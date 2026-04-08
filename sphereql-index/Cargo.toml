@@ -1,0 +1,15 @@
+[package]
+name = "sphereql-index"
+description = "Spatial indexing and queries for sphereQL"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sphereql-core = { path = "../sphereql-core" }
+
+[dev-dependencies]
+proptest = "1"
+approx = "0.5"
+rand = "0.8"

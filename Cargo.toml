@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "sphereql-core",
-    # "sphereql-index",
+    "sphereql-index",
     # "sphereql-layout",
     # "sphereql-graphql",
     # "sphereql",
