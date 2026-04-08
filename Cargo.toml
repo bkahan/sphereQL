@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "sphereql-core",
+    # "sphereql-index",
+    # "sphereql-layout",
+    # "sphereql-graphql",
+    # "sphereql",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/bkahan/sphereQL"

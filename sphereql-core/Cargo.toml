@@ -1,0 +1,15 @@
+[package]
+name = "sphereql-core"
+description = "Pure spherical math primitives for sphereQL"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+approx = "0.5"
+
+[dev-dependencies]
+proptest = "1"
