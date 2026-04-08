@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use sphereql_core::{angular_distance, SphericalPoint};
+use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::types::LayoutQuality;
 
@@ -85,7 +85,10 @@ mod tests {
             SphericalPoint::new_unchecked(1.0, 0.5, 1.0),
         ];
         let o = compute_overlap(&positions, 0.01);
-        assert!((o - 1.0).abs() < 1e-12, "overlap {o} should be 1.0 for identical points");
+        assert!(
+            (o - 1.0).abs() < 1e-12,
+            "overlap {o} should be 1.0 for identical points"
+        );
     }
 
     #[test]
@@ -99,7 +102,10 @@ mod tests {
             SphericalPoint::new_unchecked(1.0, 3.0 * FRAC_PI_2, FRAC_PI_2),
         ];
         let d = compute_dispersion(&positions);
-        assert!(d > 0.5, "dispersion {d} should be > 0.5 for well-spaced points");
+        assert!(
+            d > 0.5,
+            "dispersion {d} should be > 0.5 for well-spaced points"
+        );
     }
 
     #[test]

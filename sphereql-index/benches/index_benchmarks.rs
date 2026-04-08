@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use sphereql_core::{Cone, Shell, SphericalPoint};
 use sphereql_index::{SpatialIndex, SpatialIndexBuilder, SpatialItem};
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};

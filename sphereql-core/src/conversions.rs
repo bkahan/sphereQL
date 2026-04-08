@@ -68,11 +68,7 @@ fn normalize_theta(mut theta: f64) -> f64 {
 
 fn theta_to_longitude(theta: f64) -> f64 {
     let deg = theta.to_degrees();
-    if deg > 180.0 {
-        deg - 360.0
-    } else {
-        deg
-    }
+    if deg > 180.0 { deg - 360.0 } else { deg }
 }
 
 impl From<&SphericalPoint> for CartesianPoint {

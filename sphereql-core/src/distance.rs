@@ -100,7 +100,11 @@ mod tests {
     fn great_circle_on_unit_sphere() {
         let a = point(0.0, 0.0);
         let b = point(0.0, FRAC_PI_2);
-        assert_relative_eq!(great_circle_distance(&a, &b, 1.0), FRAC_PI_2, epsilon = 1e-12);
+        assert_relative_eq!(
+            great_circle_distance(&a, &b, 1.0),
+            FRAC_PI_2,
+            epsilon = 1e-12
+        );
     }
 
     #[test]

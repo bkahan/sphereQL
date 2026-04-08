@@ -1,7 +1,7 @@
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
 
-use sphereql::graphql::{build_schema, create_default_index, PointItem, SpatialEventBus};
 use sphereql::core::SphericalPoint;
+use sphereql::graphql::{PointItem, SpatialEventBus, build_schema, create_default_index};
 
 #[tokio::main]
 async fn main() {

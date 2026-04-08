@@ -1,8 +1,8 @@
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 use sphereql::core::{
-    angular_distance, cartesian_to_spherical, chord_distance, great_circle_distance, slerp,
-    spherical_to_cartesian, SphericalPoint,
+    SphericalPoint, angular_distance, cartesian_to_spherical, chord_distance,
+    great_circle_distance, slerp, spherical_to_cartesian,
 };
 
 fn main() {
@@ -30,8 +30,14 @@ fn main() {
         let cart = spherical_to_cartesian(&point);
         let roundtrip = cartesian_to_spherical(&cart);
         println!("\n  {name}:");
-        println!("    Spherical:  (r={:.4}, θ={:.4}, φ={:.4})", point.r, point.theta, point.phi);
-        println!("    Cartesian:  (x={:.4}, y={:.4}, z={:.4})", cart.x, cart.y, cart.z);
+        println!(
+            "    Spherical:  (r={:.4}, θ={:.4}, φ={:.4})",
+            point.r, point.theta, point.phi
+        );
+        println!(
+            "    Cartesian:  (x={:.4}, y={:.4}, z={:.4})",
+            cart.x, cart.y, cart.z
+        );
         println!(
             "    Roundtrip:  (r={:.4}, θ={:.4}, φ={:.4})",
             roundtrip.r, roundtrip.theta, roundtrip.phi
@@ -52,7 +58,10 @@ fn main() {
         let gc = great_circle_distance(a, b, earth_radius_km);
         let ch = chord_distance(a, b);
         println!("\n  {label}:");
-        println!("    Angular:      {ang:.6} rad ({:.2} deg)", ang.to_degrees());
+        println!(
+            "    Angular:      {ang:.6} rad ({:.2} deg)",
+            ang.to_degrees()
+        );
         println!("    Great-circle: {gc:.2} km (Earth radius)");
         println!("    Chord:        {ch:.6}");
     }
@@ -75,10 +84,7 @@ fn main() {
     let d_to_y = angular_distance(&mid, &equator_y);
     println!("\n  Midpoint distance to +X: {d_to_x:.6} rad");
     println!("  Midpoint distance to +Y: {d_to_y:.6} rad");
-    println!(
-        "  Equidistant: {}",
-        (d_to_x - d_to_y).abs() < 1e-12
-    );
+    println!("  Equidistant: {}", (d_to_x - d_to_y).abs() < 1e-12);
 
     // Quick demo of validation
     println!("\n--- Validation ---");

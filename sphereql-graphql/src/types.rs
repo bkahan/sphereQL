@@ -1,6 +1,4 @@
-use sphereql_core::{
-    Band, Cap, Cone, Region, Shell, SphericalPoint, Wedge,
-};
+use sphereql_core::{Band, Cap, Cone, Region, Shell, SphericalPoint, Wedge};
 
 // --- Output types ---
 
@@ -132,30 +130,26 @@ impl ConeInput {
     pub fn to_core(&self) -> Result<Cone, async_graphql::Error> {
         let apex = self.apex.to_core()?;
         let axis = self.axis.to_core()?;
-        Cone::new(apex, axis, self.half_angle)
-            .map_err(|e| async_graphql::Error::new(e.to_string()))
+        Cone::new(apex, axis, self.half_angle).map_err(|e| async_graphql::Error::new(e.to_string()))
     }
 }
 
 impl CapInput {
     pub fn to_core(&self) -> Result<Cap, async_graphql::Error> {
         let center = self.center.to_core()?;
-        Cap::new(center, self.half_angle)
-            .map_err(|e| async_graphql::Error::new(e.to_string()))
+        Cap::new(center, self.half_angle).map_err(|e| async_graphql::Error::new(e.to_string()))
     }
 }
 
 impl ShellInput {
     pub fn to_core(&self) -> Result<Shell, async_graphql::Error> {
-        Shell::new(self.inner, self.outer)
-            .map_err(|e| async_graphql::Error::new(e.to_string()))
+        Shell::new(self.inner, self.outer).map_err(|e| async_graphql::Error::new(e.to_string()))
     }
 }
 
 impl BandInput {
     pub fn to_core(&self) -> Result<Band, async_graphql::Error> {
-        Band::new(self.phi_min, self.phi_max)
-            .map_err(|e| async_graphql::Error::new(e.to_string()))
+        Band::new(self.phi_min, self.phi_max).map_err(|e| async_graphql::Error::new(e.to_string()))
     }
 }
 
@@ -207,13 +201,11 @@ impl RegionInput {
             return Ok(Region::Wedge(wedge.to_core()?));
         }
         if let Some(regions) = &self.intersection {
-            let converted: Result<Vec<Region>, _> =
-                regions.iter().map(|r| r.to_core()).collect();
+            let converted: Result<Vec<Region>, _> = regions.iter().map(|r| r.to_core()).collect();
             return Ok(Region::Intersection(converted?));
         }
         if let Some(regions) = &self.union {
-            let converted: Result<Vec<Region>, _> =
-                regions.iter().map(|r| r.to_core()).collect();
+            let converted: Result<Vec<Region>, _> = regions.iter().map(|r| r.to_core()).collect();
             return Ok(Region::Union(converted?));
         }
 

@@ -75,9 +75,7 @@ impl<T: SpatialItem> ShellIndex<T> {
 
     pub fn get(&self, id: &T::Id) -> Option<&T> {
         let &bucket_idx = self.item_map.get(id)?;
-        self.buckets[bucket_idx]
-            .iter()
-            .find(|item| item.id() == id)
+        self.buckets[bucket_idx].iter().find(|item| item.id() == id)
     }
 
     pub fn len(&self) -> usize {
@@ -115,9 +113,10 @@ impl<T: SpatialItem> ShellIndex<T> {
     }
 
     fn bucket_index(&self, r: f64) -> usize {
-        match self.boundaries.binary_search_by(|b| {
-            b.partial_cmp(&r).unwrap()
-        }) {
+        match self
+            .boundaries
+            .binary_search_by(|b| b.partial_cmp(&r).unwrap())
+        {
             // Exactly on a boundary: place in the bucket after it
             Ok(i) => (i + 1).min(self.buckets.len() - 1),
             Err(i) => i.min(self.buckets.len() - 1),
@@ -221,9 +220,7 @@ mod tests {
 
     #[test]
     fn remove_item() {
-        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new()
-            .boundary(1.0)
-            .build();
+        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new().boundary(1.0).build();
 
         index.insert(make_item(1, 0.5));
         index.insert(make_item(2, 1.5));
@@ -237,9 +234,7 @@ mod tests {
 
     #[test]
     fn remove_nonexistent_returns_none() {
-        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new()
-            .boundary(1.0)
-            .build();
+        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new().boundary(1.0).build();
 
         assert!(index.remove(&42).is_none());
     }
@@ -252,9 +247,7 @@ mod tests {
 
     #[test]
     fn item_exactly_on_boundary() {
-        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new()
-            .boundary(2.0)
-            .build();
+        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new().boundary(2.0).build();
 
         index.insert(make_item(1, 2.0));
         assert!(index.get(&1).is_some());
@@ -267,10 +260,8 @@ mod tests {
 
     #[test]
     fn empty_index_queries() {
-        let index: ShellIndex<TestItem> = ShellIndexBuilder::new()
-            .boundary(1.0)
-            .boundary(5.0)
-            .build();
+        let index: ShellIndex<TestItem> =
+            ShellIndexBuilder::new().boundary(1.0).boundary(5.0).build();
 
         assert!(index.is_empty());
         assert_eq!(index.len(), 0);
@@ -283,9 +274,7 @@ mod tests {
 
     #[test]
     fn all_items_returns_everything() {
-        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new()
-            .boundary(1.0)
-            .build();
+        let mut index: ShellIndex<TestItem> = ShellIndexBuilder::new().boundary(1.0).build();
 
         index.insert(make_item(1, 0.5));
         index.insert(make_item(2, 1.5));
