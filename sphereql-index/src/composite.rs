@@ -5,11 +5,57 @@ use sphereql_core::*;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
+/// A composite spatial index combining shell and sector partitioning for efficient queries.
+///
+/// ```
+/// use sphereql_index::*;
+/// use sphereql_core::SphericalPoint;
+///
+/// #[derive(Debug, Clone)]
+/// struct Star { id: u64, pos: SphericalPoint }
+/// impl SpatialItem for Star {
+///     type Id = u64;
+///     fn id(&self) -> &u64 { &self.id }
+///     fn position(&self) -> &SphericalPoint { &self.pos }
+/// }
+///
+/// let mut idx = SpatialIndex::<Star>::builder()
+///     .uniform_shells(3, 10.0)
+///     .theta_divisions(4)
+///     .phi_divisions(3)
+///     .build();
+///
+/// idx.insert(Star { id: 1, pos: SphericalPoint::new_unchecked(1.0, 0.5, 0.8) });
+/// assert_eq!(idx.len(), 1);
+/// assert!(idx.get(&1).is_some());
+/// ```
 pub struct SpatialIndex<T: SpatialItem> {
     shell: ShellIndex<T>,
     sector: SectorIndex<T>,
 }
 
+/// Builder for configuring and constructing a [`SpatialIndex`].
+///
+/// ```
+/// use sphereql_index::*;
+/// use sphereql_core::SphericalPoint;
+///
+/// # #[derive(Debug, Clone)]
+/// # struct Star { id: u64, pos: SphericalPoint }
+/// # impl SpatialItem for Star {
+/// #     type Id = u64;
+/// #     fn id(&self) -> &u64 { &self.id }
+/// #     fn position(&self) -> &SphericalPoint { &self.pos }
+/// # }
+/// let idx = SpatialIndexBuilder::new()
+///     .shell_boundary(1.0)
+///     .shell_boundary(5.0)
+///     .theta_divisions(6)
+///     .phi_divisions(3)
+///     .build::<Star>();
+///
+/// assert!(idx.is_empty());
+/// ```
 pub struct SpatialIndexBuilder {
     shell_boundaries: Vec<f64>,
     theta_divisions: usize,
@@ -346,7 +392,7 @@ mod tests {
 
         for item in &result.items {
             let phi = item.position().phi;
-            assert!(phi >= 0.3 && phi <= 1.0);
+            assert!((0.3..=1.0).contains(&phi));
         }
     }
 

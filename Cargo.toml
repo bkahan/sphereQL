@@ -4,7 +4,7 @@ members = [
     "sphereql-index",
     "sphereql-layout",
     "sphereql-graphql",
-    # "sphereql",
+    "sphereql",
 ]
 resolver = "2"
 

@@ -1,6 +1,15 @@
 use crate::types::{CartesianPoint, GeoPoint, SphericalPoint};
 use std::f64::consts::TAU;
 
+/// Converts a spherical point to Cartesian coordinates.
+///
+/// ```
+/// use sphereql_core::{SphericalPoint, spherical_to_cartesian};
+///
+/// let p = SphericalPoint::new(1.0, 0.0, std::f64::consts::FRAC_PI_2).unwrap();
+/// let c = spherical_to_cartesian(&p);
+/// assert!((c.x - 1.0).abs() < 1e-10);
+/// ```
 pub fn spherical_to_cartesian(p: &SphericalPoint) -> CartesianPoint {
     let x = p.r * p.phi.sin() * p.theta.cos();
     let y = p.r * p.phi.sin() * p.theta.sin();
@@ -8,6 +17,15 @@ pub fn spherical_to_cartesian(p: &SphericalPoint) -> CartesianPoint {
     CartesianPoint::new(x, y, z)
 }
 
+/// Converts a Cartesian point to spherical coordinates.
+///
+/// ```
+/// use sphereql_core::*;
+///
+/// let original = SphericalPoint::new(1.0, 0.5, 0.7).unwrap();
+/// let roundtrip = cartesian_to_spherical(&spherical_to_cartesian(&original));
+/// assert!((roundtrip.r - original.r).abs() < 1e-10);
+/// ```
 pub fn cartesian_to_spherical(p: &CartesianPoint) -> SphericalPoint {
     let r = (p.x * p.x + p.y * p.y + p.z * p.z).sqrt();
     if r == 0.0 {

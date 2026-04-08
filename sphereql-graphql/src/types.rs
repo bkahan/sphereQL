@@ -308,7 +308,7 @@ mod tests {
                 assert!(matches!(regions[0], Region::Shell(_)));
                 assert!(matches!(regions[1], Region::Band(_)));
             }
-            other => panic!("expected Intersection, got {:?}", other),
+            other => panic!("expected Intersection, got {other:?}"),
         }
     }
 

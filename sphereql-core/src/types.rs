@@ -2,6 +2,18 @@ use std::f64::consts::{PI, TAU};
 
 use crate::error::SphereQlError;
 
+/// A point in spherical coordinates (r, theta, phi).
+///
+/// - `r`: radial distance (must be >= 0)
+/// - `theta`: azimuthal angle in [0, 2pi)
+/// - `phi`: polar angle in [0, pi]
+///
+/// ```
+/// use sphereql_core::SphericalPoint;
+///
+/// let p = SphericalPoint::new(1.0, 0.5, 0.7).unwrap();
+/// assert_eq!(p.r, 1.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SphericalPoint {
     pub r: f64,
@@ -10,6 +22,16 @@ pub struct SphericalPoint {
 }
 
 impl SphericalPoint {
+    /// Creates a new `SphericalPoint` with validation.
+    ///
+    /// Returns an error if `r < 0`, `theta` is outside [0, 2pi), or `phi` is outside [0, pi].
+    ///
+    /// ```
+    /// use sphereql_core::SphericalPoint;
+    ///
+    /// assert!(SphericalPoint::new(1.0, 0.5, 0.7).is_ok());
+    /// assert!(SphericalPoint::new(-1.0, 0.0, 0.0).is_err());
+    /// ```
     pub fn new(r: f64, theta: f64, phi: f64) -> Result<Self, SphereQlError> {
         if r < 0.0 {
             return Err(SphereQlError::InvalidRadius(r));
@@ -23,6 +45,9 @@ impl SphericalPoint {
         Ok(Self { r, theta, phi })
     }
 
+    /// Creates a new `SphericalPoint` without validation.
+    ///
+    /// Caller is responsible for ensuring values are in valid ranges.
     pub fn new_unchecked(r: f64, theta: f64, phi: f64) -> Self {
         Self { r, theta, phi }
     }
@@ -67,6 +92,14 @@ impl approx::RelativeEq for SphericalPoint {
     }
 }
 
+/// A point in 3D Cartesian coordinates (x, y, z).
+///
+/// ```
+/// use sphereql_core::CartesianPoint;
+///
+/// let p = CartesianPoint::new(1.0, 0.0, 0.0);
+/// assert_eq!(p.magnitude(), 1.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CartesianPoint {
     pub x: f64,

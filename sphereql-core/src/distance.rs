@@ -1,6 +1,18 @@
 use crate::conversions::spherical_to_cartesian;
 use crate::types::{CartesianPoint, SphericalPoint};
 
+/// Returns the angular separation (in radians) between two spherical points.
+///
+/// Uses the Vincenty formula for numerical stability at all separations.
+///
+/// ```
+/// use sphereql_core::{SphericalPoint, angular_distance};
+///
+/// let a = SphericalPoint::new_unchecked(1.0, 0.0, 0.0);
+/// let b = SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::FRAC_PI_2);
+/// let dist = angular_distance(&a, &b);
+/// assert!((dist - std::f64::consts::FRAC_PI_2).abs() < 1e-10);
+/// ```
 pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
     let a_unit = SphericalPoint::new_unchecked(1.0, a.theta, a.phi);
     let b_unit = SphericalPoint::new_unchecked(1.0, b.theta, b.phi);
@@ -18,10 +30,29 @@ pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
     cross_mag.atan2(dot)
 }
 
+/// Returns the great-circle (arc) distance between two points on a sphere of given `radius`.
+///
+/// ```
+/// use sphereql_core::{SphericalPoint, great_circle_distance};
+/// use std::f64::consts::FRAC_PI_2;
+///
+/// let a = SphericalPoint::new_unchecked(1.0, 0.0, 0.0);
+/// let b = SphericalPoint::new_unchecked(1.0, 0.0, FRAC_PI_2);
+/// let dist = great_circle_distance(&a, &b, 6371.0);
+/// assert!((dist - 6371.0 * FRAC_PI_2).abs() < 1e-6);
+/// ```
 pub fn great_circle_distance(a: &SphericalPoint, b: &SphericalPoint, radius: f64) -> f64 {
     radius * angular_distance(a, b)
 }
 
+/// Returns the straight-line (chord) distance between two spherical points.
+///
+/// ```
+/// use sphereql_core::{SphericalPoint, chord_distance};
+///
+/// let p = SphericalPoint::new_unchecked(1.0, 0.0, 0.5);
+/// assert!(chord_distance(&p, &p) < 1e-10);
+/// ```
 pub fn chord_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
     let ac = spherical_to_cartesian(a);
     let bc = spherical_to_cartesian(b);

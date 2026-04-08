@@ -13,3 +13,8 @@ sphereql-core = { path = "../sphereql-core" }
 proptest = "1"
 approx = "0.5"
 rand = "0.8"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "index_benchmarks"
+harness = false

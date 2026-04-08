@@ -2,6 +2,21 @@ use crate::conversions::{cartesian_to_spherical, spherical_to_cartesian};
 use crate::distance::angular_distance;
 use crate::types::{CartesianPoint, SphericalPoint};
 
+/// Spherical linear interpolation between two unit-sphere points.
+///
+/// The parameter `t` is clamped to [0, 1]. At t=0 returns `a`, at t=1 returns `b`.
+///
+/// ```
+/// use sphereql_core::{SphericalPoint, slerp, angular_distance};
+/// use std::f64::consts::FRAC_PI_2;
+///
+/// let a = SphericalPoint::new_unchecked(1.0, 0.0, FRAC_PI_2);
+/// let b = SphericalPoint::new_unchecked(1.0, FRAC_PI_2, FRAC_PI_2);
+/// let mid = slerp(&a, &b, 0.5);
+/// let da = angular_distance(&mid, &a);
+/// let db = angular_distance(&mid, &b);
+/// assert!((da - db).abs() < 1e-10);
+/// ```
 pub fn slerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
     let t = t.clamp(0.0, 1.0);
     let a_unit = SphericalPoint::new_unchecked(1.0, a.theta, a.phi);

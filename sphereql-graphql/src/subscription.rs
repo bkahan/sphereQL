@@ -129,7 +129,7 @@ mod tests {
                 theta_degrees: theta.to_degrees(),
                 phi_degrees: phi.to_degrees(),
             },
-            item_id: format!("item-{}-{}-{}", r, theta, phi),
+            item_id: format!("item-{r}-{theta}-{phi}"),
         }
     }
 
