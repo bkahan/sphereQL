@@ -165,7 +165,10 @@ mod tests {
         assert!(res.errors.is_empty(), "errors: {:?}", res.errors);
         let data = res.data.into_json().unwrap();
         let distance = data["distanceBetween"].as_f64().unwrap();
-        assert!(distance > 0.0, "distance between distinct points should be positive");
+        assert!(
+            distance > 0.0,
+            "distance between distinct points should be positive"
+        );
     }
 
     #[tokio::test]
@@ -207,7 +210,11 @@ mod tests {
                 ) { items { r } totalScanned } }"#,
             )
             .await;
-        assert!(cone_res.errors.is_empty(), "cone errors: {:?}", cone_res.errors);
+        assert!(
+            cone_res.errors.is_empty(),
+            "cone errors: {:?}",
+            cone_res.errors
+        );
         let data = cone_res.data.into_json().unwrap();
         let items = data["withinCone"]["items"].as_array().unwrap();
         assert!(items.is_empty());
@@ -220,7 +227,11 @@ mod tests {
                 ) { point { r } distance } }"#,
             )
             .await;
-        assert!(nearest_res.errors.is_empty(), "nearest errors: {:?}", nearest_res.errors);
+        assert!(
+            nearest_res.errors.is_empty(),
+            "nearest errors: {:?}",
+            nearest_res.errors
+        );
         let data = nearest_res.data.into_json().unwrap();
         let results = data["nearestTo"].as_array().unwrap();
         assert!(results.is_empty());

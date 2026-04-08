@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use sphereql_core::{
-    angular_distance, great_circle_distance, slerp, spherical_to_cartesian, SphericalPoint,
+    SphericalPoint, angular_distance, great_circle_distance, slerp, spherical_to_cartesian,
 };
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 

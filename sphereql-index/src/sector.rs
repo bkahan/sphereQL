@@ -1,5 +1,5 @@
 use crate::item::{SpatialItem, SpatialQueryResult};
-use sphereql_core::{angular_distance, Band, Cap, Contains, SphericalPoint, Wedge};
+use sphereql_core::{Band, Cap, Contains, SphericalPoint, Wedge, angular_distance};
 use std::collections::HashMap;
 use std::f64::consts::{PI, TAU};
 
@@ -45,9 +45,7 @@ impl<T: SpatialItem> SectorIndex<T> {
 
     pub fn get(&self, id: &T::Id) -> Option<&T> {
         let &sector_idx = self.item_map.get(id)?;
-        self.sectors[sector_idx]
-            .iter()
-            .find(|item| item.id() == id)
+        self.sectors[sector_idx].iter().find(|item| item.id() == id)
     }
 
     pub fn len(&self) -> usize {

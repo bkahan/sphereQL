@@ -52,7 +52,9 @@ fn evenly_spaced_centers(k: usize) -> Vec<CartesianPoint> {
     let golden_ratio = (1.0 + 5.0_f64.sqrt()) / 2.0;
     (0..k)
         .map(|i| {
-            let phi = (1.0 - 2.0 * (i as f64 + 0.5) / k as f64).clamp(-1.0, 1.0).acos();
+            let phi = (1.0 - 2.0 * (i as f64 + 0.5) / k as f64)
+                .clamp(-1.0, 1.0)
+                .acos();
             let theta = (2.0 * PI * (i as f64) / golden_ratio).rem_euclid(2.0 * PI);
             let sp = SphericalPoint::new_unchecked(1.0, theta, phi);
             spherical_to_cartesian(&sp)
@@ -94,7 +96,10 @@ fn kmeans_spherical(
     let n = mapped_cartesian.len();
 
     let mut centers: Vec<CartesianPoint> = if n >= k {
-        mapped_cartesian[..k].iter().map(|c| c.normalize()).collect()
+        mapped_cartesian[..k]
+            .iter()
+            .map(|c| c.normalize())
+            .collect()
     } else {
         evenly_spaced_centers(k)
     };
@@ -165,7 +170,11 @@ fn fibonacci_sub_spiral(
         return vec![];
     }
     if count == 1 {
-        return vec![SphericalPoint::new_unchecked(radius, center.theta, center.phi)];
+        return vec![SphericalPoint::new_unchecked(
+            radius,
+            center.theta,
+            center.phi,
+        )];
     }
 
     let golden_angle = PI * (3.0 - 5.0_f64.sqrt());
@@ -349,8 +358,7 @@ impl<T: Clone + Send + Sync> LayoutStrategy<T> for ClusteredLayout {
         }
 
         let mapped: Vec<SphericalPoint> = items.iter().map(|item| mapper.map(item)).collect();
-        let mapped_cart: Vec<CartesianPoint> =
-            mapped.iter().map(spherical_to_cartesian).collect();
+        let mapped_cart: Vec<CartesianPoint> = mapped.iter().map(spherical_to_cartesian).collect();
 
         let k = self.num_clusters.min(items.len()).max(1);
         let km = kmeans_spherical(&mapped_cart, &mapped, k);
@@ -391,8 +399,7 @@ impl<T: Clone + Send + Sync> LayoutStrategy<T> for ClusteredLayout {
         let entries: Vec<LayoutEntry<T>> = entries.into_iter().map(|(_, e)| e).collect();
 
         final_positions.sort_by_key(|(idx, _)| *idx);
-        let positions: Vec<SphericalPoint> =
-            final_positions.into_iter().map(|(_, p)| p).collect();
+        let positions: Vec<SphericalPoint> = final_positions.into_iter().map(|(_, p)| p).collect();
 
         let quality = compute_quality(&positions, &final_assignments, k);
 

@@ -1,6 +1,6 @@
 use std::f64::consts::{PI, TAU};
 
-use sphereql_core::{angular_distance, SphericalPoint};
+use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::traits::{DimensionMapper, LayoutStrategy};
 use crate::types::{LayoutEntry, LayoutQuality, LayoutResult};
@@ -139,10 +139,7 @@ mod tests {
         // Verify all positions are distinct by checking no two points are too close
         for i in 0..20 {
             for j in (i + 1)..20 {
-                let d = angular_distance(
-                    &result.entries[i].position,
-                    &result.entries[j].position,
-                );
+                let d = angular_distance(&result.entries[i].position, &result.entries[j].position);
                 assert!(d > 1e-10, "points {i} and {j} are not distinct");
             }
         }
@@ -185,10 +182,7 @@ mod tests {
         let mut min_dist = f64::MAX;
         for i in 0..result.entries.len() {
             for j in (i + 1)..result.entries.len() {
-                let d = angular_distance(
-                    &result.entries[i].position,
-                    &result.entries[j].position,
-                );
+                let d = angular_distance(&result.entries[i].position, &result.entries[j].position);
                 if d < min_dist {
                     min_dist = d;
                 }

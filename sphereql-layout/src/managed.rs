@@ -87,7 +87,10 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
         }
 
         let dirty_indices: Vec<usize> = self.dirty.iter().copied().collect();
-        let dirty_items: Vec<T> = dirty_indices.iter().map(|&i| self.items[i].clone()).collect();
+        let dirty_items: Vec<T> = dirty_indices
+            .iter()
+            .map(|&i| self.items[i].clone())
+            .collect();
 
         let result = strategy.layout(&dirty_items, mapper);
         for (i, entry) in dirty_indices.iter().zip(result.entries.into_iter()) {
@@ -158,11 +161,7 @@ mod tests {
                 .iter()
                 .map(|&item| LayoutEntry {
                     item,
-                    position: SphericalPoint::new_unchecked(
-                        1.0,
-                        item as f64 * 0.1,
-                        FRAC_PI_2,
-                    ),
+                    position: SphericalPoint::new_unchecked(1.0, item as f64 * 0.1, FRAC_PI_2),
                 })
                 .collect();
             LayoutResult {

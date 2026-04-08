@@ -4,8 +4,8 @@ use async_graphql::{Context, Object, Result};
 use tokio::sync::RwLock;
 
 use sphereql_core::{
-    angular_distance, chord_distance, euclidean_distance, great_circle_distance,
-    spherical_to_cartesian, SphericalPoint,
+    SphericalPoint, angular_distance, chord_distance, euclidean_distance, great_circle_distance,
+    spherical_to_cartesian,
 };
 use sphereql_index::{SpatialIndex, SpatialItem};
 

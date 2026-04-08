@@ -97,10 +97,7 @@ impl SphericalSubscriptionRoot {
         Ok(stream)
     }
 
-    async fn spatial_events(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<impl Stream<Item = SpatialEvent>> {
+    async fn spatial_events(&self, ctx: &Context<'_>) -> Result<impl Stream<Item = SpatialEvent>> {
         let bus = ctx.data::<SpatialEventBus>()?;
         let mut rx = bus.subscribe();
 

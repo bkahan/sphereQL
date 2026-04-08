@@ -37,26 +37,26 @@ fn main() {
 
     // Spread cities across a sphere at various radii, theta, phi
     let cities = vec![
-        city("Alpha",    1.0, 0.2, 0.3),
-        city("Bravo",    1.5, 0.5, FRAC_PI_4),
-        city("Charlie",  2.0, 1.0, FRAC_PI_2),
-        city("Delta",    2.5, 1.5, FRAC_PI_2),
-        city("Echo",     3.0, 2.0, FRAC_PI_4),
-        city("Foxtrot",  3.5, 2.5, 1.0),
-        city("Golf",     4.0, 3.0, FRAC_PI_2),
-        city("Hotel",    4.5, 3.5, 0.8),
-        city("India",    5.0, 4.0, FRAC_PI_4),
-        city("Juliet",   5.5, 4.5, 1.2),
-        city("Kilo",     6.0, 5.0, FRAC_PI_2),
-        city("Lima",     1.0, 5.5, PI - 0.3),
-        city("Mike",     1.5, 0.0, PI - 0.5),
+        city("Alpha", 1.0, 0.2, 0.3),
+        city("Bravo", 1.5, 0.5, FRAC_PI_4),
+        city("Charlie", 2.0, 1.0, FRAC_PI_2),
+        city("Delta", 2.5, 1.5, FRAC_PI_2),
+        city("Echo", 3.0, 2.0, FRAC_PI_4),
+        city("Foxtrot", 3.5, 2.5, 1.0),
+        city("Golf", 4.0, 3.0, FRAC_PI_2),
+        city("Hotel", 4.5, 3.5, 0.8),
+        city("India", 5.0, 4.0, FRAC_PI_4),
+        city("Juliet", 5.5, 4.5, 1.2),
+        city("Kilo", 6.0, 5.0, FRAC_PI_2),
+        city("Lima", 1.0, 5.5, PI - 0.3),
+        city("Mike", 1.5, 0.0, PI - 0.5),
         city("November", 2.0, 0.8, 0.5),
-        city("Oscar",    3.0, 1.2, 0.9),
-        city("Papa",     7.0, 0.3, FRAC_PI_2),
-        city("Quebec",   8.0, 1.0, 1.0),
-        city("Romeo",    9.0, 2.0, FRAC_PI_2),
-        city("Sierra",   0.5, 3.0, FRAC_PI_4),
-        city("Tango",    1.2, 0.4, 0.6),
+        city("Oscar", 3.0, 1.2, 0.9),
+        city("Papa", 7.0, 0.3, FRAC_PI_2),
+        city("Quebec", 8.0, 1.0, 1.0),
+        city("Romeo", 9.0, 2.0, FRAC_PI_2),
+        city("Sierra", 0.5, 3.0, FRAC_PI_4),
+        city("Tango", 1.2, 0.4, 0.6),
     ];
 
     for c in &cities {
@@ -67,12 +67,7 @@ fn main() {
     // Cone query: find cities near a particular direction
     println!("--- Cone Query ---");
     let axis = SphericalPoint::new_unchecked(1.0, 0.5, FRAC_PI_4);
-    let cone = Cone::new(
-        SphericalPoint::new_unchecked(0.0, 0.0, 0.0),
-        axis,
-        0.6,
-    )
-    .unwrap();
+    let cone = Cone::new(SphericalPoint::new_unchecked(0.0, 0.0, 0.0), axis, 0.6).unwrap();
     println!(
         "Looking for cities within 0.6 rad of direction (θ={:.2}, φ={:.2}):",
         axis.theta, axis.phi
@@ -86,7 +81,10 @@ fn main() {
     );
     for c in &cone_result.items {
         let p = c.position();
-        println!("  - {} at r={:.1}, θ={:.2}, φ={:.2}", c.name, p.r, p.theta, p.phi);
+        println!(
+            "  - {} at r={:.1}, θ={:.2}, φ={:.2}",
+            c.name, p.r, p.theta, p.phi
+        );
     }
 
     // Shell query: find cities in a radius range
@@ -102,7 +100,10 @@ fn main() {
     );
     for c in &shell_result.items {
         let p = c.position();
-        println!("  - {} at r={:.1}, θ={:.2}, φ={:.2}", c.name, p.r, p.theta, p.phi);
+        println!(
+            "  - {} at r={:.1}, θ={:.2}, φ={:.2}",
+            c.name, p.r, p.theta, p.phi
+        );
     }
 
     // Nearest neighbors
@@ -135,6 +136,9 @@ fn main() {
     );
     for c in &within.items {
         let p = c.position();
-        println!("  - {} at r={:.1}, θ={:.2}, φ={:.2}", c.name, p.r, p.theta, p.phi);
+        println!(
+            "  - {} at r={:.1}, θ={:.2}, φ={:.2}",
+            c.name, p.r, p.theta, p.phi
+        );
     }
 }

@@ -78,8 +78,7 @@ impl SpatialIndexBuilder {
 
     pub fn uniform_shells(mut self, count: usize, max_r: f64) -> Self {
         for i in 0..=count {
-            self.shell_boundaries
-                .push(max_r * i as f64 / count as f64);
+            self.shell_boundaries.push(max_r * i as f64 / count as f64);
         }
         self
     }
@@ -199,14 +198,14 @@ impl<T: SpatialItem> SpatialIndex<T> {
                     item: item.clone(),
                     distance,
                 });
-            } else if let Some(farthest) = heap.peek() {
-                if distance < farthest.distance {
-                    heap.pop();
-                    heap.push(DistanceEntry {
-                        item: item.clone(),
-                        distance,
-                    });
-                }
+            } else if let Some(farthest) = heap.peek()
+                && distance < farthest.distance
+            {
+                heap.pop();
+                heap.push(DistanceEntry {
+                    item: item.clone(),
+                    distance,
+                });
             }
         }
 
@@ -219,11 +218,7 @@ impl<T: SpatialItem> SpatialIndex<T> {
             .collect()
     }
 
-    pub fn within_distance(
-        &self,
-        point: &SphericalPoint,
-        max_dist: f64,
-    ) -> SpatialQueryResult<T> {
+    pub fn within_distance(&self, point: &SphericalPoint, max_dist: f64) -> SpatialQueryResult<T> {
         let all = self.shell.all_items();
         let total_scanned = all.len();
         let items = all
@@ -371,12 +366,7 @@ mod tests {
     #[test]
     fn query_cone_returns_correct_items() {
         let idx = build_test_index();
-        let cone = Cone::new(
-            point(0.0, 0.0, 0.0),
-            point(1.0, 0.5, 0.8),
-            0.5,
-        )
-        .unwrap();
+        let cone = Cone::new(point(0.0, 0.0, 0.0), point(1.0, 0.5, 0.8), 0.5).unwrap();
 
         let result = idx.query_cone(&cone);
         for item in &result.items {
@@ -520,7 +510,11 @@ mod tests {
         assert!(idx.query_region(&region).items.is_empty());
 
         assert!(idx.nearest(&point(1.0, 0.0, FRAC_PI_2), 5).is_empty());
-        assert!(idx.within_distance(&point(1.0, 0.0, FRAC_PI_2), 1.0).items.is_empty());
+        assert!(
+            idx.within_distance(&point(1.0, 0.0, FRAC_PI_2), 1.0)
+                .items
+                .is_empty()
+        );
         assert!(idx.all_items().is_empty());
     }
 }

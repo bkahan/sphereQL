@@ -19,4 +19,4 @@ pub mod graphql {
 }
 
 #[cfg(feature = "core")]
-pub use sphereql_core::{SphericalPoint, SphereQlError};
+pub use sphereql_core::{SphereQlError, SphericalPoint};

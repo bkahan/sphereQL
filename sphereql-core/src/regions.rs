@@ -182,24 +182,14 @@ mod tests {
 
     #[test]
     fn cone_contains_point_inside() {
-        let cone = Cone::new(
-            point(0.0, 0.0, 0.0),
-            point(1.0, 0.0, FRAC_PI_4),
-            FRAC_PI_2,
-        )
-        .unwrap();
+        let cone = Cone::new(point(0.0, 0.0, 0.0), point(1.0, 0.0, FRAC_PI_4), FRAC_PI_2).unwrap();
         let p = point(2.0, 0.0, FRAC_PI_4);
         assert!(cone.contains(&p));
     }
 
     #[test]
     fn cone_excludes_point_outside() {
-        let cone = Cone::new(
-            point(0.0, 0.0, 0.0),
-            point(1.0, 0.0, 0.1),
-            0.05,
-        )
-        .unwrap();
+        let cone = Cone::new(point(0.0, 0.0, 0.0), point(1.0, 0.0, 0.1), 0.05).unwrap();
         let p = point(1.0, PI, FRAC_PI_2);
         assert!(!cone.contains(&p));
     }
@@ -207,12 +197,7 @@ mod tests {
     #[test]
     fn cone_contains_point_on_boundary() {
         let half = FRAC_PI_4;
-        let cone = Cone::new(
-            point(0.0, 0.0, 0.0),
-            point(1.0, 0.0, 0.0),
-            half,
-        )
-        .unwrap();
+        let cone = Cone::new(point(0.0, 0.0, 0.0), point(1.0, 0.0, 0.0), half).unwrap();
         // axis is at phi=0 (north pole), point at phi=half_angle should be on boundary
         let p = point(1.0, 0.0, half);
         assert!(cone.contains(&p));

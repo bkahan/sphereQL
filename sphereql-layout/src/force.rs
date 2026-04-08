@@ -1,8 +1,8 @@
 use std::f64::consts::PI;
 
 use sphereql_core::{
-    angular_distance, cartesian_to_spherical, spherical_to_cartesian, CartesianPoint,
-    SphericalPoint,
+    CartesianPoint, SphericalPoint, angular_distance, cartesian_to_spherical,
+    spherical_to_cartesian,
 };
 
 use crate::traits::{DimensionMapper, LayoutStrategy};
@@ -190,11 +190,7 @@ impl<T: Clone> LayoutStrategy<T> for ForceDirectedLayout {
 
                 // Project force onto tangent plane at p: f_tangent = f - dot(f, p) * p
                 let dot = f.x * p.x + f.y * p.y + f.z * p.z;
-                let ft = CartesianPoint::new(
-                    f.x - dot * p.x,
-                    f.y - dot * p.y,
-                    f.z - dot * p.z,
-                );
+                let ft = CartesianPoint::new(f.x - dot * p.x, f.y - dot * p.y, f.z - dot * p.z);
 
                 let new_pos = CartesianPoint::new(
                     p.x + step_size * ft.x,
@@ -299,10 +295,7 @@ mod tests {
         let result = layout.layout(&[0usize, 1], &mapper);
         assert_eq!(result.entries.len(), 2);
 
-        let dist = angular_distance(
-            &result.entries[0].position,
-            &result.entries[1].position,
-        );
+        let dist = angular_distance(&result.entries[0].position, &result.entries[1].position);
 
         assert!(
             dist > PI * 0.5,
@@ -396,10 +389,8 @@ mod tests {
         let mut total_dist_cooled = 0.0;
         let mut total_dist_uncooled = 0.0;
         for (i, orig) in mapper.positions.iter().enumerate() {
-            total_dist_cooled +=
-                angular_distance(&result_cooled.entries[i].position, orig);
-            total_dist_uncooled +=
-                angular_distance(&result_uncooled.entries[i].position, orig);
+            total_dist_cooled += angular_distance(&result_cooled.entries[i].position, orig);
+            total_dist_uncooled += angular_distance(&result_uncooled.entries[i].position, orig);
         }
 
         assert!(
