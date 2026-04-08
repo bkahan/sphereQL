@@ -1,0 +1,16 @@
+[package]
+name = "sphereql-layout"
+description = "Layout engine for sphereQL spatial positioning"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sphereql-core = { path = "../sphereql-core" }
+sphereql-index = { path = "../sphereql-index" }
+
+[dev-dependencies]
+proptest = "1"
+approx = "0.5"
+rand = "0.8"

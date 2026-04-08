@@ -2,7 +2,7 @@
 members = [
     "sphereql-core",
     "sphereql-index",
-    # "sphereql-layout",
+    "sphereql-layout",
     # "sphereql-graphql",
     # "sphereql",
 ]
