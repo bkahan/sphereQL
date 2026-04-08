@@ -3,7 +3,7 @@ members = [
     "sphereql-core",
     "sphereql-index",
     "sphereql-layout",
-    # "sphereql-graphql",
+    "sphereql-graphql",
     # "sphereql",
 ]
 resolver = "2"
