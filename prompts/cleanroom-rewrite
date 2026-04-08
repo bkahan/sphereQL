@@ -1,0 +1,206 @@
+Context
+The CCS project (/Users/benkahan/Documents/kings-dharma/ccs) implements a knowledge graph with spherical coordinate positioning for nodes. The developer owns the concept of sphereQL but not CCS IP, so this is a clean-room implementation of a production-grade Rust library that provides domain-agnostic spherical coordinate operations as an additive layer to GraphQL.
+The goal: any Rust developer can map their data to spherical coordinates and query it spatially through GraphQL, regardless of domain (geospatial, knowledge graphs, game worlds, astronomy, network topology).
+Repository & IP Separation
+
+Source (read-only reference): kings-dharma/ccs — CCS team's repo. DO NOT commit here.
+Target (all new code): bkahan/sphereQL — clean-room sphereQL library.
+Working directory: /Users/benkahan/Documents/Code/sphereQL (outside CCS repo entirely)
+Push method: Code built locally at /Users/benkahan/Documents/Code/sphereQL with git and proper commits. User pushes to bkahan/sphereQL manually afterward (git remote add origin ... && git push). MCP GitHub tools are restricted to kings-dharma/ccs and cannot be reconfigured from within the session.
+Branch: main (or feature branches as needed)
+No CCS code is copied. CCS is referenced only for conceptual understanding of spherical math patterns.
+
+
+
+Workspace Structure
+All code lives at /Users/benkahan/Documents/Code/sphereQL, pushed to github.com/bkahan/sphereQL:
+/home/user/sphereql/            # git root → bkahan/sphereQL
+  Cargo.toml                    # workspace root
+  sphereql-core/                # Layer 1: Pure math
+  sphereql-index/               # Layer 2: Spatial indexing & queries
+  sphereql-layout/              # Layer 3: Layout engine
+  sphereql-graphql/             # Layer 4: GraphQL integration (async-graphql)
+  sphereql/                     # Umbrella re-export crate
+  examples/
+  docs/
+Dependency chain: core <- index <- layout <- graphql <- umbrella
+Key dependencies: serde, thiserror, approx, async-graphql, chrono (optional), criterion (bench)
+
+Layer 1: sphereql-core (Pure Spherical Math)
+Types
+
+SphericalPoint { r, theta, phi } -- (r >= 0, theta in [0, 2PI), phi in [0, PI])
+CartesianPoint { x, y, z }
+GeoPoint { lat, lon, alt }
+Regions: Cone, Cap, Shell, Band, Wedge, Region (compound via Intersection/Union)
+
+Functions
+
+Conversions: spherical <-> cartesian <-> geo
+Distance: angular_distance (Vincenty formula, NOT spherical law of cosines -- numerically stable), great_circle_distance, chord_distance, euclidean_distance
+Containment: Contains trait implemented for all region types
+Interpolation: slerp, nlerp, full_slerp (interpolates r + direction)
+
+Design improvements over CCS patterns
+CCS ApproachsphereQL ApproachWhycos_angle.acos() (unstable near 0/PI)Vincenty formula atan2(...)Numerical stabilityRaw PartialEq on floatsapprox crate integrationCorrectnessHardcoded angle rangesConfigurable AngleRangeDomain-agnostic
+
+Layer 2: sphereql-index (Spatial Indexing & Queries)
+Core Trait
+rustpub trait SpatialItem: Clone + Send + Sync {
+    type Id: Eq + Hash + Clone + Send + Sync;
+    fn id(&self) -> &Self::Id;
+    fn position(&self) -> &SphericalPoint;
+}
+Index Types
+
+ShellIndex<T> -- radial shell bucketing with configurable boundaries (builder pattern)
+SectorIndex<T> -- angular sector grid (theta x phi divisions)
+SpatialIndex<T> -- composite of shell + sector for multi-dimensional pruning
+CachedIndex<T> -- wraps SpatialIndex with LRU cache + generation counter for auto-invalidation
+
+Queries
+
+query_cone(cone, limit) -- find items within angular cone
+query_shell(shell) -- find items in radius range
+query_band(band) -- find items in phi range
+query_region(region) -- compound region queries
+nearest(point, k) -- k-nearest neighbors
+within_distance(point, max_dist) -- all items within angular distance
+
+Cache (improvement over CCS)
+CCS: no eviction, full rebuild. sphereQL: LRU with configurable capacity, generation-counter invalidation on insert/remove/update.
+
+Layer 3: sphereql-layout (Layout Engine)
+Key Traits
+rustpub trait DimensionMapper: Send + Sync {
+    type Item;
+    fn map(&self, item: &Self::Item) -> SphericalPoint;
+}
+
+pub trait LayoutStrategy<T>: Send + Sync {
+    fn layout(&self, items: &[T], mapper: &dyn DimensionMapper<Item = T>) -> LayoutResult<T>;
+}
+This generalizes CCS's SphericalDimensionWeights (6 hardcoded domain-specific weights) into a user-defined mapping function.
+Built-in Strategies
+
+UniformLayout -- Fibonacci spiral distribution for max separation
+ClusteredLayout -- groups similar items into angular sectors (analogous to CCS CONFIDENCE_CLUSTERING / SEMANTIC_MERIDIAN_BASED)
+ForceDirectedLayout -- repulsive/attractive forces on sphere surface (analogous to CCS HYBRID_OPTIMIZATION)
+
+Incremental Updates
+ManagedLayout<T> tracks dirty items, supports add/remove/mark_dirty/reflow_incremental.
+Quality Metrics
+LayoutQuality { dispersion_score, overlap_score, silhouette_score }
+
+Layer 4: sphereql-graphql (GraphQL Integration)
+GraphQL Schema Additions
+graphqltype SphericalPoint { r, theta, phi, thetaDegrees, phiDegrees, cartesian }
+
+type Query {
+  withinCone(center: SphericalCoordinateInput!, halfAngle: Float!, limit: Int): SpatialQueryResult!
+  withinShell(rMin: Float!, rMax: Float!, limit: Int): SpatialQueryResult!
+  withinBand(phiMin: Float!, phiMax: Float!, limit: Int): SpatialQueryResult!
+  withinRegion(region: SphericalRegionInput!, limit: Int): SpatialQueryResult!
+  nearestTo(point: SphericalCoordinateInput!, k: Int!, maxDistance: Float): [NearestResult!]!
+  distanceBetween(a: SphericalCoordinateInput!, b: SphericalCoordinateInput!, metric: DistanceMetric): Float!
+}
+
+directive @sphericalFilter(withinCone: ConeInput, withinShell: ShellInput, ...) on FIELD_DEFINITION
+
+type Subscription {
+  itemEnteredRegion(region: SphericalRegionInput!): SpatialEvent!
+  itemLeftRegion(region: SphericalRegionInput!): SpatialEvent!
+}
+Rust Integration
+
+Uses async-graphql macros (#[Object], #[Scalar], #[Subscription])
+Provides SphericalQueryRoot<T> that users merge into their schema
+register_sphereql_types() helper for schema builder integration
+Thread-safe via Arc<RwLock<CachedIndex<T>>>
+
+
+Implementation Phases
+Phase 1: Core Math (~2 weeks)
+
+ Workspace setup, Cargo.toml configs
+ SphericalPoint, CartesianPoint, GeoPoint types with serde
+ Coordinate conversions (spherical <-> cartesian <-> geo)
+ Distance functions (Vincenty angular, great circle, chord, Euclidean)
+ Region types (Cone, Cap, Shell, Band, Wedge, compound Region)
+ Contains trait + implementations
+ Interpolation (slerp, nlerp)
+ Error types (thiserror)
+ Unit tests + property-based tests (proptest)
+
+Phase 2: Spatial Index (~2 weeks)
+
+ SpatialItem trait
+ ShellIndex with builder pattern
+ SectorIndex with configurable divisions
+ SpatialIndex composite
+ All query implementations (cone, shell, band, region, nearest, within_distance)
+ CachedIndex with LRU + generation counter
+ Oracle tests (verify queries match brute-force scan)
+
+Phase 3: Layout Engine (~2 weeks)
+
+ DimensionMapper trait
+ LayoutStrategy trait
+ UniformLayout (Fibonacci spiral)
+ ClusteredLayout
+ ForceDirectedLayout
+ ManagedLayout with incremental updates
+ Quality metrics
+ Integration tests with index layer
+
+Phase 4: GraphQL Integration (~2 weeks)
+
+ Custom scalars (SphericalCoordinate, SphericalRegion)
+ GraphQL object types
+ Query resolvers (withinCone, withinShell, nearestTo, etc.)
+ Filter directive support
+ Subscription support for spatial events
+ SphericalContext and schema registration helpers
+ Integration test: full GraphQL server with spatial queries
+
+Phase 5: Polish & Release (~1 week)
+
+ Umbrella sphereql crate with feature flags
+ Criterion benchmarks (insertion, queries, layout at 100/1K/10K/100K items)
+ Examples: basic_positioning.rs, geospatial.rs, game_world.rs, graphql_server.rs
+ Crate-level docs, doc-tests on all public APIs
+ CI setup (GitHub Actions: test, lint, doc, bench)
+
+
+Verification Plan
+
+Unit tests: Every function in sphereql-core tested against hand-computed values
+Property tests: Roundtrip conversions, triangle inequality, containment consistency
+Oracle tests: Index queries verified against brute-force full scan
+Integration tests: Full pipeline -- create items -> layout -> index -> GraphQL query -> verify results
+Benchmarks: Criterion suite tracking perf at scale
+Doc tests: Every public API has a runnable example
+Build: cargo test --workspace && cargo doc --no-deps --workspace && cargo clippy --workspace
+
+
+Claude Code Prompts for Implementation
+These are the prompts to give Claude Code for each phase:
+Prompt 1 (Phase 1):
+
+Create a new Rust workspace at /Users/benkahan/Documents/Code/sphereQL with sphereql-core as the first member crate. Implement: SphericalPoint(r, theta, phi), CartesianPoint(x, y, z), GeoPoint(lat, lon, alt) with serde derive. Add coordinate conversion functions (spherical<->cartesian<->geo). Implement distance functions using the Vincenty formula for angular distance (NOT spherical law of cosines). Add region types (Cone, Cap, Shell, Band, Wedge) with a Contains trait. Add slerp/nlerp interpolation. Use thiserror for errors and approx for float comparisons. Write comprehensive unit tests and proptest property tests. Edition 2024.
+
+Prompt 2 (Phase 2):
+
+In the sphereql workspace, create the sphereql-index crate depending on sphereql-core. Define a SpatialItem trait with id() and position(). Implement ShellIndex<T> with configurable radial boundaries via builder pattern, SectorIndex<T> with configurable theta/phi divisions, and a composite SpatialIndex<T>. Implement queries: query_cone, query_shell, query_band, query_region, nearest (k-NN), within_distance. Add a CachedIndex<T> wrapper with LRU eviction and generation-counter cache invalidation. Write oracle tests that verify every query against brute-force scan.
+
+Prompt 3 (Phase 3):
+
+In the sphereql workspace, create the sphereql-layout crate depending on sphereql-core and sphereql-index. Define DimensionMapper trait (user maps their data to SphericalPoint) and LayoutStrategy trait. Implement three strategies: UniformLayout (Fibonacci spiral), ClusteredLayout (group by mapper proximity into angular sectors), ForceDirectedLayout (sphere-surface force simulation). Add ManagedLayout<T> with incremental updates (add/remove/mark_dirty/reflow). Add quality metrics (dispersion, overlap, silhouette). Write integration tests with the index layer.
+
+Prompt 4 (Phase 4):
+
+In the sphereql workspace, create the sphereql-graphql crate depending on all other sphereql crates plus async-graphql. Define custom GraphQL scalars for SphericalCoordinate and SphericalRegion. Create query resolvers: withinCone, withinShell, withinBand, withinRegion, nearestTo, distanceBetween. Add a @sphericalFilter directive. Add subscriptions for itemEnteredRegion/itemLeftRegion events. Provide SphericalQueryRoot<T> and register_sphereql_types() for easy schema integration. Write integration tests with a mock GraphQL server.
+
+Prompt 5 (Phase 5):
+
+Create the umbrella sphereql crate that re-exports all sub-crates with feature flags (core, index, layout, graphql, full). Add Criterion benchmarks for insertion, cone queries, nearest-neighbor, and full layout at 1K/10K/100K items. Create example files: basic_positioning.rs, geospatial.rs, graphql_server.rs. Ensure all public APIs have doc-tests. Set up GitHub Actions CI (test, clippy, doc, bench). Review and finalize README.
