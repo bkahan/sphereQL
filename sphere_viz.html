@@ -8,319 +8,238 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a1a;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
 #c{position:absolute;top:0;left:0}
-#legend{position:absolute;top:16px;left:16px;background:rgba(10,10,30,0.85);padding:14px 18px;border-radius:10px;font-size:13px;pointer-events:auto;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08)}
-#legend h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:0.5px}
+#legend{position:absolute;top:16px;left:16px;background:rgba(10,10,30,0.88);padding:14px 18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);max-height:45vh;overflow-y:auto}
+#legend h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:.5px}
 .lrow{display:flex;align-items:center;gap:8px;margin:4px 0;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .15s}
-.lrow:hover{background:rgba(255,255,255,0.08)}
-.lrow.dim{opacity:0.25}
-.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.lbl{font-size:12px}
-.lcnt{font-size:11px;color:#888;margin-left:auto}
-#info{position:absolute;top:16px;right:16px;width:340px;max-height:calc(100vh - 32px);overflow-y:auto;background:rgba(10,10,30,0.88);padding:18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);display:none}
+.lrow:hover{background:rgba(255,255,255,0.08)}.lrow.dim{opacity:.25}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}.lbl{font-size:12px}.lcnt{font-size:11px;color:#888;margin-left:auto}
+#info{position:absolute;top:16px;right:16px;width:360px;max-height:calc(100vh - 32px);overflow-y:auto;background:rgba(10,10,30,0.88);padding:18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);display:none}
 #info.visible{display:block}
 #info h3{font-size:15px;margin-bottom:6px;font-weight:600}
 #info .cat-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;margin-bottom:8px}
 #info .txt{font-size:13px;line-height:1.5;color:#ccc;margin-bottom:12px}
-#info .neighbors h4{font-size:12px;color:#888;margin-bottom:6px;font-weight:500}
 #info .nb{padding:6px 8px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;cursor:pointer;transition:background .15s}
 #info .nb:hover{background:rgba(255,255,255,0.1)}
 #info .nb .dist{color:#888;font-size:11px;float:right}
-#queries{position:absolute;bottom:16px;left:16px;background:rgba(10,10,30,0.85);padding:14px 18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08)}
-#queries h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:0.5px}
-.qbtn{display:block;padding:6px 10px;margin:4px 0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#ddd;cursor:pointer;font-size:12px;text-align:left;width:100%;transition:background .15s}
-.qbtn:hover{background:rgba(255,255,255,0.12)}
+#controls{position:absolute;bottom:16px;left:16px;background:rgba(10,10,30,0.88);padding:14px 18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);max-width:460px;max-height:45vh;overflow-y:auto}
+#controls h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:.5px}
+.qbtn,.pbtn{display:block;padding:6px 10px;margin:4px 0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#ddd;cursor:pointer;font-size:12px;text-align:left;width:100%;transition:background .15s}
+.qbtn:hover,.pbtn:hover{background:rgba(255,255,255,0.12)}
 .qbtn.active{background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.3)}
+.pbtn.active{background:rgba(255,160,60,0.18);border-color:rgba(255,160,60,0.35)}
+.tog{display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;font-size:12px;color:#bbb}
+.tog input{accent-color:#4CAF50}
 #help{position:absolute;bottom:16px;right:16px;font-size:11px;color:#555;text-align:right;pointer-events:none}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-
 <div id="legend"></div>
 <div id="info"></div>
-<div id="queries"></div>
+<div id="controls"></div>
 <div id="help">drag to rotate · scroll to zoom · click a point to inspect</div>
-
 <script type="importmap">
 {"imports":{"three":"https://unpkg.com/three@0.163.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.163.0/examples/jsm/"}}
 </script>
 <script type="module">
-import * as THREE from 'three';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import*as THREE from'three';
+import{OrbitControls}from'three/addons/controls/OrbitControls.js';
+const D={"points":[{"id":"sci-01","text":"The speed of light in a vacuum is approximately 299,792 kilometers per second.","cat":"science","x":-0.118831,"y":-0.091532,"z":0.125973,"r":0.1959,"sd":0.125981,"su":-0.118821,"sv":-0.091534,"n":["cook-07","sci-02","cook-13","sci-10","tech-18"]},{"id":"sci-02","text":"DNA carries the genetic instructions for the development of all known living organisms.","cat":"science","x":-0.095554,"y":-0.101156,"z":0.116539,"r":0.1815,"sd":0.116547,"su":-0.095543,"sv":-0.101156,"n":["cook-07","sci-01","tech-18","cook-13","sci-10"]},{"id":"sci-03","text":"Quantum entanglement allows particles to be correlated instantaneously across vast distances.","cat":"science","x":-0.116662,"y":-0.003330,"z":0.101967,"r":0.1550,"sd":0.101967,"su":-0.116661,"sv":-0.003334,"n":["sci-19","phil-12","phil-19","phil-05","sci-04"]},{"id":"sci-04","text":"Einstein's theory of general relativity describes gravity as the curvature of spacetime.","cat":"science","x":-0.060535,"y":0.019430,"z":0.093427,"r":0.1130,"sd":0.093425,"su":-0.060537,"sv":0.019432,"n":["phil-20","phil-08","phil-12","phil-05","tech-15"]},{"id":"sci-05","text":"The human brain contains approximately 86 billion neurons connected by trillions of synapses.","cat":"science","x":-0.054380,"y":0.078971,"z":0.176441,"r":0.2008,"sd":0.176434,"su":-0.054389,"sv":0.078980,"n":["art-01","phil-03","phil-16","phil-07","phil-15"]},{"id":"sci-06","text":"Photosynthesis converts sunlight into chemical energy stored in glucose molecules.","cat":"science","x":0.078588,"y":-0.293165,"z":0.097702,"r":0.3189,"sd":0.097726,"su":0.078619,"sv":-0.293148,"n":["sci-07","biz-12","cook-19","nat-18","cook-18"]},{"id":"sci-07","text":"Black holes are regions of spacetime where gravity is so strong that nothing can escape.","cat":"science","x":0.027002,"y":-0.151419,"z":0.055960,"r":0.1637,"sd":0.055973,"su":0.027018,"sv":-0.151412,"n":["sci-06","biz-12","cook-19","cook-18","cook-10"]},{"id":"sci-08","text":"The periodic table organizes chemical elements by their atomic number and electron configuration.","cat":"science","x":0.019953,"y":-0.064021,"z":0.046612,"r":0.0817,"sd":0.046618,"su":0.019960,"sv":-0.064015,"n":["cook-04","biz-12","cook-02","cook-09","sci-07"]},{"id":"sci-09","text":"Mitochondria generate most of the cell's supply of adenosine triphosphate through oxidative phosphorylation.","cat":"science","x":0.133232,"y":-0.117633,"z":0.029609,"r":0.1802,"sd":0.029619,"su":0.133245,"sv":-0.117616,"n":["health-19","health-05","health-13","health-02","health-17"]},{"id":"sci-10","text":"The Higgs boson gives other fundamental particles their mass through interaction with the Higgs field.","cat":"science","x":-0.045008,"y":-0.049539,"z":0.085391,"r":0.1085,"sd":0.085395,"su":-0.045003,"sv":-0.049537,"n":["cook-13","cook-07","sci-14","sci-02","tech-18"]},{"id":"sci-11","text":"Plate tectonics explains how the Earth's lithosphere is divided into large plates that slowly move over the asthenosphere.","cat":"science","x":-0.111700,"y":-0.258641,"z":-0.140802,"r":0.3150,"sd":-0.140780,"su":-0.111673,"sv":-0.258665,"n":["hist-18","nat-16","health-10","sci-16","nat-17"]},{"id":"sci-12","text":"Entropy in a closed system tends to increase over time according to the second law of thermodynamics.","cat":"science","x":-0.035620,"y":-0.139035,"z":0.002044,"r":0.1435,"sd":0.002056,"su":-0.035605,"sv":-0.139039,"n":["cook-08","sci-16","nat-11","cook-01","cook-11"]},{"id":"sci-13","text":"The double-helix structure of DNA was first described by Watson and Crick in 1953.","cat":"science","x":-0.203861,"y":0.054946,"z":0.042301,"r":0.2153,"sd":0.042296,"su":-0.203867,"sv":0.054928,"n":["hist-11","phil-09","hist-08","tech-12","tech-09"]},{"id":"sci-14","text":"Neutrinos are nearly massless subatomic particles that rarely interact with ordinary matter.","cat":"science","x":-0.069626,"y":-0.096771,"z":0.208352,"r":0.2400,"sd":0.208360,"su":-0.069615,"sv":-0.096761,"n":["sci-10","cook-13","cook-07","tech-18","sci-02"]},{"id":"sci-15","text":"How does the theory of evolution explain the diversity of life on Earth?","cat":"science","x":-0.072851,"y":-0.156579,"z":0.050836,"r":0.1800,"sd":0.050850,"su":-0.072834,"sv":-0.156583,"n":["cook-17","cook-05","nat-11","cook-01","cook-16"]},{"id":"sci-16","text":"What causes the northern lights to appear in polar regions of the sky?","cat":"science","x":-0.069096,"y":-0.285939,"z":-0.040583,"r":0.2970,"sd":-0.040558,"su":-0.069065,"sv":-0.285950,"n":["health-10","sci-12","nat-09","cook-08","cook-01"]},{"id":"sci-17","text":"Why does the uncertainty principle place a fundamental limit on measuring quantum systems?","cat":"science","x":-0.030679,"y":0.076434,"z":0.214643,"r":0.2299,"sd":0.214636,"su":-0.030687,"sv":0.076449,"n":["phil-03","phil-13","phil-15","phil-11","sci-05"]},{"id":"sci-18","text":"How do vaccines train the immune system to recognize and fight specific pathogens?","cat":"science","x":0.067868,"y":-0.046708,"z":0.118397,"r":0.1442,"sd":0.118401,"su":0.067873,"sv":-0.046691,"n":["health-09","art-04","cook-09","health-03","cook-04"]},{"id":"sci-19","text":"What evidence supports the theory that the universe originated from the Big Bang?","cat":"science","x":-0.159355,"y":-0.002487,"z":0.146673,"r":0.2166,"sd":0.146673,"su":-0.159354,"sv":-0.002492,"n":["sci-03","phil-12","phil-19","phil-05","sci-04"]},{"id":"sci-20","text":"Can stem cells be reliably programmed to regenerate damaged tissues in the human body?","cat":"science","x":0.159882,"y":0.142871,"z":0.089245,"r":0.2322,"sd":0.089233,"su":0.159867,"sv":0.142895,"n":["tech-13","sport-12","tech-19","health-04","health-12"]},{"id":"tech-01","text":"Machine learning algorithms improve their performance by training on large datasets.","cat":"technology","x":0.061303,"y":0.053529,"z":-0.077075,"r":0.1121,"sd":-0.077079,"su":0.061297,"sv":0.053529,"n":["sport-14","sport-20","sport-01","sport-03","sport-10"]},{"id":"tech-02","text":"The internet connects billions of devices through a global network of computer systems.","cat":"technology","x":-0.246310,"y":0.018212,"z":-0.189898,"r":0.3115,"sd":-0.189900,"su":-0.246312,"sv":0.018169,"n":["hist-07","art-02","biz-18","tech-08","hist-02"]},{"id":"tech-03","text":"Artificial intelligence can now generate realistic images and human-like text responses.","cat":"technology","x":-0.196235,"y":0.261809,"z":0.143940,"r":0.3575,"sd":0.143918,"su":-0.196263,"sv":0.261801,"n":["tech-07","art-11","tech-09","art-13","art-09"]},{"id":"tech-04","text":"Blockchain technology provides a decentralized and tamper-resistant digital ledger system.","cat":"technology","x":-0.126819,"y":-0.065152,"z":-0.061904,"r":0.1554,"sd":-0.061899,"su":-0.126812,"sv":-0.065171,"n":["biz-20","biz-08","tech-06","tech-08","tech-14"]},{"id":"tech-05","text":"Autonomous vehicles use sensors and neural networks to navigate roads without human input.","cat":"technology","x":-0.046833,"y":0.115665,"z":0.128350,"r":0.1790,"sd":0.128341,"su":-0.046845,"sv":0.115671,"n":["phil-01","phil-14","phil-10","tech-17","phil-02"]},{"id":"tech-06","text":"Cloud computing allows on-demand access to shared computing resources over the internet.","cat":"technology","x":-0.138598,"y":-0.040244,"z":-0.105452,"r":0.1787,"sd":-0.105448,"su":-0.138594,"sv":-0.040268,"n":["tech-08","biz-08","biz-20","hist-16","biz-18"]},{"id":"tech-07","text":"Quantum computers use qubits to solve certain problems exponentially faster than classical machines.","cat":"technology","x":-0.084640,"y":0.127640,"z":0.045905,"r":0.1599,"sd":0.045894,"su":-0.084654,"sv":0.127635,"n":["art-09","art-20","art-11","tech-03","art-03"]},{"id":"tech-08","text":"Cybersecurity protects computer systems and networks from digital attacks and data breaches.","cat":"technology","x":-0.082694,"y":-0.015914,"z":-0.056299,"r":0.1013,"sd":-0.056298,"su":-0.082692,"sv":-0.015928,"n":["tech-06","biz-08","biz-20","hist-07","tech-02"]},{"id":"tech-09","text":"Natural language processing enables computers to understand and generate human language.","cat":"technology","x":-0.168330,"y":0.143131,"z":0.104374,"r":0.2444,"sd":0.104362,"su":-0.168345,"sv":0.143122,"n":["phil-09","tech-03","art-17","biz-19","tech-07"]},{"id":"tech-10","text":"The global positioning system uses a constellation of satellites to determine precise locations on Earth.","cat":"technology","x":-0.019556,"y":-0.116310,"z":-0.126813,"r":0.1732,"sd":-0.126803,"su":-0.019544,"sv":-0.116323,"n":["nat-07","nat-06","biz-10","nat-16","nat-20"]},{"id":"tech-11","text":"Three-dimensional printing builds physical objects layer by layer from digital blueprints.","cat":"technology","x":-0.169662,"y":0.126998,"z":-0.028599,"r":0.2138,"sd":-0.028610,"su":-0.169675,"sv":0.126977,"n":["art-08","hist-08","art-18","art-07","art-15"]},{"id":"tech-12","text":"Edge computing processes data closer to where it is generated rather than in a centralized data center.","cat":"technology","x":-0.105593,"y":-0.015407,"z":-0.002121,"r":0.1067,"sd":-0.002120,"su":-0.105591,"sv":-0.015419,"n":["tech-14","tech-16","hist-11","sci-13","tech-20"]},{"id":"tech-13","text":"Reinforcement learning agents discover optimal strategies through trial and error in simulated environments.","cat":"technology","x":0.104819,"y":0.153729,"z":0.088729,"r":0.2061,"sd":0.088716,"su":0.104802,"sv":0.153748,"n":["tech-19","sci-20","health-12","health-18","sport-18"]},{"id":"tech-14","text":"The Internet of Things connects everyday appliances and industrial equipment to the web for remote monitoring.","cat":"technology","x":-0.207843,"y":-0.046834,"z":-0.025506,"r":0.2146,"sd":-0.025502,"su":-0.207838,"sv":-0.046859,"n":["tech-12","tech-16","biz-20","tech-04","biz-08"]},{"id":"tech-15","text":"How do convolutional neural networks recognize objects in photographs?","cat":"technology","x":-0.145207,"y":0.079204,"z":0.173410,"r":0.2396,"sd":0.173403,"su":-0.145216,"sv":0.079203,"n":["phil-05","biz-19","art-17","phil-19","sci-04"]},{"id":"tech-16","text":"What security risks does widespread adoption of smart home devices introduce?","cat":"technology","x":-0.204132,"y":0.012773,"z":-0.075686,"r":0.2181,"sd":-0.075687,"su":-0.204134,"sv":0.012744,"n":["hist-20","hist-07","tech-02","tech-08","biz-20"]},{"id":"tech-17","text":"Can artificial general intelligence ever match the flexibility of human reasoning?","cat":"technology","x":-0.110392,"y":0.257312,"z":0.205907,"r":0.3476,"sd":0.205885,"su":-0.110420,"sv":0.257318,"n":["phil-14","phil-10","art-13","phil-01","tech-05"]},{"id":"tech-18","text":"How does end-to-end encryption protect private messages from being intercepted?","cat":"technology","x":-0.052411,"y":-0.089921,"z":0.091320,"r":0.1385,"sd":0.091328,"su":-0.052401,"sv":-0.089919,"n":["cook-03","sci-02","cook-07","cook-13","sci-10"]},{"id":"tech-19","text":"What role do graphics processing units play in accelerating deep learning training?","cat":"technology","x":0.059045,"y":0.099849,"z":0.079101,"r":0.1404,"sd":0.079092,"su":0.059034,"sv":0.099863,"n":["tech-13","sci-20","health-12","health-18","biz-09"]},{"id":"tech-20","text":"Why is version control essential for collaborative software development projects?","cat":"technology","x":-0.080724,"y":-0.047632,"z":0.024535,"r":0.0969,"sd":0.024539,"su":-0.080719,"sv":-0.047639,"n":["sci-01","tech-12","tech-14","sci-02","cook-20"]},{"id":"sport-01","text":"The Olympic Games bring together athletes from around the world to compete every four years.","cat":"sports","x":0.297136,"y":0.192910,"z":-0.344068,"r":0.4938,"sd":-0.344085,"su":0.297115,"sv":0.192913,"n":["sport-20","sport-14","tech-01","sport-11","sport-05"]},{"id":"sport-02","text":"A marathon covers 26.2 miles and tests the endurance limits of long-distance runners.","cat":"sports","x":0.392747,"y":0.158642,"z":-0.105040,"r":0.4364,"sd":-0.105053,"su":0.392730,"sv":0.158675,"n":["sport-06","sport-16","sport-17","sport-13","sport-08"]},{"id":"sport-03","text":"Basketball requires teamwork, agility, and precise shooting to outscore the opposing team.","cat":"sports","x":0.219952,"y":0.148689,"z":-0.133855,"r":0.2973,"sd":-0.133867,"su":0.219936,"sv":0.148701,"n":["sport-07","sport-09","sport-11","sport-10","sport-06"]},{"id":"sport-04","text":"Soccer is the most widely followed sport in the world, with over four billion fans.","cat":"sports","x":0.069337,"y":0.111396,"z":-0.231091,"r":0.2657,"sd":-0.231100,"su":0.069325,"sv":0.111384,"n":["art-05","tech-01","sport-14","sport-01","sport-20"]},{"id":"sport-05","text":"Tennis matches can last for hours as players rally the ball across the net.","cat":"sports","x":0.274937,"y":0.053147,"z":-0.250387,"r":0.3756,"sd":-0.250392,"su":0.274932,"sv":0.053155,"n":["sport-11","sport-01","sport-20","sport-09","sport-14"]},{"id":"sport-06","text":"Swimming is an excellent full-body cardiovascular exercise suitable for people of all ages.","cat":"sports","x":0.434920,"y":0.168800,"z":-0.165317,"r":0.4950,"sd":-0.165331,"su":0.434902,"sv":0.168833,"n":["sport-02","sport-09","sport-17","sport-16","sport-11"]},{"id":"sport-07","text":"Professional athletes dedicate years of intense training to compete at the highest level.","cat":"sports","x":0.473048,"y":0.331172,"z":-0.276720,"r":0.6403,"sd":-0.276748,"su":0.473012,"sv":0.331199,"n":["sport-03","sport-09","sport-10","sport-11","sport-06"]},{"id":"sport-08","text":"A well-designed strength training program builds muscle, strengthens joints, and prevents injuries.","cat":"sports","x":0.488402,"y":0.249937,"z":-0.042802,"r":0.5503,"sd":-0.042823,"su":0.488375,"sv":0.249986,"n":["health-20","sport-13","health-14","sport-02","sport-12"]},{"id":"sport-09","text":"Ice hockey combines skating speed, stick handling, and physical contact in a fast-paced arena.","cat":"sports","x":0.219393,"y":0.094406,"z":-0.129757,"r":0.2718,"sd":-0.129765,"su":0.219383,"sv":0.094418,"n":["sport-11","sport-06","sport-03","sport-07","sport-02"]},{"id":"sport-10","text":"Gymnastics demands extraordinary flexibility, balance, and explosive power from its competitors.","cat":"sports","x":0.247830,"y":0.268304,"z":-0.179000,"r":0.4068,"sd":-0.179023,"su":0.247801,"sv":0.268316,"n":["sport-07","sport-03","sport-19","tech-01","sport-14"]},{"id":"sport-11","text":"Cricket matches can unfold over five days in the traditional test format of the game.","cat":"sports","x":0.171211,"y":0.070372,"z":-0.110620,"r":0.2156,"sd":-0.110626,"su":0.171204,"sv":0.070381,"n":["sport-09","sport-03","sport-06","sport-07","sport-05"]},{"id":"sport-12","text":"Rock climbing challenges both physical strength and mental problem-solving on vertical terrain.","cat":"sports","x":0.369646,"y":0.251349,"z":0.039824,"r":0.4488,"sd":0.039802,"su":0.369619,"sv":0.251392,"n":["health-20","sport-08","sport-13","health-14","sci-20"]},{"id":"sport-13","text":"Interval training alternates bursts of high-intensity effort with periods of active recovery.","cat":"sports","x":0.459952,"y":0.279187,"z":-0.096928,"r":0.5467,"sd":-0.096952,"su":0.459922,"sv":0.279228,"n":["sport-08","sport-02","health-20","sport-06","sport-12"]},{"id":"sport-14","text":"The Tour de France is the most prestigious multi-stage cycling race in professional road cycling.","cat":"sports","x":0.193725,"y":0.160730,"z":-0.238022,"r":0.3464,"sd":-0.238036,"su":0.193707,"sv":0.160730,"n":["tech-01","sport-20","sport-01","sport-03","sport-07"]},{"id":"sport-15","text":"How does altitude training improve an athlete's oxygen-carrying capacity?","cat":"sports","x":0.601750,"y":0.106718,"z":-0.101205,"r":0.6195,"sd":-0.101214,"su":0.601739,"sv":0.106774,"n":["health-01","health-11","sport-16","sport-17","health-08"]},{"id":"sport-16","text":"What strategies help prevent overuse injuries in endurance athletes?","cat":"sports","x":0.612703,"y":0.158671,"z":-0.127195,"r":0.6456,"sd":-0.127209,"su":0.612686,"sv":0.158726,"n":["sport-17","sport-15","health-01","health-11","sport-02"]},{"id":"sport-17","text":"Why is proper hydration so critical for sustaining peak athletic performance?","cat":"sports","x":0.547568,"y":0.124772,"z":-0.135001,"r":0.5776,"sd":-0.135012,"su":0.547555,"sv":0.124819,"n":["sport-16","sport-15","health-01","health-11","sport-02"]},{"id":"sport-18","text":"How do referees use video replay technology to make fairer officiating decisions?","cat":"sports","x":0.054664,"y":0.076359,"z":-0.002312,"r":0.0939,"sd":-0.002319,"su":0.054656,"sv":0.076364,"n":["sport-19","sport-12","sport-13","sport-10","health-20"]},{"id":"sport-19","text":"What mental techniques do elite competitors use to stay focused under pressure?","cat":"sports","x":0.231733,"y":0.309984,"z":-0.084916,"r":0.3962,"sd":-0.084943,"su":0.231700,"sv":0.310002,"n":["sport-18","sport-10","sport-13","sport-07","sport-03"]},{"id":"sport-20","text":"Can data analytics give sports teams a measurable competitive advantage?","cat":"sports","x":0.208160,"y":0.136977,"z":-0.239822,"r":0.3458,"sd":-0.239833,"su":0.208146,"sv":0.136979,"n":["sport-01","sport-14","tech-01","sport-11","sport-05"]},{"id":"cook-01","text":"Preheat the oven to 375 degrees and line the baking sheet with parchment paper.","cat":"cooking","x":-0.111399,"y":-0.206844,"z":0.015636,"r":0.2355,"sd":0.015653,"su":-0.111377,"sv":-0.206855,"n":["cook-20","sci-15","sci-12","cook-08","sci-16"]},{"id":"cook-02","text":"Fresh herbs like basil and cilantro add vibrant flavor to almost any savory dish.","cat":"cooking","x":0.018200,"y":-0.278268,"z":0.197263,"r":0.3416,"sd":0.197287,"su":0.018230,"sv":-0.278249,"n":["biz-12","sci-08","cook-06","sci-07","cook-15"]},{"id":"cook-03","text":"A good risotto requires patience and constant stirring to achieve a creamy texture.","cat":"cooking","x":-0.086792,"y":-0.175716,"z":0.128474,"r":0.2343,"sd":0.128489,"su":-0.086774,"sv":-0.175714,"n":["cook-17","tech-18","cook-16","cook-05","cook-06"]},{"id":"cook-04","text":"Marinating meat overnight allows the flavors to penetrate deeply into the protein.","cat":"cooking","x":0.127000,"y":-0.250349,"z":0.175828,"r":0.3312,"sd":0.175850,"su":0.127027,"sv":-0.250320,"n":["sci-08","cook-09","biz-12","health-02","sci-06"]},{"id":"cook-05","text":"The secret to a perfect pie crust is using very cold butter and minimal handling of the dough.","cat":"cooking","x":-0.079975,"y":-0.271392,"z":0.134413,"r":0.3132,"sd":0.134436,"su":-0.079946,"sv":-0.271389,"n":["cook-16","cook-14","cook-15","cook-12","cook-06"]},{"id":"cook-06","text":"Sauteing onions slowly until caramelized brings out their natural sweetness.","cat":"cooking","x":-0.064461,"y":-0.300898,"z":0.196417,"r":0.3651,"sd":0.196442,"su":-0.064429,"sv":-0.300888,"n":["cook-16","cook-05","cook-14","cook-15","cook-12"]},{"id":"cook-07","text":"Homemade pasta has a remarkably different taste and texture from store-bought dried varieties.","cat":"cooking","x":-0.152665,"y":-0.155574,"z":0.207182,"r":0.3007,"sd":0.207195,"su":-0.152648,"sv":-0.155573,"n":["sci-02","sci-01","cook-13","sci-10","tech-18"]},{"id":"cook-08","text":"A cast-iron skillet retains heat evenly and develops a natural nonstick surface over time.","cat":"cooking","x":-0.034993,"y":-0.169007,"z":0.023645,"r":0.1742,"sd":0.023659,"su":-0.034975,"sv":-0.169009,"n":["nat-11","sci-12","cook-11","nat-08","cook-10"]},{"id":"cook-09","text":"Fermented foods like kimchi and sauerkraut support healthy digestion with beneficial bacteria.","cat":"cooking","x":0.211412,"y":-0.297612,"z":0.285815,"r":0.4636,"sd":0.285840,"su":0.211443,"sv":-0.297565,"n":["cook-04","art-04","sci-08","health-02","sci-18"]},{"id":"cook-10","text":"Reducing a stock over low heat concentrates its flavor into a rich, glossy sauce.","cat":"cooking","x":-0.020444,"y":-0.300080,"z":0.099318,"r":0.3167,"sd":0.099344,"su":-0.020411,"sv":-0.300074,"n":["cook-18","cook-11","cook-12","nat-08","cook-15"]},{"id":"cook-11","text":"Sourdough bread relies on a live culture of wild yeast and lactic acid bacteria for leavening.","cat":"cooking","x":-0.034567,"y":-0.354678,"z":0.083376,"r":0.3660,"sd":0.083406,"su":-0.034529,"sv":-0.354675,"n":["cook-10","cook-18","nat-08","nat-11","cook-08"]},{"id":"cook-12","text":"Blanching vegetables in boiling water and then plunging them into ice water preserves their bright color.","cat":"cooking","x":-0.051226,"y":-0.339054,"z":0.138739,"r":0.3699,"sd":0.138768,"su":-0.051189,"sv":-0.339048,"n":["cook-15","cook-14","nat-08","cook-10","cook-18"]},{"id":"cook-13","text":"A sharp knife is safer than a dull one because it requires less force and slips less often.","cat":"cooking","x":-0.045785,"y":-0.050845,"z":0.083427,"r":0.1079,"sd":0.083431,"su":-0.045780,"sv":-0.050843,"n":["sci-10","cook-07","sci-14","sci-02","tech-18"]},{"id":"cook-14","text":"Emulsification binds oil and vinegar together with the help of an agent like egg yolk or mustard.","cat":"cooking","x":-0.052496,"y":-0.307894,"z":0.129662,"r":0.3382,"sd":0.129688,"su":-0.052463,"sv":-0.307888,"n":["cook-15","cook-12","nat-08","cook-05","cook-10"]},{"id":"cook-15","text":"How does the Maillard reaction create the crispy brown crust on seared steaks?","cat":"cooking","x":-0.066411,"y":-0.424645,"z":0.178829,"r":0.4655,"sd":0.178865,"su":-0.066366,"sv":-0.424637,"n":["cook-12","cook-14","nat-08","cook-10","cook-05"]},{"id":"cook-16","text":"What makes sourdough fermentation produce a tangier flavor than commercial yeast breads?","cat":"cooking","x":-0.087098,"y":-0.316104,"z":0.168132,"r":0.3685,"sd":0.168159,"su":-0.087064,"sv":-0.316099,"n":["cook-05","cook-06","cook-14","cook-15","cook-12"]},{"id":"cook-17","text":"Why does tempering chocolate require precise temperature control to achieve a glossy finish?","cat":"cooking","x":-0.094365,"y":-0.169095,"z":0.093054,"r":0.2148,"sd":0.093068,"su":-0.094347,"sv":-0.169098,"n":["cook-03","sci-15","cook-05","cook-16","tech-18"]},{"id":"cook-18","text":"Which spices pair best with roasted root vegetables for a hearty autumn side dish?","cat":"cooking","x":-0.016444,"y":-0.392072,"z":0.124407,"r":0.4117,"sd":0.124441,"su":-0.016402,"sv":-0.392064,"n":["cook-10","cook-11","cook-12","nat-08","cook-15"]},{"id":"cook-19","text":"How can home cooks safely preserve seasonal produce through canning and pickling?","cat":"cooking","x":0.032090,"y":-0.368154,"z":0.060616,"r":0.3745,"sd":0.060647,"su":0.032129,"sv":-0.368145,"n":["cook-18","cook-11","sci-07","cook-10","sci-06"]},{"id":"cook-20","text":"What techniques produce the flakiest layers in laminated pastry doughs like croissants?","cat":"cooking","x":-0.138615,"y":-0.217309,"z":0.014168,"r":0.2581,"sd":0.014186,"su":-0.138592,"sv":-0.217323,"n":["cook-01","sci-15","sci-12","cook-08","sci-16"]},{"id":"art-01","text":"Beethoven composed his magnificent Ninth Symphony while almost completely deaf.","cat":"arts","x":-0.045437,"y":0.064103,"z":0.134863,"r":0.1561,"sd":0.134858,"su":-0.045444,"sv":0.064109,"n":["sci-05","phil-16","phil-07","phil-03","phil-15"]},{"id":"art-02","text":"Jazz music originated in New Orleans by blending African rhythms with European harmony.","cat":"arts","x":-0.086967,"y":0.013352,"z":-0.088103,"r":0.1245,"sd":-0.088105,"su":-0.086969,"sv":0.013335,"n":["biz-18","tech-02","hist-07","hist-14","hist-16"]},{"id":"art-03","text":"The Impressionist painters captured light and atmosphere with loose, visible brushstrokes.","cat":"arts","x":-0.159340,"y":0.188762,"z":0.022243,"r":0.2480,"sd":0.022227,"su":-0.159360,"sv":0.188747,"n":["art-20","hist-19","art-07","tech-07","art-09"]},{"id":"art-04","text":"A symphony orchestra typically includes strings, woodwinds, brass, and percussion sections.","cat":"arts","x":0.024638,"y":-0.034924,"z":0.049759,"r":0.0656,"sd":0.049762,"su":0.024642,"sv":-0.034917,"n":["cook-09","sci-18","health-09","cook-04","sci-08"]},{"id":"art-05","text":"Shakespeare's plays have been performed continuously around the world for over four centuries.","cat":"arts","x":-0.002679,"y":0.116880,"z":-0.302200,"r":0.3240,"sd":-0.302210,"su":-0.002692,"sv":0.116854,"n":["biz-16","sport-04","biz-13","hist-09","biz-17"]},{"id":"art-06","text":"Modern dance breaks away from classical ballet with expressive, free-form movement.","cat":"arts","x":0.044452,"y":0.223322,"z":-0.200881,"r":0.3036,"sd":-0.200900,"su":0.044428,"sv":0.223309,"n":["art-12","sport-04","tech-01","art-05","sport-14"]},{"id":"art-07","text":"Photography transformed how humanity documents and shares visual experiences of the world.","cat":"arts","x":-0.248082,"y":0.273622,"z":-0.042338,"r":0.3718,"sd":-0.042361,"su":-0.248111,"sv":0.273591,"n":["hist-19","art-08","tech-11","art-18","art-03"]},{"id":"art-08","text":"Renaissance painters mastered the technique of linear perspective to create convincing depth on flat surfaces.","cat":"arts","x":-0.285525,"y":0.257578,"z":-0.057539,"r":0.3888,"sd":-0.057561,"su":-0.285553,"sv":0.257542,"n":["tech-11","art-07","art-18","hist-19","biz-07"]},{"id":"art-09","text":"Film editing controls the rhythm and emotional impact of a movie by arranging shots in sequence.","cat":"arts","x":-0.077970,"y":0.141682,"z":0.039916,"r":0.1666,"sd":0.039903,"su":-0.077985,"sv":0.141677,"n":["tech-07","art-20","art-11","tech-03","art-03"]},{"id":"art-10","text":"The novel as a literary form emerged in the eighteenth century and quickly became a dominant medium.","cat":"arts","x":-0.302708,"y":0.136114,"z":-0.249558,"r":0.4153,"sd":-0.249569,"su":-0.302722,"sv":0.136061,"n":["hist-02","hist-14","hist-15","hist-06","hist-03"]},{"id":"art-11","text":"Frida Kahlo's self-portraits explore identity, pain, and cultural heritage through vivid symbolism.","cat":"arts","x":-0.130369,"y":0.260156,"z":0.108996,"r":0.3107,"sd":0.108974,"su":-0.130397,"sv":0.260151,"n":["art-09","tech-07","tech-03","art-13","art-20"]},{"id":"art-12","text":"Hip-hop culture encompasses rapping, DJing, breakdancing, and graffiti art as interconnected disciplines.","cat":"arts","x":-0.036529,"y":0.235796,"z":-0.130811,"r":0.2721,"sd":-0.130831,"su":-0.036554,"sv":0.235781,"n":["art-14","art-06","hist-01","hist-10","hist-09"]},{"id":"art-13","text":"Architecture balances aesthetic vision with structural engineering to create functional living spaces.","cat":"arts","x":-0.120438,"y":0.243886,"z":0.163608,"r":0.3174,"sd":0.163587,"su":-0.120465,"sv":0.243887,"n":["tech-17","biz-04","art-11","phil-14","phil-10"]},{"id":"art-14","text":"Opera combines orchestral music, vocal performance, theatrical staging, and costume design into a single art form.","cat":"arts","x":-0.084943,"y":0.143669,"z":-0.090547,"r":0.1899,"sd":-0.090560,"su":-0.084958,"sv":0.143652,"n":["hist-01","biz-06","hist-10","biz-07","art-12"]},{"id":"art-15","text":"How did the invention of the camera change the purpose and direction of painting?","cat":"arts","x":-0.366237,"y":0.190622,"z":-0.111148,"r":0.4276,"sd":-0.111164,"su":-0.366258,"sv":0.190573,"n":["hist-20","hist-08","tech-11","hist-15","biz-07"]},{"id":"art-16","text":"What distinguishes a sonata form from a rondo form in classical music composition?","cat":"arts","x":-0.020346,"y":0.144036,"z":0.048043,"r":0.1532,"sd":0.048030,"su":-0.020362,"sv":0.144038,"n":["biz-04","art-19","biz-09","art-11","art-09"]},{"id":"art-17","text":"Why do audiences experience such strong emotional responses to minor-key melodies?","cat":"arts","x":-0.124184,"y":0.070986,"z":0.105430,"r":0.1777,"sd":0.105424,"su":-0.124192,"sv":0.070982,"n":["biz-19","phil-19","tech-15","phil-05","tech-09"]},{"id":"art-18","text":"How has digital technology expanded the creative possibilities available to visual artists?","cat":"arts","x":-0.308687,"y":0.278668,"z":-0.125774,"r":0.4345,"sd":-0.125798,"su":-0.308717,"sv":0.278624,"n":["biz-07","biz-06","art-08","tech-11","hist-04"]},{"id":"art-19","text":"What role does improvisation play in the performance of jazz and blues music?","cat":"arts","x":-0.027592,"y":0.106639,"z":0.012956,"r":0.1109,"sd":0.012946,"su":-0.027603,"sv":0.106638,"n":["art-16","art-09","art-11","art-20","tech-07"]},{"id":"art-20","text":"Can a work of art be meaningful even when the viewer knows nothing about its historical context?","cat":"arts","x":-0.228196,"y":0.336153,"z":0.069814,"r":0.4122,"sd":0.069785,"su":-0.228232,"sv":0.336135,"n":["art-09","tech-07","art-03","art-11","tech-03"]},{"id":"nat-01","text":"The Amazon rainforest produces about twenty percent of the world's atmospheric oxygen.","cat":"nature","x":0.083406,"y":-0.245465,"z":-0.043088,"r":0.2628,"sd":-0.043067,"su":0.083432,"sv":-0.245460,"n":["nat-19","nat-10","nat-05","nat-14","nat-02"]},{"id":"nat-02","text":"Coral reefs support more species per unit area than any other marine environment on Earth.","cat":"nature","x":0.134867,"y":-0.256130,"z":-0.021700,"r":0.2903,"sd":-0.021678,"su":0.134894,"sv":-0.256117,"n":["nat-19","nat-01","nat-18","nat-05","health-17"]},{"id":"nat-03","text":"Bird migration patterns span thousands of miles across multiple continents each year.","cat":"nature","x":0.018056,"y":-0.163180,"z":-0.353410,"r":0.3897,"sd":-0.353397,"su":0.018074,"sv":-0.163208,"n":["biz-10","nat-06","biz-03","nat-20","nat-13"]},{"id":"nat-04","text":"Volcanic eruptions release gases and molten rock from deep within the Earth's mantle.","cat":"nature","x":0.008528,"y":-0.256585,"z":-0.134010,"r":0.2896,"sd":-0.133988,"su":0.008555,"sv":-0.256596,"n":["nat-17","hist-18","nat-09","nat-14","health-10"]},{"id":"nat-05","text":"Ocean currents play a crucial role in regulating global climate and weather patterns.","cat":"nature","x":0.118953,"y":-0.291879,"z":-0.098187,"r":0.3301,"sd":-0.098163,"su":0.118984,"sv":-0.291874,"n":["nat-01","nat-14","nat-10","nat-19","nat-02"]},{"id":"nat-06","text":"Old-growth forests contain complex ecosystems that have developed over many centuries.","cat":"nature","x":-0.026997,"y":-0.212680,"z":-0.279316,"r":0.3521,"sd":-0.279298,"su":-0.026974,"sv":-0.212707,"n":["biz-10","tech-10","nat-07","nat-20","nat-03"]},{"id":"nat-07","text":"The water cycle continuously moves water between the atmosphere, land surfaces, and oceans.","cat":"nature","x":-0.017677,"y":-0.259254,"z":-0.264650,"r":0.3709,"sd":-0.264628,"su":-0.017649,"sv":-0.259279,"n":["tech-10","biz-10","nat-06","nat-20","nat-16"]},{"id":"nat-08","text":"Bees pollinate roughly one-third of the food crops that humans depend on for survival.","cat":"nature","x":-0.042651,"y":-0.239648,"z":0.075497,"r":0.2549,"sd":0.075517,"su":-0.042625,"sv":-0.239646,"n":["nat-11","cook-12","cook-14","cook-15","cook-11"]},{"id":"nat-09","text":"Glaciers store about seventy percent of all the fresh water on the planet's surface.","cat":"nature","x":-0.014984,"y":-0.293309,"z":-0.073476,"r":0.3027,"sd":-0.073451,"su":-0.014952,"sv":-0.293317,"n":["health-10","sci-16","nat-17","nat-15","nat-14"]},{"id":"nat-10","text":"Mangrove forests protect coastlines from erosion and serve as nurseries for juvenile fish.","cat":"nature","x":0.077623,"y":-0.365010,"z":-0.062090,"r":0.3783,"sd":-0.062059,"su":0.077662,"sv":-0.365007,"n":["nat-14","nat-01","nat-19","nat-15","nat-05"]},{"id":"nat-11","text":"Soil contains billions of microorganisms per gram that decompose organic matter and recycle nutrients.","cat":"nature","x":-0.063482,"y":-0.307431,"z":0.082107,"r":0.3245,"sd":0.082133,"su":-0.063449,"sv":-0.307431,"n":["nat-08","cook-11","cook-08","cook-12","cook-14"]},{"id":"nat-12","text":"The Great Barrier Reef stretches over 2,300 kilometers along the northeastern coast of Australia.","cat":"nature","x":0.098824,"y":-0.167820,"z":-0.147425,"r":0.2443,"sd":-0.147411,"su":0.098841,"sv":-0.167822,"n":["nat-13","biz-15","biz-05","nat-20","nat-05"]},{"id":"nat-13","text":"Wolves reintroduced to Yellowstone reshaped the entire ecosystem by altering elk grazing patterns.","cat":"nature","x":0.085009,"y":-0.139391,"z":-0.195841,"r":0.2550,"sd":-0.195830,"su":0.085024,"sv":-0.139399,"n":["biz-05","nat-12","nat-20","biz-15","nat-03"]},{"id":"nat-14","text":"Tidal pools form miniature ecosystems where sea stars, anemones, and crabs coexist in shallow rock basins.","cat":"nature","x":0.062665,"y":-0.351864,"z":-0.080983,"r":0.3665,"sd":-0.080953,"su":0.062703,"sv":-0.351864,"n":["nat-10","nat-01","nat-15","nat-19","nat-05"]},{"id":"nat-15","text":"How do mycorrhizal fungi form symbiotic networks with tree roots to exchange nutrients underground?","cat":"nature","x":0.034749,"y":-0.360231,"z":-0.028356,"r":0.3630,"sd":-0.028326,"su":0.034788,"sv":-0.360230,"n":["nat-10","nat-14","nat-09","nat-19","cook-19"]},{"id":"nat-16","text":"What causes the rapid decline of insect populations in agricultural regions around the world?","cat":"nature","x":-0.114222,"y":-0.312193,"z":-0.274461,"r":0.4311,"sd":-0.274434,"su":-0.114188,"sv":-0.312228,"n":["tech-10","sci-11","nat-07","hist-18","nat-06"]},{"id":"nat-17","text":"Why are wetlands considered among the most productive ecosystems on the planet?","cat":"nature","x":0.002553,"y":-0.318493,"z":-0.156097,"r":0.3547,"sd":-0.156070,"su":0.002587,"sv":-0.318506,"n":["nat-04","hist-18","nat-09","health-10","nat-14"]},{"id":"nat-18","text":"How do deep-ocean hydrothermal vents support life without any energy from sunlight?","cat":"nature","x":0.171165,"y":-0.399214,"z":0.047567,"r":0.4370,"sd":0.047601,"su":0.171208,"sv":-0.399192,"n":["nat-02","nat-19","sci-06","nat-01","cook-19"]},{"id":"nat-19","text":"What mechanisms allow certain species to thrive in the extreme cold of the Antarctic?","cat":"nature","x":0.133171,"y":-0.395574,"z":-0.035029,"r":0.4189,"sd":-0.034995,"su":0.133213,"sv":-0.395563,"n":["nat-01","nat-10","nat-02","nat-14","nat-18"]},{"id":"nat-20","text":"Can reforestation projects fully restore the biodiversity of a previously cleared habitat?","cat":"nature","x":0.016411,"y":-0.102749,"z":-0.105877,"r":0.1484,"sd":-0.105868,"su":0.016422,"sv":-0.102756,"n":["nat-07","biz-10","nat-06","tech-10","nat-13"]},{"id":"hist-01","text":"The Renaissance saw a dramatic revival of art, science, and classical learning across Europe.","cat":"history","x":-0.216872,"y":0.271201,"z":-0.277129,"r":0.4443,"sd":-0.277152,"su":-0.216901,"sv":0.271154,"n":["hist-10","art-14","hist-03","hist-04","hist-06"]},{"id":"hist-02","text":"The Industrial Revolution transformed manufacturing through steam power and mechanization.","cat":"history","x":-0.338250,"y":0.133225,"z":-0.258038,"r":0.4458,"sd":-0.258049,"su":-0.338264,"sv":0.133167,"n":["art-10","hist-15","hist-14","hist-06","art-02"]},{"id":"hist-03","text":"Ancient Rome built an extensive network of roads and aqueducts across its vast empire.","cat":"history","x":-0.169762,"y":0.112433,"z":-0.224092,"r":0.3028,"sd":-0.224101,"su":-0.169774,"sv":0.112396,"n":["hist-06","hist-14","hist-10","art-10","hist-09"]},{"id":"hist-04","text":"The invention of the printing press revolutionized the spread of knowledge and literacy.","cat":"history","x":-0.358439,"y":0.272812,"z":-0.236109,"r":0.5086,"sd":-0.236132,"su":-0.358468,"sv":0.272754,"n":["biz-06","biz-07","hist-15","art-18","art-10"]},{"id":"hist-05","text":"European exploration in the fifteenth century established new trade routes across the globe.","cat":"history","x":-0.177577,"y":0.028920,"z":-0.332311,"r":0.3779,"sd":-0.332314,"su":-0.177580,"sv":0.028873,"n":["biz-17","hist-12","biz-01","hist-17","hist-13"]},{"id":"hist-06","text":"The French Revolution fundamentally transformed the political structure of France and Europe.","cat":"history","x":-0.229549,"y":0.131937,"z":-0.282777,"r":0.3874,"sd":-0.282788,"su":-0.229563,"sv":0.131889,"n":["hist-03","hist-14","art-10","hist-10","hist-02"]},{"id":"hist-07","text":"The Silk Road facilitated the exchange of goods, ideas, and culture between East Asia and the Mediterranean.","cat":"history","x":-0.274214,"y":0.018907,"z":-0.205562,"r":0.3432,"sd":-0.205563,"su":-0.274216,"sv":0.018860,"n":["tech-02","art-02","biz-18","tech-08","hist-02"]},{"id":"hist-08","text":"The abolition of slavery in the nineteenth century marked a turning point in the fight for human rights.","cat":"history","x":-0.241027,"y":0.144978,"z":-0.025269,"r":0.2824,"sd":-0.025282,"su":-0.241042,"sv":0.144950,"n":["tech-11","art-15","art-08","art-18","art-07"]},{"id":"hist-09","text":"The construction of the Great Wall of China spanned multiple dynasties and over two thousand years.","cat":"history","x":-0.094403,"y":0.118617,"z":-0.243620,"r":0.2869,"sd":-0.243630,"su":-0.094416,"sv":0.118586,"n":["hist-10","hist-03","biz-16","hist-06","art-05"]},{"id":"hist-10","text":"The Space Race between the United States and the Soviet Union accelerated advances in rocket technology.","cat":"history","x":-0.112494,"y":0.127172,"z":-0.172620,"r":0.2421,"sd":-0.172631,"su":-0.112507,"sv":0.127146,"n":["hist-01","hist-03","hist-09","hist-06","hist-14"]},{"id":"hist-11","text":"The signing of the Magna Carta in 1215 established the principle that even monarchs are subject to law.","cat":"history","x":-0.159965,"y":0.042741,"z":0.017895,"r":0.1665,"sd":0.017891,"su":-0.159970,"sv":0.042725,"n":["sci-13","hist-08","phil-09","tech-12","art-15"]},{"id":"hist-12","text":"Ancient Egyptian civilization thrived along the Nile for over three thousand years before Roman conquest.","cat":"history","x":-0.103513,"y":-0.003516,"z":-0.257067,"r":0.2771,"sd":-0.257067,"su":-0.103513,"sv":-0.003549,"n":["biz-17","biz-01","hist-05","hist-17","biz-02"]},{"id":"hist-13","text":"The fall of Constantinople in 1453 ended the Byzantine Empire and shifted power in southeastern Europe.","cat":"history","x":-0.176129,"y":-0.056565,"z":-0.273648,"r":0.3303,"sd":-0.273643,"su":-0.176123,"sv":-0.056607,"n":["biz-02","hist-17","hist-16","biz-11","biz-18"]},{"id":"hist-14","text":"The Marshall Plan helped rebuild Western European economies devastated by the Second World War.","cat":"history","x":-0.150033,"y":0.061712,"z":-0.166274,"r":0.2323,"sd":-0.166279,"su":-0.150039,"sv":0.061682,"n":["hist-06","hist-03","art-10","art-02","hist-02"]},{"id":"hist-15","text":"How did the invention of writing transform governance and record-keeping in ancient Mesopotamia?","cat":"history","x":-0.313739,"y":0.150242,"z":-0.180445,"r":0.3919,"sd":-0.180458,"su":-0.313756,"sv":0.150193,"n":["hist-02","hist-20","art-10","hist-04","art-15"]},{"id":"hist-16","text":"What social and economic conditions led to the outbreak of the French Revolution?","cat":"history","x":-0.291600,"y":-0.048453,"z":-0.348955,"r":0.4573,"sd":-0.348951,"su":-0.291595,"sv":-0.048514,"n":["biz-18","hist-13","art-02","biz-02","hist-17"]},{"id":"hist-17","text":"Why did the Roman Empire eventually split into eastern and western halves?","cat":"history","x":-0.132495,"y":-0.045706,"z":-0.273845,"r":0.3076,"sd":-0.273841,"su":-0.132490,"sv":-0.045743,"n":["biz-02","hist-13","hist-12","biz-11","biz-01"]},{"id":"hist-18","text":"How did the Columbian Exchange alter ecosystems and diets on both sides of the Atlantic?","cat":"history","x":-0.059588,"y":-0.361998,"z":-0.186464,"r":0.4115,"sd":-0.186433,"su":-0.059550,"sv":-0.362021,"n":["nat-17","nat-04","health-10","sci-11","nat-09"]},{"id":"hist-19","text":"What lessons can modern democracies draw from the political experiments of ancient Athens?","cat":"history","x":-0.172790,"y":0.207261,"z":-0.022650,"r":0.2708,"sd":-0.022668,"su":-0.172812,"sv":0.207241,"n":["art-07","art-08","art-03","tech-11","art-18"]},{"id":"hist-20","text":"How did the codification of laws in ancient Babylon influence later legal traditions?","cat":"history","x":-0.230918,"y":0.080325,"z":-0.091786,"r":0.2612,"sd":-0.091793,"su":-0.230927,"sv":0.080293,"n":["hist-15","art-15","tech-16","hist-02","art-10"]},{"id":"health-01","text":"Regular aerobic exercise strengthens the heart and reduces the risk of cardiovascular disease.","cat":"health","x":0.565721,"y":0.108308,"z":-0.073890,"r":0.5807,"sd":-0.073900,"su":0.565710,"sv":0.108363,"n":["sport-15","health-11","sport-16","sport-17","health-08"]},{"id":"health-02","text":"A balanced diet rich in fruits, vegetables, and whole grains provides essential vitamins and minerals.","cat":"health","x":0.232320,"y":-0.260336,"z":0.154078,"r":0.3814,"sd":0.154100,"su":0.232348,"sv":-0.260298,"n":["health-19","cook-09","cook-04","sci-09","health-05"]},{"id":"health-03","text":"Chronic sleep deprivation impairs cognitive function and weakens the immune system over time.","cat":"health","x":0.248562,"y":0.041229,"z":0.237415,"r":0.3462,"sd":0.237412,"su":0.248558,"sv":0.041276,"n":["health-18","health-16","health-12","health-04","health-09"]},{"id":"health-04","text":"Meditation and deep breathing exercises can measurably reduce stress hormones in the bloodstream.","cat":"health","x":0.405173,"y":0.153370,"z":0.201809,"r":0.4779,"sd":0.201796,"su":0.405156,"sv":0.153430,"n":["health-16","health-18","health-12","sci-20","health-03"]},{"id":"health-05","text":"Antibiotics treat bacterial infections but are completely ineffective against viral illnesses.","cat":"health","x":0.158446,"y":-0.091945,"z":0.034265,"r":0.1864,"sd":0.034272,"su":0.158456,"sv":-0.091925,"n":["health-13","health-07","sci-09","health-06","health-19"]},{"id":"health-06","text":"Exposure to natural sunlight helps the body produce vitamin D, which is critical for bone health.","cat":"health","x":0.291141,"y":-0.112412,"z":0.126007,"r":0.3366,"sd":0.126017,"su":0.291153,"sv":-0.112370,"n":["health-07","health-13","health-05","health-15","sci-09"]},{"id":"health-07","text":"Excess sugar consumption contributes to obesity, type 2 diabetes, and chronic inflammation.","cat":"health","x":0.309320,"y":-0.110762,"z":0.080922,"r":0.3384,"sd":0.080931,"su":0.309332,"sv":-0.110722,"n":["health-13","health-06","health-05","health-15","sci-09"]},{"id":"health-08","text":"Resistance training preserves bone density and reduces the risk of osteoporosis in older adults.","cat":"health","x":0.538273,"y":0.124210,"z":-0.005814,"r":0.5524,"sd":-0.005824,"su":0.538260,"sv":0.124267,"n":["health-14","health-01","health-11","sport-15","sport-16"]},{"id":"health-09","text":"Gut microbiome diversity is strongly correlated with overall immune function and mental well-being.","cat":"health","x":0.209617,"y":-0.115819,"z":0.296395,"r":0.3811,"sd":0.296405,"su":0.209629,"sv":-0.115772,"n":["sci-18","art-04","cook-09","health-03","health-06"]},{"id":"health-10","text":"Handwashing with soap remains the single most effective measure for preventing the spread of infectious diseases.","cat":"health","x":-0.020496,"y":-0.109201,"z":-0.028857,"r":0.1148,"sd":-0.028848,"su":-0.020484,"sv":-0.109205,"n":["sci-16","nat-09","hist-18","nat-17","sci-12"]},{"id":"health-11","text":"Adequate hydration supports kidney function, joint lubrication, and thermoregulation during exercise.","cat":"health","x":0.502969,"y":0.070395,"z":-0.069834,"r":0.5126,"sd":-0.069840,"su":0.502961,"sv":0.070443,"n":["sport-15","health-01","sport-16","sport-17","health-08"]},{"id":"health-12","text":"Cognitive behavioral therapy is one of the most evidence-based treatments for depression and anxiety.","cat":"health","x":0.231284,"y":0.141436,"z":0.231341,"r":0.3564,"sd":0.231329,"su":0.231269,"sv":0.141480,"n":["health-18","health-16","health-03","health-04","sci-20"]},{"id":"health-13","text":"Omega-3 fatty acids found in fish and flaxseed help reduce systemic inflammation throughout the body.","cat":"health","x":0.338587,"y":-0.173929,"z":0.077209,"r":0.3884,"sd":0.077224,"su":0.338605,"sv":-0.173886,"n":["health-05","health-07","health-06","sci-09","health-19"]},{"id":"health-14","text":"Prolonged sitting increases the risk of metabolic syndrome regardless of how much exercise a person does.","cat":"health","x":0.477885,"y":0.158439,"z":0.012072,"r":0.5036,"sd":0.012059,"su":0.477869,"sv":0.158491,"n":["health-08","health-20","sport-08","health-01","sport-16"]},{"id":"health-15","text":"How does the body regulate its core temperature during strenuous physical activity?","cat":"health","x":0.385209,"y":-0.031958,"z":0.079140,"r":0.3946,"sd":0.079143,"su":0.385212,"sv":-0.031910,"n":["health-07","health-06","health-08","health-13","health-11"]},{"id":"health-16","text":"What role does the placebo effect play in clinical drug trials and patient recovery?","cat":"health","x":0.213156,"y":0.084207,"z":0.138105,"r":0.2676,"sd":0.138098,"su":0.213147,"sv":0.084242,"n":["health-04","health-18","health-12","health-03","sci-20"]},{"id":"health-17","text":"Why is antibiotic resistance considered one of the most urgent public health threats today?","cat":"health","x":0.057813,"y":-0.061532,"z":-0.014403,"r":0.0857,"sd":-0.014398,"su":0.057820,"sv":-0.061527,"n":["nat-02","sci-09","nat-05","health-19","nat-01"]},{"id":"health-18","text":"How do mindfulness practices physically alter neural pathways associated with stress and attention?","cat":"health","x":0.226289,"y":0.127798,"z":0.220699,"r":0.3410,"sd":0.220688,"su":0.226276,"sv":0.127841,"n":["health-12","health-16","health-03","health-04","sci-20"]},{"id":"health-19","text":"What dietary changes can help reduce the risk of developing colorectal cancer?","cat":"health","x":0.228345,"y":-0.265321,"z":0.086907,"r":0.3607,"sd":0.086930,"su":0.228373,"sv":-0.265289,"n":["sci-09","health-02","nat-18","health-05","health-13"]},{"id":"health-20","text":"Can regular cardiovascular exercise slow the progression of age-related cognitive decline?","cat":"health","x":0.413070,"y":0.214784,"z":-0.008760,"r":0.4657,"sd":-0.008778,"su":0.413047,"sv":0.214827,"n":["sport-08","sport-12","health-14","sport-13","sport-02"]},{"id":"phil-01","text":"Epistemology examines the nature, sources, and limits of human knowledge.","cat":"philosophy","x":-0.080238,"y":0.209022,"z":0.220214,"r":0.3140,"sd":0.220196,"su":-0.080260,"sv":0.209032,"n":["tech-05","phil-14","phil-10","tech-17","phil-02"]},{"id":"phil-02","text":"The trolley problem illustrates the tension between utilitarian outcomes and deontological principles.","cat":"philosophy","x":-0.116840,"y":0.171715,"z":0.266830,"r":0.3381,"sd":0.266816,"su":-0.116859,"sv":0.171725,"n":["phil-18","art-01","phil-07","phil-16","sci-05"]},{"id":"phil-03","text":"Existentialist thinkers argue that individuals must create their own meaning in an indifferent universe.","cat":"philosophy","x":-0.119427,"y":0.170027,"z":0.464068,"r":0.5085,"sd":0.464054,"su":-0.119445,"sv":0.170053,"n":["sci-05","sci-17","art-01","phil-15","phil-16"]},{"id":"phil-04","text":"Socrates believed that the unexamined life is not worth living and practiced relentless self-inquiry.","cat":"philosophy","x":-0.024389,"y":0.168981,"z":0.313758,"r":0.3572,"sd":0.313743,"su":-0.024407,"sv":0.169005,"n":["phil-15","phil-16","sci-17","phil-11","phil-06"]},{"id":"phil-05","text":"Determinism holds that every event is the inevitable result of preceding causes and natural laws.","cat":"philosophy","x":-0.121348,"y":0.052072,"z":0.134520,"r":0.1885,"sd":0.134515,"su":-0.121353,"sv":0.052071,"n":["tech-15","phil-19","biz-19","art-17","sci-04"]},{"id":"phil-06","text":"The mind-body problem asks how subjective conscious experience arises from physical brain processes.","cat":"philosophy","x":-0.023072,"y":0.322504,"z":0.382869,"r":0.5011,"sd":0.382841,"su":-0.023106,"sv":0.322534,"n":["phil-04","phil-01","tech-05","phil-10","phil-15"]},{"id":"phil-07","text":"Utilitarianism judges the morality of an action by the amount of happiness it produces for the greatest number.","cat":"philosophy","x":-0.113509,"y":0.113178,"z":0.249134,"r":0.2962,"sd":0.249124,"su":-0.113521,"sv":0.113187,"n":["biz-14","art-01","sci-05","phil-02","phil-03"]},{"id":"phil-08","text":"Immanuel Kant proposed that moral duties are grounded in reason and apply universally to all rational beings.","cat":"philosophy","x":-0.135840,"y":0.073892,"z":0.312953,"r":0.3491,"sd":0.312946,"su":-0.135848,"sv":0.073904,"n":["phil-20","biz-14","sci-04","phil-07","phil-03"]},{"id":"phil-09","text":"The concept of social contract theory influenced the design of modern democratic constitutions.","cat":"philosophy","x":-0.239301,"y":0.157286,"z":0.080055,"r":0.2973,"sd":0.080042,"su":-0.239318,"sv":0.157267,"n":["tech-09","sci-13","art-03","hist-11","tech-03"]},{"id":"phil-10","text":"Phenomenology studies the structures of conscious experience from the first-person point of view.","cat":"philosophy","x":-0.127685,"y":0.354491,"z":0.331665,"r":0.5020,"sd":0.331635,"su":-0.127723,"sv":0.354505,"n":["phil-14","phil-01","tech-05","tech-17","art-13"]},{"id":"phil-11","text":"Stoic philosophy teaches that virtue and inner tranquility matter more than external circumstances.","cat":"philosophy","x":0.007070,"y":0.119510,"z":0.348701,"r":0.3687,"sd":0.348691,"su":0.007057,"sv":0.119540,"n":["sci-17","phil-04","phil-13","phil-17","phil-15"]},{"id":"phil-12","text":"The ship of Theseus paradox asks whether an object remains the same when all its parts are gradually replaced.","cat":"philosophy","x":-0.163495,"y":0.020551,"z":0.184526,"r":0.2474,"sd":0.184525,"su":-0.163497,"sv":0.020549,"n":["sci-19","sci-03","sci-04","phil-05","phil-19"]},{"id":"phil-13","text":"Nihilism rejects the possibility of inherent meaning, purpose, or objective moral values in the world.","cat":"philosophy","x":-0.043732,"y":0.072069,"z":0.353137,"r":0.3631,"sd":0.353131,"su":-0.043740,"sv":0.072094,"n":["phil-17","sci-17","phil-03","phil-11","sci-05"]},{"id":"phil-14","text":"Pragmatism evaluates ideas and beliefs primarily by their practical consequences and usefulness.","cat":"philosophy","x":-0.100908,"y":0.257754,"z":0.243516,"r":0.3687,"sd":0.243495,"su":-0.100935,"sv":0.257764,"n":["phil-10","phil-01","tech-05","tech-17","art-13"]},{"id":"phil-15","text":"Does free will genuinely exist, or is every human decision predetermined by prior brain states?","cat":"philosophy","x":-0.074240,"y":0.199132,"z":0.373411,"r":0.4297,"sd":0.373394,"su":-0.074261,"sv":0.199156,"n":["phil-16","phil-04","sci-05","art-01","phil-03"]},{"id":"phil-16","text":"What distinguishes knowledge from mere true belief in contemporary epistemological theory?","cat":"philosophy","x":-0.070872,"y":0.156097,"z":0.282005,"r":0.3300,"sd":0.281992,"su":-0.070889,"sv":0.156113,"n":["phil-15","art-01","sci-05","phil-04","phil-02"]},{"id":"phil-17","text":"Can a purely logical argument ever settle a fundamentally ethical disagreement between two people?","cat":"philosophy","x":-0.046299,"y":0.049341,"z":0.312995,"r":0.3202,"sd":0.312991,"su":-0.046304,"sv":0.049363,"n":["phil-13","sci-17","phil-03","phil-11","phil-08"]},{"id":"phil-18","text":"Is consciousness an emergent property of complex neural networks, or something more fundamental?","cat":"philosophy","x":-0.180847,"y":0.220461,"z":0.310666,"r":0.4217,"sd":0.310647,"su":-0.180871,"sv":0.220468,"n":["phil-02","phil-07","tech-05","art-01","phil-01"]},{"id":"phil-19","text":"How should society balance individual liberty against the collective welfare of its citizens?","cat":"philosophy","x":-0.136882,"y":0.044446,"z":0.117039,"r":0.1855,"sd":0.117035,"su":-0.136887,"sv":0.044441,"n":["phil-05","art-17","biz-19","tech-15","phil-12"]},{"id":"phil-20","text":"What obligations, if any, do present generations owe to people who have not yet been born?","cat":"philosophy","x":-0.073755,"y":0.019727,"z":0.156133,"r":0.1738,"sd":0.156131,"su":-0.073757,"sv":0.019732,"n":["phil-08","sci-04","biz-14","phil-07","phil-12"]},{"id":"biz-01","text":"Venture capital firms invest in early-stage startups in exchange for equity and board representation.","cat":"business","x":-0.055763,"y":-0.005609,"z":-0.183588,"r":0.1920,"sd":-0.183587,"su":-0.055763,"sv":-0.005631,"n":["hist-12","biz-17","hist-17","biz-13","hist-05"]},{"id":"biz-02","text":"Supply chain disruptions during global crises can cascade rapidly across interconnected industries.","cat":"business","x":-0.128002,"y":-0.061344,"z":-0.236727,"r":0.2760,"sd":-0.236722,"su":-0.127995,"sv":-0.061378,"n":["hist-17","hist-13","biz-11","hist-16","hist-12"]},{"id":"biz-03","text":"Compound interest allows invested capital to grow exponentially over long periods of time.","cat":"business","x":0.016620,"y":-0.034667,"z":-0.240743,"r":0.2438,"sd":-0.240740,"su":0.016624,"sv":-0.034686,"n":["biz-13","nat-03","biz-01","biz-16","hist-12"]},{"id":"biz-04","text":"Effective marketing communicates a product's value proposition clearly to its target audience.","cat":"business","x":-0.034226,"y":0.125472,"z":0.073587,"r":0.1494,"sd":0.073577,"su":-0.034240,"sv":0.125475,"n":["tech-17","art-13","biz-09","phil-10","phil-14"]},{"id":"biz-05","text":"Diversifying an investment portfolio reduces overall risk by spreading capital across uncorrelated assets.","cat":"business","x":0.066543,"y":-0.082305,"z":-0.135866,"r":0.1722,"sd":-0.135859,"su":0.066552,"sv":-0.082309,"n":["nat-13","biz-15","nat-12","nat-20","nat-03"]},{"id":"biz-06","text":"Intellectual property protections like patents and trademarks incentivize innovation by safeguarding creators.","cat":"business","x":-0.151219,"y":0.125041,"z":-0.084405,"r":0.2136,"sd":-0.084416,"su":-0.151232,"sv":0.125018,"n":["biz-07","hist-04","art-18","hist-15","art-15"]},{"id":"biz-07","text":"Remote work has fundamentally altered office culture, commuting patterns, and urban real estate demand.","cat":"business","x":-0.162699,"y":0.140853,"z":-0.076604,"r":0.2284,"sd":-0.076616,"su":-0.162714,"sv":0.140829,"n":["art-18","biz-06","hist-04","art-08","tech-11"]},{"id":"biz-08","text":"Inflation erodes purchasing power and disproportionately affects households with fixed incomes.","cat":"business","x":-0.111746,"y":-0.042289,"z":-0.074434,"r":0.1408,"sd":-0.074430,"su":-0.111741,"sv":-0.042308,"n":["biz-20","tech-06","tech-08","tech-04","hist-16"]},{"id":"biz-09","text":"A clear mission statement aligns an organization's strategy, culture, and decision-making processes.","cat":"business","x":-0.014102,"y":0.154196,"z":0.107026,"r":0.1882,"sd":0.107013,"su":-0.014119,"sv":0.154203,"n":["biz-04","phil-10","phil-14","tech-17","phil-06"]},{"id":"biz-10","text":"Central banks adjust interest rates to influence borrowing, spending, and overall economic growth.","cat":"business","x":-0.002353,"y":-0.087804,"z":-0.114648,"r":0.1444,"sd":-0.114640,"su":-0.002344,"sv":-0.087814,"n":["nat-06","nat-07","tech-10","nat-20","nat-03"]},{"id":"biz-11","text":"Economies of scale reduce the per-unit cost of production as a company increases its output volume.","cat":"business","x":-0.114716,"y":-0.072778,"z":-0.192161,"r":0.2353,"sd":-0.192155,"su":-0.114709,"sv":-0.072807,"n":["biz-02","hist-13","hist-17","hist-16","hist-12"]},{"id":"biz-12","text":"Corporate social responsibility programs aim to generate positive environmental and community impact alongside profit.","cat":"business","x":0.017932,"y":-0.092132,"z":0.049321,"r":0.1060,"sd":0.049328,"su":0.017942,"sv":-0.092126,"n":["sci-07","sci-08","cook-02","sci-06","cook-04"]},{"id":"biz-13","text":"Mergers and acquisitions allow companies to rapidly expand their market share and capabilities.","cat":"business","x":-0.025484,"y":0.012095,"z":-0.258023,"r":0.2596,"sd":-0.258024,"su":-0.025486,"sv":0.012070,"n":["biz-16","biz-01","biz-03","biz-17","hist-12"]},{"id":"biz-14","text":"Consumer behavior research reveals how psychological biases influence purchasing decisions.","cat":"business","x":-0.093499,"y":0.075745,"z":0.199542,"r":0.2330,"sd":0.199535,"su":-0.093507,"sv":0.075752,"n":["phil-07","phil-08","art-01","sci-05","phil-03"]},{"id":"biz-15","text":"How do central banks decide when to raise or lower benchmark interest rates?","cat":"business","x":0.066101,"y":-0.061654,"z":-0.070146,"r":0.1144,"sd":-0.070140,"su":0.066107,"sv":-0.061652,"n":["nat-12","biz-05","nat-13","health-17","nat-20"]},{"id":"biz-16","text":"What factors determine whether a startup will succeed or fail in its first three years?","cat":"business","x":-0.035048,"y":0.043646,"z":-0.184825,"r":0.1931,"sd":-0.184829,"su":-0.035053,"sv":0.043626,"n":["biz-13","art-05","biz-17","hist-09","biz-01"]},{"id":"biz-17","text":"Why do some industries tend naturally toward monopoly while others remain fiercely competitive?","cat":"business","x":-0.106756,"y":0.013059,"z":-0.275759,"r":0.2960,"sd":-0.275760,"su":-0.106758,"sv":0.013024,"n":["hist-12","biz-01","hist-05","hist-17","biz-16"]},{"id":"biz-18","text":"How has globalization shifted manufacturing employment from developed to developing economies?","cat":"business","x":-0.256772,"y":-0.005089,"z":-0.275354,"r":0.3765,"sd":-0.275354,"su":-0.256772,"sv":-0.005139,"n":["hist-16","art-02","tech-02","hist-07","hist-13"]},{"id":"biz-19","text":"What ethical responsibilities do technology companies have regarding user data and privacy?","cat":"business","x":-0.103330,"y":0.063187,"z":0.093955,"r":0.1533,"sd":0.093949,"su":-0.103337,"sv":0.063183,"n":["art-17","tech-15","phil-05","phil-19","tech-09"]},{"id":"biz-20","text":"Can universal basic income programs sustain economic productivity while reducing poverty?","cat":"business","x":-0.075760,"y":-0.024145,"z":-0.041398,"r":0.0896,"sd":-0.041396,"su":-0.075758,"sv":-0.024157,"n":["biz-08","tech-08","tech-06","tech-04","hist-07"]}],"queries":[{"desc":"How does gravity work in the vacuum of outer space?","x":0.011869,"y":-0.159991,"z":0.081215,"hits":[{"id":"biz-12","d":0.1061,"cat":"business"},{"id":"cook-02","d":0.1472,"cat":"cooking"},{"id":"sci-07","d":0.1521,"cat":"science"},{"id":"cook-18","d":0.1939,"cat":"cooking"},{"id":"cook-10","d":0.1989,"cat":"cooking"}]},{"desc":"What recipes should I try for a weeknight dinner?","x":0.011410,"y":-0.206748,"z":0.112367,"hits":[{"id":"cook-02","d":0.1188,"cat":"cooking"},{"id":"biz-12","d":0.1217,"cat":"business"},{"id":"sci-07","d":0.1849,"cat":"science"},{"id":"cook-18","d":0.2100,"cat":"cooking"},{"id":"cook-10","d":0.2110,"cat":"cooking"}]},{"desc":"Tell me about famous classical musicians and their compositions.","x":-0.101616,"y":0.095002,"z":-0.109316,"hits":[{"id":"hist-01","d":0.1135,"cat":"history"},{"id":"hist-10","d":0.1458,"cat":"history"},{"id":"hist-04","d":0.2019,"cat":"history"},{"id":"hist-03","d":0.2067,"cat":"history"},{"id":"hist-06","d":0.2273,"cat":"history"}]},{"desc":"How can I improve my physical fitness and overall health?","x":0.443745,"y":0.090420,"z":-0.002393,"hits":[{"id":"health-08","d":0.0263,"cat":"health"},{"id":"health-14","d":0.1227,"cat":"health"},{"id":"health-01","d":0.1229,"cat":"health"},{"id":"health-11","d":0.1452,"cat":"health"},{"id":"sport-15","d":0.1608,"cat":"sports"}]},{"desc":"What are the economic impacts of artificial intelligence on global labor markets?","x":-0.214638,"y":0.120261,"z":-0.129987,"hits":[{"id":"hist-15","d":0.0573,"cat":"history"},{"id":"hist-04","d":0.1238,"cat":"history"},{"id":"hist-02","d":0.1746,"cat":"history"},{"id":"art-10","d":0.1752,"cat":"arts"},{"id":"biz-06","d":0.1810,"cat":"business"}]},{"desc":"How do ecosystems recover after large-scale natural disasters?","x":-0.046963,"y":-0.282992,"z":-0.180167,"hits":[{"id":"hist-18","d":0.0906,"cat":"history"},{"id":"nat-17","d":0.1836,"cat":"nature"},{"id":"nat-04","d":0.1889,"cat":"nature"},{"id":"nat-16","d":0.1986,"cat":"nature"},{"id":"sci-11","d":0.2330,"cat":"science"}]},{"desc":"What ethical questions does genetic engineering raise for society?","x":-0.039756,"y":0.034158,"z":0.077792,"hits":[{"id":"phil-07","d":0.0459,"cat":"philosophy"},{"id":"biz-14","d":0.0526,"cat":"business"},{"id":"art-01","d":0.1450,"cat":"arts"},{"id":"sci-05","d":0.1636,"cat":"science"},{"id":"phil-02","d":0.1687,"cat":"philosophy"}]},{"desc":"How did ancient civilizations influence modern architectural design?","x":-0.244503,"y":0.227730,"z":-0.124578,"hits":[{"id":"biz-07","d":0.0373,"cat":"business"},{"id":"art-18","d":0.0649,"cat":"arts"},{"id":"biz-06","d":0.0737,"cat":"business"},{"id":"hist-04","d":0.1551,"cat":"history"},{"id":"art-08","d":0.2089,"cat":"arts"}]}],"paths":[{"src":"sci-04","tgt":"cook-15","srcText":"Einstein's theory of general relativity describes gravity as the curvature of spacetime.","tgtText":"How does the Maillard reaction create the crispy brown crust on seared steaks?","dist":1.4949,"steps":["sci-04","phil-20","sci-14","cook-03","cook-16","cook-15"]},{"src":"phil-06","tgt":"tech-03","srcText":"The mind-body problem asks how subjective conscious experience arises from physical brain processes.","tgtText":"Artificial intelligence can now generate realistic images and human-like text responses.","dist":0.6411,"steps":["phil-06","phil-10","tech-17","tech-03"]},{"src":"sport-02","tgt":"health-01","srcText":"A marathon covers 26.2 miles and tests the endurance limits of long-distance runners.","tgtText":"Regular aerobic exercise strengthens the heart and reduces the risk of cardiovascular disease.","dist":0.2234,"steps":["sport-02","health-01"]},{"src":"nat-01","tgt":"biz-12","srcText":"The Amazon rainforest produces about twenty percent of the world's atmospheric oxygen.","tgtText":"Corporate social responsibility programs aim to generate positive environmental and community impact alongside profit.","dist":0.7143,"steps":["nat-01","nat-18","sci-06","biz-12"]}],"manifold":{"cx":0.000000,"cy":-0.000000,"cz":-0.000000,"nx":-0.000000,"ny":-0.000085,"nz":1.000000,"ux":1.000000,"uy":-0.000107,"uz":-0.000000,"vx":0.000107,"vy":1.000000,"vz":0.000085,"vr":0.7118}};
+const COLORS={science:'#2196F3',technology:'#9C27B0',sports:'#FF5722',cooking:'#FF9800',arts:'#4CAF50',nature:'#009688',history:'#795548',health:'#E91E63',philosophy:'#607D8B',business:'#FFC107'};
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0a0a1a);
+scene.fog=new THREE.FogExp2(0x0a0a1a,0.6);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.01,100);
+camera.position.set(0,0.4,1.2);
+const ctrl=new OrbitControls(camera,canvas);
+ctrl.enableDamping=true;ctrl.dampingFactor=0.08;ctrl.minDistance=0.3;ctrl.maxDistance=6;
+scene.add(new THREE.AmbientLight(0x404060,2));
+const dl=new THREE.DirectionalLight(0xffffff,0.6);dl.position.set(3,5,4);scene.add(dl);
 
-const DATA = {"points":[{"id":"sci-1","text":"The speed of light in a vacuum is approximately 299,792 kilometers per second.","cat":"science","t":3.705635,"p":1.157281,"r":1.0000,"n":["sci-3","sci-6","cook-5","sci-4","sci-7"]},{"id":"sci-2","text":"DNA contains the genetic instructions for the development of all known living organisms.","cat":"science","t":5.058698,"p":0.497379,"r":1.0000,"n":["sci-5","tech-8","tech-1","tech-4","tech-2"]},{"id":"sci-3","text":"Quantum entanglement allows particles to be correlated instantaneously across vast distances.","cat":"science","t":3.832767,"p":0.629174,"r":1.0000,"n":["tech-7","tech-4","tech-6","sci-1","tech-8"]},{"id":"sci-4","text":"Einstein's theory of general relativity describes gravity as the curvature of spacetime.","cat":"science","t":3.908638,"p":1.811624,"r":1.0000,"n":["sci-6","art-4","sci-7","cook-5","cook-4"]},{"id":"sci-5","text":"The human brain contains approximately 86 billion neurons connected by trillions of synapses.","cat":"science","t":5.290222,"p":0.501343,"r":1.0000,"n":["sci-2","tech-1","tech-8","tech-2","tech-4"]},{"id":"sci-6","text":"Photosynthesis converts sunlight into chemical energy stored in glucose molecules.","cat":"science","t":4.143796,"p":1.499037,"r":1.0000,"n":["sci-7","sci-4","nat-4","sci-8","sci-1"]},{"id":"sci-7","text":"Black holes are regions of spacetime where gravity is so strong that nothing can escape.","cat":"science","t":4.294077,"p":1.581287,"r":1.0000,"n":["sci-6","nat-4","sci-8","sci-4","nat-2"]},{"id":"sci-8","text":"The periodic table organizes chemical elements by their atomic number and electron configuration.","cat":"science","t":4.515482,"p":1.223176,"r":1.0000,"n":["nat-4","sci-7","sci-6","nat-2","nat-5"]},{"id":"tech-1","text":"Machine learning algorithms improve their performance by training on large datasets.","cat":"technology","t":5.544081,"p":0.565348,"r":1.0000,"n":["sci-5","tech-2","sci-2","tech-8","tech-5"]},{"id":"tech-2","text":"The internet connects billions of devices through a global network of computer systems.","cat":"technology","t":6.000877,"p":0.464878,"r":1.0000,"n":["tech-1","tech-5","sci-5","tech-8","sci-2"]},{"id":"tech-3","text":"Artificial intelligence can now generate realistic images and human-like text responses.","cat":"technology","t":1.671934,"p":0.539950,"r":1.0000,"n":["tech-5","hist-3","art-7","tech-6","tech-7"]},{"id":"tech-4","text":"Blockchain technology provides a decentralized and tamper-resistant digital ledger system.","cat":"technology","t":4.239394,"p":0.262467,"r":1.0000,"n":["tech-6","tech-7","tech-8","sci-2","sci-3"]},{"id":"tech-5","text":"Autonomous vehicles use sensors and algorithms to navigate roads without human input.","cat":"technology","t":0.239167,"p":0.209771,"r":1.0000,"n":["tech-2","tech-6","tech-8","tech-4","tech-7"]},{"id":"tech-6","text":"Cloud computing allows on-demand access to shared computing resources over the internet.","cat":"technology","t":4.127364,"p":0.126245,"r":1.0000,"n":["tech-4","tech-7","tech-8","tech-5","sci-2"]},{"id":"tech-7","text":"Quantum computers use qubits to solve certain problems exponentially faster than classical machines.","cat":"technology","t":3.468040,"p":0.257354,"r":1.0000,"n":["tech-6","tech-4","tech-8","sci-3","tech-5"]},{"id":"tech-8","text":"Cybersecurity protects computer systems and networks from digital attacks and data breaches.","cat":"technology","t":5.081002,"p":0.281332,"r":1.0000,"n":["sci-2","tech-4","tech-6","sci-5","tech-5"]},{"id":"sport-1","text":"The Olympic Games bring together athletes from around the world to compete every four years.","cat":"sports","t":6.161513,"p":1.987501,"r":1.0000,"n":["sport-7","sport-4","nat-3","nat-6","sport-3"]},{"id":"sport-2","text":"A marathon covers 26.2 miles and tests the endurance limits of long-distance runners.","cat":"sports","t":5.521717,"p":2.246871,"r":1.0000,"n":["sport-5","sport-6","sport-3","nat-3","sport-7"]},{"id":"sport-3","text":"Basketball requires teamwork, agility, and precise shooting to outscore the opponent.","cat":"sports","t":6.171231,"p":2.417159,"r":1.0000,"n":["sport-6","sport-5","sport-7","art-5","sport-1"]},{"id":"sport-4","text":"Soccer is the most popular sport in the world with over four billion fans.","cat":"sports","t":0.033705,"p":1.756964,"r":1.0000,"n":["nat-6","sport-1","sport-7","nat-3","art-5"]},{"id":"sport-5","text":"Tennis matches can last for hours as players rally the ball across the net.","cat":"sports","t":5.827335,"p":2.373942,"r":1.0000,"n":["sport-6","sport-3","sport-2","sport-7","sport-1"]},{"id":"sport-6","text":"Swimming is an excellent full-body cardiovascular exercise suitable for all ages.","cat":"sports","t":6.078889,"p":2.445194,"r":1.0000,"n":["sport-3","sport-5","sport-7","art-5","sport-2"]},{"id":"sport-7","text":"Professional athletes dedicate years of intense training to compete at the highest level.","cat":"sports","t":6.236454,"p":2.158117,"r":1.0000,"n":["sport-1","sport-3","sport-6","art-5","sport-5"]},{"id":"cook-1","text":"Preheat the oven to 375 degrees and line the baking sheet with parchment paper.","cat":"cooking","t":3.259672,"p":1.730273,"r":1.0000,"n":["cook-6","cook-5","cook-3","cook-7","cook-4"]},{"id":"cook-2","text":"Fresh herbs like basil and cilantro add vibrant flavor to almost any dish.","cat":"cooking","t":3.110349,"p":2.118316,"r":1.0000,"n":["cook-3","art-1","cook-4","cook-6","cook-7"]},{"id":"cook-3","text":"A good risotto requires patience and constant stirring to achieve a creamy texture.","cat":"cooking","t":3.083210,"p":1.985764,"r":1.0000,"n":["art-1","cook-2","cook-7","cook-6","cook-1"]},{"id":"cook-4","text":"Marinating meat overnight allows the flavors to penetrate deeply into the protein.","cat":"cooking","t":3.411799,"p":2.078811,"r":1.0000,"n":["cook-6","cook-2","cook-3","cook-5","art-4"]},{"id":"cook-5","text":"The secret to a perfect pie crust is using very cold butter and minimal handling.","cat":"cooking","t":3.437421,"p":1.746852,"r":1.0000,"n":["cook-1","cook-6","cook-4","cook-3","sci-4"]},{"id":"cook-6","text":"Sauteing onions slowly until caramelized brings out their natural sweetness.","cat":"cooking","t":3.292246,"p":1.870074,"r":1.0000,"n":["cook-1","cook-5","cook-3","cook-4","cook-2"]},{"id":"cook-7","text":"Homemade pasta has a remarkably different taste and texture from store-bought varieties.","cat":"cooking","t":2.942792,"p":1.817282,"r":1.0000,"n":["cook-3","art-1","cook-1","cook-2","cook-6"]},{"id":"art-1","text":"Beethoven composed his magnificent Ninth Symphony while almost completely deaf.","cat":"arts","t":2.974642,"p":2.034723,"r":1.0000,"n":["cook-3","cook-2","cook-7","cook-6","cook-4"]},{"id":"art-2","text":"Jazz music originated in New Orleans blending African rhythms with European harmony.","cat":"arts","t":2.140200,"p":2.516987,"r":1.0000,"n":["art-6","art-1","cook-2","art-3","hist-5"]},{"id":"art-3","text":"The Impressionist painters captured light and atmosphere with loose, visible brushstrokes.","cat":"arts","t":2.101226,"p":1.726033,"r":1.0000,"n":["hist-2","hist-1","hist-6","hist-4","art-2"]},{"id":"art-4","text":"A symphony orchestra typically includes strings, woodwinds, brass, and percussion sections.","cat":"arts","t":3.822955,"p":2.227089,"r":1.0000,"n":["cook-4","sci-4","cook-6","cook-5","cook-2"]},{"id":"art-5","text":"Shakespeare's plays have been performed continuously around the world for over four centuries.","cat":"arts","t":0.346621,"p":2.277084,"r":1.0000,"n":["sport-7","sport-3","sport-6","sport-1","sport-5"]},{"id":"art-6","text":"Modern dance breaks away from classical ballet with expressive, free-form movement.","cat":"arts","t":1.377900,"p":2.369101,"r":1.0000,"n":["hist-5","art-2","hist-1","hist-6","art-5"]},{"id":"art-7","text":"Photography transformed how humanity documents and shares visual experiences.","cat":"arts","t":1.390076,"p":1.090691,"r":1.0000,"n":["hist-4","hist-3","hist-2","tech-3","hist-6"]},{"id":"nat-1","text":"The Amazon rainforest produces about twenty percent of the world's oxygen supply.","cat":"nature","t":5.286692,"p":1.383558,"r":1.0000,"n":["nat-7","nat-5","nat-2","nat-4","nat-3"]},{"id":"nat-2","text":"Coral reefs support more species per unit area than any other marine environment.","cat":"nature","t":4.764554,"p":1.640588,"r":1.0000,"n":["nat-5","nat-4","sci-7","sci-8","nat-7"]},{"id":"nat-3","text":"Bird migration patterns span thousands of miles across multiple continents each year.","cat":"nature","t":5.899812,"p":1.815835,"r":1.0000,"n":["sport-1","nat-6","sport-4","sport-7","sport-2"]},{"id":"nat-4","text":"Volcanic eruptions release gases and molten rock from deep within the Earth's mantle.","cat":"nature","t":4.561853,"p":1.535742,"r":1.0000,"n":["nat-2","sci-7","sci-8","sci-6","nat-5"]},{"id":"nat-5","text":"Ocean currents play a crucial role in regulating global climate and weather patterns.","cat":"nature","t":4.987169,"p":1.681894,"r":1.0000,"n":["nat-2","nat-7","nat-1","nat-4","sci-8"]},{"id":"nat-6","text":"Old-growth forests contain complex ecosystems that have developed over centuries.","cat":"nature","t":6.190848,"p":1.662391,"r":1.0000,"n":["sport-4","nat-3","sport-1","sport-7","art-5"]},{"id":"nat-7","text":"The water cycle continuously moves water between the atmosphere, land, and oceans.","cat":"nature","t":5.288665,"p":1.457714,"r":1.0000,"n":["nat-1","nat-5","nat-2","nat-3","nat-4"]},{"id":"hist-1","text":"The Renaissance saw a dramatic revival of art, science, and classical learning in Europe.","cat":"history","t":1.451147,"p":1.812480,"r":1.0000,"n":["hist-6","hist-5","hist-2","art-6","hist-4"]},{"id":"hist-2","text":"The Industrial Revolution transformed manufacturing through steam power and mechanization.","cat":"history","t":1.662130,"p":1.313837,"r":1.0000,"n":["hist-4","art-7","hist-6","hist-1","art-3"]},{"id":"hist-3","text":"Ancient Rome built an extensive network of roads and aqueducts across its vast empire.","cat":"history","t":1.046524,"p":0.939094,"r":1.0000,"n":["art-7","hist-4","tech-3","hist-2","tech-5"]},{"id":"hist-4","text":"The invention of the printing press revolutionized the spread of knowledge and literacy.","cat":"history","t":1.525454,"p":1.211942,"r":1.0000,"n":["hist-2","art-7","hist-3","hist-6","hist-1"]},{"id":"hist-5","text":"European exploration in the fifteenth century established new trade routes across the globe.","cat":"history","t":1.215427,"p":1.982294,"r":1.0000,"n":["hist-1","hist-6","art-6","art-5","hist-2"]},{"id":"hist-6","text":"The French Revolution fundamentally transformed the political structure of France and Europe.","cat":"history","t":1.387246,"p":1.730602,"r":1.0000,"n":["hist-1","hist-5","hist-2","hist-4","art-6"]}],"queries":[{"desc":"How does gravity work in space?","t":4.332157,"p":1.839032,"hits":[{"id":"sci-7","d":0.2605,"cat":"science"},{"id":"nat-4","d":0.3790,"cat":"nature"},{"id":"sci-6","d":0.3878,"cat":"science"},{"id":"sci-4","d":0.4106,"cat":"science"},{"id":"nat-2","d":0.4694,"cat":"nature"}]},{"desc":"What recipes should I try for dinner?","t":3.060484,"p":2.049075,"hits":[{"id":"cook-3","d":0.0665,"cat":"cooking"},{"id":"art-1","d":0.0778,"cat":"arts"},{"id":"cook-2","d":0.0817,"cat":"cooking"},{"id":"cook-7","d":0.2564,"cat":"cooking"},{"id":"cook-6","d":0.2790,"cat":"cooking"}]},{"desc":"Tell me about famous musicians and composers","t":1.851655,"p":2.145575,"hits":[{"id":"art-2","d":0.4238,"cat":"arts"},{"id":"art-6","d":0.4260,"cat":"arts"},{"id":"art-3","d":0.4787,"cat":"arts"},{"id":"hist-1","d":0.4938,"cat":"history"},{"id":"hist-5","d":0.5805,"cat":"history"}]}]};
+// Wireframe reference sphere (unit)
+const wg=new THREE.IcosahedronGeometry(0.5,3);
+const wm=new THREE.MeshBasicMaterial({color:0x334466,wireframe:true,transparent:true,opacity:0.06});
+scene.add(new THREE.Mesh(wg,wm));
 
-const COLORS = {
-    science:'#2196F3', technology:'#9C27B0', sports:'#FF5722',
-    cooking:'#FF9800', arts:'#4CAF50', nature:'#009688', history:'#795548'
-};
+// Axes
+const ag=new THREE.BufferGeometry();
+const av=[];const ac=[];
+[[1,0,0,1,0.3,0.3],[0,1,0,0.3,1,0.3],[0,0,1,0.3,0.3,1]].forEach(([x,y,z,r,g,b])=>{
+av.push(0,0,0,x*0.6,y*0.6,z*0.6);ac.push(r,g,b,r,g,b);});
+ag.setAttribute('position',new THREE.Float32BufferAttribute(av,3));
+ag.setAttribute('color',new THREE.Float32BufferAttribute(ac,3));
+scene.add(new THREE.LineSegments(ag,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.3})));
 
-// ---- Scene setup ----
-const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
+// Points
+const pg=new THREE.Group();scene.add(pg);
+const meshes=[];const idMap={};const idData={};
+const sg=new THREE.SphereGeometry(0.008,10,10);
+D.points.forEach(pt=>{
+const col=new THREE.Color(COLORS[pt.cat]||'#fff');
+const mat=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.5,roughness:0.4});
+const m=new THREE.Mesh(sg,mat);
+m.position.set(pt.x,pt.y,pt.z);m.userData=pt;
+pg.add(m);meshes.push(m);idMap[pt.id]=m;idData[pt.id]=pt;});
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a1a);
-
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 100);
-camera.position.set(0, 0.8, 2.8);
-
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.minDistance = 1.5;
-controls.maxDistance = 6;
-
-// ---- Lighting ----
-scene.add(new THREE.AmbientLight(0x404060, 1.5));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-dirLight.position.set(3, 5, 4);
-scene.add(dirLight);
-
-// ---- Reference sphere (wireframe) ----
-const wireGeo = new THREE.IcosahedronGeometry(1, 4);
-const wireMat = new THREE.MeshBasicMaterial({color:0x334466, wireframe:true, transparent:true, opacity:0.08});
-scene.add(new THREE.Mesh(wireGeo, wireMat));
-
-// Equator ring
-const eqGeo = new THREE.RingGeometry(0.998, 1.002, 128);
-const eqMat = new THREE.MeshBasicMaterial({color:0x445588, transparent:true, opacity:0.2, side:THREE.DoubleSide});
-const eqRing = new THREE.Mesh(eqGeo, eqMat);
-eqRing.rotation.x = Math.PI / 2;
-scene.add(eqRing);
-
-// ---- Coordinate conversion (SphereQL physics convention) ----
-function sph2cart(theta, phi, r) {
-    r = r || 1;
-    return new THREE.Vector3(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.cos(phi),                     // Y-up for Three.js (swap y/z)
-        r * Math.sin(phi) * Math.sin(theta)
-    );
+// Slice plane
+const MF=D.manifold;
+const sliceGrp=new THREE.Group();scene.add(sliceGrp);
+let sliceVisible=false;
+function buildSlicePlane(){
+while(sliceGrp.children.length)sliceGrp.remove(sliceGrp.children[0]);
+if(!sliceVisible)return;
+const plGeo=new THREE.PlaneGeometry(1,1);
+const plMat=new THREE.MeshBasicMaterial({color:0x6688aa,transparent:true,opacity:0.12,side:THREE.DoubleSide});
+const pl=new THREE.Mesh(plGeo,plMat);
+pl.position.set(MF.cx,MF.cy,MF.cz);
+const up=new THREE.Vector3(0,0,1);
+const normal=new THREE.Vector3(MF.nx,MF.ny,MF.nz).normalize();
+const q=new THREE.Quaternion().setFromUnitVectors(up,normal);
+pl.setRotationFromQuaternion(q);
+sliceGrp.add(pl);
+// Ring
+const rg=new THREE.RingGeometry(0.48,0.5,64);
+const rm=new THREE.MeshBasicMaterial({color:0x88aacc,transparent:true,opacity:0.25,side:THREE.DoubleSide});
+const ring=new THREE.Mesh(rg,rm);
+ring.position.copy(pl.position);ring.setRotationFromQuaternion(q);
+sliceGrp.add(ring);
 }
 
-// ---- Build point meshes ----
-const pointGroup = new THREE.Group();
-scene.add(pointGroup);
-const meshes = [];
-const idToMesh = {};
-const idToData = {};
+// Lines group for neighbors / paths / queries
+const lineGrp=new THREE.Group();scene.add(lineGrp);
+const pathGrp=new THREE.Group();scene.add(pathGrp);
+const queryGrp=new THREE.Group();scene.add(queryGrp);
+let selectedId=null;
 
-const sphereGeo = new THREE.SphereGeometry(0.018, 12, 12);
+function clearLines(){while(lineGrp.children.length)lineGrp.remove(lineGrp.children[0]);}
+function clearPaths(){while(pathGrp.children.length)pathGrp.remove(pathGrp.children[0]);}
+function clearQueries(){while(queryGrp.children.length)queryGrp.remove(queryGrp.children[0]);}
 
-DATA.points.forEach(pt => {
-    const color = new THREE.Color(COLORS[pt.cat] || '#ffffff');
-    const mat = new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.4, roughness:0.5});
-    const mesh = new THREE.Mesh(sphereGeo, mat);
-    const pos = sph2cart(pt.t, pt.p);
-    mesh.position.copy(pos);
-    mesh.userData = pt;
-    pointGroup.add(mesh);
-    meshes.push(mesh);
-    idToMesh[pt.id] = mesh;
-    idToData[pt.id] = pt;
+function drawNeighborLines(pt){
+clearLines();
+const o=new THREE.Vector3(pt.x,pt.y,pt.z);
+pt.n.forEach(nid=>{const nd=idData[nid];if(!nd)return;
+const geo=new THREE.BufferGeometry().setFromPoints([o,new THREE.Vector3(nd.x,nd.y,nd.z)]);
+lineGrp.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.3})));
+});}
+
+function drawPath(steps){
+clearPaths();
+if(steps.length<2)return;
+const pts=steps.map(id=>{const d=idData[id];return d?new THREE.Vector3(d.x,d.y,d.z):null}).filter(Boolean);
+// Tube along path
+const curve=new THREE.CatmullRomCurve3(pts);
+const tGeo=new THREE.TubeGeometry(curve,pts.length*8,0.003,6,false);
+const tMat=new THREE.MeshBasicMaterial({color:0xff8800,transparent:true,opacity:0.7});
+pathGrp.add(new THREE.Mesh(tGeo,tMat));
+// Highlight nodes
+steps.forEach(id=>{if(idMap[id])idMap[id].scale.setScalar(2.2);});
+}
+
+function selectPoint(pt){
+selectedId=pt.id;drawNeighborLines(pt);clearPaths();clearQueries();
+meshes.forEach(m=>m.scale.setScalar(1));
+if(idMap[pt.id])idMap[pt.id].scale.setScalar(2.5);
+pt.n.forEach(nid=>{if(idMap[nid])idMap[nid].scale.setScalar(1.8);});
+showInfo(pt);
+document.querySelectorAll('.qbtn,.pbtn').forEach(b=>b.classList.remove('active'));
+}
+
+function showInfo(pt){
+const color=COLORS[pt.cat]||'#999';
+let html=`<h3>${pt.id}</h3><div class="cat-tag" style="background:${color}33;color:${color}">${pt.cat}</div>
+<div class="txt">${pt.text}</div>
+<div style="font-size:11px;color:#888;margin-bottom:12px">r=${pt.r.toFixed(4)} slice_dist=${pt.sd.toFixed(4)}</div>
+<div class="neighbors"><h4 style="font-size:12px;color:#888;margin-bottom:6px">Nearest neighbors</h4>`;
+pt.n.forEach(nid=>{const nd=idData[nid];if(!nd)return;const nc=COLORS[nd.cat]||'#999';
+html+=`<div class="nb" onclick="window._sel('${nid}')"><span style="color:${nc}">●</span> ${nd.text.substring(0,70)}…<span class="dist">${nd.cat}</span></div>`;});
+html+='</div>';
+const el=document.getElementById('info');el.innerHTML=html;el.classList.add('visible');
+}
+window._sel=id=>{const pt=idData[id];if(pt)selectPoint(pt);};
+
+// Raycaster
+const rc=new THREE.Raycaster();const mouse=new THREE.Vector2();let hovered=null;
+canvas.addEventListener('mousemove',e=>{mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;});
+canvas.addEventListener('click',()=>{rc.setFromCamera(mouse,camera);const h=rc.intersectObjects(meshes.filter(m=>m.visible));if(h.length)selectPoint(h[0].object.userData);});
+
+// Legend
+const catCounts={};D.points.forEach(p=>{catCounts[p.cat]=(catCounts[p.cat]||0)+1;});
+const hiddenCats=new Set();
+const legEl=document.getElementById('legend');
+let legH='<h3>Categories ('+D.points.length+' sentences)</h3>';
+Object.entries(COLORS).forEach(([cat,color])=>{if(!catCounts[cat])return;
+legH+=`<div class="lrow" data-cat="${cat}"><div class="ldot" style="background:${color}"></div><span class="lbl">${cat}</span><span class="lcnt">${catCounts[cat]}</span></div>`;});
+legEl.innerHTML=legH;
+legEl.querySelectorAll('.lrow').forEach(row=>row.addEventListener('click',()=>{
+const cat=row.dataset.cat;
+if(hiddenCats.has(cat)){hiddenCats.delete(cat);row.classList.remove('dim');}
+else{hiddenCats.add(cat);row.classList.add('dim');}
+meshes.forEach(m=>{m.visible=!hiddenCats.has(m.userData.cat);});
+}));
+
+// Controls panel
+const ctrlEl=document.getElementById('controls');
+let cH='<h3>Analysis</h3>';
+cH+=`<label class="tog"><input type="checkbox" id="sliceToggle"> Show slicing manifold (${(MF.vr*100).toFixed(1)}% variance)</label>`;
+if(D.queries.length){cH+='<h3 style="margin-top:12px">Queries</h3>';
+D.queries.forEach((q,i)=>{cH+=`<button class="qbtn" data-qi="${i}">"${q.desc}"</button>`;});}
+if(D.paths.length){cH+='<h3 style="margin-top:12px">Concept Paths</h3>';
+D.paths.forEach((p,i)=>{cH+=`<button class="pbtn" data-pi="${i}">${p.src} → ${p.tgt} (${p.steps.length-1} hops)</button>`;});}
+ctrlEl.innerHTML=cH;
+
+document.getElementById('sliceToggle').addEventListener('change',e=>{sliceVisible=e.target.checked;buildSlicePlane();
+meshes.forEach(m=>{const pt=m.userData;if(sliceVisible){const a=Math.max(0.15,1-Math.abs(pt.sd)*8);m.material.opacity=a;m.material.transparent=true;}else{m.material.opacity=1;m.material.transparent=false;}});
 });
 
-// ---- Neighbor lines (toggled on selection) ----
-const lineGroup = new THREE.Group();
-scene.add(lineGroup);
-let selectedId = null;
+ctrlEl.querySelectorAll('.qbtn').forEach(btn=>btn.addEventListener('click',()=>{
+const qi=parseInt(btn.dataset.qi);const q=D.queries[qi];
+document.querySelectorAll('.qbtn,.pbtn').forEach(b=>b.classList.remove('active'));
+btn.classList.add('active');
+meshes.forEach(m=>m.scale.setScalar(1));clearLines();clearPaths();clearQueries();selectedId=null;
+q.hits.forEach(h=>{if(idMap[h.id])idMap[h.id].scale.setScalar(2.2);});
+// Query marker
+const qm=new THREE.Mesh(new THREE.SphereGeometry(0.014,10,10),new THREE.MeshBasicMaterial({color:0xffff00}));
+qm.position.set(q.x,q.y,q.z);queryGrp.add(qm);
+q.hits.forEach(h=>{const nd=idData[h.id];if(!nd)return;
+const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(q.x,q.y,q.z),new THREE.Vector3(nd.x,nd.y,nd.z)]);
+queryGrp.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0xffff44,transparent:true,opacity:0.5})));});
+const el=document.getElementById('info');
+let rH=`<h3>Query Results</h3><div class="txt" style="font-style:italic">"${q.desc}"</div>`;
+q.hits.forEach((h,i)=>{const nd=idData[h.id];const nc=COLORS[h.cat]||'#999';
+rH+=`<div class="nb" onclick="window._sel('${h.id}')"><span style="color:${nc}">●</span> <b>${i+1}.</b> ${nd?nd.text.substring(0,60)+'…':h.id}<span class="dist">${(h.d*180/Math.PI).toFixed(1)}°</span></div>`;});
+el.innerHTML=rH;el.classList.add('visible');
+}));
 
-function clearLines() {
-    while (lineGroup.children.length) lineGroup.remove(lineGroup.children[0]);
-}
+ctrlEl.querySelectorAll('.pbtn').forEach(btn=>btn.addEventListener('click',()=>{
+const pi=parseInt(btn.dataset.pi);const p=D.paths[pi];
+document.querySelectorAll('.qbtn,.pbtn').forEach(b=>b.classList.remove('active'));
+btn.classList.add('active');
+meshes.forEach(m=>m.scale.setScalar(1));clearLines();clearQueries();
+drawPath(p.steps);
+const el=document.getElementById('info');
+let rH=`<h3>Concept Path</h3><div class="txt">${p.srcText.substring(0,60)}… → ${p.tgtText.substring(0,60)}…</div>
+<div style="font-size:11px;color:#888;margin-bottom:8px">${p.steps.length-1} hops · ${p.dist.toFixed(4)} rad total</div>`;
+p.steps.forEach((id,i)=>{const nd=idData[id];const nc=nd?COLORS[nd.cat]||'#999':'#999';
+rH+=`<div class="nb" onclick="window._sel('${id}')"><span style="color:${nc}">●</span> <b>${i}.</b> ${nd?nd.text.substring(0,60)+'…':id}</div>`;});
+el.innerHTML=rH;el.classList.add('visible');
+}));
 
-function drawNeighborLines(pt) {
-    clearLines();
-    const origin = sph2cart(pt.t, pt.p);
-    pt.n.forEach(nid => {
-        const nd = idToData[nid];
-        if (!nd) return;
-        const dest = sph2cart(nd.t, nd.p);
-        const geo = new THREE.BufferGeometry().setFromPoints([origin, dest]);
-        const mat = new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.35});
-        lineGroup.add(new THREE.Line(geo, mat));
-    });
-}
+function updateHover(){
+rc.setFromCamera(mouse,camera);
+const h=rc.intersectObjects(meshes.filter(m=>m.visible));
+const nw=h.length?h[0].object:null;
+if(hovered&&hovered!==nw&&hovered.userData.id!==selectedId)hovered.scale.setScalar(1);
+if(nw&&nw.userData.id!==selectedId){nw.scale.setScalar(1.6);canvas.style.cursor='pointer';}
+else canvas.style.cursor='grab';
+hovered=nw;}
 
-// ---- Query markers ----
-const queryGroup = new THREE.Group();
-scene.add(queryGroup);
-
-function showQueryOnSphere(q) {
-    while (queryGroup.children.length) queryGroup.remove(queryGroup.children[0]);
-    // Query point
-    const qMat = new THREE.MeshBasicMaterial({color:0xffff00});
-    const qMesh = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 12), qMat);
-    qMesh.position.copy(sph2cart(q.t, q.p));
-    queryGroup.add(qMesh);
-    // Lines to hits
-    q.hits.forEach(h => {
-        const nd = idToData[h.id];
-        if (!nd) return;
-        const geo = new THREE.BufferGeometry().setFromPoints([sph2cart(q.t, q.p), sph2cart(nd.t, nd.p)]);
-        const mat = new THREE.LineBasicMaterial({color:0xffff44, transparent:true, opacity:0.5});
-        queryGroup.add(new THREE.Line(geo, mat));
-    });
-}
-
-// ---- Raycaster ----
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-let hoveredMesh = null;
-
-canvas.addEventListener('mousemove', e => {
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-});
-
-canvas.addEventListener('click', () => {
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(meshes);
-    if (hits.length) {
-        const pt = hits[0].object.userData;
-        selectPoint(pt);
-    }
-});
-
-function selectPoint(pt) {
-    selectedId = pt.id;
-    drawNeighborLines(pt);
-    // Reset scales
-    meshes.forEach(m => m.scale.setScalar(1));
-    // Highlight selected + neighbors
-    if (idToMesh[pt.id]) idToMesh[pt.id].scale.setScalar(2.5);
-    pt.n.forEach(nid => { if (idToMesh[nid]) idToMesh[nid].scale.setScalar(1.8); });
-    showInfoPanel(pt);
-    // Clear query highlights
-    while (queryGroup.children.length) queryGroup.remove(queryGroup.children[0]);
-    document.querySelectorAll('.qbtn').forEach(b => b.classList.remove('active'));
-}
-
-// ---- Info panel ----
-const infoEl = document.getElementById('info');
-
-function showInfoPanel(pt) {
-    const color = COLORS[pt.cat] || '#999';
-    let nbHtml = '';
-    pt.n.forEach(nid => {
-        const nd = idToData[nid];
-        if (!nd) return;
-        const nColor = COLORS[nd.cat] || '#999';
-        nbHtml += `<div class="nb" onclick="window._selectById('${nid}')"><span style="color:${nColor}">●</span> ${nd.text.substring(0, 65)}…<span class="dist">${nd.cat}</span></div>`;
-    });
-    infoEl.innerHTML = `
-        <h3>${pt.id}</h3>
-        <div class="cat-tag" style="background:${color}33;color:${color}">${pt.cat}</div>
-        <div class="txt">${pt.text}</div>
-        <div style="font-size:11px;color:#888;margin-bottom:12px">θ=${(pt.t*180/Math.PI).toFixed(1)}°  φ=${(pt.p*180/Math.PI).toFixed(1)}°  r=${pt.r.toFixed(3)}</div>
-        <div class="neighbors"><h4>Nearest neighbors</h4>${nbHtml}</div>
-    `;
-    infoEl.classList.add('visible');
-}
-
-window._selectById = function(id) {
-    const pt = idToData[id];
-    if (pt) selectPoint(pt);
-};
-
-// ---- Legend ----
-const catCounts = {};
-DATA.points.forEach(p => { catCounts[p.cat] = (catCounts[p.cat]||0)+1; });
-const hiddenCats = new Set();
-
-const legendEl = document.getElementById('legend');
-let legendHtml = '<h3>Categories</h3>';
-Object.entries(COLORS).forEach(([cat, color]) => {
-    if (!catCounts[cat]) return;
-    legendHtml += `<div class="lrow" data-cat="${cat}"><div class="ldot" style="background:${color}"></div><span class="lbl">${cat}</span><span class="lcnt">${catCounts[cat]}</span></div>`;
-});
-legendEl.innerHTML = legendHtml;
-
-legendEl.querySelectorAll('.lrow').forEach(row => {
-    row.addEventListener('click', () => {
-        const cat = row.dataset.cat;
-        if (hiddenCats.has(cat)) { hiddenCats.delete(cat); row.classList.remove('dim'); }
-        else { hiddenCats.add(cat); row.classList.add('dim'); }
-        meshes.forEach(m => {
-            m.visible = !hiddenCats.has(m.userData.cat);
-        });
-    });
-});
-
-// ---- Query buttons ----
-const queriesEl = document.getElementById('queries');
-if (DATA.queries.length) {
-    let qHtml = '<h3>Demo Queries</h3>';
-    DATA.queries.forEach((q, i) => {
-        qHtml += `<button class="qbtn" data-qi="${i}">"${q.desc}"</button>`;
-    });
-    queriesEl.innerHTML = qHtml;
-
-    queriesEl.querySelectorAll('.qbtn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const qi = parseInt(btn.dataset.qi);
-            const q = DATA.queries[qi];
-            document.querySelectorAll('.qbtn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            // Reset point scales
-            meshes.forEach(m => m.scale.setScalar(1));
-            clearLines();
-            selectedId = null;
-            // Highlight hits
-            q.hits.forEach(h => { if (idToMesh[h.id]) idToMesh[h.id].scale.setScalar(2.2); });
-            showQueryOnSphere(q);
-            // Show results in info panel
-            let rHtml = `<h3>Query Results</h3><div class="txt" style="font-style:italic">"${q.desc}"</div>`;
-            q.hits.forEach((h, i) => {
-                const nd = idToData[h.id];
-                const nColor = COLORS[h.cat] || '#999';
-                rHtml += `<div class="nb" onclick="window._selectById('${h.id}')"><span style="color:${nColor}">●</span> <b>${i+1}.</b> ${nd?nd.text.substring(0,55)+'…':h.id}<span class="dist">${(h.d*180/Math.PI).toFixed(1)}°</span></div>`;
-            });
-            infoEl.innerHTML = rHtml;
-            infoEl.classList.add('visible');
-        });
-    });
-} else {
-    queriesEl.style.display = 'none';
-}
-
-// ---- Hover highlight ----
-function updateHover() {
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(meshes.filter(m => m.visible));
-    const newHover = hits.length ? hits[0].object : null;
-    if (hoveredMesh && hoveredMesh !== newHover) {
-        if (hoveredMesh.userData.id !== selectedId) {
-            hoveredMesh.scale.setScalar(hoveredMesh.userData.n && hoveredMesh.userData.n.includes(selectedId) ? 1.8 : 1);
-        }
-    }
-    if (newHover && newHover.userData.id !== selectedId) {
-        newHover.scale.setScalar(1.6);
-        canvas.style.cursor = 'pointer';
-    } else {
-        canvas.style.cursor = 'grab';
-    }
-    hoveredMesh = newHover;
-}
-
-// ---- Resize ----
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-// ---- Animate ----
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    updateHover();
-    renderer.render(scene, camera);
-}
-animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+(function animate(){requestAnimationFrame(animate);ctrl.update();updateHover();renderer.render(scene,camera);})();
 </script>
 </body>
 </html>

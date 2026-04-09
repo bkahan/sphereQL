@@ -39,6 +39,7 @@ pub struct PcaProjection {
     mean: Vec<f64>,
     dim: usize,
     radial: RadialStrategy,
+    volumetric: bool,
 }
 
 impl PcaProjection {
@@ -92,11 +93,20 @@ impl PcaProjection {
             mean,
             dim,
             radial,
+            volumetric: false,
         }
     }
 
     pub fn fit_default(embeddings: &[Embedding]) -> Self {
         Self::fit(embeddings, RadialStrategy::default())
+    }
+
+    /// Enable volumetric mode: r comes from the PCA projection magnitude
+    /// instead of the embedding magnitude. Points distribute through the
+    /// full 3D volume rather than clustering on the sphere surface.
+    pub fn with_volumetric(mut self, enabled: bool) -> Self {
+        self.volumetric = enabled;
+        self
     }
 }
 
@@ -110,8 +120,6 @@ impl Projection for PcaProjection {
             embedding.dimension()
         );
 
-        let magnitude = embedding.magnitude();
-        let r = self.radial.compute(magnitude);
         let normalized = embedding.normalized();
 
         let centered: Vec<f64> = normalized
@@ -124,7 +132,18 @@ impl Projection for PcaProjection {
         let y = dot(&centered, &self.components[1]);
         let z = dot(&centered, &self.components[2]);
 
-        project_xyz_to_spherical(x, y, z, r)
+        if self.volumetric {
+            // Use the raw PCA projection — r encodes distance from centroid
+            // in the 3D PCA subspace, giving genuine volumetric structure.
+            let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
+            if sp.r < f64::EPSILON {
+                return SphericalPoint::new_unchecked(0.0, 0.0, 0.0);
+            }
+            SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
+        } else {
+            let r = self.radial.compute(embedding.magnitude());
+            project_xyz_to_spherical(x, y, z, r)
+        }
     }
 
     fn dimensionality(&self) -> usize {

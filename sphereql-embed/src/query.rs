@@ -1,3 +1,5 @@
+use std::collections::{BinaryHeap, HashMap};
+
 use sphereql_core::*;
 use sphereql_index::*;
 
@@ -140,6 +142,324 @@ impl<P: Projection> EmbeddingIndex<P> {
     pub fn projection(&self) -> &P {
         &self.projection
     }
+
+    pub fn all_items(&self) -> Vec<&EmbeddingItem> {
+        self.index.all_items()
+    }
+
+    /// Find the shortest semantic path between two items through a k-NN graph.
+    ///
+    /// Builds a k-nearest-neighbor graph over all indexed embeddings, then
+    /// runs Dijkstra's algorithm weighted by angular distance. The resulting
+    /// path traces the chain of closest intermediate concepts connecting
+    /// the source to the target.
+    pub fn concept_path(
+        &self,
+        source_id: &str,
+        target_id: &str,
+        k: usize,
+    ) -> Option<ConceptPath> {
+        let items = self.index.all_items();
+        let n = items.len();
+        if n < 2 {
+            return None;
+        }
+
+        let id_to_idx: HashMap<&str, usize> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item.id.as_str(), i))
+            .collect();
+
+        let source_idx = *id_to_idx.get(source_id)?;
+        let target_idx = *id_to_idx.get(target_id)?;
+
+        // Build k-NN adjacency list (undirected)
+        let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+        for (i, item) in items.iter().enumerate() {
+            let nearest = self.index.nearest(item.position(), k + 1);
+            for result in &nearest {
+                if let Some(&j) = id_to_idx.get(result.item.id.as_str())
+                    && i != j
+                {
+                    adj[i].push((j, result.distance));
+                }
+            }
+        }
+        // Symmetrize
+        let snapshot: Vec<Vec<(usize, f64)>> = adj.clone();
+        for (i, edges) in snapshot.iter().enumerate() {
+            for &(j, d) in edges {
+                if !adj[j].iter().any(|&(k, _)| k == i) {
+                    adj[j].push((i, d));
+                }
+            }
+        }
+
+        // Dijkstra (min-heap via reversed Ord)
+        let mut dist = vec![f64::INFINITY; n];
+        let mut prev: Vec<Option<usize>> = vec![None; n];
+        let mut heap = BinaryHeap::new();
+
+        dist[source_idx] = 0.0;
+        heap.push(DijkstraEntry { dist: 0.0, node: source_idx });
+
+        while let Some(entry) = heap.pop() {
+            let u = entry.node;
+            if entry.dist > dist[u] {
+                continue;
+            }
+            if u == target_idx {
+                break;
+            }
+            for &(v, w) in &adj[u] {
+                let nd = dist[u] + w;
+                if nd < dist[v] {
+                    dist[v] = nd;
+                    prev[v] = Some(u);
+                    heap.push(DijkstraEntry { dist: nd, node: v });
+                }
+            }
+        }
+
+        if dist[target_idx].is_infinite() {
+            return None;
+        }
+
+        // Reconstruct
+        let mut path = Vec::new();
+        let mut cur = target_idx;
+        loop {
+            path.push(PathStep {
+                id: items[cur].id.clone(),
+                cumulative_distance: dist[cur],
+            });
+            match prev[cur] {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+        path.reverse();
+
+        Some(ConceptPath {
+            total_distance: dist[target_idx],
+            steps: path,
+        })
+    }
+}
+
+// --- Concept path types ---
+
+#[derive(Debug, Clone)]
+pub struct ConceptPath {
+    pub steps: Vec<PathStep>,
+    pub total_distance: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct PathStep {
+    pub id: String,
+    pub cumulative_distance: f64,
+}
+
+#[derive(PartialEq)]
+struct DijkstraEntry {
+    dist: f64,
+    node: usize,
+}
+
+impl Eq for DijkstraEntry {}
+
+impl PartialOrd for DijkstraEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DijkstraEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reversed: BinaryHeap is a max-heap, so smaller dist = higher priority
+        other
+            .dist
+            .partial_cmp(&self.dist)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+// --- Slicing manifold ---
+
+/// A 2D plane fitted through the 3D projected point cloud that captures
+/// the maximum variance. Found by PCA on the Cartesian coordinates of
+/// the projected embeddings.
+///
+/// The plane is defined by:
+/// - `centroid`: the mean of all 3D points
+/// - `basis_u`, `basis_v`: orthonormal vectors spanning the plane (directions of max variance)
+/// - `normal`: vector perpendicular to the plane (direction of minimum variance)
+#[derive(Debug, Clone)]
+pub struct SlicingManifold {
+    pub centroid: [f64; 3],
+    pub normal: [f64; 3],
+    pub basis_u: [f64; 3],
+    pub basis_v: [f64; 3],
+    pub variance_ratio: f64,
+}
+
+impl SlicingManifold {
+    /// Fit the optimal slicing plane to a set of 3D points.
+    /// Each point is (x, y, z) in Cartesian coordinates.
+    pub fn fit(points: &[[f64; 3]]) -> Self {
+        let n = points.len() as f64;
+        assert!(n >= 3.0, "need at least 3 points to fit a plane");
+
+        // Centroid
+        let mut c = [0.0; 3];
+        for p in points {
+            for i in 0..3 {
+                c[i] += p[i];
+            }
+        }
+        for ci in &mut c {
+            *ci /= n;
+        }
+
+        // 3×3 covariance matrix (symmetric)
+        let mut cov = [[0.0f64; 3]; 3];
+        for p in points {
+            let d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+            for i in 0..3 {
+                for j in 0..3 {
+                    cov[i][j] += d[i] * d[j];
+                }
+            }
+        }
+        for row in &mut cov {
+            for v in row.iter_mut() {
+                *v /= n;
+            }
+        }
+
+        // Eigendecomposition of 3×3 symmetric matrix via Jacobi iteration
+        let (eigenvalues, eigenvectors) = eigen_symmetric_3x3(&cov);
+
+        // eigenvalues are sorted descending: λ₀ ≥ λ₁ ≥ λ₂
+        // basis_u = eigenvector of λ₀, basis_v = eigenvector of λ₁, normal = eigenvector of λ₂
+        let total_var = eigenvalues[0] + eigenvalues[1] + eigenvalues[2];
+        let variance_ratio = if total_var > 0.0 {
+            (eigenvalues[0] + eigenvalues[1]) / total_var
+        } else {
+            1.0
+        };
+
+        Self {
+            centroid: c,
+            normal: eigenvectors[2],
+            basis_u: eigenvectors[0],
+            basis_v: eigenvectors[1],
+            variance_ratio,
+        }
+    }
+
+    /// Project a 3D point onto the plane, returning (u, v) coordinates.
+    pub fn project_2d(&self, point: &[f64; 3]) -> (f64, f64) {
+        let d = [
+            point[0] - self.centroid[0],
+            point[1] - self.centroid[1],
+            point[2] - self.centroid[2],
+        ];
+        let u = d[0] * self.basis_u[0] + d[1] * self.basis_u[1] + d[2] * self.basis_u[2];
+        let v = d[0] * self.basis_v[0] + d[1] * self.basis_v[1] + d[2] * self.basis_v[2];
+        (u, v)
+    }
+
+    /// Signed distance from the plane (positive = same side as normal).
+    pub fn distance(&self, point: &[f64; 3]) -> f64 {
+        let d = [
+            point[0] - self.centroid[0],
+            point[1] - self.centroid[1],
+            point[2] - self.centroid[2],
+        ];
+        d[0] * self.normal[0] + d[1] * self.normal[1] + d[2] * self.normal[2]
+    }
+}
+
+/// Eigendecomposition of a 3×3 symmetric matrix via Jacobi rotations.
+/// Returns (eigenvalues_desc, eigenvectors_desc) sorted by decreasing eigenvalue.
+fn eigen_symmetric_3x3(m: &[[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
+    let mut a = *m;
+    let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]; // eigenvector matrix
+
+    #[allow(clippy::needless_range_loop)]
+    for _ in 0..50 {
+        // Find largest off-diagonal element
+        let mut p = 0;
+        let mut q = 1;
+        let mut max_val = a[0][1].abs();
+        for i in 0..3 {
+            for j in (i + 1)..3 {
+                if a[i][j].abs() > max_val {
+                    max_val = a[i][j].abs();
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+        if max_val < 1e-15 {
+            break;
+        }
+
+        // Jacobi rotation to zero out a[p][q]
+        let theta = if (a[p][p] - a[q][q]).abs() < 1e-30 {
+            std::f64::consts::FRAC_PI_4
+        } else {
+            0.5 * (2.0 * a[p][q] / (a[p][p] - a[q][q])).atan()
+        };
+        let c = theta.cos();
+        let s = theta.sin();
+
+        // Rotate a ← GᵀaG
+        let mut new_a = a;
+        for i in 0..3 {
+            new_a[i][p] = c * a[i][p] + s * a[i][q];
+            new_a[i][q] = -s * a[i][p] + c * a[i][q];
+        }
+        let snapshot = new_a;
+        for j in 0..3 {
+            new_a[p][j] = c * snapshot[p][j] + s * snapshot[q][j];
+            new_a[q][j] = -s * snapshot[p][j] + c * snapshot[q][j];
+        }
+        new_a[p][q] = 0.0;
+        new_a[q][p] = 0.0;
+        a = new_a;
+
+        // Rotate eigenvectors: V ← VG
+        let mut new_v = v;
+        for i in 0..3 {
+            new_v[i][p] = c * v[i][p] + s * v[i][q];
+            new_v[i][q] = -s * v[i][p] + c * v[i][q];
+        }
+        v = new_v;
+    }
+
+    let eigenvalues = [a[0][0], a[1][1], a[2][2]];
+
+    // Sort by descending eigenvalue
+    let mut order = [0usize, 1, 2];
+    order.sort_by(|&a, &b| eigenvalues[b].partial_cmp(&eigenvalues[a]).unwrap());
+
+    let sorted_vals = [
+        eigenvalues[order[0]],
+        eigenvalues[order[1]],
+        eigenvalues[order[2]],
+    ];
+    // Eigenvectors are columns of v
+    let sorted_vecs = [
+        [v[0][order[0]], v[1][order[0]], v[2][order[0]]],
+        [v[0][order[1]], v[1][order[1]], v[2][order[1]]],
+        [v[0][order[2]], v[1][order[2]], v[2][order[2]]],
+    ];
+
+    (sorted_vals, sorted_vecs)
 }
 
 /// Builds SphereQL [`Region`]s from semantic constraints on embeddings.
