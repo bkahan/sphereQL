@@ -2,7 +2,7 @@
 
 Production-grade spherical coordinate operations library for Rust with GraphQL integration.
 
-sphereQL provides a layered architecture for working with spherical coordinates — from core math primitives through spatial indexing, layout engines, and a ready-to-use GraphQL API.
+sphereQL provides a layered architecture for working with spherical coordinates — from core math primitives through spatial indexing, layout engines, embedding projection, and a ready-to-use GraphQL API.
 
 ## Crates
 
@@ -11,7 +11,9 @@ sphereQL provides a layered architecture for working with spherical coordinates 
 | `sphereql-core`    | Spherical math primitives: points, conversions, distances, interpolation, regions |
 | `sphereql-index`   | Spatial indexing with shell/sector partitioning for fast queries                  |
 | `sphereql-layout`  | Layout engine: uniform (Fibonacci), clustered (k-means), force-directed           |
+| `sphereql-embed`   | Vector embedding projection: PCA and random projection from high-D to S²          |
 | `sphereql-graphql` | async-graphql integration with queries, subscriptions, and event bus              |
+| `sphereql-wasm`    | WebAssembly bindings for the embedding pipeline                                   |
 | `sphereql`         | Umbrella crate with feature flags for selective imports                           |
 
 ## Quick Start
@@ -25,13 +27,14 @@ sphereql = { version = "0.1", features = ["full"] }
 
 ### Feature Flags
 
-| Feature          | Includes                                         | Dependencies     |
-| ---------------- | ------------------------------------------------ | ---------------- |
-| `core` (default) | Math primitives, conversions, distances, regions | --               |
-| `index`          | Spatial indexing and queries                     | `core`           |
-| `layout`         | Layout strategies and quality metrics            | `core`, `index`  |
-| `graphql`        | GraphQL schema, subscriptions, event bus         | `core`, `index`  |
-| `full`           | Everything                                       | All of the above |
+| Feature          | Includes                                         | Dependencies              |
+| ---------------- | ------------------------------------------------ | ------------------------- |
+| `core` (default) | Math primitives, conversions, distances, regions | --                        |
+| `index`          | Spatial indexing and queries                     | `core`                    |
+| `layout`         | Layout strategies and quality metrics            | `core`, `index`           |
+| `embed`          | Embedding projection (PCA, random) and pipeline  | `core`, `index`, `layout` |
+| `graphql`        | GraphQL schema, subscriptions, event bus         | `core`, `index`           |
+| `full`           | Everything                                       | All of the above          |
 
 ### Basic Usage
 
@@ -84,14 +87,37 @@ use sphereql::core::*;
 use sphereql::layout::*;
 
 // Uniform distribution via Fibonacci spiral
-let layout = UniformLayout::new(1.0);
+let layout = UniformLayout::new();
 let result = layout.layout(&items, &mapper);
 
 // Clustered layout with k-means
-let layout = ClusteredLayout::new(4, 1.0, 0.3);
+let layout = ClusteredLayout::new().with_clusters(4).with_spread(0.3);
 
 // Force-directed simulation
 let layout = ForceDirectedLayout::default();
+```
+
+### Embedding Projection
+
+```rust
+use sphereql::embed::*;
+
+// Fit PCA projection from a corpus of embeddings
+let corpus: Vec<Embedding> = load_embeddings();
+let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude);
+
+// Project high-dimensional vectors to the sphere
+let point = pca.project(&query_embedding);
+
+// Build a spatial index over embeddings
+let mut index = EmbeddingIndex::builder(pca)
+    .uniform_shells(10, 1.0)
+    .theta_divisions(12)
+    .phi_divisions(6)
+    .build();
+
+// Search: k nearest neighbors in projected space
+let results = index.search_nearest(&query, 5);
 ```
 
 ### GraphQL Integration
@@ -134,11 +160,15 @@ sphereql (umbrella, feature-gated)
   |
   +-- sphereql-graphql (async-graphql schema, subscriptions)
   |     |
+  +-- sphereql-embed (PCA/random projection, semantic pipeline)
+  |     |
   +-- sphereql-layout (layout strategies, quality metrics)
   |     |
   +-----+-- sphereql-index (spatial partitioning, queries)
   |           |
   +-----------+-- sphereql-core (math primitives, zero dependencies*)
+
+  sphereql-wasm (WASM bindings for sphereql-embed pipeline)
 ```
 
 \* Core depends only on `serde`, `thiserror`, and `approx`.
@@ -154,6 +184,11 @@ cargo run --example geospatial -p sphereql --features index
 
 # GraphQL schema demo
 cargo run --example graphql_server -p sphereql --features full
+
+# Embedding projection demos
+cargo run --example word_embeddings -p sphereql --features embed
+cargo run --example semantic_search -p sphereql --features embed
+cargo run --example auto_categorize -p sphereql --features embed
 ```
 
 ## Running Tests
