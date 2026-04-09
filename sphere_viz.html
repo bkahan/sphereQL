@@ -317,8 +317,10 @@ function updateHover(){
 rc.setFromCamera(mouse,camera);
 const h=rc.intersectObjects(meshes.filter(m=>m.visible));
 const nw=h.length?h[0].object:null;
-if(hovered&&hovered!==nw&&hovered.userData.id!==selectedId)hovered.scale.setScalar(1);
-if(nw&&nw.userData.id!==selectedId){nw.scale.setScalar(1.6);canvas.style.cursor='pointer';}
+const hid=hovered?hovered.userData.id||null:null;
+const nid=nw?nw.userData.id||null:null;
+if(hovered&&hovered!==nw&&hid!==selectedId)hovered.scale.setScalar(1);
+if(nw&&nid!==selectedId){nw.scale.setScalar(1.6);canvas.style.cursor='pointer';}
 else canvas.style.cursor='grab';
 hovered=nw;}
 
