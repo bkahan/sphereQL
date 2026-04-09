@@ -144,13 +144,20 @@ fn main() {
     }
 
     // ── 5. Concept paths ────────────────────────────────────────────────
+    // One path per category pair — 10 paths covering all categories
     eprintln!("Computing concept paths...");
 
     let path_pairs = [
-        ("sci-04", "cook-15"),   // Einstein → Maillard reaction
-        ("phil-06", "tech-03"),  // Mind-body problem → AI text generation
+        ("sci-04", "cook-15"),     // Einstein → Maillard reaction
+        ("phil-06", "tech-03"),    // Mind-body problem → AI text generation
         ("sport-02", "health-01"), // Marathon → cardiovascular exercise
-        ("nat-01", "biz-12"),    // Amazon rainforest → corporate social responsibility
+        ("nat-01", "biz-12"),      // Amazon rainforest → corporate social responsibility
+        ("art-01", "hist-01"),     // Beethoven → Renaissance
+        ("health-12", "phil-02"),  // Cognitive behavioral therapy → trolley problem
+        ("tech-07", "sci-10"),     // Quantum computers → Higgs boson
+        ("cook-11", "nat-08"),     // Sourdough bread → bee pollination
+        ("biz-04", "art-09"),      // Marketing → film editing
+        ("sport-12", "phil-11"),   // Rock climbing → Stoic philosophy
     ];
 
     let mut paths: Vec<(String, String, ConceptPath)> = Vec::new();
@@ -231,9 +238,16 @@ fn main() {
     }
 
     // ── 6b. Concept Globs ───────────────────────────────────────────────
+    // Use category count as k so there's one glob per category
     eprintln!("Detecting concept globs...");
     let all_ids: Vec<String> = sentences.iter().map(|s| s.id.clone()).collect();
-    let glob_result = GlobResult::detect(&cart_points, &all_ids, None, 15);
+    let num_categories = {
+        let mut cats: Vec<&str> = sentences.iter().map(|s| s.category.as_str()).collect();
+        cats.sort();
+        cats.dedup();
+        cats.len()
+    };
+    let glob_result = GlobResult::detect(&cart_points, &all_ids, Some(num_categories), num_categories + 5);
 
     // ── 7. Terminal output ──────────────────────────────────────────────
     println!("=== SphereQL: End-to-End Transformer Pipeline ===\n");
@@ -296,7 +310,7 @@ fn main() {
     }
 
     for qr in &query_results {
-        println!("\n--- Query: \"{}\" ---", qr.description);
+        println!("\n--- Query (Nearest): \"{}\" ---", qr.description);
         for (i, (id, dist, cat)) in qr.hits.iter().enumerate() {
             let text = sentences
                 .iter()
@@ -312,6 +326,33 @@ fn main() {
                 text,
             );
         }
+    }
+
+    // ── Similarity threshold demo (SimilarAbove) ────────────────────────
+    if let Some(first_q) = queries.first() {
+        let sim_result = index.search_similar(&first_q.1, 0.85);
+        println!(
+            "\n--- SimilarAbove (cosine ≥ 0.85): \"{}\" → {} hits ---",
+            first_q.0,
+            sim_result.items.len(),
+        );
+        for item in sim_result.items.iter().take(8) {
+            let cat = sentences.iter().find(|s| s.id == item.id).map(|s| s.category.as_str()).unwrap_or("?");
+            let text = sentences.iter().find(|s| s.id == item.id).map(|s| truncate(&s.text, 55)).unwrap_or_default();
+            println!("  [{cat:<12}] \"{text}\"");
+        }
+    }
+
+    // ── Local manifold demo ─────────────────────────────────────────────
+    if let Some(first_qr) = query_results.first() {
+        println!(
+            "\n--- Local Manifold: \"{}\" ---",
+            first_qr.description,
+        );
+        println!(
+            "  Variance captured: {:.1}% (1.0 = flat plane, 0.67 = spherical)",
+            first_qr.local_manifold.variance_ratio * 100.0,
+        );
     }
 
     // ── 8. Generate visualization ───────────────────────────────────────
