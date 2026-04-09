@@ -49,3 +49,7 @@ required-features = ["embed"]
 [[example]]
 name = "e2e_transformer"
 required-features = ["embed"]
+
+[[example]]
+name = "auto_categorize"
+required-features = ["embed"]
