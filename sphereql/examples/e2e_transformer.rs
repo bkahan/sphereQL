@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use sphereql::core::spherical_to_cartesian;
 use sphereql::embed::{
-    ConceptPath, Embedding, EmbeddingIndex, PcaProjection, Projection, RadialStrategy,
+    ConceptPath, Embedding, EmbeddingIndex, GlobResult, PcaProjection, Projection, RadialStrategy,
     SlicingManifold,
 };
 
@@ -187,6 +187,7 @@ fn main() {
         y: f64,
         z: f64,
         hits: Vec<(String, f64, String)>,
+        local_manifold: SlicingManifold,
     }
 
     impl AsQueryResult for QueryResult {
@@ -197,6 +198,7 @@ fn main() {
                 y: self.y,
                 z: self.z,
                 hits: &self.hits,
+                lm: &self.local_manifold,
             }
         }
     }
@@ -206,6 +208,8 @@ fn main() {
         let results = index.search_nearest(emb, 5);
         let sp = pca.project(emb);
         let c = spherical_to_cartesian(&sp);
+        let qpt = [c.x, c.y, c.z];
+        let local_manifold = SlicingManifold::fit_local(&qpt, &cart_points, 20);
         query_results.push(QueryResult {
             description: desc.to_string(),
             x: c.x,
@@ -222,8 +226,14 @@ fn main() {
                     (r.item.id.clone(), r.distance, cat)
                 })
                 .collect(),
+            local_manifold,
         });
     }
+
+    // ── 6b. Concept Globs ───────────────────────────────────────────────
+    eprintln!("Detecting concept globs...");
+    let all_ids: Vec<String> = sentences.iter().map(|s| s.id.clone()).collect();
+    let glob_result = GlobResult::detect(&cart_points, &all_ids, None, 15);
 
     // ── 7. Terminal output ──────────────────────────────────────────────
     println!("=== SphereQL: End-to-End Transformer Pipeline ===\n");
@@ -247,10 +257,23 @@ fn main() {
         "\nSlicing manifold: {:.1}% variance captured in 2D plane",
         manifold.variance_ratio * 100.0
     );
+
     println!(
-        "  Normal: ({:.4}, {:.4}, {:.4})",
-        manifold.normal[0], manifold.normal[1], manifold.normal[2]
+        "\nConcept Globs: auto-detected k={} (silhouette={:.3})",
+        glob_result.k, glob_result.silhouette,
     );
+    for g in &glob_result.globs {
+        let mut glob_cats: HashMap<&str, usize> = HashMap::new();
+        for mid in &g.member_ids {
+            if let Some(s) = sentences.iter().find(|s| s.id == *mid) {
+                *glob_cats.entry(&s.category).or_default() += 1;
+            }
+        }
+        let mut gc: Vec<_> = glob_cats.iter().collect();
+        gc.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
+        let top: String = gc.iter().take(3).map(|(c, n)| format!("{c}({n})")).collect::<Vec<_>>().join(", ");
+        println!("  Glob {:>2}: {:>3} members, radius={:.4}, top: {}", g.id, g.member_ids.len(), g.radius, top);
+    }
 
     for (src, tgt, path) in &paths {
         let src_text = sentences.iter().find(|s| s.id == *src).map(|s| truncate(&s.text, 40)).unwrap_or_default();
@@ -293,7 +316,7 @@ fn main() {
 
     // ── 8. Generate visualization ───────────────────────────────────────
     eprintln!("\nGenerating visualization...");
-    let data_json = build_viz_json(&projected, &query_results, &paths, &manifold, &sentences);
+    let data_json = build_viz_json(&projected, &query_results, &paths, &manifold, &glob_result, &sentences);
     let html = VIZ_TEMPLATE.replace("__DATA_PLACEHOLDER__", &data_json);
     std::fs::write(&output_path, &html)
         .unwrap_or_else(|e| panic!("Cannot write {output_path}: {e}"));
@@ -318,6 +341,7 @@ fn build_viz_json(
     queries: &[impl AsQueryResult],
     paths: &[(String, String, ConceptPath)],
     manifold: &SlicingManifold,
+    globs: &GlobResult,
     sentences: &[Sentence],
 ) -> String {
     let pts: Vec<String> = points
@@ -345,13 +369,13 @@ fn build_viz_json(
                 .iter()
                 .map(|(id, d, cat)| format!("{{\"id\":\"{id}\",\"d\":{d:.4},\"cat\":\"{cat}\"}}", ))
                 .collect();
+            let lm = qr.lm;
             format!(
-                "{{\"desc\":\"{}\",\"x\":{:.6},\"y\":{:.6},\"z\":{:.6},\"hits\":[{}]}}",
-                esc(qr.desc),
-                qr.x,
-                qr.y,
-                qr.z,
-                hits.join(",")
+                "{{\"desc\":\"{}\",\"x\":{:.6},\"y\":{:.6},\"z\":{:.6},\"hits\":[{}],\"lm\":{{\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"nx\":{:.6},\"ny\":{:.6},\"nz\":{:.6},\"vr\":{:.4}}}}}",
+                esc(qr.desc), qr.x, qr.y, qr.z, hits.join(","),
+                lm.centroid[0], lm.centroid[1], lm.centroid[2],
+                lm.normal[0], lm.normal[1], lm.normal[2],
+                lm.variance_ratio,
             )
         })
         .collect();
@@ -383,12 +407,23 @@ fn build_viz_json(
         manifold.variance_ratio,
     );
 
+    let gs: Vec<String> = globs.globs.iter().map(|g| {
+        let members = g.member_ids.iter().map(|m| format!("\"{m}\"")).collect::<Vec<_>>().join(",");
+        format!(
+            "{{\"id\":{},\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"r\":{:.4},\"members\":[{}]}}",
+            g.id, g.centroid[0], g.centroid[1], g.centroid[2], g.radius, members
+        )
+    }).collect();
+
     format!(
-        "{{\"points\":[{}],\"queries\":[{}],\"paths\":[{}],\"manifold\":{}}}",
+        "{{\"points\":[{}],\"queries\":[{}],\"paths\":[{}],\"manifold\":{},\"globs\":[{}],\"globK\":{},\"globSil\":{:.4}}}",
         pts.join(","),
         qs.join(","),
         ps.join(","),
         mf,
+        gs.join(","),
+        globs.k,
+        globs.silhouette,
     )
 }
 
@@ -399,6 +434,7 @@ struct QR<'a> {
     y: f64,
     z: f64,
     hits: &'a [(String, f64, String)],
+    lm: &'a SlicingManifold,
 }
 
 trait AsQueryResult {
@@ -518,6 +554,64 @@ ring.position.copy(pl.position);ring.setRotationFromQuaternion(q);
 sliceGrp.add(ring);
 }
 
+// Glob visualization (translucent spheres + diamond centroids)
+const globGrp=new THREE.Group();scene.add(globGrp);
+const GLOB_COLORS=['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F','#BB8FCE','#85C1E9'];
+let globsVisible=false;
+function buildGlobs(){
+while(globGrp.children.length)globGrp.remove(globGrp.children[0]);
+if(!globsVisible||!D.globs)return;
+D.globs.forEach((g,i)=>{
+const col=new THREE.Color(GLOB_COLORS[i%GLOB_COLORS.length]);
+// Translucent sphere at radius
+const sg=new THREE.SphereGeometry(g.r,16,16);
+const sm=new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.08,depthWrite:false});
+const sphere=new THREE.Mesh(sg,sm);
+sphere.position.set(g.cx,g.cy,g.cz);
+globGrp.add(sphere);
+// Wireframe ring
+const wg=new THREE.SphereGeometry(g.r,12,12);
+const wm=new THREE.MeshBasicMaterial({color:col,wireframe:true,transparent:true,opacity:0.15});
+const wire=new THREE.Mesh(wg,wm);
+wire.position.set(g.cx,g.cy,g.cz);
+globGrp.add(wire);
+// Diamond centroid marker
+const dg=new THREE.OctahedronGeometry(0.015);
+const dm=new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.8});
+const diamond=new THREE.Mesh(dg,dm);
+diamond.position.set(g.cx,g.cy,g.cz);
+diamond.userData={isGlobCenter:true,globIdx:i,glob:g};
+globGrp.add(diamond);
+meshes.push(diamond);
+});
+}
+
+// Per-query local manifold discs
+const lmGrp=new THREE.Group();scene.add(lmGrp);
+const lmDiscs=[];
+function buildLocalManifold(qi,visible){
+if(lmDiscs[qi]){lmDiscs[qi].visible=visible;return;}
+const q=D.queries[qi];if(!q||!q.lm)return;
+const lm=q.lm;
+const plGeo=new THREE.CircleGeometry(0.15,32);
+const plMat=new THREE.MeshBasicMaterial({color:0xffff44,transparent:true,opacity:0.15,side:THREE.DoubleSide,depthWrite:false});
+const disc=new THREE.Mesh(plGeo,plMat);
+disc.position.set(lm.cx,lm.cy,lm.cz);
+const normal=new THREE.Vector3(lm.nx,lm.ny,lm.nz).normalize();
+const up=new THREE.Vector3(0,0,1);
+disc.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(up,normal));
+disc.visible=visible;
+lmGrp.add(disc);
+lmDiscs[qi]=disc;
+// Edge ring
+const rGeo=new THREE.RingGeometry(0.148,0.152,32);
+const rMat=new THREE.MeshBasicMaterial({color:0xffff88,transparent:true,opacity:0.3,side:THREE.DoubleSide});
+const ring=new THREE.Mesh(rGeo,rMat);
+ring.position.copy(disc.position);ring.rotation.copy(disc.rotation);
+ring.visible=visible;
+lmGrp.add(ring);
+}
+
 // Lines group for neighbors / paths / queries
 const lineGrp=new THREE.Group();scene.add(lineGrp);
 const pathGrp=new THREE.Group();scene.add(pathGrp);
@@ -549,7 +643,25 @@ pathGrp.add(new THREE.Mesh(tGeo,tMat));
 steps.forEach(id=>{if(idMap[id])idMap[id].scale.setScalar(2.2);});
 }
 
+let globLinesShown=null;
 function selectPoint(pt){
+if(pt.isGlobCenter){
+  // Toggle: click centroid → show lines to all members, click again → hide
+  const gi=pt.globIdx;
+  if(globLinesShown===gi){clearLines();globLinesShown=null;document.getElementById('info').classList.remove('visible');return;}
+  clearLines();clearPaths();clearQueries();globLinesShown=gi;
+  const g=pt.glob;const o=new THREE.Vector3(g.cx,g.cy,g.cz);
+  g.members.forEach(mid=>{const nd=idData[mid];if(!nd)return;
+  const geo=new THREE.BufferGeometry().setFromPoints([o,new THREE.Vector3(nd.x,nd.y,nd.z)]);
+  lineGrp.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:GLOB_COLORS[gi%GLOB_COLORS.length],transparent:true,opacity:0.4})));});
+  const el=document.getElementById('info');
+  let html=`<h3>Glob ${gi}</h3><div style="font-size:12px;color:#aaa;margin-bottom:8px">${g.members.length} members · radius=${g.r.toFixed(4)}</div>`;
+  g.members.forEach(mid=>{const nd=idData[mid];if(!nd)return;const nc=COLORS[nd.cat]||'#999';
+  html+=`<div class="nb" onclick="window._sel('${mid}')"><span style="color:${nc}">●</span> ${nd.text.substring(0,65)}…</div>`;});
+  el.innerHTML=html;el.classList.add('visible');
+  return;
+}
+globLinesShown=null;
 selectedId=pt.id;drawNeighborLines(pt);clearPaths();clearQueries();
 meshes.forEach(m=>m.scale.setScalar(1));
 if(idMap[pt.id])idMap[pt.id].scale.setScalar(2.5);
@@ -595,15 +707,23 @@ meshes.forEach(m=>{m.visible=!hiddenCats.has(m.userData.cat);});
 const ctrlEl=document.getElementById('controls');
 let cH='<h3>Analysis</h3>';
 cH+=`<label class="tog"><input type="checkbox" id="sliceToggle"> Show slicing manifold (${(MF.vr*100).toFixed(1)}% variance)</label>`;
+if(D.globs){cH+=`<label class="tog"><input type="checkbox" id="globToggle"> Show concept globs (k=${D.globK}, sil=${D.globSil.toFixed(3)})</label>`;}
 if(D.queries.length){cH+='<h3 style="margin-top:12px">Queries</h3>';
-D.queries.forEach((q,i)=>{cH+=`<button class="qbtn" data-qi="${i}">"${q.desc}"</button>`;});}
+D.queries.forEach((q,i)=>{cH+=`<div style="display:flex;align-items:center;gap:4px"><button class="qbtn" data-qi="${i}" style="flex:1">"${q.desc}"</button>${q.lm?`<label class="tog" style="margin:0;white-space:nowrap"><input type="checkbox" class="lmtog" data-qi="${i}"> manifold</label>`:''}</div>`;});}
 if(D.paths.length){cH+='<h3 style="margin-top:12px">Concept Paths</h3>';
 D.paths.forEach((p,i)=>{cH+=`<button class="pbtn" data-pi="${i}">${p.src} → ${p.tgt} (${p.steps.length-1} hops)</button>`;});}
 ctrlEl.innerHTML=cH;
 
 document.getElementById('sliceToggle').addEventListener('change',e=>{sliceVisible=e.target.checked;buildSlicePlane();
-meshes.forEach(m=>{const pt=m.userData;if(sliceVisible){const a=Math.max(0.15,1-Math.abs(pt.sd)*8);m.material.opacity=a;m.material.transparent=true;}else{m.material.opacity=1;m.material.transparent=false;}});
+meshes.forEach(m=>{const pt=m.userData;if(!pt)return;if(sliceVisible&&pt.sd!==undefined){const a=Math.max(0.15,1-Math.abs(pt.sd)*8);m.material.opacity=a;m.material.transparent=true;}else{m.material.opacity=1;m.material.transparent=false;}});
 });
+
+const globToggle=document.getElementById('globToggle');
+if(globToggle)globToggle.addEventListener('change',e=>{globsVisible=e.target.checked;buildGlobs();});
+
+document.querySelectorAll('.lmtog').forEach(cb=>{cb.addEventListener('change',e=>{
+const qi=parseInt(e.target.dataset.qi);buildLocalManifold(qi,e.target.checked);
+});});
 
 ctrlEl.querySelectorAll('.qbtn').forEach(btn=>btn.addEventListener('click',()=>{
 const qi=parseInt(btn.dataset.qi);const q=D.queries[qi];

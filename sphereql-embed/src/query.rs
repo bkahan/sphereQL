@@ -381,6 +381,33 @@ impl SlicingManifold {
         ];
         d[0] * self.normal[0] + d[1] * self.normal[1] + d[2] * self.normal[2]
     }
+
+    /// Fit a local manifold around a query point using its k nearest neighbors.
+    ///
+    /// The local plane captures the shape of the semantic neighborhood:
+    /// - If variance_ratio ≈ 1.0, the neighborhood is flat (concepts spread in a plane)
+    /// - If variance_ratio ≈ 0.67, concepts are uniformly distributed (spherical)
+    /// - The normal direction reveals which semantic axis is least relevant locally
+    ///
+    /// This enables directional search narrowing: once you know the local geometry,
+    /// you can restrict subsequent queries to the dominant plane, cutting the
+    /// effective search dimensionality from 3D to 2D in that region.
+    pub fn fit_local(query: &[f64; 3], all_points: &[[f64; 3]], k: usize) -> Self {
+        let mut dists: Vec<(usize, f64)> = all_points
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (i, dist3(query, p)))
+            .collect();
+        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+        let neighborhood: Vec<[f64; 3]> = dists
+            .iter()
+            .take(k.max(3))
+            .map(|&(i, _)| all_points[i])
+            .collect();
+
+        Self::fit(&neighborhood)
+    }
 }
 
 /// Eigendecomposition of a 3×3 symmetric matrix via Jacobi rotations.
