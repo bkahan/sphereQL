@@ -17,6 +17,7 @@ use crate::types::{CartesianPoint, SphericalPoint};
 /// let db = angular_distance(&mid, &b);
 /// assert!((da - db).abs() < 1e-10);
 /// ```
+#[must_use]
 pub fn slerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
     let t = t.clamp(0.0, 1.0);
     let a_unit = SphericalPoint::new_unchecked(1.0, a.theta, a.phi);
@@ -44,6 +45,14 @@ pub fn slerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
     cartesian_to_spherical(&result)
 }
 
+/// Normalized linear interpolation between two unit-sphere points.
+///
+/// Linearly interpolates in Cartesian space, then normalizes back to the
+/// unit sphere. Faster than [`slerp`] but does not produce constant-speed
+/// traversal along the great circle arc.
+///
+/// The parameter `t` is clamped to [0, 1].
+#[must_use]
 pub fn nlerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
     let t = t.clamp(0.0, 1.0);
     let a_unit = SphericalPoint::new_unchecked(1.0, a.theta, a.phi);
@@ -61,6 +70,12 @@ pub fn nlerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
     cartesian_to_spherical(&lerped.normalize())
 }
 
+/// Full spherical linear interpolation including radius.
+///
+/// Interpolates both direction (via [`slerp`]) and radial distance
+/// (linearly between `a.r` and `b.r`). The parameter `t` is clamped
+/// to [0, 1].
+#[must_use]
 pub fn full_slerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
     let t = t.clamp(0.0, 1.0);
     let direction = slerp(a, b, t);
