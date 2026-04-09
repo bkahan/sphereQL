@@ -5,6 +5,7 @@ members = [
     "sphereql-layout",
     "sphereql-graphql",
     "sphereql-embed",
+    "sphereql-vectordb",
     "sphereql-wasm",
     "sphereql",
 ]
