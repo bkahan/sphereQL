@@ -12,7 +12,8 @@ use std::collections::HashMap;
 
 use sphereql::core::spherical_to_cartesian;
 use sphereql::embed::{
-    Embedding, EmbeddingIndex, PcaProjection, Projection, RadialStrategy, SlicingManifold,
+    Embedding, EmbeddingIndex, GlobResult, PcaProjection, Projection, RadialStrategy,
+    SlicingManifold,
 };
 
 struct Sent {
@@ -160,6 +161,36 @@ fn main() {
         "\nSlicing manifold: {:.1}% variance captured in 2D plane",
         manifold.variance_ratio * 100.0
     );
+
+    // ── Concept Globs (auto-k via silhouette) ───────────────────────────
+    let all_ids: Vec<String> = sentences.iter().map(|s| s.id.clone()).collect();
+    let glob_result = GlobResult::detect(&cart_points, &all_ids, None, 15);
+    println!(
+        "\nConcept Globs: auto-detected k={} (silhouette={:.3})",
+        glob_result.k, glob_result.silhouette,
+    );
+
+    for glob in &glob_result.globs {
+        // Which NLI categories dominate this glob?
+        let mut glob_cats: HashMap<&str, usize> = HashMap::new();
+        for mid in &glob.member_ids {
+            if let Some(s) = sentences.iter().find(|s| s.id == *mid) {
+                *glob_cats.entry(&s.cat).or_default() += 1;
+            }
+        }
+        let mut gc: Vec<_> = glob_cats.iter().collect();
+        gc.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
+        let top_cats: String = gc.iter().take(3).map(|(c, n)| format!("{c}({n})")).collect::<Vec<_>>().join(", ");
+
+        println!(
+            "  Glob {:>2}: {:>3} members, radius={:.4}, top: {}",
+            glob.id, glob.member_ids.len(), glob.radius, top_cats,
+        );
+    }
+
+    // Compare auto-detected globs vs NLI categories
+    println!("\n  (Globs are purely geometric — derived from 3D positions,");
+    println!("   not from NLI labels. Agreement shows the projection preserves structure.)");
 
     println!(
         "\n✓ {} sentences auto-categorized into {} categories by {classifier}",

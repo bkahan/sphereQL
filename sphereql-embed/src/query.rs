@@ -462,6 +462,251 @@ fn eigen_symmetric_3x3(m: &[[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
     (sorted_vals, sorted_vecs)
 }
 
+// --- Concept Globs (spherical k-means + silhouette auto-k) ---
+
+/// A cluster of semantically related embeddings in the projected 3D space.
+#[derive(Debug, Clone)]
+pub struct ConceptGlob {
+    pub id: usize,
+    pub centroid: [f64; 3],
+    pub member_ids: Vec<String>,
+    pub member_distances: Vec<f64>,
+    pub radius: f64,
+}
+
+/// Result of glob detection: the set of all globs plus quality metrics.
+#[derive(Debug, Clone)]
+pub struct GlobResult {
+    pub globs: Vec<ConceptGlob>,
+    pub k: usize,
+    pub silhouette: f64,
+}
+
+impl GlobResult {
+    /// Detect concept globs from 3D projected points.
+    ///
+    /// If `k` is `Some`, uses that many clusters.
+    /// If `None`, auto-selects k ∈ [2, max_k] by maximizing the silhouette score.
+    pub fn detect(
+        points: &[[f64; 3]],
+        ids: &[String],
+        k: Option<usize>,
+        max_k: usize,
+    ) -> Self {
+        let n = points.len();
+        assert_eq!(n, ids.len());
+        assert!(n >= 2, "need at least 2 points for clustering");
+
+        let max_k = max_k.min(n);
+
+        if let Some(k) = k {
+            let k = k.clamp(2, max_k);
+            let (assignments, silhouette) = kmeans_3d(points, k);
+            let globs = build_globs(points, ids, &assignments, k);
+            return Self {
+                globs,
+                k,
+                silhouette,
+            };
+        }
+
+        // Auto-detect: try k = 2..=max_k, pick best silhouette
+        let mut best_k = 2;
+        let mut best_sil = f64::NEG_INFINITY;
+        let mut best_assignments = vec![0usize; n];
+
+        for trial_k in 2..=max_k {
+            let (assignments, sil) = kmeans_3d(points, trial_k);
+            if sil > best_sil {
+                best_sil = sil;
+                best_k = trial_k;
+                best_assignments = assignments;
+            }
+        }
+
+        let globs = build_globs(points, ids, &best_assignments, best_k);
+        Self {
+            globs,
+            k: best_k,
+            silhouette: best_sil,
+        }
+    }
+}
+
+fn kmeans_3d(points: &[[f64; 3]], k: usize) -> (Vec<usize>, f64) {
+    let n = points.len();
+    let max_iter = 50;
+
+    // Init: spread initial centers evenly across the point set
+    let mut centers: Vec<[f64; 3]> = (0..k)
+        .map(|i| points[i * n / k])
+        .collect();
+
+    let mut assignments = vec![0usize; n];
+
+    for _ in 0..max_iter {
+        let mut changed = false;
+
+        // Assign
+        for (i, p) in points.iter().enumerate() {
+            let mut best = 0;
+            let mut best_d = f64::MAX;
+            for (j, c) in centers.iter().enumerate() {
+                let d = dist3(p, c);
+                if d < best_d {
+                    best_d = d;
+                    best = j;
+                }
+            }
+            if assignments[i] != best {
+                assignments[i] = best;
+                changed = true;
+            }
+        }
+
+        if !changed {
+            break;
+        }
+
+        // Update centers
+        let mut sums = vec![[0.0f64; 3]; k];
+        let mut counts = vec![0usize; k];
+        for (i, &a) in assignments.iter().enumerate() {
+            for d in 0..3 {
+                sums[a][d] += points[i][d];
+            }
+            counts[a] += 1;
+        }
+        for j in 0..k {
+            if counts[j] > 0 {
+                for d in 0..3 {
+                    centers[j][d] = sums[j][d] / counts[j] as f64;
+                }
+            }
+        }
+    }
+
+    let sil = silhouette_score(points, &assignments, k);
+    (assignments, sil)
+}
+
+fn silhouette_score(points: &[[f64; 3]], assignments: &[usize], k: usize) -> f64 {
+    let n = points.len();
+    if n <= 1 || k <= 1 {
+        return 0.0;
+    }
+
+    let mut total = 0.0;
+    for i in 0..n {
+        let ci = assignments[i];
+
+        // a(i): mean dist to same-cluster members
+        let mut a_sum = 0.0;
+        let mut a_cnt = 0;
+        for j in 0..n {
+            if j != i && assignments[j] == ci {
+                a_sum += dist3(&points[i], &points[j]);
+                a_cnt += 1;
+            }
+        }
+        let a = if a_cnt > 0 { a_sum / a_cnt as f64 } else { 0.0 };
+
+        // b(i): min mean dist to any other cluster
+        let mut b = f64::MAX;
+        for ck in 0..k {
+            if ck == ci {
+                continue;
+            }
+            let mut b_sum = 0.0;
+            let mut b_cnt = 0;
+            for j in 0..n {
+                if assignments[j] == ck {
+                    b_sum += dist3(&points[i], &points[j]);
+                    b_cnt += 1;
+                }
+            }
+            if b_cnt > 0 {
+                b = b.min(b_sum / b_cnt as f64);
+            }
+        }
+        if b == f64::MAX {
+            b = 0.0;
+        }
+
+        let denom = a.max(b);
+        total += if denom > 0.0 { (b - a) / denom } else { 0.0 };
+    }
+
+    total / n as f64
+}
+
+fn build_globs(
+    points: &[[f64; 3]],
+    ids: &[String],
+    assignments: &[usize],
+    k: usize,
+) -> Vec<ConceptGlob> {
+    let mut globs = Vec::with_capacity(k);
+
+    for cluster_id in 0..k {
+        let member_indices: Vec<usize> = assignments
+            .iter()
+            .enumerate()
+            .filter(|&(_, &a)| a == cluster_id)
+            .map(|(i, _)| i)
+            .collect();
+
+        if member_indices.is_empty() {
+            continue;
+        }
+
+        // Centroid
+        let mut centroid = [0.0; 3];
+        for &i in &member_indices {
+            for d in 0..3 {
+                centroid[d] += points[i][d];
+            }
+        }
+        let n = member_indices.len() as f64;
+        for c in &mut centroid {
+            *c /= n;
+        }
+
+        // Member distances from centroid
+        let member_distances: Vec<f64> = member_indices
+            .iter()
+            .map(|&i| dist3(&points[i], &centroid))
+            .collect();
+
+        let radius = member_distances
+            .iter()
+            .cloned()
+            .fold(0.0f64, f64::max);
+
+        let member_ids: Vec<String> = member_indices
+            .iter()
+            .map(|&i| ids[i].clone())
+            .collect();
+
+        globs.push(ConceptGlob {
+            id: cluster_id,
+            centroid,
+            member_ids,
+            member_distances,
+            radius,
+        });
+    }
+
+    globs
+}
+
+fn dist3(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    let dx = a[0] - b[0];
+    let dy = a[1] - b[1];
+    let dz = a[2] - b[2];
+    (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
 /// Builds SphereQL [`Region`]s from semantic constraints on embeddings.
 pub struct SemanticQuery;
 
