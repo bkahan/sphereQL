@@ -1151,6 +1151,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sphereql-embed"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sphereql-core",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "sphereql-graphql"
 version = "0.1.0"
 dependencies = [

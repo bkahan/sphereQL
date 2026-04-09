@@ -1,0 +1,17 @@
+[package]
+name = "sphereql-embed"
+description = "High-dimensional vector embedding to the 2-sphere via orthonormal random projection"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sphereql-core = { path = "../sphereql-core" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[dev-dependencies]
+approx = "0.5"
+proptest = "1"
+serde_json = "1"
