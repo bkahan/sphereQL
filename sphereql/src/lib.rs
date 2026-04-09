@@ -13,6 +13,11 @@ pub mod layout {
     pub use sphereql_layout::*;
 }
 
+#[cfg(feature = "embed")]
+pub mod embed {
+    pub use sphereql_embed::*;
+}
+
 #[cfg(feature = "graphql")]
 pub mod graphql {
     pub use sphereql_graphql::*;

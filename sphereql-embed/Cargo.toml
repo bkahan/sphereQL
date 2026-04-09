@@ -1,0 +1,15 @@
+[package]
+name = "sphereql-embed"
+description = "Vector embedding projection engine for sphereQL"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sphereql-core = { path = "../sphereql-core" }
+sphereql-index = { path = "../sphereql-index" }
+sphereql-layout = { path = "../sphereql-layout" }
+
+[dev-dependencies]
+approx = "0.5"
