@@ -357,7 +357,11 @@ fn main() {
 
     // ── 8. Generate visualization ───────────────────────────────────────
     eprintln!("\nGenerating visualization...");
-    let data_json = build_viz_json(&projected, &query_results, &paths, &manifold, &glob_result, &sentences);
+
+    // Compute minimum bounding sphere of all points
+    let (bsphere_center, bsphere_radius) = bounding_sphere(&cart_points);
+
+    let data_json = build_viz_json(&projected, &query_results, &paths, &manifold, &glob_result, &sentences, &bsphere_center, bsphere_radius);
     let html = VIZ_TEMPLATE.replace("__DATA_PLACEHOLDER__", &data_json);
     std::fs::write(&output_path, &html)
         .unwrap_or_else(|e| panic!("Cannot write {output_path}: {e}"));
@@ -377,6 +381,36 @@ fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Minimum bounding sphere via Ritter's algorithm.
+fn bounding_sphere(points: &[[f64; 3]]) -> ([f64; 3], f64) {
+    if points.is_empty() {
+        return ([0.0; 3], 0.0);
+    }
+    // Start with centroid
+    let n = points.len() as f64;
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+    let mut cz = 0.0;
+    for p in points {
+        cx += p[0];
+        cy += p[1];
+        cz += p[2];
+    }
+    cx /= n;
+    cy /= n;
+    cz /= n;
+
+    // Radius = max distance from centroid to any point
+    let mut r = 0.0f64;
+    for p in points {
+        let d = ((p[0] - cx).powi(2) + (p[1] - cy).powi(2) + (p[2] - cz).powi(2)).sqrt();
+        r = r.max(d);
+    }
+
+    ([cx, cy, cz], r)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_viz_json(
     points: &[ProjectedPoint],
     queries: &[impl AsQueryResult],
@@ -384,6 +418,8 @@ fn build_viz_json(
     manifold: &SlicingManifold,
     globs: &GlobResult,
     sentences: &[Sentence],
+    bsphere_center: &[f64; 3],
+    bsphere_radius: f64,
 ) -> String {
     let pts: Vec<String> = points
         .iter()
@@ -457,7 +493,7 @@ fn build_viz_json(
     }).collect();
 
     format!(
-        "{{\"points\":[{}],\"queries\":[{}],\"paths\":[{}],\"manifold\":{},\"globs\":[{}],\"globK\":{},\"globSil\":{:.4}}}",
+        "{{\"points\":[{}],\"queries\":[{}],\"paths\":[{}],\"manifold\":{},\"globs\":[{}],\"globK\":{},\"globSil\":{:.4},\"bsphere\":{{\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"r\":{:.6}}}}}",
         pts.join(","),
         qs.join(","),
         ps.join(","),
@@ -465,6 +501,7 @@ fn build_viz_json(
         gs.join(","),
         globs.k,
         globs.silhouette,
+        bsphere_center[0], bsphere_center[1], bsphere_center[2], bsphere_radius,
     )
 }
 
@@ -595,12 +632,27 @@ ring.position.copy(pl.position);ring.setRotationFromQuaternion(q);
 sliceGrp.add(ring);
 }
 
+// Bounding sphere — visible when globs are off
+const BS=D.bsphere;
+const bsGrp=new THREE.Group();scene.add(bsGrp);
+const bsSphGeo=new THREE.SphereGeometry(BS.r,32,32);
+const bsSphMat=new THREE.MeshBasicMaterial({color:0x4466aa,transparent:true,opacity:0.06,depthWrite:false});
+const bsSph=new THREE.Mesh(bsSphGeo,bsSphMat);
+bsSph.position.set(BS.cx,BS.cy,BS.cz);
+bsGrp.add(bsSph);
+const bsWireGeo=new THREE.SphereGeometry(BS.r,24,24);
+const bsWireMat=new THREE.MeshBasicMaterial({color:0x4466aa,wireframe:true,transparent:true,opacity:0.1});
+const bsWire=new THREE.Mesh(bsWireGeo,bsWireMat);
+bsWire.position.set(BS.cx,BS.cy,BS.cz);
+bsGrp.add(bsWire);
+
 // Glob visualization (translucent spheres + diamond centroids)
 const globGrp=new THREE.Group();scene.add(globGrp);
 const GLOB_COLORS=['#FF6B6B','#4ECDC4','#45B7D1','#96CEB4','#FFEAA7','#DDA0DD','#98D8C8','#F7DC6F','#BB8FCE','#85C1E9'];
 let globsVisible=false;
 function buildGlobs(){
 while(globGrp.children.length)globGrp.remove(globGrp.children[0]);
+bsGrp.visible=!globsVisible;
 if(!globsVisible||!D.globs)return;
 D.globs.forEach((g,i)=>{
 const col=new THREE.Color(GLOB_COLORS[i%GLOB_COLORS.length]);
@@ -629,9 +681,9 @@ meshes.push(diamond);
 
 // Per-query local manifold discs
 const lmGrp=new THREE.Group();scene.add(lmGrp);
-const lmDiscs=[];
+const lmPairs=[];// each entry: {disc, ring}
 function buildLocalManifold(qi,visible){
-if(lmDiscs[qi]){lmDiscs[qi].visible=visible;return;}
+if(lmPairs[qi]){lmPairs[qi].disc.visible=visible;lmPairs[qi].ring.visible=visible;return;}
 const q=D.queries[qi];if(!q||!q.lm)return;
 const lm=q.lm;
 const plGeo=new THREE.CircleGeometry(0.15,32);
@@ -643,14 +695,13 @@ const up=new THREE.Vector3(0,0,1);
 disc.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(up,normal));
 disc.visible=visible;
 lmGrp.add(disc);
-lmDiscs[qi]=disc;
-// Edge ring
 const rGeo=new THREE.RingGeometry(0.148,0.152,32);
 const rMat=new THREE.MeshBasicMaterial({color:0xffff88,transparent:true,opacity:0.3,side:THREE.DoubleSide});
 const ring=new THREE.Mesh(rGeo,rMat);
 ring.position.copy(disc.position);ring.rotation.copy(disc.rotation);
 ring.visible=visible;
 lmGrp.add(ring);
+lmPairs[qi]={disc,ring};
 }
 
 // Lines group for neighbors / paths / queries
