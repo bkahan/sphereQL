@@ -11,13 +11,15 @@ default = ["core"]
 core = ["dep:sphereql-core"]
 index = ["core", "dep:sphereql-index"]
 layout = ["index", "dep:sphereql-layout"]
+embed = ["layout", "dep:sphereql-embed"]
 graphql = ["index", "dep:sphereql-graphql"]
-full = ["core", "index", "layout", "graphql"]
+full = ["core", "index", "layout", "embed", "graphql"]
 
 [dependencies]
 sphereql-core = { path = "../sphereql-core", optional = true }
 sphereql-index = { path = "../sphereql-index", optional = true }
 sphereql-layout = { path = "../sphereql-layout", optional = true }
+sphereql-embed = { path = "../sphereql-embed", optional = true }
 sphereql-graphql = { path = "../sphereql-graphql", optional = true }
 serde_json = "1"
 
@@ -35,3 +37,19 @@ required-features = ["index"]
 [[example]]
 name = "graphql_server"
 required-features = ["full"]
+
+[[example]]
+name = "word_embeddings"
+required-features = ["embed"]
+
+[[example]]
+name = "semantic_search"
+required-features = ["embed"]
+
+[[example]]
+name = "e2e_transformer"
+required-features = ["embed"]
+
+[[example]]
+name = "auto_categorize"
+required-features = ["embed"]
