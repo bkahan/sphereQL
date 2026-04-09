@@ -37,3 +37,11 @@ required-features = ["index"]
 [[example]]
 name = "graphql_server"
 required-features = ["full"]
+
+[[example]]
+name = "word_embeddings"
+required-features = ["embed"]
+
+[[example]]
+name = "semantic_search"
+required-features = ["embed"]
