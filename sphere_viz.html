@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SphereQL — Semantic Embedding Visualization</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
+#c{position:absolute;top:0;left:0}
+#legend{position:absolute;top:16px;left:16px;background:rgba(10,10,30,0.85);padding:14px 18px;border-radius:10px;font-size:13px;pointer-events:auto;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08)}
+#legend h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:0.5px}
+.lrow{display:flex;align-items:center;gap:8px;margin:4px 0;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .15s}
+.lrow:hover{background:rgba(255,255,255,0.08)}
+.lrow.dim{opacity:0.25}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.lbl{font-size:12px}
+.lcnt{font-size:11px;color:#888;margin-left:auto}
+#info{position:absolute;top:16px;right:16px;width:340px;max-height:calc(100vh - 32px);overflow-y:auto;background:rgba(10,10,30,0.88);padding:18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);display:none}
+#info.visible{display:block}
+#info h3{font-size:15px;margin-bottom:6px;font-weight:600}
+#info .cat-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;margin-bottom:8px}
+#info .txt{font-size:13px;line-height:1.5;color:#ccc;margin-bottom:12px}
+#info .neighbors h4{font-size:12px;color:#888;margin-bottom:6px;font-weight:500}
+#info .nb{padding:6px 8px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;cursor:pointer;transition:background .15s}
+#info .nb:hover{background:rgba(255,255,255,0.1)}
+#info .nb .dist{color:#888;font-size:11px;float:right}
+#queries{position:absolute;bottom:16px;left:16px;background:rgba(10,10,30,0.85);padding:14px 18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08)}
+#queries h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:0.5px}
+.qbtn{display:block;padding:6px 10px;margin:4px 0;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#ddd;cursor:pointer;font-size:12px;text-align:left;width:100%;transition:background .15s}
+.qbtn:hover{background:rgba(255,255,255,0.12)}
+.qbtn.active{background:rgba(100,180,255,0.15);border-color:rgba(100,180,255,0.3)}
+#help{position:absolute;bottom:16px;right:16px;font-size:11px;color:#555;text-align:right;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="legend"></div>
+<div id="info"></div>
+<div id="queries"></div>
+<div id="help">drag to rotate · scroll to zoom · click a point to inspect</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.163.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.163.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const DATA = {"points":[{"id":"sci-1","text":"The speed of light in a vacuum is approximately 299,792 kilometers per second.","cat":"science","t":3.705635,"p":1.157281,"r":1.0000,"n":["sci-3","sci-6","cook-5","sci-4","sci-7"]},{"id":"sci-2","text":"DNA contains the genetic instructions for the development of all known living organisms.","cat":"science","t":5.058698,"p":0.497379,"r":1.0000,"n":["sci-5","tech-8","tech-1","tech-4","tech-2"]},{"id":"sci-3","text":"Quantum entanglement allows particles to be correlated instantaneously across vast distances.","cat":"science","t":3.832767,"p":0.629174,"r":1.0000,"n":["tech-7","tech-4","tech-6","sci-1","tech-8"]},{"id":"sci-4","text":"Einstein's theory of general relativity describes gravity as the curvature of spacetime.","cat":"science","t":3.908638,"p":1.811624,"r":1.0000,"n":["sci-6","art-4","sci-7","cook-5","cook-4"]},{"id":"sci-5","text":"The human brain contains approximately 86 billion neurons connected by trillions of synapses.","cat":"science","t":5.290222,"p":0.501343,"r":1.0000,"n":["sci-2","tech-1","tech-8","tech-2","tech-4"]},{"id":"sci-6","text":"Photosynthesis converts sunlight into chemical energy stored in glucose molecules.","cat":"science","t":4.143796,"p":1.499037,"r":1.0000,"n":["sci-7","sci-4","nat-4","sci-8","sci-1"]},{"id":"sci-7","text":"Black holes are regions of spacetime where gravity is so strong that nothing can escape.","cat":"science","t":4.294077,"p":1.581287,"r":1.0000,"n":["sci-6","nat-4","sci-8","sci-4","nat-2"]},{"id":"sci-8","text":"The periodic table organizes chemical elements by their atomic number and electron configuration.","cat":"science","t":4.515482,"p":1.223176,"r":1.0000,"n":["nat-4","sci-7","sci-6","nat-2","nat-5"]},{"id":"tech-1","text":"Machine learning algorithms improve their performance by training on large datasets.","cat":"technology","t":5.544081,"p":0.565348,"r":1.0000,"n":["sci-5","tech-2","sci-2","tech-8","tech-5"]},{"id":"tech-2","text":"The internet connects billions of devices through a global network of computer systems.","cat":"technology","t":6.000877,"p":0.464878,"r":1.0000,"n":["tech-1","tech-5","sci-5","tech-8","sci-2"]},{"id":"tech-3","text":"Artificial intelligence can now generate realistic images and human-like text responses.","cat":"technology","t":1.671934,"p":0.539950,"r":1.0000,"n":["tech-5","hist-3","art-7","tech-6","tech-7"]},{"id":"tech-4","text":"Blockchain technology provides a decentralized and tamper-resistant digital ledger system.","cat":"technology","t":4.239394,"p":0.262467,"r":1.0000,"n":["tech-6","tech-7","tech-8","sci-2","sci-3"]},{"id":"tech-5","text":"Autonomous vehicles use sensors and algorithms to navigate roads without human input.","cat":"technology","t":0.239167,"p":0.209771,"r":1.0000,"n":["tech-2","tech-6","tech-8","tech-4","tech-7"]},{"id":"tech-6","text":"Cloud computing allows on-demand access to shared computing resources over the internet.","cat":"technology","t":4.127364,"p":0.126245,"r":1.0000,"n":["tech-4","tech-7","tech-8","tech-5","sci-2"]},{"id":"tech-7","text":"Quantum computers use qubits to solve certain problems exponentially faster than classical machines.","cat":"technology","t":3.468040,"p":0.257354,"r":1.0000,"n":["tech-6","tech-4","tech-8","sci-3","tech-5"]},{"id":"tech-8","text":"Cybersecurity protects computer systems and networks from digital attacks and data breaches.","cat":"technology","t":5.081002,"p":0.281332,"r":1.0000,"n":["sci-2","tech-4","tech-6","sci-5","tech-5"]},{"id":"sport-1","text":"The Olympic Games bring together athletes from around the world to compete every four years.","cat":"sports","t":6.161513,"p":1.987501,"r":1.0000,"n":["sport-7","sport-4","nat-3","nat-6","sport-3"]},{"id":"sport-2","text":"A marathon covers 26.2 miles and tests the endurance limits of long-distance runners.","cat":"sports","t":5.521717,"p":2.246871,"r":1.0000,"n":["sport-5","sport-6","sport-3","nat-3","sport-7"]},{"id":"sport-3","text":"Basketball requires teamwork, agility, and precise shooting to outscore the opponent.","cat":"sports","t":6.171231,"p":2.417159,"r":1.0000,"n":["sport-6","sport-5","sport-7","art-5","sport-1"]},{"id":"sport-4","text":"Soccer is the most popular sport in the world with over four billion fans.","cat":"sports","t":0.033705,"p":1.756964,"r":1.0000,"n":["nat-6","sport-1","sport-7","nat-3","art-5"]},{"id":"sport-5","text":"Tennis matches can last for hours as players rally the ball across the net.","cat":"sports","t":5.827335,"p":2.373942,"r":1.0000,"n":["sport-6","sport-3","sport-2","sport-7","sport-1"]},{"id":"sport-6","text":"Swimming is an excellent full-body cardiovascular exercise suitable for all ages.","cat":"sports","t":6.078889,"p":2.445194,"r":1.0000,"n":["sport-3","sport-5","sport-7","art-5","sport-2"]},{"id":"sport-7","text":"Professional athletes dedicate years of intense training to compete at the highest level.","cat":"sports","t":6.236454,"p":2.158117,"r":1.0000,"n":["sport-1","sport-3","sport-6","art-5","sport-5"]},{"id":"cook-1","text":"Preheat the oven to 375 degrees and line the baking sheet with parchment paper.","cat":"cooking","t":3.259672,"p":1.730273,"r":1.0000,"n":["cook-6","cook-5","cook-3","cook-7","cook-4"]},{"id":"cook-2","text":"Fresh herbs like basil and cilantro add vibrant flavor to almost any dish.","cat":"cooking","t":3.110349,"p":2.118316,"r":1.0000,"n":["cook-3","art-1","cook-4","cook-6","cook-7"]},{"id":"cook-3","text":"A good risotto requires patience and constant stirring to achieve a creamy texture.","cat":"cooking","t":3.083210,"p":1.985764,"r":1.0000,"n":["art-1","cook-2","cook-7","cook-6","cook-1"]},{"id":"cook-4","text":"Marinating meat overnight allows the flavors to penetrate deeply into the protein.","cat":"cooking","t":3.411799,"p":2.078811,"r":1.0000,"n":["cook-6","cook-2","cook-3","cook-5","art-4"]},{"id":"cook-5","text":"The secret to a perfect pie crust is using very cold butter and minimal handling.","cat":"cooking","t":3.437421,"p":1.746852,"r":1.0000,"n":["cook-1","cook-6","cook-4","cook-3","sci-4"]},{"id":"cook-6","text":"Sauteing onions slowly until caramelized brings out their natural sweetness.","cat":"cooking","t":3.292246,"p":1.870074,"r":1.0000,"n":["cook-1","cook-5","cook-3","cook-4","cook-2"]},{"id":"cook-7","text":"Homemade pasta has a remarkably different taste and texture from store-bought varieties.","cat":"cooking","t":2.942792,"p":1.817282,"r":1.0000,"n":["cook-3","art-1","cook-1","cook-2","cook-6"]},{"id":"art-1","text":"Beethoven composed his magnificent Ninth Symphony while almost completely deaf.","cat":"arts","t":2.974642,"p":2.034723,"r":1.0000,"n":["cook-3","cook-2","cook-7","cook-6","cook-4"]},{"id":"art-2","text":"Jazz music originated in New Orleans blending African rhythms with European harmony.","cat":"arts","t":2.140200,"p":2.516987,"r":1.0000,"n":["art-6","art-1","cook-2","art-3","hist-5"]},{"id":"art-3","text":"The Impressionist painters captured light and atmosphere with loose, visible brushstrokes.","cat":"arts","t":2.101226,"p":1.726033,"r":1.0000,"n":["hist-2","hist-1","hist-6","hist-4","art-2"]},{"id":"art-4","text":"A symphony orchestra typically includes strings, woodwinds, brass, and percussion sections.","cat":"arts","t":3.822955,"p":2.227089,"r":1.0000,"n":["cook-4","sci-4","cook-6","cook-5","cook-2"]},{"id":"art-5","text":"Shakespeare's plays have been performed continuously around the world for over four centuries.","cat":"arts","t":0.346621,"p":2.277084,"r":1.0000,"n":["sport-7","sport-3","sport-6","sport-1","sport-5"]},{"id":"art-6","text":"Modern dance breaks away from classical ballet with expressive, free-form movement.","cat":"arts","t":1.377900,"p":2.369101,"r":1.0000,"n":["hist-5","art-2","hist-1","hist-6","art-5"]},{"id":"art-7","text":"Photography transformed how humanity documents and shares visual experiences.","cat":"arts","t":1.390076,"p":1.090691,"r":1.0000,"n":["hist-4","hist-3","hist-2","tech-3","hist-6"]},{"id":"nat-1","text":"The Amazon rainforest produces about twenty percent of the world's oxygen supply.","cat":"nature","t":5.286692,"p":1.383558,"r":1.0000,"n":["nat-7","nat-5","nat-2","nat-4","nat-3"]},{"id":"nat-2","text":"Coral reefs support more species per unit area than any other marine environment.","cat":"nature","t":4.764554,"p":1.640588,"r":1.0000,"n":["nat-5","nat-4","sci-7","sci-8","nat-7"]},{"id":"nat-3","text":"Bird migration patterns span thousands of miles across multiple continents each year.","cat":"nature","t":5.899812,"p":1.815835,"r":1.0000,"n":["sport-1","nat-6","sport-4","sport-7","sport-2"]},{"id":"nat-4","text":"Volcanic eruptions release gases and molten rock from deep within the Earth's mantle.","cat":"nature","t":4.561853,"p":1.535742,"r":1.0000,"n":["nat-2","sci-7","sci-8","sci-6","nat-5"]},{"id":"nat-5","text":"Ocean currents play a crucial role in regulating global climate and weather patterns.","cat":"nature","t":4.987169,"p":1.681894,"r":1.0000,"n":["nat-2","nat-7","nat-1","nat-4","sci-8"]},{"id":"nat-6","text":"Old-growth forests contain complex ecosystems that have developed over centuries.","cat":"nature","t":6.190848,"p":1.662391,"r":1.0000,"n":["sport-4","nat-3","sport-1","sport-7","art-5"]},{"id":"nat-7","text":"The water cycle continuously moves water between the atmosphere, land, and oceans.","cat":"nature","t":5.288665,"p":1.457714,"r":1.0000,"n":["nat-1","nat-5","nat-2","nat-3","nat-4"]},{"id":"hist-1","text":"The Renaissance saw a dramatic revival of art, science, and classical learning in Europe.","cat":"history","t":1.451147,"p":1.812480,"r":1.0000,"n":["hist-6","hist-5","hist-2","art-6","hist-4"]},{"id":"hist-2","text":"The Industrial Revolution transformed manufacturing through steam power and mechanization.","cat":"history","t":1.662130,"p":1.313837,"r":1.0000,"n":["hist-4","art-7","hist-6","hist-1","art-3"]},{"id":"hist-3","text":"Ancient Rome built an extensive network of roads and aqueducts across its vast empire.","cat":"history","t":1.046524,"p":0.939094,"r":1.0000,"n":["art-7","hist-4","tech-3","hist-2","tech-5"]},{"id":"hist-4","text":"The invention of the printing press revolutionized the spread of knowledge and literacy.","cat":"history","t":1.525454,"p":1.211942,"r":1.0000,"n":["hist-2","art-7","hist-3","hist-6","hist-1"]},{"id":"hist-5","text":"European exploration in the fifteenth century established new trade routes across the globe.","cat":"history","t":1.215427,"p":1.982294,"r":1.0000,"n":["hist-1","hist-6","art-6","art-5","hist-2"]},{"id":"hist-6","text":"The French Revolution fundamentally transformed the political structure of France and Europe.","cat":"history","t":1.387246,"p":1.730602,"r":1.0000,"n":["hist-1","hist-5","hist-2","hist-4","art-6"]}],"queries":[{"desc":"How does gravity work in space?","t":4.332157,"p":1.839032,"hits":[{"id":"sci-7","d":0.2605,"cat":"science"},{"id":"nat-4","d":0.3790,"cat":"nature"},{"id":"sci-6","d":0.3878,"cat":"science"},{"id":"sci-4","d":0.4106,"cat":"science"},{"id":"nat-2","d":0.4694,"cat":"nature"}]},{"desc":"What recipes should I try for dinner?","t":3.060484,"p":2.049075,"hits":[{"id":"cook-3","d":0.0665,"cat":"cooking"},{"id":"art-1","d":0.0778,"cat":"arts"},{"id":"cook-2","d":0.0817,"cat":"cooking"},{"id":"cook-7","d":0.2564,"cat":"cooking"},{"id":"cook-6","d":0.2790,"cat":"cooking"}]},{"desc":"Tell me about famous musicians and composers","t":1.851655,"p":2.145575,"hits":[{"id":"art-2","d":0.4238,"cat":"arts"},{"id":"art-6","d":0.4260,"cat":"arts"},{"id":"art-3","d":0.4787,"cat":"arts"},{"id":"hist-1","d":0.4938,"cat":"history"},{"id":"hist-5","d":0.5805,"cat":"history"}]}]};
+
+const COLORS = {
+    science:'#2196F3', technology:'#9C27B0', sports:'#FF5722',
+    cooking:'#FF9800', arts:'#4CAF50', nature:'#009688', history:'#795548'
+};
+
+// ---- Scene setup ----
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a1a);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(0, 0.8, 2.8);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 6;
+
+// ---- Lighting ----
+scene.add(new THREE.AmbientLight(0x404060, 1.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(3, 5, 4);
+scene.add(dirLight);
+
+// ---- Reference sphere (wireframe) ----
+const wireGeo = new THREE.IcosahedronGeometry(1, 4);
+const wireMat = new THREE.MeshBasicMaterial({color:0x334466, wireframe:true, transparent:true, opacity:0.08});
+scene.add(new THREE.Mesh(wireGeo, wireMat));
+
+// Equator ring
+const eqGeo = new THREE.RingGeometry(0.998, 1.002, 128);
+const eqMat = new THREE.MeshBasicMaterial({color:0x445588, transparent:true, opacity:0.2, side:THREE.DoubleSide});
+const eqRing = new THREE.Mesh(eqGeo, eqMat);
+eqRing.rotation.x = Math.PI / 2;
+scene.add(eqRing);
+
+// ---- Coordinate conversion (SphereQL physics convention) ----
+function sph2cart(theta, phi, r) {
+    r = r || 1;
+    return new THREE.Vector3(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.cos(phi),                     // Y-up for Three.js (swap y/z)
+        r * Math.sin(phi) * Math.sin(theta)
+    );
+}
+
+// ---- Build point meshes ----
+const pointGroup = new THREE.Group();
+scene.add(pointGroup);
+const meshes = [];
+const idToMesh = {};
+const idToData = {};
+
+const sphereGeo = new THREE.SphereGeometry(0.018, 12, 12);
+
+DATA.points.forEach(pt => {
+    const color = new THREE.Color(COLORS[pt.cat] || '#ffffff');
+    const mat = new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.4, roughness:0.5});
+    const mesh = new THREE.Mesh(sphereGeo, mat);
+    const pos = sph2cart(pt.t, pt.p);
+    mesh.position.copy(pos);
+    mesh.userData = pt;
+    pointGroup.add(mesh);
+    meshes.push(mesh);
+    idToMesh[pt.id] = mesh;
+    idToData[pt.id] = pt;
+});
+
+// ---- Neighbor lines (toggled on selection) ----
+const lineGroup = new THREE.Group();
+scene.add(lineGroup);
+let selectedId = null;
+
+function clearLines() {
+    while (lineGroup.children.length) lineGroup.remove(lineGroup.children[0]);
+}
+
+function drawNeighborLines(pt) {
+    clearLines();
+    const origin = sph2cart(pt.t, pt.p);
+    pt.n.forEach(nid => {
+        const nd = idToData[nid];
+        if (!nd) return;
+        const dest = sph2cart(nd.t, nd.p);
+        const geo = new THREE.BufferGeometry().setFromPoints([origin, dest]);
+        const mat = new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.35});
+        lineGroup.add(new THREE.Line(geo, mat));
+    });
+}
+
+// ---- Query markers ----
+const queryGroup = new THREE.Group();
+scene.add(queryGroup);
+
+function showQueryOnSphere(q) {
+    while (queryGroup.children.length) queryGroup.remove(queryGroup.children[0]);
+    // Query point
+    const qMat = new THREE.MeshBasicMaterial({color:0xffff00});
+    const qMesh = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 12), qMat);
+    qMesh.position.copy(sph2cart(q.t, q.p));
+    queryGroup.add(qMesh);
+    // Lines to hits
+    q.hits.forEach(h => {
+        const nd = idToData[h.id];
+        if (!nd) return;
+        const geo = new THREE.BufferGeometry().setFromPoints([sph2cart(q.t, q.p), sph2cart(nd.t, nd.p)]);
+        const mat = new THREE.LineBasicMaterial({color:0xffff44, transparent:true, opacity:0.5});
+        queryGroup.add(new THREE.Line(geo, mat));
+    });
+}
+
+// ---- Raycaster ----
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hoveredMesh = null;
+
+canvas.addEventListener('mousemove', e => {
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+});
+
+canvas.addEventListener('click', () => {
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(meshes);
+    if (hits.length) {
+        const pt = hits[0].object.userData;
+        selectPoint(pt);
+    }
+});
+
+function selectPoint(pt) {
+    selectedId = pt.id;
+    drawNeighborLines(pt);
+    // Reset scales
+    meshes.forEach(m => m.scale.setScalar(1));
+    // Highlight selected + neighbors
+    if (idToMesh[pt.id]) idToMesh[pt.id].scale.setScalar(2.5);
+    pt.n.forEach(nid => { if (idToMesh[nid]) idToMesh[nid].scale.setScalar(1.8); });
+    showInfoPanel(pt);
+    // Clear query highlights
+    while (queryGroup.children.length) queryGroup.remove(queryGroup.children[0]);
+    document.querySelectorAll('.qbtn').forEach(b => b.classList.remove('active'));
+}
+
+// ---- Info panel ----
+const infoEl = document.getElementById('info');
+
+function showInfoPanel(pt) {
+    const color = COLORS[pt.cat] || '#999';
+    let nbHtml = '';
+    pt.n.forEach(nid => {
+        const nd = idToData[nid];
+        if (!nd) return;
+        const nColor = COLORS[nd.cat] || '#999';
+        nbHtml += `<div class="nb" onclick="window._selectById('${nid}')"><span style="color:${nColor}">●</span> ${nd.text.substring(0, 65)}…<span class="dist">${nd.cat}</span></div>`;
+    });
+    infoEl.innerHTML = `
+        <h3>${pt.id}</h3>
+        <div class="cat-tag" style="background:${color}33;color:${color}">${pt.cat}</div>
+        <div class="txt">${pt.text}</div>
+        <div style="font-size:11px;color:#888;margin-bottom:12px">θ=${(pt.t*180/Math.PI).toFixed(1)}°  φ=${(pt.p*180/Math.PI).toFixed(1)}°  r=${pt.r.toFixed(3)}</div>
+        <div class="neighbors"><h4>Nearest neighbors</h4>${nbHtml}</div>
+    `;
+    infoEl.classList.add('visible');
+}
+
+window._selectById = function(id) {
+    const pt = idToData[id];
+    if (pt) selectPoint(pt);
+};
+
+// ---- Legend ----
+const catCounts = {};
+DATA.points.forEach(p => { catCounts[p.cat] = (catCounts[p.cat]||0)+1; });
+const hiddenCats = new Set();
+
+const legendEl = document.getElementById('legend');
+let legendHtml = '<h3>Categories</h3>';
+Object.entries(COLORS).forEach(([cat, color]) => {
+    if (!catCounts[cat]) return;
+    legendHtml += `<div class="lrow" data-cat="${cat}"><div class="ldot" style="background:${color}"></div><span class="lbl">${cat}</span><span class="lcnt">${catCounts[cat]}</span></div>`;
+});
+legendEl.innerHTML = legendHtml;
+
+legendEl.querySelectorAll('.lrow').forEach(row => {
+    row.addEventListener('click', () => {
+        const cat = row.dataset.cat;
+        if (hiddenCats.has(cat)) { hiddenCats.delete(cat); row.classList.remove('dim'); }
+        else { hiddenCats.add(cat); row.classList.add('dim'); }
+        meshes.forEach(m => {
+            m.visible = !hiddenCats.has(m.userData.cat);
+        });
+    });
+});
+
+// ---- Query buttons ----
+const queriesEl = document.getElementById('queries');
+if (DATA.queries.length) {
+    let qHtml = '<h3>Demo Queries</h3>';
+    DATA.queries.forEach((q, i) => {
+        qHtml += `<button class="qbtn" data-qi="${i}">"${q.desc}"</button>`;
+    });
+    queriesEl.innerHTML = qHtml;
+
+    queriesEl.querySelectorAll('.qbtn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const qi = parseInt(btn.dataset.qi);
+            const q = DATA.queries[qi];
+            document.querySelectorAll('.qbtn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            // Reset point scales
+            meshes.forEach(m => m.scale.setScalar(1));
+            clearLines();
+            selectedId = null;
+            // Highlight hits
+            q.hits.forEach(h => { if (idToMesh[h.id]) idToMesh[h.id].scale.setScalar(2.2); });
+            showQueryOnSphere(q);
+            // Show results in info panel
+            let rHtml = `<h3>Query Results</h3><div class="txt" style="font-style:italic">"${q.desc}"</div>`;
+            q.hits.forEach((h, i) => {
+                const nd = idToData[h.id];
+                const nColor = COLORS[h.cat] || '#999';
+                rHtml += `<div class="nb" onclick="window._selectById('${h.id}')"><span style="color:${nColor}">●</span> <b>${i+1}.</b> ${nd?nd.text.substring(0,55)+'…':h.id}<span class="dist">${(h.d*180/Math.PI).toFixed(1)}°</span></div>`;
+            });
+            infoEl.innerHTML = rHtml;
+            infoEl.classList.add('visible');
+        });
+    });
+} else {
+    queriesEl.style.display = 'none';
+}
+
+// ---- Hover highlight ----
+function updateHover() {
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(meshes.filter(m => m.visible));
+    const newHover = hits.length ? hits[0].object : null;
+    if (hoveredMesh && hoveredMesh !== newHover) {
+        if (hoveredMesh.userData.id !== selectedId) {
+            hoveredMesh.scale.setScalar(hoveredMesh.userData.n && hoveredMesh.userData.n.includes(selectedId) ? 1.8 : 1);
+        }
+    }
+    if (newHover && newHover.userData.id !== selectedId) {
+        newHover.scale.setScalar(1.6);
+        canvas.style.cursor = 'pointer';
+    } else {
+        canvas.style.cursor = 'grab';
+    }
+    hoveredMesh = newHover;
+}
+
+// ---- Resize ----
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---- Animate ----
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    updateHover();
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>

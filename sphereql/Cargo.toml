@@ -45,3 +45,7 @@ required-features = ["embed"]
 [[example]]
 name = "semantic_search"
 required-features = ["embed"]
+
+[[example]]
+name = "e2e_transformer"
+required-features = ["embed"]
