@@ -49,7 +49,7 @@ pub struct Cap {
 impl Cap {
     pub fn new(center: SphericalPoint, half_angle: f64) -> Result<Self, SphereQlError> {
         if half_angle <= 0.0 || half_angle > PI {
-            return Err(SphereQlError::InvalidConeAngle(half_angle));
+            return Err(SphereQlError::InvalidCapAngle(half_angle));
         }
         Ok(Self { center, half_angle })
     }
@@ -255,6 +255,15 @@ mod tests {
     fn cap_invalid_half_angle() {
         assert!(Cap::new(point(1.0, 0.0, 0.0), 0.0).is_err());
         assert!(Cap::new(point(1.0, 0.0, 0.0), -1.0).is_err());
+    }
+
+    #[test]
+    fn cap_error_is_cap_specific() {
+        let err = Cap::new(point(1.0, 0.0, 0.0), 0.0).unwrap_err();
+        assert!(
+            matches!(err, SphereQlError::InvalidCapAngle(_)),
+            "expected InvalidCapAngle, got {err:?}"
+        );
     }
 
     // --- Shell tests ---
