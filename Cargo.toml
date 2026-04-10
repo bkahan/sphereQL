@@ -1,10 +1,10 @@
 [workspace]
 members = [
     "sphereql-core",
+    "sphereql-embed",
     "sphereql-index",
     "sphereql-layout",
     "sphereql-graphql",
-    "sphereql-embed",
     "sphereql-vectordb",
     "sphereql-wasm",
     "sphereql",
