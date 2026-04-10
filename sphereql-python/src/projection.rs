@@ -140,7 +140,10 @@ impl PyPcaProjection {
                 .map(|e| self.inner.project(e))
                 .collect::<Vec<_>>()
         });
-        Ok(results.into_iter().map(PySphericalPoint::from_inner).collect())
+        Ok(results
+            .into_iter()
+            .map(PySphericalPoint::from_inner)
+            .collect())
     }
 
     fn project_rich_batch<'py>(
@@ -223,7 +226,10 @@ impl PyRandomProjection {
                 .map(|e| self.inner.project(e))
                 .collect::<Vec<_>>()
         });
-        Ok(results.into_iter().map(PySphericalPoint::from_inner).collect())
+        Ok(results
+            .into_iter()
+            .map(PySphericalPoint::from_inner)
+            .collect())
     }
 
     fn project_rich_batch<'py>(

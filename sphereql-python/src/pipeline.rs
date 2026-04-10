@@ -1,11 +1,11 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::projection::{PyPcaProjection, extract_embedding, extract_embeddings_2d};
+use crate::types::{Glob, Manifold, Nearest, Path};
 use sphereql_embed::pipeline::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
-use crate::projection::{extract_embedding, extract_embeddings_2d, PyPcaProjection};
-use crate::types::{Glob, Manifold, Nearest, Path};
 
 #[pyclass]
 pub struct Pipeline {
@@ -38,9 +38,7 @@ impl Pipeline {
         let inner = match projection {
             Some(pca) => {
                 let pca_clone = pca.inner().clone();
-                py.detach(move || {
-                    SphereQLPipeline::with_projection(categories, embs, pca_clone)
-                })
+                py.detach(move || SphereQLPipeline::with_projection(categories, embs, pca_clone))
             }
             None => {
                 let raw: Vec<Vec<f64>> = embs.into_iter().map(|e| e.values.clone()).collect();
@@ -128,11 +126,7 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, min_cosine=0.8))]
-    fn similar_above(
-        &self,
-        query: &Bound<'_, PyAny>,
-        min_cosine: f64,
-    ) -> PyResult<Vec<Nearest>> {
+    fn similar_above(&self, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
         let pq = PipelineQuery {
             embedding: emb.values,
@@ -147,11 +141,7 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, min_cosine=0.8))]
-    fn similar_above_json(
-        &self,
-        query: &Bound<'_, PyAny>,
-        min_cosine: f64,
-    ) -> PyResult<String> {
+    fn similar_above_json(&self, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<String> {
         let results = self.similar_above(query, min_cosine)?;
         let out: Vec<_> = results
             .iter()
