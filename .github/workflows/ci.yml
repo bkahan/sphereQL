@@ -40,7 +40,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build docs
-        run: cargo doc --workspace --all-features --no-deps --exclude sphereql-python
+        run: cargo doc --workspace --all-features --no-deps
 
   format:
     runs-on: ubuntu-latest

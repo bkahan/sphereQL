@@ -9,6 +9,7 @@ repository.workspace = true
 [lib]
 name = "sphereql"
 crate-type = ["cdylib"]
+doc = false
 
 [features]
 default = ["embed"]
