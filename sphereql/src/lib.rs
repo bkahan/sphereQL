@@ -23,5 +23,10 @@ pub mod graphql {
     pub use sphereql_graphql::*;
 }
 
+#[cfg(feature = "vectordb")]
+pub mod vectordb {
+    pub use sphereql_vectordb::*;
+}
+
 #[cfg(feature = "core")]
 pub use sphereql_core::{SphereQlError, SphericalPoint};
