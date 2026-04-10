@@ -1,5 +1,5 @@
-use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 
 use sphereql_embed::pipeline::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
@@ -160,12 +160,7 @@ impl Pipeline {
         }
     }
 
-    fn detect_globs(
-        &self,
-        query: Vec<f64>,
-        k: Option<usize>,
-        max_k: usize,
-    ) -> PyResult<Vec<Glob>> {
+    fn detect_globs(&self, query: Vec<f64>, k: Option<usize>, max_k: usize) -> PyResult<Vec<Glob>> {
         let pq = PipelineQuery { embedding: query };
         match self
             .inner

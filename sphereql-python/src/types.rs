@@ -1,5 +1,5 @@
-use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 
 use sphereql_embed::pipeline::{GlobSummary, ManifoldResult, NearestResult, PathResult};
 

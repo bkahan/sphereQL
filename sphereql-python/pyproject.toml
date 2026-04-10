@@ -18,6 +18,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 manifest-path = "Cargo.toml"
