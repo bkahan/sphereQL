@@ -21,7 +21,7 @@ pub enum VectorStoreError {
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
 
-    #[error("pipeline not built \u2014 call build_pipeline() first")]
+    #[error("pipeline not built — call build_pipeline() first")]
     PipelineNotBuilt,
 
     #[error("insufficient data: {0}")]
