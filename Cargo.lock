@@ -2089,6 +2089,7 @@ name = "sphereql-embed"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "serde",
  "sphereql-core",
  "sphereql-index",
  "sphereql-layout",

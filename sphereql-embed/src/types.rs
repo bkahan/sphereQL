@@ -1,8 +1,58 @@
 use std::sync::Arc;
 
+use sphereql_core::SphericalPoint;
+
 #[derive(Debug, Clone)]
 pub struct Embedding {
     pub values: Vec<f64>,
+}
+
+/// A projected point on the sphere with rich attributes from the projection.
+///
+/// Extends the raw `SphericalPoint` with metadata that captures how much
+/// information was preserved (or lost) during dimensionality reduction.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct ProjectedPoint {
+    /// The spherical position (r, theta, phi).
+    pub position: SphericalPoint,
+    /// How well the 3D projection captures this point's original direction.
+    /// Computed as 1 - (residual / total variance). Range [0, 1]:
+    /// - 1.0: perfect reconstruction (all variance explained by 3 PCA components)
+    /// - 0.0: the projection lost everything
+    pub certainty: f64,
+    /// Semantic strength of the original embedding (pre-normalization magnitude).
+    /// Higher values indicate more specific/confident embeddings.
+    pub intensity: f64,
+    /// Magnitude of the 3-component PCA projection before normalization.
+    /// Points near the PCA centroid have low projection magnitude and are
+    /// ambiguous — they don't strongly align with any principal direction.
+    pub projection_magnitude: f64,
+}
+
+impl ProjectedPoint {
+    pub fn new(
+        position: SphericalPoint,
+        certainty: f64,
+        intensity: f64,
+        projection_magnitude: f64,
+    ) -> Self {
+        Self {
+            position,
+            certainty,
+            intensity,
+            projection_magnitude,
+        }
+    }
+
+    /// Create a basic projected point with no metadata (legacy compat).
+    pub fn from_position(position: SphericalPoint, intensity: f64) -> Self {
+        Self {
+            position,
+            certainty: 1.0,
+            intensity,
+            projection_magnitude: 1.0,
+        }
+    }
 }
 
 impl Embedding {
