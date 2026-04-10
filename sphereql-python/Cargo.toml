@@ -22,6 +22,7 @@ full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["extension-module"] }
+numpy = "0.28"
 sphereql-core = { path = "../sphereql-core", optional = true }
 sphereql-index = { path = "../sphereql-index", optional = true }
 sphereql-layout = { path = "../sphereql-layout", optional = true }

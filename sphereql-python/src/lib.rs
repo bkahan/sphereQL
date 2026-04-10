@@ -5,6 +5,8 @@ mod core_types;
 #[cfg(feature = "embed")]
 mod pipeline;
 #[cfg(feature = "embed")]
+mod projection;
+#[cfg(feature = "embed")]
 mod types;
 
 #[pymodule]
@@ -26,6 +28,8 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "embed")]
     {
         m.add_class::<core_types::PyProjectedPoint>()?;
+        m.add_class::<projection::PyPcaProjection>()?;
+        m.add_class::<projection::PyRandomProjection>()?;
         m.add_class::<pipeline::Pipeline>()?;
         m.add_class::<types::Nearest>()?;
         m.add_class::<types::Path>()?;
