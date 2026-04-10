@@ -267,10 +267,10 @@ impl VectorStore for QdrantStore {
             .with_vectors(true)
             .limit(limit as u32);
 
-        if let Some(off) = offset {
-            if let Ok(num) = off.parse::<u64>() {
-                builder = builder.offset(PointId::from(num));
-            }
+        if let Some(off) = offset
+            && let Ok(num) = off.parse::<u64>()
+        {
+            builder = builder.offset(PointId::from(num));
         }
 
         let response = self
