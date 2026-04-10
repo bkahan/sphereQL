@@ -9,7 +9,6 @@ repository.workspace = true
 [dependencies]
 sphereql-core = { path = "../sphereql-core" }
 sphereql-index = { path = "../sphereql-index" }
-sphereql-layout = { path = "../sphereql-layout" }
 async-graphql = "6"
 tokio = { version = "1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }

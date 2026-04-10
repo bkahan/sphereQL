@@ -10,6 +10,7 @@ use std::f64::consts::TAU;
 /// let c = spherical_to_cartesian(&p);
 /// assert!((c.x - 1.0).abs() < 1e-10);
 /// ```
+#[must_use]
 pub fn spherical_to_cartesian(p: &SphericalPoint) -> CartesianPoint {
     let x = p.r * p.phi.sin() * p.theta.cos();
     let y = p.r * p.phi.sin() * p.theta.sin();
@@ -26,9 +27,10 @@ pub fn spherical_to_cartesian(p: &SphericalPoint) -> CartesianPoint {
 /// let roundtrip = cartesian_to_spherical(&spherical_to_cartesian(&original));
 /// assert!((roundtrip.r - original.r).abs() < 1e-10);
 /// ```
+#[must_use]
 pub fn cartesian_to_spherical(p: &CartesianPoint) -> SphericalPoint {
     let r = (p.x * p.x + p.y * p.y + p.z * p.z).sqrt();
-    if r == 0.0 {
+    if r < f64::EPSILON {
         return SphericalPoint::new_unchecked(0.0, 0.0, 0.0);
     }
     let theta = normalize_theta(p.y.atan2(p.x));
@@ -36,6 +38,11 @@ pub fn cartesian_to_spherical(p: &CartesianPoint) -> SphericalPoint {
     SphericalPoint::new_unchecked(r, theta, phi)
 }
 
+/// Converts a spherical point to geographic coordinates (lat/lon/alt).
+///
+/// Assumes the unit sphere (r=1.0) represents the surface. Altitude is
+/// the excess radius above 1.0, clamped to zero for sub-unit radii.
+#[must_use]
 pub fn spherical_to_geo(p: &SphericalPoint) -> GeoPoint {
     let lat = 90.0 - p.phi.to_degrees();
     let lon = theta_to_longitude(p.theta);
@@ -43,6 +50,11 @@ pub fn spherical_to_geo(p: &SphericalPoint) -> GeoPoint {
     GeoPoint::new_unchecked(lat, lon, alt)
 }
 
+/// Converts geographic coordinates to spherical coordinates.
+///
+/// Latitude maps to polar angle phi, longitude to azimuthal angle theta,
+/// and altitude adds to the unit radius.
+#[must_use]
 pub fn geo_to_spherical(p: &GeoPoint) -> SphericalPoint {
     let phi = (90.0 - p.lat).to_radians();
     let theta = normalize_theta(p.lon.to_radians());
@@ -50,10 +62,14 @@ pub fn geo_to_spherical(p: &GeoPoint) -> SphericalPoint {
     SphericalPoint::new_unchecked(r, theta, phi)
 }
 
+/// Converts a Cartesian point to geographic coordinates via spherical.
+#[must_use]
 pub fn cartesian_to_geo(p: &CartesianPoint) -> GeoPoint {
     spherical_to_geo(&cartesian_to_spherical(p))
 }
 
+/// Converts geographic coordinates to Cartesian via spherical.
+#[must_use]
 pub fn geo_to_cartesian(p: &GeoPoint) -> CartesianPoint {
     spherical_to_cartesian(&geo_to_spherical(p))
 }
@@ -203,6 +219,13 @@ mod tests {
         assert_relative_eq!(s.r, 0.0, epsilon = 1e-15);
         assert_relative_eq!(s.theta, 0.0, epsilon = 1e-15);
         assert_relative_eq!(s.phi, 0.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn near_zero_cartesian_to_spherical() {
+        let c = CartesianPoint::new(1e-20, 1e-20, 1e-20);
+        let s = cartesian_to_spherical(&c);
+        assert_relative_eq!(s.r, 0.0, epsilon = 1e-15);
     }
 
     // --- Known values: north pole (phi=0) ---

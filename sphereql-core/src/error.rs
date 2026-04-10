@@ -18,6 +18,8 @@ pub enum SphereQlError {
     InvalidBandBounds { phi_min: f64, phi_max: f64 },
     #[error("invalid cone: half_angle {0} must be in (0, π]")]
     InvalidConeAngle(f64),
+    #[error("invalid cap: half_angle {0} must be in (0, π]")]
+    InvalidCapAngle(f64),
     #[error("zero vector cannot be normalized")]
     ZeroVector,
 }

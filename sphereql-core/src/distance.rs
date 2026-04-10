@@ -13,6 +13,7 @@ use crate::types::{CartesianPoint, SphericalPoint};
 /// let dist = angular_distance(&a, &b);
 /// assert!((dist - std::f64::consts::FRAC_PI_2).abs() < 1e-10);
 /// ```
+#[must_use]
 pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
     let a_unit = SphericalPoint::new_unchecked(1.0, a.theta, a.phi);
     let b_unit = SphericalPoint::new_unchecked(1.0, b.theta, b.phi);
@@ -41,11 +42,15 @@ pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
 /// let dist = great_circle_distance(&a, &b, 6371.0);
 /// assert!((dist - 6371.0 * FRAC_PI_2).abs() < 1e-6);
 /// ```
+#[must_use]
 pub fn great_circle_distance(a: &SphericalPoint, b: &SphericalPoint, radius: f64) -> f64 {
     radius * angular_distance(a, b)
 }
 
 /// Returns the straight-line (chord) distance between two spherical points.
+///
+/// Unlike angular or great-circle distances which measure along the sphere
+/// surface, this computes the Euclidean distance through 3D space.
 ///
 /// ```
 /// use sphereql_core::{SphericalPoint, chord_distance};
@@ -53,12 +58,15 @@ pub fn great_circle_distance(a: &SphericalPoint, b: &SphericalPoint, radius: f64
 /// let p = SphericalPoint::new_unchecked(1.0, 0.0, 0.5);
 /// assert!(chord_distance(&p, &p) < 1e-10);
 /// ```
+#[must_use]
 pub fn chord_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
     let ac = spherical_to_cartesian(a);
     let bc = spherical_to_cartesian(b);
     euclidean_distance(&ac, &bc)
 }
 
+/// Returns the Euclidean (L2) distance between two Cartesian points.
+#[must_use]
 pub fn euclidean_distance(a: &CartesianPoint, b: &CartesianPoint) -> f64 {
     let dx = a.x - b.x;
     let dy = a.y - b.y;
