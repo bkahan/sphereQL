@@ -4,13 +4,15 @@ use sphereql_core::*;
 use sphereql_index::*;
 
 use crate::projection::Projection;
-use crate::types::Embedding;
+use crate::types::{Embedding, ProjectedPoint};
 
 #[derive(Debug, Clone)]
 pub struct EmbeddingItem {
     pub id: String,
     pub position: SphericalPoint,
     pub original_magnitude: f64,
+    /// Rich projection metadata. `None` for items inserted via `insert()` (legacy path).
+    pub projected: Option<ProjectedPoint>,
 }
 
 impl SpatialItem for EmbeddingItem {
@@ -20,6 +22,25 @@ impl SpatialItem for EmbeddingItem {
     }
     fn position(&self) -> &SphericalPoint {
         &self.position
+    }
+}
+
+impl EmbeddingItem {
+    /// Certainty of this point's projection. Falls back to 1.0 if no rich metadata.
+    pub fn certainty(&self) -> f64 {
+        self.projected.map_or(1.0, |p| p.certainty)
+    }
+
+    /// Intensity (pre-normalization magnitude) of the original embedding.
+    pub fn intensity(&self) -> f64 {
+        self.projected
+            .map_or(self.original_magnitude, |p| p.intensity)
+    }
+
+    /// PCA projection magnitude — how strongly this point projects onto
+    /// the 3 principal components. Low values indicate ambiguous points.
+    pub fn projection_magnitude(&self) -> f64 {
+        self.projected.map_or(1.0, |p| p.projection_magnitude)
     }
 }
 
@@ -75,11 +96,12 @@ impl<P: Projection> EmbeddingIndex<P> {
     }
 
     pub fn insert(&mut self, id: impl Into<String>, embedding: &Embedding) {
-        let position = self.projection.project(embedding);
+        let rich = self.projection.project_rich(embedding);
         self.index.insert(EmbeddingItem {
             id: id.into(),
-            position,
+            position: rich.position,
             original_magnitude: embedding.magnitude(),
+            projected: Some(rich),
         });
     }
 
@@ -87,11 +109,13 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// The angular coordinates (theta, phi) are still determined by the projection.
     /// Use this for metadata-driven radius: recency scores, importance weights, etc.
     pub fn insert_with_radius(&mut self, id: impl Into<String>, embedding: &Embedding, r: f64) {
-        let projected = self.projection.project(embedding);
+        let rich = self.projection.project_rich(embedding);
+        let position = SphericalPoint::new_unchecked(r, rich.position.theta, rich.position.phi);
         self.index.insert(EmbeddingItem {
             id: id.into(),
-            position: SphericalPoint::new_unchecked(r, projected.theta, projected.phi),
+            position,
             original_magnitude: embedding.magnitude(),
+            projected: Some(ProjectedPoint { position, ..rich }),
         });
     }
 
@@ -561,12 +585,12 @@ fn kmeans_3d(points: &[[f64; 3]], k: usize) -> (Vec<usize>, f64) {
     for _ in 0..max_iter {
         let mut changed = false;
 
-        // Assign
+        // Assign by angular distance (direction, not position)
         for (i, p) in points.iter().enumerate() {
             let mut best = 0;
             let mut best_d = f64::MAX;
             for (j, c) in centers.iter().enumerate() {
-                let d = dist3(p, c);
+                let d = angular_dist3(p, c);
                 if d < best_d {
                     best_d = d;
                     best = j;
@@ -582,20 +606,20 @@ fn kmeans_3d(points: &[[f64; 3]], k: usize) -> (Vec<usize>, f64) {
             break;
         }
 
-        // Update centers
+        // Update centers: mean direction (Euclidean mean of unit vectors, then normalize).
+        // This is the Fréchet mean on S² for concentrated clusters.
         let mut sums = vec![[0.0f64; 3]; k];
         let mut counts = vec![0usize; k];
         for (i, &a) in assignments.iter().enumerate() {
-            for d in 0..3 {
-                sums[a][d] += points[i][d];
+            let norm_p = normalize3(&points[i]);
+            for (d, &np) in norm_p.iter().enumerate() {
+                sums[a][d] += np;
             }
             counts[a] += 1;
         }
         for j in 0..k {
             if counts[j] > 0 {
-                for d in 0..3 {
-                    centers[j][d] = sums[j][d] / counts[j] as f64;
-                }
+                centers[j] = normalize3(&sums[j]);
             }
         }
     }
@@ -614,18 +638,18 @@ fn silhouette_score(points: &[[f64; 3]], assignments: &[usize], k: usize) -> f64
     for i in 0..n {
         let ci = assignments[i];
 
-        // a(i): mean dist to same-cluster members
+        // a(i): mean angular dist to same-cluster members
         let mut a_sum = 0.0;
         let mut a_cnt = 0;
         for j in 0..n {
             if j != i && assignments[j] == ci {
-                a_sum += dist3(&points[i], &points[j]);
+                a_sum += angular_dist3(&points[i], &points[j]);
                 a_cnt += 1;
             }
         }
         let a = if a_cnt > 0 { a_sum / a_cnt as f64 } else { 0.0 };
 
-        // b(i): min mean dist to any other cluster
+        // b(i): min mean angular dist to any other cluster
         let mut b = f64::MAX;
         for ck in 0..k {
             if ck == ci {
@@ -635,7 +659,7 @@ fn silhouette_score(points: &[[f64; 3]], assignments: &[usize], k: usize) -> f64
             let mut b_cnt = 0;
             for j in 0..n {
                 if assignments[j] == ck {
-                    b_sum += dist3(&points[i], &points[j]);
+                    b_sum += angular_dist3(&points[i], &points[j]);
                     b_cnt += 1;
                 }
             }
@@ -674,22 +698,20 @@ fn build_globs(
             continue;
         }
 
-        // Centroid
+        // Centroid: mean direction (normalize to get angular centroid)
         let mut centroid = [0.0; 3];
         for &i in &member_indices {
+            let norm_p = normalize3(&points[i]);
             for (d, c) in centroid.iter_mut().enumerate() {
-                *c += points[i][d];
+                *c += norm_p[d];
             }
         }
-        let n = member_indices.len() as f64;
-        for c in &mut centroid {
-            *c /= n;
-        }
+        centroid = normalize3(&centroid);
 
-        // Member distances from centroid
+        // Member angular distances from centroid
         let member_distances: Vec<f64> = member_indices
             .iter()
-            .map(|&i| dist3(&points[i], &centroid))
+            .map(|&i| angular_dist3(&points[i], &centroid))
             .collect();
 
         let radius = member_distances.iter().cloned().fold(0.0f64, f64::max);
@@ -713,6 +735,28 @@ fn dist3(a: &[f64; 3], b: &[f64; 3]) -> f64 {
     let dy = a[1] - b[1];
     let dz = a[2] - b[2];
     (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+/// Angular distance between two 3D points treated as direction vectors.
+/// Returns the angle in radians [0, π]. Ignores magnitude differences.
+fn angular_dist3(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let ma = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
+    let mb = (b[0] * b[0] + b[1] * b[1] + b[2] * b[2]).sqrt();
+    let denom = ma * mb;
+    if denom < f64::EPSILON {
+        return 0.0;
+    }
+    (dot / denom).clamp(-1.0, 1.0).acos()
+}
+
+/// Normalize a 3D vector to unit length. Returns zero vector if input is zero.
+fn normalize3(v: &[f64; 3]) -> [f64; 3] {
+    let mag = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if mag < f64::EPSILON {
+        return [0.0; 3];
+    }
+    [v[0] / mag, v[1] / mag, v[2] / mag]
 }
 
 /// Builds SphereQL [`Region`]s from semantic constraints on embeddings.

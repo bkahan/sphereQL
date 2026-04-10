@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use sphereql_embed::{
-    Embedding, PcaProjection, PipelineInput, PipelineQuery, Projection, RadialStrategy,
-    SphereQLOutput, SphereQLPipeline, SphereQLQuery,
+    Embedding, PcaProjection, PipelineQuery, Projection, RadialStrategy, SphereQLOutput,
+    SphereQLPipeline, SphereQLQuery,
 };
 
 use crate::error::VectorStoreError;
@@ -125,10 +125,10 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let projection = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
             .with_volumetric(self.config.volumetric);
 
-        let pipeline = SphereQLPipeline::new(PipelineInput {
-            categories,
-            embeddings: embeddings.clone(),
-        });
+        // Use with_projection to share the same PCA instance, avoiding
+        // the dual-PCA bug where sync_projections and queries would use
+        // different coordinate systems.
+        let pipeline = SphereQLPipeline::with_projection(categories, embs, projection.clone());
 
         self.pipeline = Some(pipeline);
         self.projection = Some(projection);

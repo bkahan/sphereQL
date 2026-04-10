@@ -16,11 +16,10 @@ const DIM: usize = 64;
 /// English stop words stripped before hashing.  These dominate the corpus
 /// across every topic and would otherwise drown out content tokens.
 const STOPWORDS: &[&str] = &[
-    "the", "and", "with", "for", "its", "now", "across", "above", "along",
-    "from", "into", "out", "off", "have", "has", "this", "that", "these",
-    "those", "their", "them", "they", "then", "than", "over", "under", "but",
-    "not", "all", "any", "are", "was", "were", "been", "being", "such", "via",
-    "down", "up", "between", "lanes", "high",
+    "the", "and", "with", "for", "its", "now", "across", "above", "along", "from", "into", "out",
+    "off", "have", "has", "this", "that", "these", "those", "their", "them", "they", "then",
+    "than", "over", "under", "but", "not", "all", "any", "are", "was", "were", "been", "being",
+    "such", "via", "down", "up", "between", "lanes", "high",
 ];
 
 /// Deterministic, dependency-free text encoder.
@@ -68,7 +67,10 @@ async fn end_to_end_text_to_sphereql() {
         ("bears fish for salmon along the cold river", "animals"),
         // vehicles
         ("the sedan accelerates down the empty highway", "vehicles"),
-        ("a freight train carries cargo across the continent", "vehicles"),
+        (
+            "a freight train carries cargo across the continent",
+            "vehicles",
+        ),
         ("the cargo ship docks at the busy harbor", "vehicles"),
         ("electric scooters now line the city sidewalks", "vehicles"),
         ("jet airplanes climb above the puffy clouds", "vehicles"),

@@ -10,6 +10,7 @@ repository.workspace = true
 sphereql-core = { path = "../sphereql-core" }
 sphereql-index = { path = "../sphereql-index" }
 sphereql-layout = { path = "../sphereql-layout" }
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 approx = "0.5"

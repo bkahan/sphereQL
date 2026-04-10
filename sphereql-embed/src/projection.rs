@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use sphereql_core::{CartesianPoint, SphericalPoint, cartesian_to_spherical};
 
-use crate::types::{Embedding, RadialStrategy};
+use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
 /// Maps high-dimensional embeddings to spherical coordinates.
 ///
@@ -12,12 +12,22 @@ use crate::types::{Embedding, RadialStrategy};
 /// is controlled by the projection's [`RadialStrategy`].
 pub trait Projection: Send + Sync {
     fn project(&self, embedding: &Embedding) -> SphericalPoint;
+
+    /// Project with rich metadata: certainty, intensity, projection magnitude.
+    fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
+        let position = self.project(embedding);
+        ProjectedPoint::from_position(position, embedding.magnitude())
+    }
+
     fn dimensionality(&self) -> usize;
 }
 
 impl<P: Projection> Projection for Arc<P> {
     fn project(&self, embedding: &Embedding) -> SphericalPoint {
         (**self).project(embedding)
+    }
+    fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
+        (**self).project_rich(embedding)
     }
     fn dimensionality(&self) -> usize {
         (**self).dimensionality()
@@ -40,6 +50,11 @@ pub struct PcaProjection {
     dim: usize,
     radial: RadialStrategy,
     volumetric: bool,
+    /// Top-3 eigenvalues from PCA (descending). Used to compute per-point certainty.
+    eigenvalues: [f64; 3],
+    /// Total variance across all dimensions. eigenvalues[0..3].sum() / total_variance
+    /// gives the global explained variance ratio.
+    total_variance: f64,
 }
 
 impl PcaProjection {
@@ -82,7 +97,14 @@ impl PcaProjection {
             })
             .collect();
 
-        let components = top_k_eigenvectors(&centered, 3, dim);
+        let (components, eigenvalues) = top_k_eigenvectors(&centered, 3, dim);
+
+        // Total variance = sum of all eigenvalues = trace of covariance = sum of squared norms
+        let total_variance: f64 = centered
+            .iter()
+            .map(|row| row.iter().map(|x| x * x).sum::<f64>())
+            .sum::<f64>()
+            / centered.len() as f64;
 
         Self {
             components: [
@@ -94,6 +116,12 @@ impl PcaProjection {
             dim,
             radial,
             volumetric: false,
+            eigenvalues: [
+                eigenvalues.first().copied().unwrap_or(0.0),
+                eigenvalues.get(1).copied().unwrap_or(0.0),
+                eigenvalues.get(2).copied().unwrap_or(0.0),
+            ],
+            total_variance,
         }
     }
 
@@ -107,6 +135,29 @@ impl PcaProjection {
     pub fn with_volumetric(mut self, enabled: bool) -> Self {
         self.volumetric = enabled;
         self
+    }
+
+    /// The fraction of total variance captured by the top-3 PCA components.
+    /// A global quality metric for the projection — higher means less information lost.
+    pub fn explained_variance_ratio(&self) -> f64 {
+        if self.total_variance < f64::EPSILON {
+            return 1.0;
+        }
+        let explained: f64 = self.eigenvalues.iter().sum();
+        (explained / self.total_variance).clamp(0.0, 1.0)
+    }
+
+    /// Project a centered vector and return (x, y, z) plus the residual.
+    fn project_centered(&self, centered: &[f64]) -> (f64, f64, f64, f64) {
+        let x = dot(centered, &self.components[0]);
+        let y = dot(centered, &self.components[1]);
+        let z = dot(centered, &self.components[2]);
+
+        let projected_sq = x * x + y * y + z * z;
+        let total_sq: f64 = centered.iter().map(|v| v * v).sum();
+        let residual_sq = (total_sq - projected_sq).max(0.0);
+
+        (x, y, z, residual_sq)
     }
 }
 
@@ -128,13 +179,9 @@ impl Projection for PcaProjection {
             .map(|(&v, &m)| v - m)
             .collect();
 
-        let x = dot(&centered, &self.components[0]);
-        let y = dot(&centered, &self.components[1]);
-        let z = dot(&centered, &self.components[2]);
+        let (x, y, z, _) = self.project_centered(&centered);
 
         if self.volumetric {
-            // Use the raw PCA projection — r encodes distance from centroid
-            // in the 3D PCA subspace, giving genuine volumetric structure.
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
             if sp.r < f64::EPSILON {
                 return SphericalPoint::new_unchecked(0.0, 0.0, 0.0);
@@ -144,6 +191,50 @@ impl Projection for PcaProjection {
             let r = self.radial.compute(embedding.magnitude());
             project_xyz_to_spherical(x, y, z, r)
         }
+    }
+
+    fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
+        assert_eq!(
+            embedding.dimension(),
+            self.dim,
+            "expected dimension {}, got {}",
+            self.dim,
+            embedding.dimension()
+        );
+
+        let intensity = embedding.magnitude();
+        let normalized = embedding.normalized();
+
+        let centered: Vec<f64> = normalized
+            .iter()
+            .zip(self.mean.iter())
+            .map(|(&v, &m)| v - m)
+            .collect();
+
+        let (x, y, z, residual_sq) = self.project_centered(&centered);
+        let projection_magnitude = (x * x + y * y + z * z).sqrt();
+
+        // Per-point certainty: fraction of this point's variance captured by the 3 components
+        let total_sq: f64 = centered.iter().map(|v| v * v).sum();
+        let certainty = if total_sq < f64::EPSILON {
+            0.0
+        } else {
+            (1.0 - residual_sq / total_sq).clamp(0.0, 1.0)
+        };
+
+        let position = if self.volumetric {
+            let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
+            if sp.r < f64::EPSILON {
+                SphericalPoint::new_unchecked(0.0, 0.0, 0.0)
+            } else {
+                SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
+            }
+        } else {
+            let r = self.radial.compute(intensity);
+            project_xyz_to_spherical(x, y, z, r)
+        };
+
+        ProjectedPoint::new(position, certainty, intensity, projection_magnitude)
     }
 
     fn dimensionality(&self) -> usize {
@@ -240,15 +331,20 @@ fn normalize_vec(v: &mut [f64]) -> f64 {
 ///
 /// Computes XᵀX·v as Xᵀ(Xv) to avoid forming the n×n matrix,
 /// keeping each iteration at O(N·n) instead of O(n²).
-fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> Vec<Vec<f64>> {
+///
+/// Returns (eigenvectors, eigenvalues) both sorted by decreasing eigenvalue.
+fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> (Vec<Vec<f64>>, Vec<f64>) {
     let max_iters = 200;
     let tol = 1e-10;
     let mut vectors: Vec<Vec<f64>> = Vec::with_capacity(k);
+    let mut values: Vec<f64> = Vec::with_capacity(k);
     let mut rng = SplitMix64::new(0xDEAD_BEEF);
+    let n = data.len() as f64;
 
     for _ in 0..k {
         let mut v: Vec<f64> = (0..dim).map(|_| rng.normal()).collect();
         normalize_vec(&mut v);
+        let mut eigenvalue = 0.0;
 
         for _ in 0..max_iters {
             // w = Xv ∈ ℝᴺ
@@ -275,6 +371,9 @@ fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> Vec<Vec<f64>> 
                 break;
             }
 
+            // The eigenvalue is vᵀ(XᵀX)v / N = mag / N (before normalization)
+            eigenvalue = mag / n;
+
             let change = 1.0 - dot(&u, &v).abs();
             v = u;
 
@@ -284,6 +383,7 @@ fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> Vec<Vec<f64>> 
         }
 
         vectors.push(v);
+        values.push(eigenvalue);
     }
 
     // If some components had zero variance, fill with orthogonal random directions
@@ -297,9 +397,10 @@ fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> Vec<Vec<f64>> 
         }
         normalize_vec(&mut v);
         vectors.push(v);
+        values.push(0.0);
     }
 
-    vectors
+    (vectors, values)
 }
 
 // --- Deterministic PRNG (SplitMix64 + Box-Muller) ---

@@ -214,6 +214,8 @@ struct NearestOut {
     id: String,
     category: String,
     distance: f64,
+    certainty: f64,
+    intensity: f64,
 }
 
 impl From<&NearestResult> for NearestOut {
@@ -222,6 +224,8 @@ impl From<&NearestResult> for NearestOut {
             id: r.id.clone(),
             category: r.category.clone(),
             distance: r.distance,
+            certainty: r.certainty,
+            intensity: r.intensity,
         }
     }
 }
@@ -267,17 +271,41 @@ struct ManifoldOut {
     variance_ratio: f64,
 }
 
-// ── Server-side cache ───────────────────────────────────────────────────
+// ── Server-side cache (Node.js only, not available in browser WASM) ────
 
 /// Read a cached SphereQL result from disk.
 /// Returns the JSON string if the file exists, or None.
+///
+/// Only available when targeting Node.js (wasi or server-side runtimes).
+/// Will return None in browser environments where std::fs is unavailable.
 #[wasm_bindgen]
 pub fn cache_read(path: &str) -> Option<String> {
-    std::fs::read_to_string(path).ok()
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        None
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::read_to_string(path).ok()
+    }
 }
 
 /// Write a SphereQL result to disk for caching.
+///
+/// Only available when targeting Node.js (wasi or server-side runtimes).
+/// Returns an error in browser environments where std::fs is unavailable.
 #[wasm_bindgen]
 pub fn cache_write(path: &str, json: &str) -> Result<(), JsError> {
-    std::fs::write(path, json).map_err(|e| JsError::new(&e.to_string()))
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (path, json);
+        Err(JsError::new(
+            "cache_write is not available in browser WASM — use localStorage or IndexedDB instead",
+        ))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::write(path, json).map_err(|e| JsError::new(&e.to_string()))
+    }
 }

@@ -7,6 +7,7 @@ members = [
     "sphereql-graphql",
     "sphereql-vectordb",
     "sphereql-wasm",
+    "sphereql-python",
     "sphereql",
 ]
 resolver = "2"

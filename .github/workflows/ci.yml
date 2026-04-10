@@ -68,3 +68,28 @@ jobs:
           else
             cargo check -p sphereql --features ${{ matrix.features }}
           fi
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Create virtualenv and install tools
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install maturin pytest numpy
+      - name: Build and install sphereql
+        working-directory: sphereql-python
+        run: |
+          source ../.venv/bin/activate
+          maturin develop
+      - name: Run Python tests
+        working-directory: sphereql-python
+        run: |
+          source ../.venv/bin/activate
+          pytest -v

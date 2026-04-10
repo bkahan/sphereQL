@@ -30,6 +30,10 @@ pub struct NearestResult {
     pub id: String,
     pub category: String,
     pub distance: f64,
+    /// Certainty of this point's projection (0–1). Higher = more faithfully represented.
+    pub certainty: f64,
+    /// Semantic intensity (pre-normalization magnitude of original embedding).
+    pub intensity: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -100,22 +104,12 @@ pub struct SphereQLPipeline {
 }
 
 impl SphereQLPipeline {
-    /// Build a pipeline from raw inputs.
+    /// Build a pipeline from raw inputs, fitting a new PCA internally.
     ///
     /// - `input.categories[i]` is the category for sentence `i`
     /// - `input.embeddings[i]` is the embedding vector for sentence `i`
     /// - All embedding vectors must have the same dimensionality (>= 3).
     pub fn new(input: PipelineInput) -> Self {
-        let n = input.embeddings.len();
-        assert_eq!(
-            n,
-            input.categories.len(),
-            "categories.len() ({}) must equal embeddings.len() ({})",
-            input.categories.len(),
-            n
-        );
-        assert!(n >= 3, "need at least 3 embeddings");
-
         let embeddings: Vec<Embedding> = input
             .embeddings
             .iter()
@@ -123,6 +117,27 @@ impl SphereQLPipeline {
             .collect();
 
         let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).with_volumetric(true);
+        Self::with_projection(input.categories, embeddings, pca)
+    }
+
+    /// Build a pipeline from pre-computed embeddings and an existing PCA projection.
+    ///
+    /// Use this when the projection has already been fitted externally (e.g.,
+    /// by `VectorStoreBridge`) to avoid fitting a second PCA on the same data.
+    pub fn with_projection(
+        categories: Vec<String>,
+        embeddings: Vec<Embedding>,
+        pca: PcaProjection,
+    ) -> Self {
+        let n = embeddings.len();
+        assert_eq!(
+            n,
+            categories.len(),
+            "categories.len() ({}) must equal embeddings.len() ({})",
+            categories.len(),
+            n
+        );
+        assert!(n >= 3, "need at least 3 embeddings");
 
         let mut index = EmbeddingIndex::builder(pca.clone())
             .uniform_shells(10, 1.0)
@@ -149,7 +164,7 @@ impl SphereQLPipeline {
         Self {
             pca,
             index,
-            categories: input.categories,
+            categories,
             cart_points,
             ids,
         }
@@ -169,6 +184,8 @@ impl SphereQLPipeline {
                             id: r.item.id.clone(),
                             category: self.cat_for(&r.item.id),
                             distance: r.distance,
+                            certainty: r.item.certainty(),
+                            intensity: r.item.intensity(),
                         })
                         .collect(),
                 )
@@ -187,6 +204,8 @@ impl SphereQLPipeline {
                                 id: item.id.clone(),
                                 category: self.cat_for(&item.id),
                                 distance: d,
+                                certainty: item.certainty(),
+                                intensity: item.intensity(),
                             }
                         })
                         .collect(),
