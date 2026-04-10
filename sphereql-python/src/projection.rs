@@ -45,7 +45,7 @@ pub(crate) fn extract_embedding(obj: &Bound<'_, PyAny>) -> PyResult<Embedding> {
     Ok(Embedding::new(vec))
 }
 
-fn extract_embeddings_2d(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Embedding>> {
+pub(crate) fn extract_embeddings_2d(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Embedding>> {
     // Try numpy 2D array (f64)
     if let Ok(arr) = obj.extract::<PyReadonlyArray2<f64>>() {
         let shape = arr.shape();

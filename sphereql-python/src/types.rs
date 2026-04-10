@@ -5,7 +5,7 @@ use sphereql_embed::pipeline::{GlobSummary, ManifoldResult, NearestResult, PathR
 
 // ── Nearest ────────────────────────────────────────────────────────────
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(name = "NearestHit", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Nearest {
     #[pyo3(get)]
@@ -24,7 +24,7 @@ pub struct Nearest {
 impl Nearest {
     fn __repr__(&self) -> String {
         format!(
-            "Nearest(id={:?}, category={:?}, distance={:.4})",
+            "NearestHit(id={:?}, category={:?}, distance={:.4})",
             self.id, self.category, self.distance
         )
     }
@@ -119,7 +119,7 @@ impl PathStep {
 
 // ── Path ───────────────────────────────────────────────────────────────
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(name = "PathResult", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Path {
     #[pyo3(get)]
@@ -132,7 +132,7 @@ pub struct Path {
 impl Path {
     fn __repr__(&self) -> String {
         format!(
-            "Path(steps={}, total_distance={:.4})",
+            "PathResult(steps={}, total_distance={:.4})",
             self.steps.len(),
             self.total_distance
         )
@@ -201,7 +201,7 @@ impl From<&PathResult> for Path {
 
 // ── Glob ───────────────────────────────────────────────────────────────
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(name = "GlobInfo", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Glob {
     #[pyo3(get)]
@@ -220,7 +220,7 @@ pub struct Glob {
 impl Glob {
     fn __repr__(&self) -> String {
         format!(
-            "Glob(id={}, members={}, radius={:.4})",
+            "GlobInfo(id={}, members={}, radius={:.4})",
             self.id, self.member_count, self.radius
         )
     }
@@ -280,7 +280,7 @@ impl From<&GlobSummary> for Glob {
 
 // ── Manifold ───────────────────────────────────────────────────────────
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(name = "ManifoldInfo", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Manifold {
     #[pyo3(get)]
@@ -294,7 +294,7 @@ pub struct Manifold {
 #[pymethods]
 impl Manifold {
     fn __repr__(&self) -> String {
-        format!("Manifold(variance_ratio={:.4})", self.variance_ratio)
+        format!("ManifoldInfo(variance_ratio={:.4})", self.variance_ratio)
     }
 
     fn __eq__(&self, other: &Manifold) -> bool {
