@@ -2,9 +2,7 @@ use sphereql_core::*;
 use sphereql_index::SpatialItem;
 
 use crate::projection::{PcaProjection, Projection};
-use crate::query::{
-    EmbeddingIndex, GlobResult, SlicingManifold,
-};
+use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
 
 // ── Input contract ──────────────────────────────────────────────────────
@@ -80,7 +78,11 @@ pub enum SphereQLQuery<'a> {
     /// Find all neighbors within a cosine similarity threshold.
     SimilarAbove { min_cosine: f64 },
     /// Find the shortest concept path between two indexed items.
-    ConceptPath { source_id: &'a str, target_id: &'a str, graph_k: usize },
+    ConceptPath {
+        source_id: &'a str,
+        target_id: &'a str,
+        graph_k: usize,
+    },
     /// Detect concept globs. k=None for auto-detection.
     DetectGlobs { k: Option<usize>, max_k: usize },
     /// Fit a local manifold around the query point.
@@ -120,8 +122,7 @@ impl SphereQLPipeline {
             .map(|v| Embedding::new(v.clone()))
             .collect();
 
-        let pca =
-            PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).with_volumetric(true);
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).with_volumetric(true);
 
         let mut index = EmbeddingIndex::builder(pca.clone())
             .uniform_shells(10, 1.0)
@@ -198,17 +199,19 @@ impl SphereQLPipeline {
                 graph_k,
             } => {
                 let path = self.index.concept_path(source_id, target_id, graph_k);
-                SphereQLOutput::ConceptPath(path.map(|p| PathResult {
-                    total_distance: p.total_distance,
-                    steps: p
-                        .steps
-                        .iter()
-                        .map(|s| PipelinePathStep {
-                            id: s.id.clone(),
-                            category: self.cat_for(&s.id),
-                            cumulative_distance: s.cumulative_distance,
-                        })
-                        .collect(),
+                SphereQLOutput::ConceptPath(path.map(|p| {
+                    PathResult {
+                        total_distance: p.total_distance,
+                        steps: p
+                            .steps
+                            .iter()
+                            .map(|s| PipelinePathStep {
+                                id: s.id.clone(),
+                                category: self.cat_for(&s.id),
+                                cumulative_distance: s.cumulative_distance,
+                            })
+                            .collect(),
+                    }
                 }))
             }
 
@@ -219,8 +222,7 @@ impl SphereQLPipeline {
                         .globs
                         .iter()
                         .map(|g| {
-                            let mut cat_counts =
-                                std::collections::HashMap::<String, usize>::new();
+                            let mut cat_counts = std::collections::HashMap::<String, usize>::new();
                             for mid in &g.member_ids {
                                 let cat = self.cat_for(mid);
                                 *cat_counts.entry(cat).or_default() += 1;
@@ -371,10 +373,7 @@ mod tests {
     fn pipeline_local_manifold() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input);
-        let result = pipeline.query(
-            SphereQLQuery::LocalManifold { neighborhood_k: 10 },
-            &query,
-        );
+        let result = pipeline.query(SphereQLQuery::LocalManifold { neighborhood_k: 10 }, &query);
         match result {
             SphereQLOutput::LocalManifold(m) => {
                 assert!(m.variance_ratio > 0.0);

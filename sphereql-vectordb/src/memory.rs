@@ -95,7 +95,11 @@ impl VectorStore for InMemoryStore {
             })
             .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(k);
         Ok(scored)
     }
@@ -219,12 +223,13 @@ mod tests {
     #[tokio::test]
     async fn dimension_mismatch_rejected() {
         let store = InMemoryStore::new("test", 3);
-        let result = store
-            .upsert(&[record("a", vec![1.0, 0.0])])
-            .await;
+        let result = store.upsert(&[record("a", vec![1.0, 0.0])]).await;
         assert!(matches!(
             result,
-            Err(VectorStoreError::DimensionMismatch { expected: 3, got: 2 })
+            Err(VectorStoreError::DimensionMismatch {
+                expected: 3,
+                got: 2
+            })
         ));
     }
 
@@ -304,10 +309,7 @@ mod tests {
         assert_eq!(page1.records[0].id, "a");
         assert_eq!(page1.records[1].id, "b");
 
-        let page2 = store
-            .list(2, page1.next_offset.as_deref())
-            .await
-            .unwrap();
+        let page2 = store.list(2, page1.next_offset.as_deref()).await.unwrap();
         assert_eq!(page2.records.len(), 1);
         assert!(page2.next_offset.is_none());
         assert_eq!(page2.records[0].id, "c");

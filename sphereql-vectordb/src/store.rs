@@ -24,11 +24,8 @@ pub trait VectorStore: Send + Sync {
 
     /// Approximate nearest-neighbor search. Returns up to `k` results
     /// ordered by descending similarity (highest score first).
-    async fn search(
-        &self,
-        vector: &[f64],
-        k: usize,
-    ) -> Result<Vec<SearchResult>, VectorStoreError>;
+    async fn search(&self, vector: &[f64], k: usize)
+    -> Result<Vec<SearchResult>, VectorStoreError>;
 
     /// Scroll through all records with cursor-based pagination.
     /// Pass `None` for the first page; use the returned `next_offset` for subsequent pages.

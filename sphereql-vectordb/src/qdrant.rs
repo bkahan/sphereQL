@@ -3,21 +3,17 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use qdrant_client::Qdrant;
 use qdrant_client::qdrant::{
-    CreateCollectionBuilder, Distance, PointStruct, VectorParamsBuilder,
-    SearchPointsBuilder, ScrollPointsBuilder, GetPointsBuilder,
-    UpsertPointsBuilder, DeletePointsBuilder, SetPayloadPointsBuilder,
-    CountPointsBuilder, PointsIdsList,
-    PointId, point_id::PointIdOptions,
-    vectors::VectorsOptions,
-    value::Kind,
-    Value as QdrantValue,
+    CountPointsBuilder, CreateCollectionBuilder, DeletePointsBuilder, Distance, GetPointsBuilder,
+    PointId, PointStruct, PointsIdsList, ScrollPointsBuilder, SearchPointsBuilder,
+    SetPayloadPointsBuilder, UpsertPointsBuilder, Value as QdrantValue, VectorParamsBuilder,
+    VectorsOutput, point_id::PointIdOptions, value::Kind,
+    vector_output::Vector as VectorOutputVariant, vectors_output::VectorsOptions,
 };
 
 use crate::error::VectorStoreError;
 use crate::store::VectorStore;
 use crate::types::{
-    DistanceMetric, PayloadUpdate, SearchResult, VectorPage, VectorRecord,
-    SPHEREQL_ID_KEY,
+    DistanceMetric, PayloadUpdate, SPHEREQL_ID_KEY, SearchResult, VectorPage, VectorRecord,
 };
 
 /// Configuration for connecting to a Qdrant instance.
@@ -33,11 +29,7 @@ pub struct QdrantConfig {
 }
 
 impl QdrantConfig {
-    pub fn new(
-        url: impl Into<String>,
-        collection: impl Into<String>,
-        dimension: usize,
-    ) -> Self {
+    pub fn new(url: impl Into<String>, collection: impl Into<String>, dimension: usize) -> Self {
         Self {
             url: url.into(),
             api_key: None,
@@ -91,7 +83,7 @@ impl QdrantStore {
     pub async fn connect(config: QdrantConfig) -> Result<Self, VectorStoreError> {
         let mut builder = Qdrant::from_url(&config.url);
         if let Some(ref key) = config.api_key {
-            builder = builder.api_key(key);
+            builder = builder.api_key(key.as_str());
         }
         let client = builder
             .build()
@@ -111,11 +103,9 @@ impl QdrantStore {
                 };
                 client
                     .create_collection(
-                        CreateCollectionBuilder::new(&config.collection)
-                            .vectors_config(VectorParamsBuilder::new(
-                                config.dimension as u64,
-                                distance,
-                            )),
+                        CreateCollectionBuilder::new(&config.collection).vectors_config(
+                            VectorParamsBuilder::new(config.dimension as u64, distance),
+                        ),
                     )
                     .await
                     .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
@@ -131,11 +121,7 @@ impl QdrantStore {
 
     /// Wrap an existing Qdrant client \u2014 for when the caller manages
     /// the connection and collection lifecycle themselves.
-    pub fn from_client(
-        client: Qdrant,
-        collection: impl Into<String>,
-        dimension: usize,
-    ) -> Self {
+    pub fn from_client(client: Qdrant, collection: impl Into<String>, dimension: usize) -> Self {
         Self {
             client,
             collection: collection.into(),
@@ -164,10 +150,7 @@ impl VectorStore for QdrantStore {
                 let vector_f32 = f64_to_f32(&r.vector);
 
                 let mut payload = metadata_to_payload(&r.metadata);
-                payload.insert(
-                    SPHEREQL_ID_KEY.to_string(),
-                    QdrantValue::from(r.id.clone()),
-                );
+                payload.insert(SPHEREQL_ID_KEY.to_string(), QdrantValue::from(r.id.clone()));
 
                 Ok(PointStruct::new(point_id, vector_f32, payload))
             })
@@ -224,8 +207,7 @@ impl VectorStore for QdrantStore {
 
         self.client
             .delete_points(
-                DeletePointsBuilder::new(&self.collection)
-                    .points(PointsIdsList { ids: point_ids }),
+                DeletePointsBuilder::new(&self.collection).points(PointsIdsList { ids: point_ids }),
             )
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
@@ -313,10 +295,7 @@ impl VectorStore for QdrantStore {
             })
             .collect();
 
-        let next_offset = response
-            .next_page_offset
-            .as_ref()
-            .map(point_id_to_string);
+        let next_offset = response.next_page_offset.as_ref().map(point_id_to_string);
 
         Ok(VectorPage {
             records,
@@ -403,12 +382,13 @@ fn extract_original_id(payload: &HashMap<String, QdrantValue>) -> Option<String>
 
 // \u2500\u2500 Vector extraction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
-fn extract_vector_f64(
-    vectors: &Option<qdrant_client::qdrant::Vectors>,
-) -> Option<Vec<f64>> {
+fn extract_vector_f64(vectors: &Option<VectorsOutput>) -> Option<Vec<f64>> {
     let v = vectors.as_ref()?;
     match &v.vectors_options {
-        Some(VectorsOptions::Vector(vec)) => Some(f32_to_f64(&vec.data)),
+        Some(VectorsOptions::Vector(vec)) => match vec.clone().into_vector() {
+            VectorOutputVariant::Dense(dense) => Some(f32_to_f64(&dense.data)),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -477,11 +457,9 @@ fn qdrant_value_to_json(v: &QdrantValue) -> serde_json::Value {
         Some(Kind::NullValue(_)) => serde_json::Value::Null,
         Some(Kind::BoolValue(b)) => serde_json::json!(b),
         Some(Kind::IntegerValue(i)) => serde_json::json!(i),
-        Some(Kind::DoubleValue(d)) => {
-            serde_json::Value::Number(serde_json::Number::from_f64(*d).unwrap_or_else(|| {
-                serde_json::Number::from(0)
-            }))
-        }
+        Some(Kind::DoubleValue(d)) => serde_json::Value::Number(
+            serde_json::Number::from_f64(*d).unwrap_or_else(|| serde_json::Number::from(0)),
+        ),
         Some(Kind::StringValue(s)) => serde_json::json!(s),
         Some(Kind::ListValue(l)) => {
             serde_json::Value::Array(l.values.iter().map(qdrant_value_to_json).collect())
@@ -532,7 +510,7 @@ mod tests {
         let original = serde_json::json!({
             "string": "hello",
             "int": 42,
-            "float": 3.14,
+            "float": 3.5,
             "bool": true,
             "null": null,
             "array": [1, 2, 3],
@@ -588,10 +566,7 @@ mod tests {
                 kind: Some(Kind::StringValue("my-id".to_string())),
             },
         );
-        assert_eq!(
-            extract_original_id(&payload),
-            Some("my-id".to_string())
-        );
+        assert_eq!(extract_original_id(&payload), Some("my-id".to_string()));
     }
 
     #[test]

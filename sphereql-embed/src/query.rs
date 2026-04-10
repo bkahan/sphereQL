@@ -96,11 +96,7 @@ impl<P: Projection> EmbeddingIndex<P> {
     }
 
     /// Find the k embeddings whose projected directions are closest to the query.
-    pub fn search_nearest(
-        &self,
-        query: &Embedding,
-        k: usize,
-    ) -> Vec<NearestResult<EmbeddingItem>> {
+    pub fn search_nearest(&self, query: &Embedding, k: usize) -> Vec<NearestResult<EmbeddingItem>> {
         let projected = self.projection.project(query);
         self.index.nearest(&projected, k)
     }
@@ -153,12 +149,7 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// runs Dijkstra's algorithm weighted by angular distance. The resulting
     /// path traces the chain of closest intermediate concepts connecting
     /// the source to the target.
-    pub fn concept_path(
-        &self,
-        source_id: &str,
-        target_id: &str,
-        k: usize,
-    ) -> Option<ConceptPath> {
+    pub fn concept_path(&self, source_id: &str, target_id: &str, k: usize) -> Option<ConceptPath> {
         let items = self.index.all_items();
         let n = items.len();
         if n < 2 {
@@ -202,7 +193,10 @@ impl<P: Projection> EmbeddingIndex<P> {
         let mut heap = BinaryHeap::new();
 
         dist[source_idx] = 0.0;
-        heap.push(DijkstraEntry { dist: 0.0, node: source_idx });
+        heap.push(DijkstraEntry {
+            dist: 0.0,
+            node: source_idx,
+        });
 
         while let Some(entry) = heap.pop() {
             let u = entry.node;
@@ -514,12 +508,7 @@ impl GlobResult {
     ///
     /// If `k` is `Some`, uses that many clusters.
     /// If `None`, auto-selects k ∈ [2, max_k] by maximizing the silhouette score.
-    pub fn detect(
-        points: &[[f64; 3]],
-        ids: &[String],
-        k: Option<usize>,
-        max_k: usize,
-    ) -> Self {
+    pub fn detect(points: &[[f64; 3]], ids: &[String], k: Option<usize>, max_k: usize) -> Self {
         let n = points.len();
         assert_eq!(n, ids.len());
         assert!(n >= 2, "need at least 2 points for clustering");
@@ -565,9 +554,7 @@ fn kmeans_3d(points: &[[f64; 3]], k: usize) -> (Vec<usize>, f64) {
     let max_iter = 50;
 
     // Init: spread initial centers evenly across the point set
-    let mut centers: Vec<[f64; 3]> = (0..k)
-        .map(|i| points[i * n / k])
-        .collect();
+    let mut centers: Vec<[f64; 3]> = (0..k).map(|i| points[i * n / k]).collect();
 
     let mut assignments = vec![0usize; n];
 
@@ -690,8 +677,8 @@ fn build_globs(
         // Centroid
         let mut centroid = [0.0; 3];
         for &i in &member_indices {
-            for d in 0..3 {
-                centroid[d] += points[i][d];
+            for (d, c) in centroid.iter_mut().enumerate() {
+                *c += points[i][d];
             }
         }
         let n = member_indices.len() as f64;
@@ -705,15 +692,9 @@ fn build_globs(
             .map(|&i| dist3(&points[i], &centroid))
             .collect();
 
-        let radius = member_distances
-            .iter()
-            .cloned()
-            .fold(0.0f64, f64::max);
+        let radius = member_distances.iter().cloned().fold(0.0f64, f64::max);
 
-        let member_ids: Vec<String> = member_indices
-            .iter()
-            .map(|&i| ids[i].clone())
-            .collect();
+        let member_ids: Vec<String> = member_indices.iter().map(|&i| ids[i].clone()).collect();
 
         globs.push(ConceptGlob {
             id: cluster_id,
@@ -934,8 +915,14 @@ mod tests {
         let result = idx.search_region(&Region::Shell(shell));
 
         let ids: Vec<&str> = result.items.iter().map(|i| i.id.as_str()).collect();
-        assert!(ids.contains(&"medium"), "medium (mag=1.0) should be in [0.5, 2.0]");
-        assert!(!ids.contains(&"large"), "large (mag=5.0) should not be in [0.5, 2.0]");
+        assert!(
+            ids.contains(&"medium"),
+            "medium (mag=1.0) should be in [0.5, 2.0]"
+        );
+        assert!(
+            !ids.contains(&"large"),
+            "large (mag=5.0) should not be in [0.5, 2.0]"
+        );
     }
 
     #[test]

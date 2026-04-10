@@ -1,8 +1,8 @@
 use wasm_bindgen::prelude::*;
 
 use sphereql_embed::pipeline::{
-    GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput,
-    SphereQLPipeline, SphereQLQuery,
+    GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
+    SphereQLQuery,
 };
 
 /// WASM-exposed pipeline. Constructed once with corpus data, then queried
@@ -118,17 +118,19 @@ impl Pipeline {
             &emb,
         );
         match result {
-            SphereQLOutput::ConceptPath(path) => serde_json::to_string(&path.map(|p| PathOut {
-                total_distance: p.total_distance,
-                steps: p
-                    .steps
-                    .iter()
-                    .map(|s| PathStepOut {
-                        id: s.id.clone(),
-                        category: s.category.clone(),
-                        cumulative_distance: s.cumulative_distance,
-                    })
-                    .collect(),
+            SphereQLOutput::ConceptPath(path) => serde_json::to_string(&path.map(|p| {
+                PathOut {
+                    total_distance: p.total_distance,
+                    steps: p
+                        .steps
+                        .iter()
+                        .map(|s| PathStepOut {
+                            id: s.id.clone(),
+                            category: s.category.clone(),
+                            cumulative_distance: s.cumulative_distance,
+                        })
+                        .collect(),
+                }
             }))
             .map_err(|e| JsError::new(&e.to_string())),
             _ => Err(JsError::new("unexpected output type")),

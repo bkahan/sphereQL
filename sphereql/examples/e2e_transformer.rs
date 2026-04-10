@@ -247,7 +247,12 @@ fn main() {
         cats.dedup();
         cats.len()
     };
-    let glob_result = GlobResult::detect(&cart_points, &all_ids, Some(num_categories), num_categories + 5);
+    let glob_result = GlobResult::detect(
+        &cart_points,
+        &all_ids,
+        Some(num_categories),
+        num_categories + 5,
+    );
 
     // ── 7. Terminal output ──────────────────────────────────────────────
     println!("=== SphereQL: End-to-End Transformer Pipeline ===\n");
@@ -285,13 +290,32 @@ fn main() {
         }
         let mut gc: Vec<_> = glob_cats.iter().collect();
         gc.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
-        let top: String = gc.iter().take(3).map(|(c, n)| format!("{c}({n})")).collect::<Vec<_>>().join(", ");
-        println!("  Glob {:>2}: {:>3} members, radius={:.4}, top: {}", g.id, g.member_ids.len(), g.radius, top);
+        let top: String = gc
+            .iter()
+            .take(3)
+            .map(|(c, n)| format!("{c}({n})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "  Glob {:>2}: {:>3} members, radius={:.4}, top: {}",
+            g.id,
+            g.member_ids.len(),
+            g.radius,
+            top
+        );
     }
 
     for (src, tgt, path) in &paths {
-        let src_text = sentences.iter().find(|s| s.id == *src).map(|s| truncate(&s.text, 40)).unwrap_or_default();
-        let tgt_text = sentences.iter().find(|s| s.id == *tgt).map(|s| truncate(&s.text, 40)).unwrap_or_default();
+        let src_text = sentences
+            .iter()
+            .find(|s| s.id == *src)
+            .map(|s| truncate(&s.text, 40))
+            .unwrap_or_default();
+        let tgt_text = sentences
+            .iter()
+            .find(|s| s.id == *tgt)
+            .map(|s| truncate(&s.text, 40))
+            .unwrap_or_default();
         println!(
             "\n--- Concept Path: \"{}\" → \"{}\" ({} hops, {:.4} rad total) ---",
             src_text,
@@ -300,8 +324,16 @@ fn main() {
             path.total_distance
         );
         for (i, step) in path.steps.iter().enumerate() {
-            let cat = sentences.iter().find(|s| s.id == step.id).map(|s| s.category.as_str()).unwrap_or("?");
-            let text = sentences.iter().find(|s| s.id == step.id).map(|s| truncate(&s.text, 50)).unwrap_or_default();
+            let cat = sentences
+                .iter()
+                .find(|s| s.id == step.id)
+                .map(|s| s.category.as_str())
+                .unwrap_or("?");
+            let text = sentences
+                .iter()
+                .find(|s| s.id == step.id)
+                .map(|s| truncate(&s.text, 50))
+                .unwrap_or_default();
             println!(
                 "  {:>2}. [{:<12}] cum={:.4}  \"{}\"",
                 i, cat, step.cumulative_distance, text
@@ -337,18 +369,23 @@ fn main() {
             sim_result.items.len(),
         );
         for item in sim_result.items.iter().take(8) {
-            let cat = sentences.iter().find(|s| s.id == item.id).map(|s| s.category.as_str()).unwrap_or("?");
-            let text = sentences.iter().find(|s| s.id == item.id).map(|s| truncate(&s.text, 55)).unwrap_or_default();
+            let cat = sentences
+                .iter()
+                .find(|s| s.id == item.id)
+                .map(|s| s.category.as_str())
+                .unwrap_or("?");
+            let text = sentences
+                .iter()
+                .find(|s| s.id == item.id)
+                .map(|s| truncate(&s.text, 55))
+                .unwrap_or_default();
             println!("  [{cat:<12}] \"{text}\"");
         }
     }
 
     // ── Local manifold demo ─────────────────────────────────────────────
     if let Some(first_qr) = query_results.first() {
-        println!(
-            "\n--- Local Manifold: \"{}\" ---",
-            first_qr.description,
-        );
+        println!("\n--- Local Manifold: \"{}\" ---", first_qr.description,);
         println!(
             "  Variance captured: {:.1}% (1.0 = flat plane, 0.67 = spherical)",
             first_qr.local_manifold.variance_ratio * 100.0,
@@ -361,7 +398,16 @@ fn main() {
     // Compute minimum bounding sphere of all points
     let (bsphere_center, bsphere_radius) = bounding_sphere(&cart_points);
 
-    let data_json = build_viz_json(&projected, &query_results, &paths, &manifold, &glob_result, &sentences, &bsphere_center, bsphere_radius);
+    let data_json = build_viz_json(
+        &projected,
+        &query_results,
+        &paths,
+        &manifold,
+        &glob_result,
+        &sentences,
+        &bsphere_center,
+        bsphere_radius,
+    );
     let html = VIZ_TEMPLATE.replace("__DATA_PLACEHOLDER__", &data_json);
     std::fs::write(&output_path, &html)
         .unwrap_or_else(|e| panic!("Cannot write {output_path}: {e}"));
@@ -427,7 +473,7 @@ fn build_viz_json(
             let nb = p
                 .neighbors
                 .iter()
-                .map(|n| format!("\"{}\"", n))
+                .map(|n| format!("\"{n}\""))
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
@@ -477,20 +523,37 @@ fn build_viz_json(
 
     let mf = format!(
         "{{\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"nx\":{:.6},\"ny\":{:.6},\"nz\":{:.6},\"ux\":{:.6},\"uy\":{:.6},\"uz\":{:.6},\"vx\":{:.6},\"vy\":{:.6},\"vz\":{:.6},\"vr\":{:.4}}}",
-        manifold.centroid[0], manifold.centroid[1], manifold.centroid[2],
-        manifold.normal[0], manifold.normal[1], manifold.normal[2],
-        manifold.basis_u[0], manifold.basis_u[1], manifold.basis_u[2],
-        manifold.basis_v[0], manifold.basis_v[1], manifold.basis_v[2],
+        manifold.centroid[0],
+        manifold.centroid[1],
+        manifold.centroid[2],
+        manifold.normal[0],
+        manifold.normal[1],
+        manifold.normal[2],
+        manifold.basis_u[0],
+        manifold.basis_u[1],
+        manifold.basis_u[2],
+        manifold.basis_v[0],
+        manifold.basis_v[1],
+        manifold.basis_v[2],
         manifold.variance_ratio,
     );
 
-    let gs: Vec<String> = globs.globs.iter().map(|g| {
-        let members = g.member_ids.iter().map(|m| format!("\"{m}\"")).collect::<Vec<_>>().join(",");
-        format!(
-            "{{\"id\":{},\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"r\":{:.4},\"members\":[{}]}}",
-            g.id, g.centroid[0], g.centroid[1], g.centroid[2], g.radius, members
-        )
-    }).collect();
+    let gs: Vec<String> = globs
+        .globs
+        .iter()
+        .map(|g| {
+            let members = g
+                .member_ids
+                .iter()
+                .map(|m| format!("\"{m}\""))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{{\"id\":{},\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"r\":{:.4},\"members\":[{}]}}",
+                g.id, g.centroid[0], g.centroid[1], g.centroid[2], g.radius, members
+            )
+        })
+        .collect();
 
     format!(
         "{{\"points\":[{}],\"queries\":[{}],\"paths\":[{}],\"manifold\":{},\"globs\":[{}],\"globK\":{},\"globSil\":{:.4},\"bsphere\":{{\"cx\":{:.6},\"cy\":{:.6},\"cz\":{:.6},\"r\":{:.6}}}}}",
@@ -501,7 +564,10 @@ fn build_viz_json(
         gs.join(","),
         globs.k,
         globs.silhouette,
-        bsphere_center[0], bsphere_center[1], bsphere_center[2], bsphere_radius,
+        bsphere_center[0],
+        bsphere_center[1],
+        bsphere_center[2],
+        bsphere_radius,
     )
 }
 

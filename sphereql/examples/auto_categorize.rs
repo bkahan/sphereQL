@@ -70,7 +70,7 @@ fn main() {
     let mut cats: Vec<_> = cat_counts.iter().collect();
     cats.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
     for (cat, count) in &cats {
-        println!("  {:<14} {count}", cat);
+        println!("  {cat:<14} {count}");
     }
 
     // ── Project (volumetric) ────────────────────────────────────────────
@@ -180,11 +180,19 @@ fn main() {
         }
         let mut gc: Vec<_> = glob_cats.iter().collect();
         gc.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
-        let top_cats: String = gc.iter().take(3).map(|(c, n)| format!("{c}({n})")).collect::<Vec<_>>().join(", ");
+        let top_cats: String = gc
+            .iter()
+            .take(3)
+            .map(|(c, n)| format!("{c}({n})"))
+            .collect::<Vec<_>>()
+            .join(", ");
 
         println!(
             "  Glob {:>2}: {:>3} members, radius={:.4}, top: {}",
-            glob.id, glob.member_ids.len(), glob.radius, top_cats,
+            glob.id,
+            glob.member_ids.len(),
+            glob.radius,
+            top_cats,
         );
     }
 

@@ -171,7 +171,11 @@ impl RandomProjection {
         assert!(dim >= 3, "embedding dimension must be >= 3");
         let mut rng = SplitMix64::new(seed);
         let matrix = std::array::from_fn(|_| (0..dim).map(|_| rng.normal()).collect());
-        Self { matrix, dim, radial }
+        Self {
+            matrix,
+            dim,
+            radial,
+        }
     }
 
     pub fn new_default(dim: usize) -> Self {
@@ -470,7 +474,7 @@ mod tests {
     fn random_produces_valid_spherical_points() {
         let rp = RandomProjection::new(10, RadialStrategy::Fixed(1.0), 42);
         for i in 0..20 {
-            let e = emb(&vec![i as f64 * 0.1 + 0.01; 10]);
+            let e = emb(&[i as f64 * 0.1 + 0.01; 10]);
             assert_valid_spherical(&rp.project(&e));
         }
     }
@@ -492,7 +496,10 @@ mod tests {
         let rp2 = RandomProjection::new(10, RadialStrategy::Fixed(1.0), 999);
         let e = emb(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
         let d = angular_distance(&rp1.project(&e), &rp2.project(&e));
-        assert!(d > 1e-6, "different seeds should produce different projections");
+        assert!(
+            d > 1e-6,
+            "different seeds should produce different projections"
+        );
     }
 
     #[test]

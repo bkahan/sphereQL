@@ -43,7 +43,9 @@ fn embed(features: &[(usize, f64)], seed: u64) -> Embedding {
     }
     let mut s = seed;
     for x in &mut v {
-        s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         *x += ((s >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.04;
     }
     Embedding::new(v)
@@ -61,114 +63,207 @@ fn corpus() -> Vec<Doc> {
     vec![
         // --- Science ---
         Doc {
-            id: "sci-1", topic: "science",
+            id: "sci-1",
+            topic: "science",
             text: "The speed of light in a vacuum is approximately 299,792 km/s.",
             importance: 0.95,
-            embedding: embed(&[(PHYSICS,1.0),(SPACE,0.5),(ENERGY,0.6),(MOTION,0.7),(MATH,0.3)], 1),
+            embedding: embed(
+                &[
+                    (PHYSICS, 1.0),
+                    (SPACE, 0.5),
+                    (ENERGY, 0.6),
+                    (MOTION, 0.7),
+                    (MATH, 0.3),
+                ],
+                1,
+            ),
         },
         Doc {
-            id: "sci-2", topic: "science",
+            id: "sci-2",
+            topic: "science",
             text: "DNA carries the genetic instructions for all living organisms.",
             importance: 0.92,
-            embedding: embed(&[(BIOLOGY,1.0),(CHEMISTRY,0.5),(NATURE,0.4),(TIME,0.2)], 2),
+            embedding: embed(
+                &[(BIOLOGY, 1.0), (CHEMISTRY, 0.5), (NATURE, 0.4), (TIME, 0.2)],
+                2,
+            ),
         },
         Doc {
-            id: "sci-3", topic: "science",
+            id: "sci-3",
+            topic: "science",
             text: "Quantum entanglement allows particles to be correlated across vast distances.",
             importance: 0.88,
-            embedding: embed(&[(PHYSICS,0.9),(SPACE,0.6),(MATH,0.5),(ENERGY,0.4)], 3),
+            embedding: embed(
+                &[(PHYSICS, 0.9), (SPACE, 0.6), (MATH, 0.5), (ENERGY, 0.4)],
+                3,
+            ),
         },
         Doc {
-            id: "sci-4", topic: "science",
+            id: "sci-4",
+            topic: "science",
             text: "Photosynthesis converts sunlight into chemical energy in plants.",
             importance: 0.85,
-            embedding: embed(&[(BIOLOGY,0.8),(CHEMISTRY,0.7),(ENERGY,0.8),(NATURE,0.6)], 4),
+            embedding: embed(
+                &[
+                    (BIOLOGY, 0.8),
+                    (CHEMISTRY, 0.7),
+                    (ENERGY, 0.8),
+                    (NATURE, 0.6),
+                ],
+                4,
+            ),
         },
-
         // --- Cooking ---
         Doc {
-            id: "cook-1", topic: "cooking",
+            id: "cook-1",
+            topic: "cooking",
             text: "Preheat the oven to 350°F and line a baking sheet with parchment paper.",
             importance: 0.60,
-            embedding: embed(&[(COOKING,1.0),(HEAT,0.9),(FLAVOR,0.2)], 5),
+            embedding: embed(&[(COOKING, 1.0), (HEAT, 0.9), (FLAVOR, 0.2)], 5),
         },
         Doc {
-            id: "cook-2", topic: "cooking",
+            id: "cook-2",
+            topic: "cooking",
             text: "Simmer the tomato sauce on low heat until it thickens, stirring occasionally.",
             importance: 0.65,
-            embedding: embed(&[(COOKING,0.9),(HEAT,0.7),(FLAVOR,0.6),(TIME,0.3)], 6),
+            embedding: embed(
+                &[(COOKING, 0.9), (HEAT, 0.7), (FLAVOR, 0.6), (TIME, 0.3)],
+                6,
+            ),
         },
         Doc {
-            id: "cook-3", topic: "cooking",
+            id: "cook-3",
+            topic: "cooking",
             text: "Season generously with salt, pepper, and a pinch of smoked paprika.",
             importance: 0.55,
-            embedding: embed(&[(COOKING,0.8),(FLAVOR,1.0),(CHEMISTRY,0.2)], 7),
+            embedding: embed(&[(COOKING, 0.8), (FLAVOR, 1.0), (CHEMISTRY, 0.2)], 7),
         },
         Doc {
-            id: "cook-4", topic: "cooking",
+            id: "cook-4",
+            topic: "cooking",
             text: "Fold the egg whites gently into the batter to keep it light and airy.",
             importance: 0.50,
-            embedding: embed(&[(COOKING,0.9),(FLAVOR,0.4),(MOTION,0.3)], 8),
+            embedding: embed(&[(COOKING, 0.9), (FLAVOR, 0.4), (MOTION, 0.3)], 8),
         },
-
         // --- Sports ---
         Doc {
-            id: "sport-1", topic: "sports",
+            id: "sport-1",
+            topic: "sports",
             text: "The team scored a last-minute goal to win the championship.",
             importance: 0.80,
-            embedding: embed(&[(SPORT,1.0),(COMPETE,0.9),(TEAM,0.8),(EMOTION,0.6),(TIME,0.3)], 9),
+            embedding: embed(
+                &[
+                    (SPORT, 1.0),
+                    (COMPETE, 0.9),
+                    (TEAM, 0.8),
+                    (EMOTION, 0.6),
+                    (TIME, 0.3),
+                ],
+                9,
+            ),
         },
         Doc {
-            id: "sport-2", topic: "sports",
+            id: "sport-2",
+            topic: "sports",
             text: "She ran the marathon in under three hours, setting a personal record.",
             importance: 0.75,
-            embedding: embed(&[(SPORT,0.9),(COMPETE,0.7),(MOTION,0.8),(ENERGY,0.5),(TIME,0.4)], 10),
+            embedding: embed(
+                &[
+                    (SPORT, 0.9),
+                    (COMPETE, 0.7),
+                    (MOTION, 0.8),
+                    (ENERGY, 0.5),
+                    (TIME, 0.4),
+                ],
+                10,
+            ),
         },
         Doc {
-            id: "sport-3", topic: "sports",
+            id: "sport-3",
+            topic: "sports",
             text: "The goalkeeper made a spectacular diving save in extra time.",
             importance: 0.70,
-            embedding: embed(&[(SPORT,0.9),(COMPETE,0.6),(TEAM,0.5),(MOTION,0.7),(EMOTION,0.4)], 11),
+            embedding: embed(
+                &[
+                    (SPORT, 0.9),
+                    (COMPETE, 0.6),
+                    (TEAM, 0.5),
+                    (MOTION, 0.7),
+                    (EMOTION, 0.4),
+                ],
+                11,
+            ),
         },
-
         // --- Music ---
         Doc {
-            id: "mus-1", topic: "music",
+            id: "mus-1",
+            topic: "music",
             text: "The symphony's third movement builds to a powerful fortissimo climax.",
             importance: 0.82,
-            embedding: embed(&[(MUSIC,1.0),(PERFORM,0.7),(RHYTHM,0.5),(EMOTION,0.8),(ENERGY,0.5)], 12),
+            embedding: embed(
+                &[
+                    (MUSIC, 1.0),
+                    (PERFORM, 0.7),
+                    (RHYTHM, 0.5),
+                    (EMOTION, 0.8),
+                    (ENERGY, 0.5),
+                ],
+                12,
+            ),
         },
         Doc {
-            id: "mus-2", topic: "music",
+            id: "mus-2",
+            topic: "music",
             text: "Her voice resonated through the concert hall with crystalline clarity.",
             importance: 0.78,
-            embedding: embed(&[(MUSIC,0.9),(PERFORM,0.9),(EMOTION,0.6),(ENERGY,0.3)], 13),
+            embedding: embed(
+                &[(MUSIC, 0.9), (PERFORM, 0.9), (EMOTION, 0.6), (ENERGY, 0.3)],
+                13,
+            ),
         },
         Doc {
-            id: "mus-3", topic: "music",
+            id: "mus-3",
+            topic: "music",
             text: "The drummer maintained a complex polyrhythm throughout the entire piece.",
             importance: 0.68,
-            embedding: embed(&[(MUSIC,0.8),(PERFORM,0.6),(RHYTHM,1.0),(TIME,0.5)], 14),
+            embedding: embed(
+                &[(MUSIC, 0.8), (PERFORM, 0.6), (RHYTHM, 1.0), (TIME, 0.5)],
+                14,
+            ),
         },
-
         // --- History ---
         Doc {
-            id: "hist-1", topic: "history",
+            id: "hist-1",
+            topic: "history",
             text: "The fall of the Roman Empire in 476 AD reshaped the political landscape of Europe.",
             importance: 0.90,
-            embedding: embed(&[(HISTORY,1.0),(CIVILIZE,0.8),(WAR,0.5),(TIME,0.7)], 15),
+            embedding: embed(
+                &[(HISTORY, 1.0), (CIVILIZE, 0.8), (WAR, 0.5), (TIME, 0.7)],
+                15,
+            ),
         },
         Doc {
-            id: "hist-2", topic: "history",
+            id: "hist-2",
+            topic: "history",
             text: "The Industrial Revolution transformed manufacturing through steam-powered machinery.",
             importance: 0.88,
-            embedding: embed(&[(HISTORY,0.8),(CIVILIZE,0.6),(TECH,0.7),(ENERGY,0.6),(TIME,0.5)], 16),
+            embedding: embed(
+                &[
+                    (HISTORY, 0.8),
+                    (CIVILIZE, 0.6),
+                    (TECH, 0.7),
+                    (ENERGY, 0.6),
+                    (TIME, 0.5),
+                ],
+                16,
+            ),
         },
         Doc {
-            id: "hist-3", topic: "history",
+            id: "hist-3",
+            topic: "history",
             text: "Ancient Egyptians built the pyramids as monumental tombs for their pharaohs.",
             importance: 0.85,
-            embedding: embed(&[(HISTORY,0.9),(CIVILIZE,1.0),(TIME,0.6)], 17),
+            embedding: embed(&[(HISTORY, 0.9), (CIVILIZE, 1.0), (TIME, 0.6)], 17),
         },
     ]
 }
@@ -209,8 +304,8 @@ fn main() {
     // -----------------------------------------------------------------------
     println!("--- Document Map ---");
     println!(
-        "{:<10} {:<10} {:>6} {:>10} {:>10}  {}",
-        "id", "topic", "r", "θ (deg)", "φ (deg)", "text (truncated)"
+        "{:<10} {:<10} {:>6} {:>10} {:>10}  text (truncated)",
+        "id", "topic", "r", "θ (deg)", "φ (deg)"
     );
     println!("{}", "-".repeat(90));
     for doc in &docs {
@@ -246,20 +341,14 @@ fn main() {
     // -----------------------------------------------------------------------
     // Query 3: "What happened in ancient history?"
     // -----------------------------------------------------------------------
-    let q3 = embed(
-        &[(HISTORY, 0.9), (CIVILIZE, 0.7), (TIME, 0.5)],
-        102,
-    );
+    let q3 = embed(&[(HISTORY, 0.9), (CIVILIZE, 0.7), (TIME, 0.5)], 102);
     run_nearest_query(&index, &docs, &q3, "What happened in ancient history?", 5);
 
     // -----------------------------------------------------------------------
     // Similarity search: find all docs semantically close to a music query
     // -----------------------------------------------------------------------
     println!("\n--- Similarity Search: \"orchestral performance\" (cosine ≥ 0.75) ---");
-    let q_music = embed(
-        &[(MUSIC, 0.9), (PERFORM, 0.8), (EMOTION, 0.4)],
-        103,
-    );
+    let q_music = embed(&[(MUSIC, 0.9), (PERFORM, 0.8), (EMOTION, 0.4)], 103);
     let sim_results = index.search_similar(&q_music, 0.75);
     let q_proj = index.projection().project(&q_music);
     for item in &sim_results.items {
@@ -284,7 +373,12 @@ fn main() {
     // -----------------------------------------------------------------------
     println!("\n--- Compound Query: science-like AND high importance (r > 2.5) ---");
     let q_sci = embed(
-        &[(PHYSICS, 0.5), (BIOLOGY, 0.5), (CHEMISTRY, 0.4), (ENERGY, 0.3)],
+        &[
+            (PHYSICS, 0.5),
+            (BIOLOGY, 0.5),
+            (CHEMISTRY, 0.4),
+            (ENERGY, 0.3),
+        ],
         104,
     );
     let region = SemanticQuery::similar_in_shell(&q_sci, index.projection(), 0.6, 2.5, 5.0);
@@ -327,7 +421,14 @@ fn main() {
     // -----------------------------------------------------------------------
     println!("\n--- Cross-Domain: midpoint between \"science\" and \"cooking\" ---");
     let q_cross = embed(
-        &[(BIOLOGY, 0.4), (CHEMISTRY, 0.5), (COOKING, 0.4), (ENERGY, 0.3), (HEAT, 0.3), (WATER, 0.2)],
+        &[
+            (BIOLOGY, 0.4),
+            (CHEMISTRY, 0.5),
+            (COOKING, 0.4),
+            (ENERGY, 0.3),
+            (HEAT, 0.3),
+            (WATER, 0.2),
+        ],
         105,
     );
     let cross_results = index.search_nearest(&q_cross, 5);

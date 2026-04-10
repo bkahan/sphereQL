@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
 use sphereql_embed::{
-    Embedding, PcaProjection, Projection, RadialStrategy,
-    PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
+    Embedding, PcaProjection, PipelineInput, PipelineQuery, Projection, RadialStrategy,
+    SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
 
 use crate::error::VectorStoreError;
 use crate::store::VectorStore;
 use crate::types::{
-    PayloadUpdate, SearchResult, VectorRecord,
-    SPHEREQL_R_KEY, SPHEREQL_THETA_KEY, SPHEREQL_PHI_KEY,
+    PayloadUpdate, SPHEREQL_PHI_KEY, SPHEREQL_R_KEY, SPHEREQL_THETA_KEY, SearchResult, VectorRecord,
 };
 
 /// Configuration for the bridge between a vector store and sphereQL.
@@ -344,10 +343,7 @@ mod tests {
     #[tokio::test]
     async fn build_pipeline_rejects_too_few_records() {
         let store = InMemoryStore::new("test", 5);
-        store
-            .upsert(&make_records(2, 5))
-            .await
-            .unwrap();
+        store.upsert(&make_records(2, 5)).await.unwrap();
 
         let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
         let err = bridge.build_pipeline(category_extractor).await;
@@ -396,11 +392,7 @@ mod tests {
         let count = bridge.sync_projections().await.unwrap();
         assert_eq!(count, 20);
 
-        let records = bridge
-            .store()
-            .get(&["rec-0".into()])
-            .await
-            .unwrap();
+        let records = bridge.store().get(&["rec-0".into()]).await.unwrap();
 
         let meta = &records[0].metadata;
         assert!(meta.contains_key(SPHEREQL_R_KEY));
@@ -432,10 +424,7 @@ mod tests {
         bridge.build_pipeline(category_extractor).await.unwrap();
 
         let query_vec = vec![0.9; 10];
-        let results = bridge
-            .hybrid_search(&query_vec, 5, 15)
-            .await
-            .unwrap();
+        let results = bridge.hybrid_search(&query_vec, 5, 15).await.unwrap();
 
         assert_eq!(results.len(), 5);
         for pair in results.windows(2) {
