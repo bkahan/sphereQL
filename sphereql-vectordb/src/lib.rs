@@ -4,6 +4,8 @@ pub mod memory;
 pub mod store;
 pub mod types;
 
+#[cfg(feature = "pinecone")]
+pub mod pinecone;
 #[cfg(feature = "qdrant")]
 pub mod qdrant;
 

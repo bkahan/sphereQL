@@ -4,7 +4,14 @@ build-backend = "maturin"
 
 [project]
 name = "sphereql"
+version = "0.1.0"
+description = "Spherical coordinate knowledge representation — fast semantic search, visualization, and analysis"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.9"
+authors = [
+    { name = "Ben Kahan", email = "benkahan1@gmail.com" }
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -12,16 +19,21 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
-    "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Database",
 ]
-dynamic = ["version"]
+keywords = ["embeddings", "semantic-search", "vector-database", "spherical", "pca", "visualization"]
+
+[project.optional-dependencies]
+qdrant = []
+
+[project.urls]
+Repository = "https://github.com/bkahan/sphereQL"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
-manifest-path = "Cargo.toml"
+features = ["pyo3/extension-module", "core", "embed", "vectordb"]
+python-source = "python"
 module-name = "sphereql"

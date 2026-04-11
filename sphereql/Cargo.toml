@@ -14,6 +14,7 @@ layout = ["index", "dep:sphereql-layout"]
 embed = ["layout", "dep:sphereql-embed"]
 graphql = ["index", "dep:sphereql-graphql"]
 vectordb = ["embed", "dep:sphereql-vectordb"]
+pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
 [dependencies]
@@ -55,3 +56,7 @@ required-features = ["embed"]
 [[example]]
 name = "auto_categorize"
 required-features = ["embed"]
+
+[[example]]
+name = "benchmark"
+required-features = ["full"]

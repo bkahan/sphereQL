@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__SPHEREQL_TITLE__</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
+canvas{position:absolute;top:0;left:0}
+#legend{position:absolute;top:16px;left:16px;background:rgba(26,26,46,0.92);padding:14px 18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);max-height:50vh;overflow-y:auto;z-index:10}
+#legend h3{font-size:14px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:.5px}
+.lrow{display:flex;align-items:center;gap:8px;margin:4px 0;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .15s}
+.lrow:hover{background:rgba(255,255,255,0.08)}.lrow.dim{opacity:.25}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.lbl{font-size:12px}.lcnt{font-size:11px;color:#888;margin-left:auto}
+#info{position:absolute;top:16px;right:16px;width:320px;background:rgba(26,26,46,0.92);padding:18px;border-radius:10px;font-size:13px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);display:none;z-index:10}
+#info.visible{display:block}
+#info h3{font-size:15px;margin-bottom:6px;font-weight:600}
+#info .cat-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;margin-bottom:8px}
+#info .coord{font-size:12px;color:#999;margin:4px 0}
+#info .nb{padding:6px 8px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;cursor:pointer;transition:background .15s}
+#info .nb:hover{background:rgba(255,255,255,0.1)}
+#info .nb .dist{color:#888;font-size:11px;float:right}
+#stats{position:absolute;bottom:16px;left:16px;background:rgba(26,26,46,0.92);padding:14px 18px;border-radius:10px;font-size:12px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);z-index:10}
+#stats h3{font-size:13px;margin-bottom:6px;color:#aaa;font-weight:500}
+#stats .row{display:flex;justify-content:space-between;gap:16px;margin:2px 0;color:#bbb}
+#stats .val{color:#e0e0e0;font-weight:500}
+#search{position:absolute;bottom:16px;right:16px;background:rgba(26,26,46,0.92);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);z-index:10}
+#search input{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#e0e0e0;padding:6px 10px;font-size:12px;width:200px;outline:none}
+#search input:focus{border-color:rgba(100,180,255,0.4)}
+#tooltip{position:absolute;pointer-events:none;background:rgba(26,26,46,0.95);padding:8px 12px;border-radius:6px;font-size:12px;border:1px solid rgba(255,255,255,0.12);display:none;z-index:20;white-space:nowrap}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="legend"><h3>Categories</h3><div id="legend-items"></div></div>
+<div id="info"><h3 id="info-label"></h3><div id="info-cat" class="cat-tag"></div><div id="info-coords" class="coord"></div><h4 style="font-size:12px;color:#aaa;margin:10px 0 4px">Nearest neighbors</h4><div id="info-neighbors"></div></div>
+<div id="stats"><h3>Stats</h3><div id="stats-content"></div></div>
+<div id="search"><input type="text" id="search-input" placeholder="Search labels..."></div>
+<div id="tooltip"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const D=/*__SPHEREQL_DATA__*/;
+const pts=D.points,N=pts.length;
+
+// Category colors
+const catSet=[...new Set(pts.map(p=>p.cat))].sort();
+const PALETTE=["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#f06292","#4dd0e1","#a1887f","#90a4ae","#aed581","#7986cb","#ffb74d","#e57373","#64b5f6","#dce775","#9575cd"];
+const catColor={};catSet.forEach((c,i)=>catColor[c]=PALETTE[i%PALETTE.length]);
+const catVisible={};catSet.forEach(c=>catVisible[c]=true);
+
+// Canvas & renderer
+const canvas=document.getElementById("c");
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x1a1a2e);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.01,100);
+camera.position.set(0,0,2.2);
+
+// Lighting
+scene.add(new THREE.AmbientLight(0x404060,2));
+const dl=new THREE.DirectionalLight(0xffffff,0.6);dl.position.set(3,5,4);scene.add(dl);
+
+// Wireframe sphere
+const wg=new THREE.IcosahedronGeometry(0.5,3);
+const wm=new THREE.MeshBasicMaterial({color:0x334466,wireframe:true,transparent:true,opacity:0.06});
+scene.add(new THREE.Mesh(wg,wm));
+
+// Points as BufferGeometry for performance
+const positions=new Float32Array(N*3);
+const colors=new Float32Array(N*3);
+const sizes=new Float32Array(N);
+for(let i=0;i<N;i++){
+  const p=pts[i],c=new THREE.Color(catColor[p.cat]);
+  positions[i*3]=p.x;positions[i*3+1]=p.y;positions[i*3+2]=p.z;
+  colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b;
+  sizes[i]=4.0;
+}
+const pointsGeo=new THREE.BufferGeometry();
+pointsGeo.setAttribute("position",new THREE.BufferAttribute(positions,3));
+pointsGeo.setAttribute("color",new THREE.BufferAttribute(colors,3));
+pointsGeo.setAttribute("size",new THREE.BufferAttribute(sizes,1));
+
+const pointsMat=new THREE.ShaderMaterial({
+  vertexColors:true,transparent:true,depthWrite:false,
+  uniforms:{opacity:{value:1.0}},
+  vertexShader:`
+    attribute float size;
+    varying vec3 vc;
+    void main(){
+      vc=color;
+      vec4 mv=modelViewMatrix*vec4(position,1.0);
+      gl_PointSize=size*300.0/(-mv.z);
+      gl_Position=projectionMatrix*mv;
+    }`,
+  fragmentShader:`
+    uniform float opacity;
+    varying vec3 vc;
+    void main(){
+      float d=length(gl_PointCoord-0.5);
+      if(d>0.5)discard;
+      float a=smoothstep(0.5,0.3,d)*opacity;
+      gl_FragColor=vec4(vc,a);
+    }`
+});
+const pointsMesh=new THREE.Points(pointsGeo,pointsMat);
+scene.add(pointsMesh);
+
+// Neighbor lines group
+const linesGroup=new THREE.Group();scene.add(linesGroup);
+
+// Orbit controls (manual implementation)
+let isDragging=false,prevX=0,prevY=0;
+let spherical={theta:0,phi:Math.PI/2,radius:2.2};
+
+function updateCamera(){
+  const st=Math.sin(spherical.phi),ct=Math.cos(spherical.phi);
+  camera.position.set(
+    spherical.radius*st*Math.sin(spherical.theta),
+    spherical.radius*ct,
+    spherical.radius*st*Math.cos(spherical.theta)
+  );
+  camera.lookAt(0,0,0);
+}
+
+canvas.addEventListener("mousedown",e=>{isDragging=true;prevX=e.clientX;prevY=e.clientY});
+canvas.addEventListener("mousemove",e=>{
+  if(!isDragging)return;
+  const dx=e.clientX-prevX,dy=e.clientY-prevY;
+  spherical.theta-=dx*0.005;
+  spherical.phi=Math.max(0.01,Math.min(Math.PI-0.01,spherical.phi-dy*0.005));
+  prevX=e.clientX;prevY=e.clientY;
+  updateCamera();
+});
+canvas.addEventListener("mouseup",()=>isDragging=false);
+canvas.addEventListener("mouseleave",()=>isDragging=false);
+canvas.addEventListener("wheel",e=>{
+  spherical.radius=Math.max(0.5,Math.min(10,spherical.radius+e.deltaY*0.002));
+  updateCamera();
+},{passive:true});
+// Touch support
+canvas.addEventListener("touchstart",e=>{if(e.touches.length===1){isDragging=true;prevX=e.touches[0].clientX;prevY=e.touches[0].clientY}},{passive:true});
+canvas.addEventListener("touchmove",e=>{
+  if(!isDragging||e.touches.length!==1)return;
+  const dx=e.touches[0].clientX-prevX,dy=e.touches[0].clientY-prevY;
+  spherical.theta-=dx*0.005;
+  spherical.phi=Math.max(0.01,Math.min(Math.PI-0.01,spherical.phi-dy*0.005));
+  prevX=e.touches[0].clientX;prevY=e.touches[0].clientY;
+  updateCamera();
+},{passive:true});
+canvas.addEventListener("touchend",()=>isDragging=false);
+updateCamera();
+
+// Raycaster for hover/click
+const raycaster=new THREE.Raycaster();
+raycaster.params.Points.threshold=0.02;
+const mouse=new THREE.Vector2();
+const tooltip=document.getElementById("tooltip");
+let selectedIdx=-1;
+
+function getHovered(e){
+  mouse.x=(e.clientX/innerWidth)*2-1;
+  mouse.y=-(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObject(pointsMesh);
+  if(hits.length>0){
+    const idx=hits[0].index;
+    if(catVisible[pts[idx].cat])return idx;
+  }
+  return -1;
+}
+
+canvas.addEventListener("mousemove",e=>{
+  if(isDragging){tooltip.style.display="none";return}
+  const idx=getHovered(e);
+  if(idx>=0){
+    const p=pts[idx];
+    tooltip.innerHTML=`<b>${p.label||"Point "+idx}</b><br>Category: ${p.cat}<br>\u03b8=${p.theta.toFixed(3)} \u03c6=${p.phi.toFixed(3)} r=${p.r.toFixed(3)}`;
+    tooltip.style.display="block";
+    tooltip.style.left=(e.clientX+12)+"px";
+    tooltip.style.top=(e.clientY+12)+"px";
+    canvas.style.cursor="pointer";
+  }else{
+    tooltip.style.display="none";
+    canvas.style.cursor="grab";
+  }
+});
+
+canvas.addEventListener("click",e=>{
+  if(isDragging)return;
+  const idx=getHovered(e);
+  if(idx>=0)selectPoint(idx);
+  else deselectPoint();
+});
+
+function selectPoint(idx){
+  selectedIdx=idx;
+  const p=pts[idx];
+
+  // Find 5 nearest neighbors
+  const dists=pts.map((q,i)=>{
+    if(i===idx||!catVisible[q.cat])return{i,d:Infinity};
+    const dx=p.x-q.x,dy=p.y-q.y,dz=p.z-q.z;
+    return{i,d:Math.sqrt(dx*dx+dy*dy+dz*dz)};
+  }).filter(d=>d.d<Infinity).sort((a,b)=>a.d-b.d).slice(0,5);
+
+  // Dim all points except selected and neighbors
+  const neighborSet=new Set([idx,...dists.map(d=>d.i)]);
+  const sizeAttr=pointsGeo.getAttribute("size");
+  const colorAttr=pointsGeo.getAttribute("color");
+  for(let i=0;i<N;i++){
+    if(neighborSet.has(i)){
+      sizeAttr.array[i]=6.0;
+      const c=new THREE.Color(catColor[pts[i].cat]);
+      colorAttr.array[i*3]=c.r;colorAttr.array[i*3+1]=c.g;colorAttr.array[i*3+2]=c.b;
+    }else{
+      sizeAttr.array[i]=2.0;
+      colorAttr.array[i*3]*=0.3;colorAttr.array[i*3+1]*=0.3;colorAttr.array[i*3+2]*=0.3;
+    }
+  }
+  sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;
+  pointsMat.uniforms.opacity.value=0.4;
+
+  // Draw lines to neighbors
+  while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
+  const lineMat=new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.3});
+  for(const d of dists){
+    const geo=new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(p.x,p.y,p.z),
+      new THREE.Vector3(pts[d.i].x,pts[d.i].y,pts[d.i].z)
+    ]);
+    linesGroup.add(new THREE.Line(geo,lineMat));
+  }
+
+  // Info panel
+  const info=document.getElementById("info");
+  document.getElementById("info-label").textContent=p.label||"Point "+idx;
+  const catTag=document.getElementById("info-cat");
+  catTag.textContent=p.cat;catTag.style.background=catColor[p.cat]+"33";catTag.style.color=catColor[p.cat];
+  document.getElementById("info-coords").innerHTML=`\u03b8=${p.theta.toFixed(4)} &nbsp; \u03c6=${p.phi.toFixed(4)} &nbsp; r=${p.r.toFixed(4)}`;
+  const nbDiv=document.getElementById("info-neighbors");
+  nbDiv.innerHTML=dists.map(d=>`<div class="nb" data-idx="${d.i}">${pts[d.i].label||"Point "+d.i} <span class="dist">${d.d.toFixed(4)}</span></div>`).join("");
+  nbDiv.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));
+  info.classList.add("visible");
+}
+
+function deselectPoint(){
+  selectedIdx=-1;
+  const sizeAttr=pointsGeo.getAttribute("size");
+  const colorAttr=pointsGeo.getAttribute("color");
+  for(let i=0;i<N;i++){
+    const vis=catVisible[pts[i].cat];
+    sizeAttr.array[i]=vis?4.0:0.0;
+    const c=new THREE.Color(catColor[pts[i].cat]);
+    colorAttr.array[i*3]=c.r;colorAttr.array[i*3+1]=c.g;colorAttr.array[i*3+2]=c.b;
+  }
+  sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;
+  pointsMat.uniforms.opacity.value=1.0;
+  while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
+  document.getElementById("info").classList.remove("visible");
+}
+
+// Legend
+const legendDiv=document.getElementById("legend-items");
+const catCounts={};pts.forEach(p=>catCounts[p.cat]=(catCounts[p.cat]||0)+1);
+catSet.forEach(cat=>{
+  const row=document.createElement("div");row.className="lrow";
+  row.innerHTML=`<span class="ldot" style="background:${catColor[cat]}"></span><span class="lbl">${cat}</span><span class="lcnt">${catCounts[cat]}</span>`;
+  row.addEventListener("click",()=>{
+    catVisible[cat]=!catVisible[cat];
+    row.classList.toggle("dim",!catVisible[cat]);
+    updateVisibility();
+  });
+  legendDiv.appendChild(row);
+});
+
+function updateVisibility(){
+  const sizeAttr=pointsGeo.getAttribute("size");
+  for(let i=0;i<N;i++){
+    sizeAttr.array[i]=catVisible[pts[i].cat]?4.0:0.0;
+  }
+  sizeAttr.needsUpdate=true;
+  if(selectedIdx>=0)deselectPoint();
+}
+
+// Search
+const searchInput=document.getElementById("search-input");
+searchInput.addEventListener("input",()=>{
+  const q=searchInput.value.toLowerCase();
+  const sizeAttr=pointsGeo.getAttribute("size");
+  const colorAttr=pointsGeo.getAttribute("color");
+  if(!q){
+    deselectPoint();return;
+  }
+  for(let i=0;i<N;i++){
+    const match=(pts[i].label||"").toLowerCase().includes(q);
+    const vis=catVisible[pts[i].cat];
+    sizeAttr.array[i]=(match&&vis)?6.0:(vis?2.0:0.0);
+    const c=new THREE.Color(catColor[pts[i].cat]);
+    const f=match?1.0:0.3;
+    colorAttr.array[i*3]=c.r*f;colorAttr.array[i*3+1]=c.g*f;colorAttr.array[i*3+2]=c.b*f;
+  }
+  sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;
+  pointsMat.uniforms.opacity.value=0.5;
+});
+
+// Stats
+const statsDiv=document.getElementById("stats-content");
+const rVals=pts.map(p=>p.r),thVals=pts.map(p=>p.theta),phVals=pts.map(p=>p.phi);
+statsDiv.innerHTML=`
+<div class="row"><span>Points</span><span class="val">${N.toLocaleString()}</span></div>
+<div class="row"><span>Categories</span><span class="val">${catSet.length}</span></div>
+<div class="row"><span>PCA variance</span><span class="val">${(D.evr*100).toFixed(1)}%</span></div>
+<div class="row"><span>r range</span><span class="val">[${Math.min(...rVals).toFixed(3)}, ${Math.max(...rVals).toFixed(3)}]</span></div>
+<div class="row"><span>\u03b8 range</span><span class="val">[${Math.min(...thVals).toFixed(3)}, ${Math.max(...thVals).toFixed(3)}]</span></div>
+<div class="row"><span>\u03c6 range</span><span class="val">[${Math.min(...phVals).toFixed(3)}, ${Math.max(...phVals).toFixed(3)}]</span></div>`;
+
+// Resize
+window.addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// Render loop
+function animate(){
+  requestAnimationFrame(animate);
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>

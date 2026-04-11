@@ -182,6 +182,16 @@ impl Pipeline {
         }
     }
 
+    /// Export all projected points as JSON.
+    pub fn export_json(&self) -> Result<String, JsError> {
+        Ok(self.inner.to_json())
+    }
+
+    /// PCA explained variance ratio.
+    pub fn explained_variance(&self) -> f64 {
+        self.inner.explained_variance_ratio()
+    }
+
     /// Number of indexed items.
     pub fn len(&self) -> usize {
         self.inner.num_items()
