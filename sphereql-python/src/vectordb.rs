@@ -7,11 +7,11 @@ use pyo3::types::PyDict;
 use tokio::runtime::Runtime;
 
 use sphereql_embed::pipeline::{SphereQLOutput, SphereQLQuery};
+use sphereql_vectordb::store::VectorStore;
+use sphereql_vectordb::types::{PayloadUpdate, SearchResult, VectorPage};
 use sphereql_vectordb::{
     BridgeConfig, InMemoryStore, VectorRecord, VectorStoreBridge, VectorStoreError,
 };
-use sphereql_vectordb::store::VectorStore;
-use sphereql_vectordb::types::{PayloadUpdate, SearchResult, VectorPage};
 
 use crate::types::{Glob, Nearest, Path};
 
@@ -87,9 +87,9 @@ fn parse_record(dict: &Bound<'_, PyDict>) -> PyResult<VectorRecord> {
     let mut record = VectorRecord::new(id, vector);
 
     if let Some(meta_obj) = dict.get_item("metadata")? {
-        let meta: &Bound<'_, PyDict> = meta_obj.cast().map_err(|_| {
-            PyValueError::new_err("'metadata' must be a dict")
-        })?;
+        let meta: &Bound<'_, PyDict> = meta_obj
+            .cast()
+            .map_err(|_| PyValueError::new_err("'metadata' must be a dict"))?;
         for (k, v) in meta.iter() {
             let key: String = k.extract()?;
             let val: serde_json::Value = pythonize::depythonize(&v)
@@ -149,11 +149,10 @@ impl PyInMemoryStore {
     ///     records: List of dicts with keys 'id' (str), 'vector' (list[float]),
     ///         and optionally 'metadata' (dict).
     fn upsert(&self, records: Vec<Bound<'_, PyDict>>) -> PyResult<()> {
-        let recs: Vec<VectorRecord> = records
-            .iter()
-            .map(parse_record)
-            .collect::<PyResult<_>>()?;
-        self.rt.block_on(self.inner.upsert(&recs)).map_err(vstore_err)
+        let recs: Vec<VectorRecord> = records.iter().map(parse_record).collect::<PyResult<_>>()?;
+        self.rt
+            .block_on(self.inner.upsert(&recs))
+            .map_err(vstore_err)
     }
 
     /// Return the number of records in the store.
@@ -720,10 +719,7 @@ pub use pinecone_bridge::PyPineconeBridge;
 
 // ── Dict conversion ──────────────────────────────────────────────────────
 
-fn search_result_to_dict<'py>(
-    py: Python<'py>,
-    r: &SearchResult,
-) -> PyResult<Bound<'py, PyDict>> {
+fn search_result_to_dict<'py>(py: Python<'py>, r: &SearchResult) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     dict.set_item("id", &r.id)?;
     dict.set_item("score", r.score)?;
@@ -739,9 +735,10 @@ fn search_result_to_dict<'py>(
 fn json_to_py(py: Python<'_>, v: &serde_json::Value) -> PyResult<Py<PyAny>> {
     Ok(match v {
         serde_json::Value::Null => py.None(),
-        serde_json::Value::Bool(b) => {
-            pyo3::types::PyBool::new(py, *b).to_owned().into_any().unbind()
-        }
+        serde_json::Value::Bool(b) => pyo3::types::PyBool::new(py, *b)
+            .to_owned()
+            .into_any()
+            .unbind(),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 i.into_pyobject(py).unwrap().into_any().unbind()
@@ -756,8 +753,10 @@ fn json_to_py(py: Python<'_>, v: &serde_json::Value) -> PyResult<Py<PyAny>> {
         }
         serde_json::Value::String(s) => s.into_pyobject(py).unwrap().into_any().unbind(),
         serde_json::Value::Array(arr) => {
-            let items: Vec<Py<PyAny>> =
-                arr.iter().map(|v| json_to_py(py, v)).collect::<PyResult<_>>()?;
+            let items: Vec<Py<PyAny>> = arr
+                .iter()
+                .map(|v| json_to_py(py, v))
+                .collect::<PyResult<_>>()?;
             pyo3::types::PyList::new(py, items)?.into_any().unbind()
         }
         serde_json::Value::Object(map) => {

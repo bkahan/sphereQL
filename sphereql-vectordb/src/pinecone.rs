@@ -24,11 +24,7 @@ pub struct PineconeConfig {
 }
 
 impl PineconeConfig {
-    pub fn new(
-        api_key: impl Into<String>,
-        host: impl Into<String>,
-        dimension: usize,
-    ) -> Self {
+    pub fn new(api_key: impl Into<String>, host: impl Into<String>, dimension: usize) -> Self {
         Self {
             api_key: api_key.into(),
             host: host.into(),
@@ -172,10 +168,8 @@ impl VectorStore for PineconeStore {
             return Ok(Vec::new());
         }
 
-        let mut query_pairs: Vec<(&str, &str)> = ids
-            .iter()
-            .map(|id| ("ids", id.as_str()))
-            .collect();
+        let mut query_pairs: Vec<(&str, &str)> =
+            ids.iter().map(|id| ("ids", id.as_str())).collect();
         if !self.config.namespace.is_empty() {
             query_pairs.push(("namespace", &self.config.namespace));
         }
@@ -279,8 +273,7 @@ impl VectorStore for PineconeStore {
         offset: Option<&str>,
     ) -> Result<VectorPage, VectorStoreError> {
         // Step 1: List IDs
-        let mut query_params: Vec<(&str, String)> =
-            vec![("limit", limit.to_string())];
+        let mut query_params: Vec<(&str, String)> = vec![("limit", limit.to_string())];
         if !self.config.namespace.is_empty() {
             query_params.push(("namespace", self.config.namespace.clone()));
         }
@@ -591,9 +584,10 @@ mod tests {
             vectors: vec![PineconeVector {
                 id: "v1".into(),
                 values: vec![1.0, 2.0, 3.0],
-                metadata: Some(HashMap::from([
-                    ("category".into(), serde_json::json!("science")),
-                ])),
+                metadata: Some(HashMap::from([(
+                    "category".into(),
+                    serde_json::json!("science"),
+                )])),
             }],
             namespace: Some("test-ns".into()),
         };

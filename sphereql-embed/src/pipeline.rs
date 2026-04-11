@@ -316,7 +316,11 @@ impl SphereQLPipeline {
             .iter()
             .enumerate()
             .map(|(i, id)| {
-                let cat = self.categories.get(i).map(|s| s.as_str()).unwrap_or("unknown");
+                let cat = self
+                    .categories
+                    .get(i)
+                    .map(|s| s.as_str())
+                    .unwrap_or("unknown");
                 (id.as_str(), cat, self.cart_points[i])
             })
             .collect()
@@ -394,7 +398,8 @@ impl SphereQLPipeline {
 
     /// Serialize all projected points as a JSON array string.
     pub fn to_json(&self) -> String {
-        serde_json::to_string(&self.exported_points()).expect("ExportedPoint is always serializable")
+        serde_json::to_string(&self.exported_points())
+            .expect("ExportedPoint is always serializable")
     }
 
     /// Serialize all projected points as CSV with a header row.
@@ -530,8 +535,14 @@ mod tests {
         let pipeline = SphereQLPipeline::new(input);
         for p in pipeline.exported_points() {
             assert!(p.r >= 0.0, "r must be non-negative");
-            assert!(p.theta >= 0.0 && p.theta < std::f64::consts::TAU, "theta out of range");
-            assert!(p.phi >= 0.0 && p.phi <= std::f64::consts::PI, "phi out of range");
+            assert!(
+                p.theta >= 0.0 && p.theta < std::f64::consts::TAU,
+                "theta out of range"
+            );
+            assert!(
+                p.phi >= 0.0 && p.phi <= std::f64::consts::PI,
+                "phi out of range"
+            );
         }
     }
 
@@ -561,7 +572,10 @@ mod tests {
         let pipeline = SphereQLPipeline::new(input);
         let csv = pipeline.to_csv();
         let lines: Vec<&str> = csv.lines().collect();
-        assert_eq!(lines[0], "id,category,r,theta,phi,x,y,z,certainty,intensity");
+        assert_eq!(
+            lines[0],
+            "id,category,r,theta,phi,x,y,z,certainty,intensity"
+        );
         assert_eq!(lines.len(), 21); // header + 20 data lines
     }
 

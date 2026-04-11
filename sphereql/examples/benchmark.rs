@@ -8,8 +8,7 @@ use std::time::Instant;
 
 use sphereql::embed::pipeline::{SphereQLOutput, SphereQLQuery};
 use sphereql::vectordb::{
-    BridgeConfig, InMemoryStore, VectorRecord, VectorStoreBridge,
-    store::VectorStore,
+    BridgeConfig, InMemoryStore, VectorRecord, VectorStoreBridge, store::VectorStore,
 };
 
 const NUM_CLUSTERS: usize = 20;
@@ -90,10 +89,7 @@ fn generate_dataset() -> Dataset {
         centroids.push(centroid.clone());
 
         for j in 0..POINTS_PER_CLUSTER {
-            let mut point: Vec<f64> = centroid
-                .iter()
-                .map(|&x| x + rng.normal() * 0.15)
-                .collect();
+            let mut point: Vec<f64> = centroid.iter().map(|&x| x + rng.normal() * 0.15).collect();
             normalize(&mut point);
 
             let id = format!("p-{}", c * POINTS_PER_CLUSTER + j);
@@ -164,11 +160,7 @@ fn recall_at_k(retrieved_ids: &[String], truth_ids: &[String], k: usize) -> f64 
     hits as f64 / truth_set.len() as f64
 }
 
-fn ndcg_at_k(
-    retrieved_ids: &[String],
-    truth_relevance: &HashMap<String, f64>,
-    k: usize,
-) -> f64 {
+fn ndcg_at_k(retrieved_ids: &[String], truth_relevance: &HashMap<String, f64>, k: usize) -> f64 {
     let dcg: f64 = retrieved_ids
         .iter()
         .take(k)
@@ -268,7 +260,11 @@ async fn main() {
     let build_time_ms = build_start.elapsed().as_millis();
     let evr = bridge.projection().unwrap().explained_variance_ratio();
 
-    eprintln!("Index built in {} ms, PCA EVR: {:.1}%", build_time_ms, evr * 100.0);
+    eprintln!(
+        "Index built in {} ms, PCA EVR: {:.1}%",
+        build_time_ms,
+        evr * 100.0
+    );
 
     let ks = [1, 5, 10, 20];
     let recall_multipliers = [2, 4, 8];
@@ -370,10 +366,7 @@ async fn main() {
 
             for (qi, q) in dataset.queries.iter().enumerate() {
                 let start = Instant::now();
-                let results = bridge
-                    .hybrid_search(&q.vector, k, recall_k)
-                    .await
-                    .unwrap();
+                let results = bridge.hybrid_search(&q.vector, k, recall_k).await.unwrap();
                 let elapsed = start.elapsed().as_micros() as f64;
                 latencies.push(elapsed);
 

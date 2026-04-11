@@ -172,7 +172,11 @@ pub fn visualize_pipeline(
         categories.push(cat.to_string());
         cart_points.push(*xyz);
         labels.push(id.to_string());
-        let cp = CartesianPoint { x: xyz[0], y: xyz[1], z: xyz[2] };
+        let cp = CartesianPoint {
+            x: xyz[0],
+            y: xyz[1],
+            z: xyz[2],
+        };
         let sp = cartesian_to_spherical(&cp);
         spherical.push((sp.r, sp.theta, sp.phi));
     }
