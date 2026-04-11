@@ -290,6 +290,43 @@ impl Pipeline {
         .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    fn exported_points<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyList>> {
+        let points = self.inner.exported_points();
+        let list = pyo3::types::PyList::empty(py);
+        for p in &points {
+            let dict = pyo3::types::PyDict::new(py);
+            dict.set_item("id", &p.id)?;
+            dict.set_item("category", &p.category)?;
+            dict.set_item("r", p.r)?;
+            dict.set_item("theta", p.theta)?;
+            dict.set_item("phi", p.phi)?;
+            dict.set_item("x", p.x)?;
+            dict.set_item("y", p.y)?;
+            dict.set_item("z", p.z)?;
+            dict.set_item("certainty", p.certainty)?;
+            dict.set_item("intensity", p.intensity)?;
+            list.append(dict)?;
+        }
+        Ok(list)
+    }
+
+    #[getter]
+    fn explained_variance_ratio(&self) -> f64 {
+        self.inner.explained_variance_ratio()
+    }
+
+    fn unique_categories(&self) -> Vec<String> {
+        self.inner.unique_categories()
+    }
+
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn to_csv(&self) -> String {
+        self.inner.to_csv()
+    }
+
     fn __len__(&self) -> usize {
         self.inner.num_items()
     }

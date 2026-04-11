@@ -93,6 +93,21 @@ pub enum SphereQLQuery<'a> {
     LocalManifold { neighborhood_k: usize },
 }
 
+/// Projected data for a single item, suitable for export or visualization.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExportedPoint {
+    pub id: String,
+    pub category: String,
+    pub r: f64,
+    pub theta: f64,
+    pub phi: f64,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub certainty: f64,
+    pub intensity: f64,
+}
+
 // ── Pipeline ────────────────────────────────────────────────────────────
 
 pub struct SphereQLPipeline {
@@ -311,6 +326,89 @@ impl SphereQLPipeline {
     pub fn pca(&self) -> &PcaProjection {
         &self.pca
     }
+
+    /// Export all projected points with their Cartesian and spherical coordinates.
+    ///
+    /// Returns one `ExportedPoint` per indexed item, in insertion order.
+    pub fn exported_points(&self) -> Vec<ExportedPoint> {
+        self.ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let [x, y, z] = self.cart_points[i];
+                let category = self
+                    .categories
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".into());
+                let item = self.index.get(id);
+                let (r, theta, phi) = item
+                    .map(|it| {
+                        let pos = it.position();
+                        (pos.r, pos.theta, pos.phi)
+                    })
+                    .unwrap_or((0.0, 0.0, 0.0));
+                let certainty = item.map_or(1.0, |it| it.certainty());
+                let intensity = item.map_or(1.0, |it| it.intensity());
+                ExportedPoint {
+                    id: id.clone(),
+                    category,
+                    r,
+                    theta,
+                    phi,
+                    x,
+                    y,
+                    z,
+                    certainty,
+                    intensity,
+                }
+            })
+            .collect()
+    }
+
+    /// The PCA projection's explained variance ratio (0.0–1.0).
+    pub fn explained_variance_ratio(&self) -> f64 {
+        self.pca.explained_variance_ratio()
+    }
+
+    /// Number of unique categories in the corpus.
+    pub fn num_categories(&self) -> usize {
+        let mut seen = std::collections::HashSet::new();
+        for cat in &self.categories {
+            seen.insert(cat.as_str());
+        }
+        seen.len()
+    }
+
+    /// Unique category names in insertion order.
+    pub fn unique_categories(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut result = Vec::new();
+        for cat in &self.categories {
+            if seen.insert(cat.as_str()) {
+                result.push(cat.clone());
+            }
+        }
+        result
+    }
+
+    /// Serialize all projected points as a JSON array string.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self.exported_points()).expect("ExportedPoint is always serializable")
+    }
+
+    /// Serialize all projected points as CSV with a header row.
+    pub fn to_csv(&self) -> String {
+        let points = self.exported_points();
+        let mut out = String::from("id,category,r,theta,phi,x,y,z,certainty,intensity\n");
+        for p in &points {
+            out.push_str(&format!(
+                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                p.id, p.category, p.r, p.theta, p.phi, p.x, p.y, p.z, p.certainty, p.intensity,
+            ));
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -417,5 +515,72 @@ mod tests {
             }
             _ => panic!("expected LocalManifold"),
         }
+    }
+
+    #[test]
+    fn test_exported_points_count() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        assert_eq!(pipeline.exported_points().len(), 20);
+    }
+
+    #[test]
+    fn test_exported_points_fields() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        for p in pipeline.exported_points() {
+            assert!(p.r >= 0.0, "r must be non-negative");
+            assert!(p.theta >= 0.0 && p.theta < std::f64::consts::TAU, "theta out of range");
+            assert!(p.phi >= 0.0 && p.phi <= std::f64::consts::PI, "phi out of range");
+        }
+    }
+
+    #[test]
+    fn test_exported_points_categories() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        let points = pipeline.exported_points();
+        for (i, p) in points.iter().enumerate() {
+            let expected = if i < 10 { "group_a" } else { "group_b" };
+            assert_eq!(p.category, expected);
+        }
+    }
+
+    #[test]
+    fn test_to_json_parseable() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        let json = pipeline.to_json();
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("valid JSON");
+        assert_eq!(parsed.len(), 20);
+    }
+
+    #[test]
+    fn test_to_csv_lines() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        let csv = pipeline.to_csv();
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines[0], "id,category,r,theta,phi,x,y,z,certainty,intensity");
+        assert_eq!(lines.len(), 21); // header + 20 data lines
+    }
+
+    #[test]
+    fn test_explained_variance() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        let ratio = pipeline.explained_variance_ratio();
+        assert!(ratio > 0.0 && ratio <= 1.0);
+    }
+
+    #[test]
+    fn test_unique_categories() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input);
+        let cats = pipeline.unique_categories();
+        assert_eq!(cats.len(), 2);
+        assert_eq!(cats[0], "group_a");
+        assert_eq!(cats[1], "group_b");
+        assert_eq!(pipeline.num_categories(), 2);
     }
 }
