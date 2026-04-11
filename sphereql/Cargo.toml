@@ -55,3 +55,7 @@ required-features = ["embed"]
 [[example]]
 name = "auto_categorize"
 required-features = ["embed"]
+
+[[example]]
+name = "benchmark"
+required-features = ["full"]
