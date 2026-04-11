@@ -10,6 +10,8 @@ mod projection;
 mod types;
 #[cfg(feature = "vectordb")]
 mod vectordb;
+#[cfg(feature = "embed")]
+mod viz;
 
 #[pymodule]
 fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -38,6 +40,8 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<types::PathStep>()?;
         m.add_class::<types::Glob>()?;
         m.add_class::<types::Manifold>()?;
+        m.add_function(wrap_pyfunction!(viz::visualize, m)?)?;
+        m.add_function(wrap_pyfunction!(viz::visualize_pipeline, m)?)?;
     }
 
     #[cfg(feature = "vectordb")]

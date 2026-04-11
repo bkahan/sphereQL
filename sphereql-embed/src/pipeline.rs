@@ -294,6 +294,23 @@ impl SphereQLPipeline {
     pub fn categories(&self) -> &[String] {
         &self.categories
     }
+
+    /// Export (id, category, cartesian [x, y, z]) triples for every indexed item.
+    pub fn projected_points(&self) -> Vec<(&str, &str, [f64; 3])> {
+        self.ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let cat = self.categories.get(i).map(|s| s.as_str()).unwrap_or("unknown");
+                (id.as_str(), cat, self.cart_points[i])
+            })
+            .collect()
+    }
+
+    /// Access the fitted PCA projection.
+    pub fn pca(&self) -> &PcaProjection {
+        &self.pca
+    }
 }
 
 #[cfg(test)]

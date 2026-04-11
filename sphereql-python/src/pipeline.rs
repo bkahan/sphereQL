@@ -9,7 +9,7 @@ use sphereql_embed::pipeline::{
 
 #[pyclass]
 pub struct Pipeline {
-    inner: SphereQLPipeline,
+    pub(crate) inner: SphereQLPipeline,
     dim: usize,
 }
 
