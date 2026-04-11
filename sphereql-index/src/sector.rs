@@ -164,6 +164,41 @@ impl<T: SpatialItem> SectorIndex<T> {
         }
     }
 
+    /// Returns all items from sectors whose angular center is within
+    /// `proxy_threshold` cosine proxy distance of the query direction.
+    ///
+    /// Cosine proxy = `1 - dot(a, b)` for unit vectors, monotone with
+    /// angular distance. The sector's angular diagonal is added as margin
+    /// to ensure no edge items are missed.
+    ///
+    /// This is the fast path for sector-accelerated k-NN: it does only
+    /// 3 muls + 2 adds per sector center (no trig), and returns references
+    /// without cloning items.
+    pub fn items_in_nearby_sectors<'a>(
+        &'a self,
+        query_cart: &[f64; 3],
+        proxy_threshold: f64,
+    ) -> Vec<&'a T> {
+        let sector_margin = 1.0 - self.sector_diagonal().cos();
+        let adjusted = proxy_threshold + sector_margin;
+        let mut items = Vec::new();
+
+        for sector_idx in 0..self.sectors.len() {
+            let center = self.sector_center(sector_idx);
+            let center_cart = center.unit_cartesian();
+            let dot = query_cart[0] * center_cart[0]
+                + query_cart[1] * center_cart[1]
+                + query_cart[2] * center_cart[2];
+            let proxy = 1.0 - dot.clamp(-1.0, 1.0);
+
+            if proxy <= adjusted {
+                items.extend(self.sectors[sector_idx].iter());
+            }
+        }
+
+        items
+    }
+
     pub fn all_items(&self) -> Vec<&T> {
         self.sectors.iter().flat_map(|s| s.iter()).collect()
     }
@@ -188,7 +223,7 @@ impl<T: SpatialItem> SectorIndex<T> {
         (phi_idx as f64 * step, (phi_idx + 1) as f64 * step)
     }
 
-    fn sector_center(&self, sector_idx: usize) -> SphericalPoint {
+    pub(crate) fn sector_center(&self, sector_idx: usize) -> SphericalPoint {
         let theta_idx = sector_idx / self.phi_divisions;
         let phi_idx = sector_idx % self.phi_divisions;
 
@@ -198,7 +233,7 @@ impl<T: SpatialItem> SectorIndex<T> {
         SphericalPoint::new_unchecked(1.0, (t_min + t_max) / 2.0, (p_min + p_max) / 2.0)
     }
 
-    fn sector_diagonal(&self) -> f64 {
+    pub(crate) fn sector_diagonal(&self) -> f64 {
         let d_theta = TAU / self.theta_divisions as f64;
         let d_phi = PI / self.phi_divisions as f64;
         // Conservative upper bound: treat the angular extents as legs of a right triangle
@@ -260,10 +295,8 @@ mod tests {
     #[test]
     fn correct_sector_placement() {
         let mut index = SectorIndex::new(4, 2);
-        // theta_divisions=4 -> sectors at [0,TAU/4), [TAU/4,TAU/2), ...
-        // phi_divisions=2 -> sectors at [0,PI/2), [PI/2,PI)
-        let a = item(1, 0.1, 0.1); // theta_idx=0, phi_idx=0 -> sector 0
-        let b = item(2, FRAC_PI_2 + 0.1, FRAC_PI_2 + 0.1); // theta_idx=1, phi_idx=1 -> sector 3
+        let a = item(1, 0.1, 0.1);
+        let b = item(2, FRAC_PI_2 + 0.1, FRAC_PI_2 + 0.1);
 
         index.insert(a);
         index.insert(b);
@@ -313,11 +346,9 @@ mod tests {
     #[test]
     fn query_band_skips_sectors() {
         let mut index = SectorIndex::new(4, 8);
-        // Place 100 items outside the band
         for i in 0..100 {
             index.insert(item(i, (i as f64 * 0.06) % TAU, 0.05));
         }
-        // Place 1 item inside the band
         index.insert(item(999, 1.0, FRAC_PI_2));
 
         let band = Band::new(FRAC_PI_4, 3.0 * FRAC_PI_4).unwrap();
@@ -346,9 +377,9 @@ mod tests {
     #[test]
     fn query_wedge_wraparound() {
         let mut index = SectorIndex::new(8, 4);
-        index.insert(item(1, 6.0, FRAC_PI_2)); // near TAU
-        index.insert(item(2, 0.1, FRAC_PI_2)); // near 0
-        index.insert(item(3, 3.0, FRAC_PI_2)); // middle, outside
+        index.insert(item(1, 6.0, FRAC_PI_2));
+        index.insert(item(2, 0.1, FRAC_PI_2));
+        index.insert(item(3, 3.0, FRAC_PI_2));
 
         let wedge = Wedge::new(5.5, 0.3);
         let result = index.query_wedge(&wedge);
@@ -364,9 +395,9 @@ mod tests {
         let mut index = SectorIndex::new(8, 8);
         let center = SphericalPoint::new_unchecked(1.0, 1.0, FRAC_PI_2);
 
-        index.insert(item(1, 1.0, FRAC_PI_2)); // exactly at center
-        index.insert(item(2, 1.05, FRAC_PI_2)); // very close
-        index.insert(item(3, 4.0, FRAC_PI_2)); // far away
+        index.insert(item(1, 1.0, FRAC_PI_2));
+        index.insert(item(2, 1.05, FRAC_PI_2));
+        index.insert(item(3, 4.0, FRAC_PI_2));
 
         let result = index.query_cone(&center, 0.2);
 
@@ -379,12 +410,10 @@ mod tests {
     #[test]
     fn query_cone_skips_distant_sectors() {
         let mut index = SectorIndex::new(16, 16);
-        // Fill the opposite hemisphere
         for i in 0..50 {
             let theta = PI + (i as f64 * 0.02);
             index.insert(item(i, theta, FRAC_PI_2));
         }
-        // One item near the query center
         index.insert(item(999, 0.1, FRAC_PI_4));
 
         let center = SphericalPoint::new_unchecked(1.0, 0.1, FRAC_PI_4);
@@ -441,9 +470,7 @@ mod tests {
     #[test]
     fn items_at_sector_boundaries() {
         let mut index = SectorIndex::new(4, 4);
-        // phi exactly at PI should land in the last phi sector
         index.insert(item(1, 0.0, PI));
-        // theta at nearly TAU should land in the last theta sector
         index.insert(item(2, TAU - 0.001, FRAC_PI_2));
 
         assert_eq!(index.len(), 2);
@@ -469,5 +496,20 @@ mod tests {
     #[should_panic(expected = "phi_divisions must be >= 1")]
     fn zero_phi_divisions_panics() {
         SectorIndex::<TestItem>::new(4, 0);
+    }
+
+    #[test]
+    fn items_in_nearby_sectors_returns_local_items() {
+        let mut index = SectorIndex::new(8, 8);
+        index.insert(item(1, 0.5, FRAC_PI_2));
+        index.insert(item(2, PI + 0.5, FRAC_PI_2));
+
+        let query_point = SphericalPoint::new_unchecked(1.0, 0.5, FRAC_PI_2);
+        let query_cart = query_point.unit_cartesian();
+
+        let results = index.items_in_nearby_sectors(&query_cart, 0.5);
+        let ids: Vec<u32> = results.iter().map(|i| i.id).collect();
+        assert!(ids.contains(&1));
+        assert!(!ids.contains(&2));
     }
 }

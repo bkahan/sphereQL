@@ -75,15 +75,6 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     ///
     /// `category_fn` extracts a category string from each record's metadata.
     /// Categories drive glob detection and are attached to query results.
-    ///
-    /// ```ignore
-    /// bridge.build_pipeline(|record| {
-    ///     record.metadata.get("topic")
-    ///         .and_then(|v| v.as_str())
-    ///         .unwrap_or("unknown")
-    ///         .to_string()
-    /// }).await?;
-    /// ```
     pub async fn build_pipeline(
         &mut self,
         category_fn: impl Fn(&VectorRecord) -> String,
@@ -125,9 +116,6 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let projection = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
             .with_volumetric(self.config.volumetric);
 
-        // Use with_projection to share the same PCA instance, avoiding
-        // the dual-PCA bug where sync_projections and queries would use
-        // different coordinate systems.
         let pipeline = SphereQLPipeline::with_projection(categories, embs, projection.clone());
 
         self.pipeline = Some(pipeline);
@@ -140,11 +128,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
 
     /// Push sphereQL spherical coordinates back to the store as payload metadata.
     ///
-    /// For each record, writes:
-    /// - `_sphereql_r`: radial distance
-    /// - `_sphereql_theta`: azimuthal angle [0, 2\u03c0)
-    /// - `_sphereql_phi`: polar angle [0, \u03c0]
-    ///
+    /// For each record, writes `_sphereql_r`, `_sphereql_theta`, `_sphereql_phi`.
     /// Uses `set_payload` so existing metadata is preserved (merged, not replaced).
     /// Returns the number of records updated.
     pub async fn sync_projections(&self) -> Result<usize, VectorStoreError> {
@@ -200,44 +184,41 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     }
 
     /// Hybrid search: use the vector store's ANN for initial recall,
-    /// then re-rank through sphereQL's angular distance.
+    /// then re-rank through **original cosine similarity** for precision.
     ///
     /// 1. Queries the store for `recall_k` nearest neighbors (fast ANN).
-    /// 2. Projects all candidates through the PCA.
-    /// 3. Re-ranks by angular distance in sphereQL's spherical coordinate space.
-    /// 4. Returns the top `final_k` results.
+    /// 2. Re-ranks candidates by cosine similarity in the original
+    ///    high-dimensional space (not the lossy 3D projection).
+    /// 3. Returns the top `final_k` results.
     ///
-    /// This combines the store's scalable ANN index with sphereQL's
-    /// geometry-aware re-ranking for higher precision.
+    /// The spherical projection is NOT used for re-ranking because its
+    /// low explained variance ratio makes angular distance a poor proxy
+    /// for true semantic similarity beyond k=1.
     pub async fn hybrid_search(
         &self,
         query_embedding: &[f64],
         final_k: usize,
         recall_k: usize,
     ) -> Result<Vec<SearchResult>, VectorStoreError> {
-        let projection = self
-            .projection
-            .as_ref()
-            .ok_or(VectorStoreError::PipelineNotBuilt)?;
+        if self.projection.is_none() {
+            return Err(VectorStoreError::PipelineNotBuilt);
+        }
 
         let candidates = self.store.search(query_embedding, recall_k).await?;
 
-        let query_emb = Embedding::from(query_embedding);
-        let query_sp = projection.project(&query_emb);
-
+        // Re-rank by original cosine similarity \u2014 the true semantic distance.
         let mut scored: Vec<(SearchResult, f64)> = candidates
             .into_iter()
             .filter_map(|mut result| {
                 let vec = result.vector.as_ref()?;
-                let emb = Embedding::from(vec.as_slice());
-                let sp = projection.project(&emb);
-                let angular_dist = sphereql_core::angular_distance(&query_sp, &sp);
-                result.score = 1.0 - (angular_dist / std::f64::consts::PI);
-                Some((result, angular_dist))
+                let cosine_sim = sphereql_core::cosine_similarity(query_embedding, vec);
+                result.score = cosine_sim;
+                Some((result, cosine_sim))
             })
             .collect();
 
-        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort descending by cosine similarity (higher = more similar)
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(final_k);
 
         Ok(scored.into_iter().map(|(r, _)| r).collect())

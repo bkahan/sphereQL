@@ -18,6 +18,7 @@ The script demonstrates:
 - Automatic cluster (glob) detection
 - Concept paths between items
 - Local manifold analysis
+- Data export (JSON, CSV, projected points)
 - Vector DB bridge with hybrid search
 
 All output goes to stdout. The only file created is an HTML visualization.
