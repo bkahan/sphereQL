@@ -72,6 +72,9 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     }
 
     /// Pull all vectors from the store and build the sphereQL pipeline.
+    ///
+    /// `category_fn` extracts a category string from each record's metadata.
+    /// Categories drive glob detection and are attached to query results.
     pub async fn build_pipeline(
         &mut self,
         category_fn: impl Fn(&VectorRecord) -> String,
@@ -124,6 +127,10 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     }
 
     /// Push sphereQL spherical coordinates back to the store as payload metadata.
+    ///
+    /// For each record, writes `_sphereql_r`, `_sphereql_theta`, `_sphereql_phi`.
+    /// Uses `set_payload` so existing metadata is preserved (merged, not replaced).
+    /// Returns the number of records updated.
     pub async fn sync_projections(&self) -> Result<usize, VectorStoreError> {
         let projection = self
             .projection
@@ -157,6 +164,9 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     }
 
     /// Execute a typed sphereQL query against the pipeline.
+    ///
+    /// The `query_embedding` is projected through the same PCA that was
+    /// fitted during `build_pipeline`, so the coordinate system is consistent.
     pub fn query(
         &self,
         q: SphereQLQuery<'_>,
@@ -190,10 +200,9 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         final_k: usize,
         recall_k: usize,
     ) -> Result<Vec<SearchResult>, VectorStoreError> {
-        let _projection = self
-            .projection
-            .as_ref()
-            .ok_or(VectorStoreError::PipelineNotBuilt)?;
+        if self.projection.is_none() {
+            return Err(VectorStoreError::PipelineNotBuilt);
+        }
 
         let candidates = self.store.search(query_embedding, recall_k).await?;
 
@@ -202,8 +211,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             .into_iter()
             .filter_map(|mut result| {
                 let vec = result.vector.as_ref()?;
-                let cosine_sim =
-                    sphereql_core::cosine_similarity(query_embedding, vec);
+                let cosine_sim = sphereql_core::cosine_similarity(query_embedding, vec);
                 result.score = cosine_sim;
                 Some((result, cosine_sim))
             })

@@ -178,7 +178,6 @@ impl<T: SpatialItem> SectorIndex<T> {
         &'a self,
         query_cart: &[f64; 3],
         proxy_threshold: f64,
-        _cart_cache: &HashMap<T::Id, [f64; 3]>,
     ) -> Vec<&'a T> {
         let sector_margin = 1.0 - self.sector_diagonal().cos();
         let adjusted = proxy_threshold + sector_margin;
@@ -507,9 +506,8 @@ mod tests {
 
         let query_point = SphericalPoint::new_unchecked(1.0, 0.5, FRAC_PI_2);
         let query_cart = query_point.unit_cartesian();
-        let cache = HashMap::new();
 
-        let results = index.items_in_nearby_sectors(&query_cart, 0.5, &cache);
+        let results = index.items_in_nearby_sectors(&query_cart, 0.5);
         let ids: Vec<u32> = results.iter().map(|i| i.id).collect();
         assert!(ids.contains(&1));
         assert!(!ids.contains(&2));

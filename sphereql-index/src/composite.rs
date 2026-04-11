@@ -275,9 +275,9 @@ impl<T: SpatialItem> SpatialIndex<T> {
         proxy_threshold = proxy_threshold.max(0.01);
 
         loop {
-            let candidates =
-                self.sector
-                    .items_in_nearby_sectors(query_cart, proxy_threshold, &self.cart_cache);
+            let candidates = self
+                .sector
+                .items_in_nearby_sectors(query_cart, proxy_threshold);
 
             if candidates.len() >= target_candidates || proxy_threshold >= 2.0 {
                 return self.rank_candidates(&candidates, query_cart, query_point, k);

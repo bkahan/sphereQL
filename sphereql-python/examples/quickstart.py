@@ -110,8 +110,35 @@ def main():
     print(f"  Normal:   [{', '.join(f'{x:.3f}' for x in manifold.normal)}]")
     print()
 
-    # ── Act 6: Vector DB Bridge ──────────────────────────────────────
-    header("Act 6: Plug into my existing vector DB")
+    # ── Act 6: Data Export ────────────────────────────────────────────
+    header("Act 6: Export projected data")
+    print("SphereQL can export all projected points as structured data")
+    print("for downstream analysis, visualization, or debugging.\n")
+
+    print(f"  PCA explained variance ratio: "
+          f"{pipeline.explained_variance_ratio:.1%}")
+    print(f"  Unique categories: {pipeline.unique_categories()}\n")
+
+    points = pipeline.exported_points()
+    print(f"  exported_points() -> {len(points)} dicts")
+    p = points[0]
+    print(f"  First point: id={p['id']}, category={p['category']}")
+    print(f"    spherical: r={p['r']:.3f}, theta={p['theta']:.3f}, "
+          f"phi={p['phi']:.3f}")
+    print(f"    cartesian: x={p['x']:.3f}, y={p['y']:.3f}, z={p['z']:.3f}")
+    print(f"    certainty={p['certainty']:.3f}, "
+          f"intensity={p['intensity']:.3f}")
+
+    csv_preview = pipeline.to_csv().split("\n")
+    print(f"\n  to_csv() preview (header + first 2 rows):")
+    for line in csv_preview[:3]:
+        print(f"    {line}")
+
+    json_str = pipeline.to_json()
+    print(f"\n  to_json() -> {len(json_str)} chars")
+
+    # ── Act 7: Vector DB Bridge ──────────────────────────────────────
+    header("Act 7: Plug into my existing vector DB")
     print("VectorStoreBridge connects any vector store to SphereQL's")
     print("analysis pipeline. Here we use InMemoryStore as a demo.\n")
 
@@ -131,7 +158,7 @@ def main():
     hybrid_results = bridge.hybrid_search(
         query_emb, final_k=5, recall_k=20,
     )
-    print(f"\n  Hybrid search (ANN recall + angular re-ranking):")
+    print(f"\n  Hybrid search (ANN recall + cosine re-ranking):")
     for i, r in enumerate(hybrid_results, 1):
         print(f"    {i}. [{r['metadata']['category']}] "
               f"score={r['score']:.4f} — {r['id']}")
@@ -150,7 +177,12 @@ def main():
     print("  - Automatic cluster (glob) detection")
     print("  - Concept paths between items")
     print("  - Local manifold analysis")
+    print("  - Data export (JSON, CSV, projected points)")
     print("  - Vector DB bridge with hybrid search")
+    print("\nNote: This demo uses 64-d FNV-1a hash embeddings. With real")
+    print("384-d+ embeddings (e.g. sentence-transformers), PCA explained")
+    print("variance will be lower (~3%), which limits search precision")
+    print("but doesn't affect visualization, globs, or concept paths.")
     print("\nNext steps:")
     print("  - Try with your own embeddings (e.g. from sentence-transformers)")
     print("  - Connect to Qdrant or Pinecone for production use")
