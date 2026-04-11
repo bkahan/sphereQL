@@ -364,6 +364,51 @@ class QdrantBridge:
     def sync_projections(self) -> int: ...
     def __len__(self) -> int: ...
 
+class PineconeBridge:
+    """Bridge between a Pinecone index and the SphereQL pipeline."""
+
+    def __init__(
+        self,
+        api_key: str,
+        host: str,
+        dimension: int,
+        *,
+        namespace: Optional[str] = None,
+        batch_size: Optional[int] = None,
+        max_records: Optional[int] = None,
+    ) -> None: ...
+    def build_pipeline(self, *, category_key: str = "category") -> None: ...
+    def query_nearest(
+        self, embedding: list[float], *, k: int = 5
+    ) -> list[NearestHit]: ...
+    def query_similar(
+        self, embedding: list[float], *, min_cosine: float = 0.8
+    ) -> list[NearestHit]: ...
+    def query_concept_path(
+        self,
+        source_id: str,
+        target_id: str,
+        *,
+        graph_k: int = 10,
+        embedding: list[float],
+    ) -> Optional[PathResult]: ...
+    def query_detect_globs(
+        self,
+        embedding: list[float],
+        *,
+        k: Optional[int] = None,
+        max_k: int = 10,
+    ) -> list[GlobInfo]: ...
+    def hybrid_search(
+        self,
+        embedding: list[float],
+        *,
+        final_k: int = 5,
+        recall_k: int = 20,
+    ) -> list[dict[str, Any]]: ...
+    def sync_projections(self) -> int: ...
+    def __len__(self) -> int: ...
+
 # ── Visualization ──────────────────────────────────────────────────────
 
 def visualize(

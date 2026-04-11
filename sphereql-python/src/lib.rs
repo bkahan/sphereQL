@@ -50,6 +50,11 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<vectordb::PyVectorStoreBridge>()?;
     }
 
+    #[cfg(feature = "pinecone")]
+    {
+        m.add_class::<vectordb::PyPineconeBridge>()?;
+    }
+
     #[cfg(feature = "qdrant")]
     {
         m.add_class::<vectordb::PyQdrantBridge>()?;

@@ -548,6 +548,176 @@ mod qdrant_bridge {
 #[cfg(feature = "qdrant")]
 pub use qdrant_bridge::PyQdrantBridge;
 
+// ── PyPineconeBridge ────────────────────────────────────────────────────
+
+#[cfg(feature = "pinecone")]
+mod pinecone_bridge {
+    use super::*;
+    use sphereql_vectordb::pinecone::{PineconeConfig, PineconeStore};
+
+    /// Bridge between a Pinecone index and the sphereQL pipeline.
+    ///
+    /// Connects to Pinecone via REST API, pulls vectors, fits PCA, and
+    /// exposes the full set of sphereQL queries plus hybrid search.
+    #[pyclass(name = "PineconeBridge")]
+    pub struct PyPineconeBridge {
+        bridge: VectorStoreBridge<PineconeStore>,
+        rt: Arc<Runtime>,
+    }
+
+    #[pymethods]
+    impl PyPineconeBridge {
+        /// Connect to a Pinecone index and create a bridge.
+        ///
+        /// Args:
+        ///     api_key: Pinecone API key.
+        ///     host: Index host (e.g. "my-index-abc123.svc.pinecone.io").
+        ///     dimension: Dimensionality of vectors in the index.
+        ///     namespace: Optional Pinecone namespace. Default "".
+        ///     batch_size: Records per batch for sync operations. Default 100.
+        ///     max_records: Upper bound on records to load. Default 500,000.
+        #[new]
+        #[pyo3(signature = (api_key, host, dimension, *, namespace=None, batch_size=None, max_records=None))]
+        fn new(
+            api_key: String,
+            host: String,
+            dimension: usize,
+            namespace: Option<String>,
+            batch_size: Option<usize>,
+            max_records: Option<usize>,
+        ) -> PyResult<Self> {
+            let rt = Arc::new(make_runtime()?);
+            let mut config = PineconeConfig::new(api_key, host, dimension);
+            if let Some(ns) = namespace {
+                config = config.with_namespace(ns);
+            }
+            let store = PineconeStore::new(config).map_err(vstore_err)?;
+
+            let bridge_config = BridgeConfig {
+                batch_size: batch_size.unwrap_or(100),
+                max_records: max_records.unwrap_or(500_000),
+                ..Default::default()
+            };
+
+            Ok(Self {
+                bridge: VectorStoreBridge::new(store, bridge_config),
+                rt,
+            })
+        }
+
+        #[pyo3(signature = (*, category_key="category"))]
+        fn build_pipeline(&mut self, category_key: &str) -> PyResult<()> {
+            let extractor = category_extractor(category_key);
+            self.rt
+                .block_on(self.bridge.build_pipeline(extractor))
+                .map_err(vstore_err)?;
+            Ok(())
+        }
+
+        #[pyo3(signature = (embedding, *, k=5))]
+        fn query_nearest(&self, embedding: Vec<f64>, k: usize) -> PyResult<Vec<Nearest>> {
+            match self
+                .bridge
+                .query(SphereQLQuery::Nearest { k }, &embedding)
+                .map_err(vstore_err)?
+            {
+                SphereQLOutput::Nearest(items) => Ok(nearest_to_py(&items)),
+                _ => Err(PyRuntimeError::new_err("unexpected output type")),
+            }
+        }
+
+        #[pyo3(signature = (embedding, *, min_cosine=0.8))]
+        fn query_similar(&self, embedding: Vec<f64>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
+            match self
+                .bridge
+                .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
+                .map_err(vstore_err)?
+            {
+                SphereQLOutput::KNearest(items) => Ok(nearest_to_py(&items)),
+                _ => Err(PyRuntimeError::new_err("unexpected output type")),
+            }
+        }
+
+        #[pyo3(signature = (source_id, target_id, *, graph_k=10, embedding))]
+        fn query_concept_path(
+            &self,
+            source_id: &str,
+            target_id: &str,
+            graph_k: usize,
+            embedding: Vec<f64>,
+        ) -> PyResult<Option<Path>> {
+            match self
+                .bridge
+                .query(
+                    SphereQLQuery::ConceptPath {
+                        source_id,
+                        target_id,
+                        graph_k,
+                    },
+                    &embedding,
+                )
+                .map_err(vstore_err)?
+            {
+                SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
+                _ => Err(PyRuntimeError::new_err("unexpected output type")),
+            }
+        }
+
+        #[pyo3(signature = (embedding, *, k=None, max_k=10))]
+        fn query_detect_globs(
+            &self,
+            embedding: Vec<f64>,
+            k: Option<usize>,
+            max_k: usize,
+        ) -> PyResult<Vec<Glob>> {
+            match self
+                .bridge
+                .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
+                .map_err(vstore_err)?
+            {
+                SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
+                _ => Err(PyRuntimeError::new_err("unexpected output type")),
+            }
+        }
+
+        #[pyo3(signature = (embedding, *, final_k=5, recall_k=20))]
+        fn hybrid_search<'py>(
+            &self,
+            py: Python<'py>,
+            embedding: Vec<f64>,
+            final_k: usize,
+            recall_k: usize,
+        ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+            let results = self
+                .rt
+                .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
+                .map_err(vstore_err)?;
+
+            results
+                .iter()
+                .map(|r| search_result_to_dict(py, r))
+                .collect()
+        }
+
+        fn sync_projections(&self) -> PyResult<usize> {
+            self.rt
+                .block_on(self.bridge.sync_projections())
+                .map_err(vstore_err)
+        }
+
+        fn __len__(&self) -> usize {
+            self.bridge.len()
+        }
+
+        fn __repr__(&self) -> String {
+            format!("PineconeBridge(records={})", self.bridge.len())
+        }
+    }
+}
+
+#[cfg(feature = "pinecone")]
+pub use pinecone_bridge::PyPineconeBridge;
+
 // ── Dict conversion ──────────────────────────────────────────────────────
 
 fn search_result_to_dict<'py>(

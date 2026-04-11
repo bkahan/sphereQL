@@ -8,6 +8,7 @@ repository.workspace = true
 
 [features]
 default = []
+pinecone = ["dep:reqwest"]
 qdrant = ["dep:qdrant-client"]
 
 [dependencies]
@@ -21,6 +22,7 @@ serde_json = "1"
 thiserror = "2"
 
 qdrant-client = { version = "1.12", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

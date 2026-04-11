@@ -19,6 +19,7 @@ layout = ["index", "dep:sphereql-layout"]
 embed = ["layout", "dep:sphereql-embed"]
 graphql = ["index", "dep:sphereql-graphql"]
 vectordb = ["embed", "dep:sphereql-vectordb", "dep:tokio", "dep:async-trait", "dep:pythonize"]
+pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 qdrant = ["vectordb", "sphereql-vectordb/qdrant"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
