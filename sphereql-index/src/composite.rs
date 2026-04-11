@@ -3,7 +3,7 @@ use crate::sector::SectorIndex;
 use crate::shell::ShellIndex;
 use sphereql_core::*;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, HashMap};
 
 /// A composite spatial index combining shell and sector partitioning for efficient queries.
 ///
@@ -32,6 +32,9 @@ use std::collections::BinaryHeap;
 pub struct SpatialIndex<T: SpatialItem> {
     shell: ShellIndex<T>,
     sector: SectorIndex<T>,
+    /// Cached unit Cartesian direction vectors for fast angular distance proxy.
+    /// Populated at insert time, avoids recomputing trig on every nearest() call.
+    cart_cache: HashMap<T::Id, [f64; 3]>,
 }
 
 /// Builder for configuring and constructing a [`SpatialIndex`].
@@ -102,6 +105,7 @@ impl SpatialIndexBuilder {
         SpatialIndex {
             shell: shell_builder.build(),
             sector: SectorIndex::new(self.theta_divisions, self.phi_divisions),
+            cart_cache: HashMap::new(),
         }
     }
 }
@@ -118,11 +122,14 @@ impl<T: SpatialItem> SpatialIndex<T> {
     }
 
     pub fn insert(&mut self, item: T) {
+        let cart = item.position().unit_cartesian();
+        self.cart_cache.insert(item.id().clone(), cart);
         self.sector.insert(item.clone());
         self.shell.insert(item);
     }
 
     pub fn remove(&mut self, id: &T::Id) -> Option<T> {
+        self.cart_cache.remove(id);
         self.sector.remove(id);
         self.shell.remove(id)
     }
@@ -184,27 +191,133 @@ impl<T: SpatialItem> SpatialIndex<T> {
         }
     }
 
+    /// Find the k nearest items by angular distance.
+    ///
+    /// Uses pre-computed unit Cartesian vectors and cosine proxy distance
+    /// (3 muls + 2 adds per item) instead of the full Vincenty formula
+    /// (4 trig + cross product + sqrt + atan2). The proxy `1 - dot(a,b)`
+    /// is monotone with angular distance, so the k-NN ordering is exact.
+    ///
+    /// For small indices (≤500 items), does a fast linear scan.
+    /// For larger indices, uses sector-based candidate pruning to avoid
+    /// scanning distant items entirely.
     pub fn nearest(&self, point: &SphericalPoint, k: usize) -> Vec<NearestResult<T>> {
         if k == 0 {
             return Vec::new();
         }
 
-        let mut heap: BinaryHeap<DistanceEntry<T>> = BinaryHeap::new();
+        let query_cart = point.unit_cartesian();
+
+        if self.len() <= 500 {
+            return self.nearest_scan(&query_cart, point, k);
+        }
+
+        self.nearest_sector_accelerated(&query_cart, point, k)
+    }
+
+    /// Linear scan using cached cosine proxy — fast for small N.
+    fn nearest_scan(
+        &self,
+        query_cart: &[f64; 3],
+        query_point: &SphericalPoint,
+        k: usize,
+    ) -> Vec<NearestResult<T>> {
+        let mut heap: BinaryHeap<ProxyDistEntry<T>> = BinaryHeap::new();
 
         for item in self.shell.all_items() {
-            let distance = angular_distance(point, item.position());
+            let item_cart = self
+                .cart_cache
+                .get(item.id())
+                .copied()
+                .unwrap_or_else(|| item.position().unit_cartesian());
+
+            let proxy = cosine_proxy(query_cart, &item_cart);
+
             if heap.len() < k {
-                heap.push(DistanceEntry {
+                heap.push(ProxyDistEntry {
                     item: item.clone(),
-                    distance,
+                    proxy_distance: proxy,
                 });
             } else if let Some(farthest) = heap.peek()
-                && distance < farthest.distance
+                && proxy < farthest.proxy_distance
             {
                 heap.pop();
-                heap.push(DistanceEntry {
+                heap.push(ProxyDistEntry {
                     item: item.clone(),
-                    distance,
+                    proxy_distance: proxy,
+                });
+            }
+        }
+
+        // Convert proxy distances to actual angular distances for the final results
+        heap.into_sorted_vec()
+            .into_iter()
+            .map(|e| NearestResult {
+                distance: angular_distance(query_point, e.item.position()),
+                item: e.item,
+            })
+            .collect()
+    }
+
+    /// Sector-accelerated nearest: retrieve candidates from nearby sectors,
+    /// then rank by cosine proxy. Expands the search cone if not enough
+    /// candidates are found.
+    fn nearest_sector_accelerated(
+        &self,
+        query_cart: &[f64; 3],
+        query_point: &SphericalPoint,
+        k: usize,
+    ) -> Vec<NearestResult<T>> {
+        let target_candidates = (k * 20).max(100).min(self.len());
+
+        // Start with ~2 sector radii, expand as needed
+        let mut proxy_threshold = 2.0 * (1.0 - self.sector.sector_diagonal().cos());
+        proxy_threshold = proxy_threshold.max(0.01);
+
+        loop {
+            let candidates =
+                self.sector
+                    .items_in_nearby_sectors(query_cart, proxy_threshold, &self.cart_cache);
+
+            if candidates.len() >= target_candidates || proxy_threshold >= 2.0 {
+                return self.rank_candidates(&candidates, query_cart, query_point, k);
+            }
+
+            proxy_threshold *= 2.0;
+        }
+    }
+
+    /// Rank a candidate set by cosine proxy, return top-k with actual angular distances.
+    fn rank_candidates(
+        &self,
+        candidates: &[&T],
+        query_cart: &[f64; 3],
+        query_point: &SphericalPoint,
+        k: usize,
+    ) -> Vec<NearestResult<T>> {
+        let mut heap: BinaryHeap<ProxyDistEntry<T>> = BinaryHeap::new();
+
+        for &item in candidates {
+            let item_cart = self
+                .cart_cache
+                .get(item.id())
+                .copied()
+                .unwrap_or_else(|| item.position().unit_cartesian());
+
+            let proxy = cosine_proxy(query_cart, &item_cart);
+
+            if heap.len() < k {
+                heap.push(ProxyDistEntry {
+                    item: item.clone(),
+                    proxy_distance: proxy,
+                });
+            } else if let Some(farthest) = heap.peek()
+                && proxy < farthest.proxy_distance
+            {
+                heap.pop();
+                heap.push(ProxyDistEntry {
+                    item: item.clone(),
+                    proxy_distance: proxy,
                 });
             }
         }
@@ -212,8 +325,8 @@ impl<T: SpatialItem> SpatialIndex<T> {
         heap.into_sorted_vec()
             .into_iter()
             .map(|e| NearestResult {
+                distance: angular_distance(query_point, e.item.position()),
                 item: e.item,
-                distance: e.distance,
             })
             .collect()
     }
@@ -238,30 +351,31 @@ impl<T: SpatialItem> SpatialIndex<T> {
     }
 }
 
-struct DistanceEntry<T: SpatialItem> {
+// Heap entry using cosine proxy distance for fast k-NN
+struct ProxyDistEntry<T: SpatialItem> {
     item: T,
-    distance: f64,
+    proxy_distance: f64,
 }
 
-impl<T: SpatialItem> PartialEq for DistanceEntry<T> {
+impl<T: SpatialItem> PartialEq for ProxyDistEntry<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.distance == other.distance
+        self.proxy_distance == other.proxy_distance
     }
 }
 
-impl<T: SpatialItem> Eq for DistanceEntry<T> {}
+impl<T: SpatialItem> Eq for ProxyDistEntry<T> {}
 
-impl<T: SpatialItem> PartialOrd for DistanceEntry<T> {
+impl<T: SpatialItem> PartialOrd for ProxyDistEntry<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-// Max-heap by distance so we can evict the farthest when maintaining top-k closest
-impl<T: SpatialItem> Ord for DistanceEntry<T> {
+// Max-heap by proxy distance so we can evict the farthest when maintaining top-k closest
+impl<T: SpatialItem> Ord for ProxyDistEntry<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.distance
-            .partial_cmp(&other.distance)
+        self.proxy_distance
+            .partial_cmp(&other.proxy_distance)
             .unwrap_or(Ordering::Equal)
     }
 }
@@ -516,5 +630,45 @@ mod tests {
                 .is_empty()
         );
         assert!(idx.all_items().is_empty());
+    }
+
+    #[test]
+    fn cart_cache_populated_on_insert() {
+        let mut idx = SpatialIndexBuilder::new()
+            .theta_divisions(4)
+            .phi_divisions(3)
+            .build::<TestItem>();
+
+        idx.insert(item(1, 1.0, 0.5, FRAC_PI_2));
+        assert!(idx.cart_cache.contains_key(&1));
+
+        idx.remove(&1);
+        assert!(!idx.cart_cache.contains_key(&1));
+    }
+
+    #[test]
+    fn nearest_with_large_index_uses_sector_acceleration() {
+        let mut idx = SpatialIndexBuilder::new()
+            .theta_divisions(12)
+            .phi_divisions(6)
+            .build::<TestItem>();
+
+        let n = 1000;
+        for i in 0..n {
+            let frac = i as f64 / n as f64;
+            idx.insert(item(
+                i,
+                1.0,
+                (frac * std::f64::consts::TAU) % std::f64::consts::TAU,
+                frac * PI,
+            ));
+        }
+
+        let query = point(1.0, 1.0, FRAC_PI_2);
+        let results = idx.nearest(&query, 5);
+
+        assert_eq!(results.len(), 5);
+        assert!(results[0].distance <= results[1].distance);
+        assert!(results[1].distance <= results[2].distance);
     }
 }

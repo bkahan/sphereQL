@@ -31,6 +31,33 @@ pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
     cross_mag.atan2(dot)
 }
 
+/// Cosine proxy distance between two unit Cartesian direction vectors.
+///
+/// Returns `1 - dot(a, b)`, which is in [0, 2] and is monotone with angular
+/// distance: 0 when identical, 1 at 90°, 2 when antipodal. This is much
+/// cheaper than [`angular_distance`] since it avoids spherical-to-Cartesian
+/// conversion, cross product, sqrt, and atan2.
+///
+/// Use this when only the **ordering** matters (k-NN heaps, candidate pruning).
+/// Convert only the final k results to actual angular distance.
+///
+/// ```
+/// use sphereql_core::cosine_proxy;
+///
+/// let a = [1.0, 0.0, 0.0];
+/// let b = [1.0, 0.0, 0.0];
+/// assert!(cosine_proxy(&a, &b) < 1e-10);
+///
+/// let c = [-1.0, 0.0, 0.0];
+/// assert!((cosine_proxy(&a, &c) - 2.0).abs() < 1e-10);
+/// ```
+#[must_use]
+#[inline]
+pub fn cosine_proxy(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    1.0 - dot.clamp(-1.0, 1.0)
+}
+
 /// Returns the great-circle (arc) distance between two points on a sphere of given `radius`.
 ///
 /// ```
@@ -72,6 +99,37 @@ pub fn euclidean_distance(a: &CartesianPoint, b: &CartesianPoint) -> f64 {
     let dy = a.y - b.y;
     let dz = a.z - b.z;
     (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+/// Cosine similarity between two high-dimensional vectors.
+///
+/// Returns `dot(a, b) / (‖a‖ × ‖b‖)`, in [-1, 1]. Returns 0.0 if either
+/// vector has zero norm. This operates on the **original** embedding space,
+/// not the projected sphere.
+///
+/// ```
+/// use sphereql_core::cosine_similarity;
+///
+/// let a = vec![1.0, 0.0, 0.0];
+/// let b = vec![1.0, 0.0, 0.0];
+/// assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-10);
+/// ```
+#[must_use]
+pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
+    debug_assert_eq!(a.len(), b.len(), "vectors must have equal length");
+    let mut dot = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+    for i in 0..a.len() {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < f64::EPSILON {
+        return 0.0;
+    }
+    (dot / denom).clamp(-1.0, 1.0)
 }
 
 #[cfg(test)]
@@ -176,5 +234,76 @@ mod tests {
         let b = point(PI, PI - 1e-15);
         let dist = angular_distance(&a, &b);
         assert_relative_eq!(dist, PI, epsilon = 1e-10);
+    }
+
+    // --- cosine_proxy tests ---
+
+    #[test]
+    fn cosine_proxy_same_direction() {
+        let a = [1.0, 0.0, 0.0];
+        assert!(cosine_proxy(&a, &a) < 1e-12);
+    }
+
+    #[test]
+    fn cosine_proxy_orthogonal() {
+        let a = [1.0, 0.0, 0.0];
+        let b = [0.0, 1.0, 0.0];
+        assert_relative_eq!(cosine_proxy(&a, &b), 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_proxy_antipodal() {
+        let a = [1.0, 0.0, 0.0];
+        let b = [-1.0, 0.0, 0.0];
+        assert_relative_eq!(cosine_proxy(&a, &b), 2.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_proxy_monotone_with_angular_distance() {
+        let q = point(0.5, 1.0);
+        let a = point(0.6, 1.0);
+        let b = point(2.0, 1.0);
+        let q_cart = q.unit_cartesian();
+        let a_cart = a.unit_cartesian();
+        let b_cart = b.unit_cartesian();
+
+        let proxy_a = cosine_proxy(&q_cart, &a_cart);
+        let proxy_b = cosine_proxy(&q_cart, &b_cart);
+        let angular_a = angular_distance(&q, &a);
+        let angular_b = angular_distance(&q, &b);
+
+        assert!(
+            (proxy_a < proxy_b) == (angular_a < angular_b),
+            "cosine proxy must preserve distance ordering"
+        );
+    }
+
+    // --- cosine_similarity tests ---
+
+    #[test]
+    fn cosine_similarity_identical() {
+        let a = vec![1.0, 2.0, 3.0];
+        assert_relative_eq!(cosine_similarity(&a, &a), 1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_similarity_opposite() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![-1.0, 0.0, 0.0];
+        assert_relative_eq!(cosine_similarity(&a, &b), -1.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_similarity_orthogonal() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0];
+        assert_relative_eq!(cosine_similarity(&a, &b), 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_similarity_zero_vector() {
+        let a = vec![0.0, 0.0, 0.0];
+        let b = vec![1.0, 2.0, 3.0];
+        assert_relative_eq!(cosine_similarity(&a, &b), 0.0, epsilon = 1e-12);
     }
 }

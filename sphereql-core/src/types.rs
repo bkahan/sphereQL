@@ -59,6 +59,19 @@ impl SphericalPoint {
             phi: 0.0,
         }
     }
+
+    /// Unit Cartesian direction vector (x, y, z) for this point's angular position.
+    ///
+    /// Ignores the radial component — returns the point on S² at (θ, φ).
+    /// Used for fast angular distance approximation via dot product:
+    /// `1 - dot(a.unit_cartesian(), b.unit_cartesian())` is monotone with
+    /// angular distance, avoiding the full Vincenty formula.
+    #[inline]
+    pub fn unit_cartesian(&self) -> [f64; 3] {
+        let (sin_phi, cos_phi) = self.phi.sin_cos();
+        let (sin_theta, cos_theta) = self.theta.sin_cos();
+        [sin_phi * cos_theta, sin_phi * sin_theta, cos_phi]
+    }
 }
 
 impl approx::AbsDiffEq for SphericalPoint {
