@@ -1655,6 +1655,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pythonize"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b79f670c9626c8b651c0581011b57b6ba6970bb69faf01a7c4c0cfc81c43f95"
+dependencies = [
+ "pyo3",
+ "serde",
+]
+
+[[package]]
 name = "qdrant-client"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2276,8 +2286,10 @@ dependencies = [
 name = "sphereql-python"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "numpy",
  "pyo3",
+ "pythonize",
  "serde_json",
  "sphereql-core",
  "sphereql-embed",
@@ -2285,6 +2297,7 @@ dependencies = [
  "sphereql-index",
  "sphereql-layout",
  "sphereql-vectordb",
+ "tokio",
 ]
 
 [[package]]

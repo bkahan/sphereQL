@@ -8,6 +8,8 @@ mod pipeline;
 mod projection;
 #[cfg(feature = "embed")]
 mod types;
+#[cfg(feature = "vectordb")]
+mod vectordb;
 
 #[pymodule]
 fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -36,6 +38,17 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<types::PathStep>()?;
         m.add_class::<types::Glob>()?;
         m.add_class::<types::Manifold>()?;
+    }
+
+    #[cfg(feature = "vectordb")]
+    {
+        m.add_class::<vectordb::PyInMemoryStore>()?;
+        m.add_class::<vectordb::PyVectorStoreBridge>()?;
+    }
+
+    #[cfg(feature = "qdrant")]
+    {
+        m.add_class::<vectordb::PyQdrantBridge>()?;
     }
 
     Ok(())

@@ -21,7 +21,10 @@ dynamic = ["version"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[project.optional-dependencies]
+qdrant = []
+
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "vectordb"]
 manifest-path = "Cargo.toml"
 module-name = "sphereql"
