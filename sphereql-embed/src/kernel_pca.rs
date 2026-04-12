@@ -1,6 +1,6 @@
 use sphereql_core::{CartesianPoint, SphericalPoint, cartesian_to_spherical};
 
-use crate::projection::{dot, normalize_vec, project_xyz_to_spherical, SplitMix64};
+use crate::projection::{SplitMix64, dot, normalize_vec, project_xyz_to_spherical};
 use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
 use crate::projection::Projection;
@@ -441,13 +441,13 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
 
         for _ in 0..max_iters {
             let mut u = vec![0.0; n];
-            for i in 0..n {
+            for (i, ui) in u.iter_mut().enumerate() {
                 let row_start = i * n;
                 let mut s = 0.0;
                 for j in 0..n {
                     s += matrix[row_start + j] * v[j];
                 }
-                u[i] = s;
+                *ui = s;
             }
 
             for prev in &vectors {
@@ -553,8 +553,7 @@ mod tests {
     #[test]
     fn kernel_pca_fit_explicit_sigma() {
         let corpus = corpus_10d();
-        let kpca =
-            KernelPcaProjection::fit_with_sigma(&corpus, 0.5, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit_with_sigma(&corpus, 0.5, RadialStrategy::Fixed(1.0));
         assert!((kpca.sigma() - 0.5).abs() < 1e-12);
     }
 
@@ -719,7 +718,10 @@ mod tests {
         let b = vec![0.0, 1.0, 0.0];
         let inv = 0.5;
         let k = gaussian_kernel(&a, &b, inv);
-        assert!(k > 0.0 && k <= 1.0, "Gaussian kernel must be in (0, 1], got {k}");
+        assert!(
+            k > 0.0 && k <= 1.0,
+            "Gaussian kernel must be in (0, 1], got {k}"
+        );
     }
 
     #[test]
@@ -781,11 +783,7 @@ mod tests {
         use crate::projection::PcaProjection;
         let corpus = corpus_10d();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
-        let kpca = KernelPcaProjection::fit_with_sigma(
-            &corpus,
-            100.0,
-            RadialStrategy::Fixed(1.0),
-        );
+        let kpca = KernelPcaProjection::fit_with_sigma(&corpus, 100.0, RadialStrategy::Fixed(1.0));
         let query = emb(&[1.0, 0.1, 0.0, 0.05, 0.02, -0.01, 0.01, 0.0, 0.02, 0.01]);
         let pca_pt = pca.project(&query);
         let kpca_pt = kpca.project(&query);
