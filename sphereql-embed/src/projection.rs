@@ -566,7 +566,7 @@ mod tests {
     fn pca_dimension_mismatch_panics() {
         let corpus = corpus_10d();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
-        pca.project(&emb(&[1.0, 2.0, 3.0]));
+        let _ = pca.project(&emb(&[1.0, 2.0, 3.0]));
     }
 
     // --- Random projection tests ---

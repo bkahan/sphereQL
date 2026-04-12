@@ -1,3 +1,9 @@
+//! Vector database integration layer.
+//!
+//! Bridges external vector stores (in-memory, Pinecone, Qdrant) with the
+//! sphereQL embedding pipeline. Handles sync, projection, and hybrid search
+//! with cosine similarity re-ranking in the original embedding space.
+
 pub mod bridge;
 pub mod error;
 pub mod memory;

@@ -2357,6 +2357,7 @@ dependencies = [
  "sphereql-core",
  "sphereql-index",
  "sphereql-layout",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

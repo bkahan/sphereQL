@@ -26,7 +26,8 @@ impl ShellIndexBuilder {
     }
 
     pub fn build<T: SpatialItem>(mut self) -> ShellIndex<T> {
-        self.boundaries.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        self.boundaries
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         self.boundaries.dedup();
 
         let bucket_count = if self.boundaries.is_empty() {
@@ -115,7 +116,7 @@ impl<T: SpatialItem> ShellIndex<T> {
     fn bucket_index(&self, r: f64) -> usize {
         match self
             .boundaries
-            .binary_search_by(|b| b.partial_cmp(&r).unwrap())
+            .binary_search_by(|b| b.partial_cmp(&r).unwrap_or(std::cmp::Ordering::Equal))
         {
             // Exactly on a boundary: place in the bucket after it
             Ok(i) => (i + 1).min(self.buckets.len() - 1),

@@ -365,7 +365,7 @@ mod tests {
         index.insert(item(2, 3.0, FRAC_PI_2));
         index.insert(item(3, 5.5, FRAC_PI_2));
 
-        let wedge = Wedge::new(0.2, 1.0);
+        let wedge = Wedge::new(0.2, 1.0).unwrap();
         let result = index.query_wedge(&wedge);
 
         let ids: Vec<u32> = result.items.iter().map(|i| i.id).collect();
@@ -381,7 +381,7 @@ mod tests {
         index.insert(item(2, 0.1, FRAC_PI_2));
         index.insert(item(3, 3.0, FRAC_PI_2));
 
-        let wedge = Wedge::new(5.5, 0.3);
+        let wedge = Wedge::new(5.5, 0.3).unwrap();
         let result = index.query_wedge(&wedge);
 
         let ids: Vec<u32> = result.items.iter().map(|i| i.id).collect();

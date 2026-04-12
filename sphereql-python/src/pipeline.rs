@@ -49,7 +49,8 @@ impl Pipeline {
                     })
                 })
             }
-        };
+        }
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(Self { inner, dim })
     }
@@ -83,7 +84,8 @@ impl Pipeline {
         let inner = SphereQLPipeline::new(PipelineInput {
             categories,
             embeddings,
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner, dim })
     }
 

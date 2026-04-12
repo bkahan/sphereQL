@@ -20,6 +20,10 @@ pub enum SphereQlError {
     InvalidConeAngle(f64),
     #[error("invalid cap: half_angle {0} must be in (0, π]")]
     InvalidCapAngle(f64),
+    #[error(
+        "invalid wedge bounds: theta_min {theta_min} and theta_max {theta_max} must be in [0, 2π)"
+    )]
+    InvalidWedgeBounds { theta_min: f64, theta_max: f64 },
     #[error("zero vector cannot be normalized")]
     ZeroVector,
 }

@@ -1,4 +1,4 @@
-use std::f64::consts::PI;
+use std::f64::consts::{PI, TAU};
 
 use crate::distance::angular_distance;
 use crate::error::SphereQlError;
@@ -112,11 +112,17 @@ pub struct Wedge {
 }
 
 impl Wedge {
-    pub fn new(theta_min: f64, theta_max: f64) -> Self {
-        Self {
+    pub fn new(theta_min: f64, theta_max: f64) -> Result<Self, SphereQlError> {
+        if !(0.0..TAU).contains(&theta_min) || !(0.0..TAU).contains(&theta_max) {
+            return Err(SphereQlError::InvalidWedgeBounds {
+                theta_min,
+                theta_max,
+            });
+        }
+        Ok(Self {
             theta_min,
             theta_max,
-        }
+        })
     }
 
     fn wraps(&self) -> bool {
@@ -342,7 +348,7 @@ mod tests {
 
     #[test]
     fn wedge_contains_normal_range() {
-        let wedge = Wedge::new(0.5, 2.0);
+        let wedge = Wedge::new(0.5, 2.0).unwrap();
         assert!(wedge.contains(&point(1.0, 1.0, FRAC_PI_2)));
         assert!(!wedge.contains(&point(1.0, 3.0, FRAC_PI_2)));
     }
@@ -352,7 +358,7 @@ mod tests {
         // 350° to 10° in radians: ~6.1087 to ~0.1745
         let theta_min = 350.0_f64.to_radians();
         let theta_max = 10.0_f64.to_radians();
-        let wedge = Wedge::new(theta_min, theta_max);
+        let wedge = Wedge::new(theta_min, theta_max).unwrap();
 
         let inside_high = point(1.0, 355.0_f64.to_radians(), FRAC_PI_2);
         let inside_low = point(1.0, 5.0_f64.to_radians(), FRAC_PI_2);
@@ -365,9 +371,15 @@ mod tests {
 
     #[test]
     fn wedge_boundary_inclusive() {
-        let wedge = Wedge::new(1.0, 2.0);
+        let wedge = Wedge::new(1.0, 2.0).unwrap();
         assert!(wedge.contains(&point(1.0, 1.0, FRAC_PI_2)));
         assert!(wedge.contains(&point(1.0, 2.0, FRAC_PI_2)));
+    }
+
+    #[test]
+    fn wedge_rejects_invalid_theta() {
+        assert!(Wedge::new(-0.1, 1.0).is_err());
+        assert!(Wedge::new(0.0, 7.0).is_err());
     }
 
     // --- Compound region tests ---
@@ -420,7 +432,7 @@ mod tests {
         assert!(shell_region.contains(&point(3.0, 0.0, 0.0)));
         assert!(!shell_region.contains(&point(10.0, 0.0, 0.0)));
 
-        let wedge_region = Region::Wedge(Wedge::new(0.5, 2.0));
+        let wedge_region = Region::Wedge(Wedge::new(0.5, 2.0).unwrap());
         assert!(wedge_region.contains(&point(1.0, 1.0, FRAC_PI_2)));
     }
 }

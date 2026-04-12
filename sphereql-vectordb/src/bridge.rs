@@ -116,7 +116,8 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let projection = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
             .with_volumetric(self.config.volumetric);
 
-        let pipeline = SphereQLPipeline::with_projection(categories, embs, projection.clone());
+        let pipeline = SphereQLPipeline::with_projection(categories, embs, projection.clone())
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?;
 
         self.pipeline = Some(pipeline);
         self.projection = Some(projection);

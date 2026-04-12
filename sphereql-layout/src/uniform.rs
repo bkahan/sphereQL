@@ -5,7 +5,7 @@ use sphereql_core::{SphericalPoint, angular_distance};
 use crate::traits::{DimensionMapper, LayoutStrategy};
 use crate::types::{LayoutEntry, LayoutQuality, LayoutResult};
 
-const GOLDEN_RATIO_ANGLE: f64 = PI * (1.0 + 2.236_067_977_499_79); // PI * (1 + sqrt(5))
+const GOLDEN_ANGLE: f64 = PI * (3.0 - 2.236_067_977_499_79); // PI * (3 - sqrt(5)) ≈ 2.3999 rad
 
 pub struct UniformLayout {
     radius: f64,
@@ -22,7 +22,7 @@ impl UniformLayout {
 
     fn fibonacci_point(&self, i: usize, n: usize) -> SphericalPoint {
         let phi = (1.0 - 2.0 * (i as f64 + 0.5) / n as f64).acos();
-        let theta = (GOLDEN_RATIO_ANGLE * i as f64) % TAU;
+        let theta = (GOLDEN_ANGLE * i as f64) % TAU;
         // Ensure theta is non-negative after modulo
         let theta = if theta < 0.0 { theta + TAU } else { theta };
         SphericalPoint::new_unchecked(self.radius, theta, phi)
@@ -125,7 +125,7 @@ mod tests {
         // For n=1, i=0: phi = acos(1.0 - 2.0*0.5/1.0) = acos(0.0) = PI/2
         assert!((pos.phi - std::f64::consts::FRAC_PI_2).abs() < 1e-10);
         assert!((pos.r - 1.0).abs() < 1e-10);
-        // theta = (golden_ratio * 0) % TAU = 0.0
+        // theta = (golden_angle * 0) % TAU = 0.0
         assert!(pos.theta.abs() < 1e-10);
     }
 

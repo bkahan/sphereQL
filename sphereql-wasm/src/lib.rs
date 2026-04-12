@@ -65,7 +65,7 @@ impl Pipeline {
         };
 
         Ok(Pipeline {
-            inner: SphereQLPipeline::new(input),
+            inner: SphereQLPipeline::new(input).map_err(|e| JsError::new(&e.to_string()))?,
         })
     }
 

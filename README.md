@@ -13,7 +13,9 @@ sphereQL provides a layered architecture for working with spherical coordinates 
 | `sphereql-layout`  | Layout engine: uniform (Fibonacci), clustered (k-means), force-directed           |
 | `sphereql-embed`   | Vector embedding projection: PCA and random projection from high-D to S²          |
 | `sphereql-graphql` | async-graphql integration with queries, subscriptions, and event bus              |
+| `sphereql-vectordb`| Vector store integration (in-memory, Pinecone, Qdrant) with hybrid search        |
 | `sphereql-wasm`    | WebAssembly bindings for the embedding pipeline                                   |
+| `sphereql-python`  | Python bindings via PyO3/maturin                                                  |
 | `sphereql`         | Umbrella crate with feature flags for selective imports                           |
 
 ## Quick Start
@@ -34,6 +36,8 @@ sphereql = { version = "0.1", features = ["full"] }
 | `layout`         | Layout strategies and quality metrics            | `core`, `index`           |
 | `embed`          | Embedding projection (PCA, random) and pipeline  | `core`, `index`, `layout` |
 | `graphql`        | GraphQL schema, subscriptions, event bus         | `core`, `index`           |
+| `vectordb`       | Vector store bridge and hybrid search            | `embed`                   |
+| `pinecone`       | Pinecone backend for vectordb                    | `vectordb`                |
 | `full`           | Everything                                       | All of the above          |
 
 ### Basic Usage
@@ -145,6 +149,33 @@ let result = schema.execute(r#"{
 }"#).await;
 ```
 
+### Python
+
+```bash
+cd sphereql-python
+pip install maturin
+maturin develop
+```
+
+```python
+import sphereql
+
+# Build a pipeline from embeddings
+pipeline = sphereql.Pipeline(
+    categories=["science", "cooking", "sports"],
+    embeddings=[[0.1, 0.2, ...], [0.3, 0.4, ...], [0.5, 0.6, ...]],
+)
+
+# Query nearest neighbors
+results = pipeline.nearest([0.15, 0.25, ...], k=3)
+for r in results:
+    print(f"{r.category}: {r.distance:.4f}")
+
+# Export projected points
+points = pipeline.exported_points()
+print(pipeline.explained_variance_ratio)
+```
+
 ## Coordinate System
 
 sphereQL uses the physics convention for spherical coordinates:
@@ -160,6 +191,8 @@ sphereql (umbrella, feature-gated)
   |
   +-- sphereql-graphql (async-graphql schema, subscriptions)
   |     |
+  +-- sphereql-vectordb (vector store bridge, hybrid search)
+  |     |
   +-- sphereql-embed (PCA/random projection, semantic pipeline)
   |     |
   +-- sphereql-layout (layout strategies, quality metrics)
@@ -169,6 +202,7 @@ sphereql (umbrella, feature-gated)
   +-----------+-- sphereql-core (math primitives, zero dependencies*)
 
   sphereql-wasm (WASM bindings for sphereql-embed pipeline)
+  sphereql-python (PyO3 bindings via maturin)
 ```
 
 \* Core depends only on `serde`, `thiserror`, and `approx`.
@@ -204,6 +238,18 @@ cargo clippy --workspace --all-features --all-targets
 cargo bench -p sphereql-core
 cargo bench -p sphereql-index
 ```
+
+## Performance Notes
+
+The embedding pipeline projects high-dimensional vectors (e.g., 384-d) down to 3D
+spherical coordinates via PCA. This projection is inherently lossy — the explained
+variance ratio (EVR) indicates how much information is preserved. For typical
+transformer embeddings, expect 2-5% EVR at 3D.
+
+sphereQL compensates with hybrid search: fast angular-distance candidate retrieval
+in projected space, followed by cosine similarity re-ranking in the original
+embedding space. See [`docs/benchmark-analysis.md`](docs/benchmark-analysis.md) and
+[`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md) for details.
 
 ## License
 

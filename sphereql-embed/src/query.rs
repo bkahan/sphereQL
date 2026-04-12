@@ -286,6 +286,8 @@ struct DijkstraEntry {
     node: usize,
 }
 
+// Safety: dist values come from cosine_proxy on unit vectors, never NaN in practice.
+// Ord impl uses unwrap_or(Equal) as a NaN guard.
 impl Eq for DijkstraEntry {}
 
 impl PartialOrd for DijkstraEntry {
