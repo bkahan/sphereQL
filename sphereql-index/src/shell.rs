@@ -2,6 +2,7 @@ use crate::item::{SpatialItem, SpatialQueryResult};
 use sphereql_core::{Contains, Shell};
 use std::collections::HashMap;
 
+/// Builder for constructing a [`ShellIndex`] with custom radial boundaries.
 pub struct ShellIndexBuilder {
     boundaries: Vec<f64>,
 }
@@ -50,6 +51,11 @@ impl Default for ShellIndexBuilder {
     }
 }
 
+/// Radial shell index that partitions items into concentric spherical shells.
+///
+/// Items are placed into buckets bounded by configurable radial boundaries.
+/// Shell queries only scan the overlapping buckets, making radial filtering
+/// sub-linear for indices with many shells.
 pub struct ShellIndex<T: SpatialItem> {
     boundaries: Vec<f64>,
     buckets: Vec<Vec<T>>,
