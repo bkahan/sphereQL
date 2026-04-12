@@ -5,7 +5,7 @@ use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
 
-// ── Errors ─────────────────────────────────────────────────────────────
+// ── Errors ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineError {
@@ -15,7 +15,7 @@ pub enum PipelineError {
     TooFewEmbeddings(usize),
 }
 
-// ── Input contract ──────────────────────────────────────────────────────
+// ── Input contract ──────────────────────────────────────────────────────────
 
 /// Input to construct a SphereQL pipeline.
 ///
@@ -33,7 +33,7 @@ pub struct PipelineQuery {
     pub embedding: Vec<f64>,
 }
 
-// ── Output types ────────────────────────────────────────────────────────
+// ── Output types ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 pub struct NearestResult {
@@ -118,7 +118,7 @@ pub struct ExportedPoint {
     pub intensity: f64,
 }
 
-// ── Pipeline ────────────────────────────────────────────────────────────
+// ── Pipeline ──────────────────────────────────────────────────────────────
 
 pub struct SphereQLPipeline {
     pca: PcaProjection,
@@ -413,14 +413,26 @@ impl SphereQLPipeline {
             .expect("ExportedPoint is always serializable")
     }
 
-    /// Serialize all projected points as CSV with a header row.
+    /// Serialize all projected points as RFC 4180-compliant CSV with a header row.
+    ///
+    /// String fields (id, category) are quoted to handle embedded commas
+    /// and special characters safely.
     pub fn to_csv(&self) -> String {
         let points = self.exported_points();
         let mut out = String::from("id,category,r,theta,phi,x,y,z,certainty,intensity\n");
         for p in &points {
             out.push_str(&format!(
-                "{},{},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-                p.id, p.category, p.r, p.theta, p.phi, p.x, p.y, p.z, p.certainty, p.intensity,
+                "\"{}\",\"{}\",{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
+                p.id.replace('"', "\"\"'),
+                p.category.replace('"', "\"\"'),
+                p.r,
+                p.theta,
+                p.phi,
+                p.x,
+                p.y,
+                p.z,
+                p.certainty,
+                p.intensity,
             ));
         }
         out
@@ -588,6 +600,17 @@ mod tests {
             "id,category,r,theta,phi,x,y,z,certainty,intensity"
         );
         assert_eq!(lines.len(), 21); // header + 20 data lines
+    }
+
+    #[test]
+    fn test_to_csv_quoted_fields() {
+        // Verify that the CSV output properly quotes string fields
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let csv = pipeline.to_csv();
+        let data_line = csv.lines().nth(1).unwrap();
+        // First field (id) should be quoted
+        assert!(data_line.starts_with('"'), "id field should be quoted");
     }
 
     #[test]
