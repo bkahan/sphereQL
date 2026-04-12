@@ -53,6 +53,7 @@ impl SphericalPoint {
         Self { r, theta, phi }
     }
 
+    /// Returns the origin point (0, 0, 0) in spherical coordinates.
     pub fn origin() -> Self {
         Self {
             r: 0.0,
@@ -127,6 +128,7 @@ impl CartesianPoint {
         Self { x, y, z }
     }
 
+    /// Returns the origin point (0, 0, 0) in Cartesian coordinates.
     pub fn origin() -> Self {
         Self {
             x: 0.0,
@@ -183,6 +185,18 @@ impl approx::RelativeEq for CartesianPoint {
     }
 }
 
+/// A point in geographic coordinates (latitude, longitude, altitude).
+///
+/// - `lat`: latitude in degrees, range [-90, 90]
+/// - `lon`: longitude in degrees, range [-180, 180]
+/// - `alt`: altitude above the unit sphere surface (must be >= 0)
+///
+/// ```
+/// use sphereql_core::GeoPoint;
+///
+/// let p = GeoPoint::new(51.5074, -0.1278, 0.0).unwrap(); // London
+/// assert!((p.lat - 51.5074).abs() < 1e-10);
+/// ```
 #[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GeoPoint {
@@ -192,6 +206,10 @@ pub struct GeoPoint {
 }
 
 impl GeoPoint {
+    /// Creates a new `GeoPoint` with validation.
+    ///
+    /// Returns an error if `lat` is outside [-90, 90], `lon` is outside
+    /// [-180, 180], or `alt` is negative.
     pub fn new(lat: f64, lon: f64, alt: f64) -> Result<Self, SphereQlError> {
         if !(-90.0..=90.0).contains(&lat) {
             return Err(SphereQlError::InvalidLatitude(lat));
@@ -205,6 +223,9 @@ impl GeoPoint {
         Ok(Self { lat, lon, alt })
     }
 
+    /// Creates a new `GeoPoint` without validation.
+    ///
+    /// Caller is responsible for ensuring values are in valid ranges.
     pub fn new_unchecked(lat: f64, lon: f64, alt: f64) -> Self {
         Self { lat, lon, alt }
     }

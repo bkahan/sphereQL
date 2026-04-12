@@ -3,6 +3,11 @@ use sphereql_core::{Band, Cap, Contains, SphericalPoint, Wedge, angular_distance
 use std::collections::HashMap;
 use std::f64::consts::{PI, TAU};
 
+/// Angular sector index that partitions S² into a grid of theta × phi sectors.
+///
+/// Each sector covers a rectangular region in (theta, phi) space. Items are
+/// placed in the sector containing their angular position, enabling fast
+/// spatial queries by scanning only the sectors that overlap the query region.
 pub struct SectorIndex<T: SpatialItem> {
     theta_divisions: usize,
     phi_divisions: usize,
@@ -233,12 +238,14 @@ impl<T: SpatialItem> SectorIndex<T> {
         SphericalPoint::new_unchecked(1.0, (t_min + t_max) / 2.0, (p_min + p_max) / 2.0)
     }
 
+    /// Conservative upper bound on the angular diagonal of a single sector.
+    ///
+    /// Treats the theta and phi angular extents as legs of a right triangle
+    /// on the sphere. Overestimates for large sectors, which is the safe
+    /// direction for candidate pruning.
     pub(crate) fn sector_diagonal(&self) -> f64 {
         let d_theta = TAU / self.theta_divisions as f64;
         let d_phi = PI / self.phi_divisions as f64;
-        // Conservative upper bound: treat the angular extents as legs of a right triangle
-        // on the sphere. The actual angular diagonal is at most this for small sectors,
-        // and this overestimates for large sectors, which is the safe direction.
         (d_theta * d_theta + d_phi * d_phi).sqrt()
     }
 
