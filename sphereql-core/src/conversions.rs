@@ -10,7 +10,6 @@ use std::f64::consts::TAU;
 /// let c = spherical_to_cartesian(&p);
 /// assert!((c.x - 1.0).abs() < 1e-10);
 /// ```
-#[must_use]
 pub fn spherical_to_cartesian(p: &SphericalPoint) -> CartesianPoint {
     let x = p.r * p.phi.sin() * p.theta.cos();
     let y = p.r * p.phi.sin() * p.theta.sin();
@@ -27,7 +26,6 @@ pub fn spherical_to_cartesian(p: &SphericalPoint) -> CartesianPoint {
 /// let roundtrip = cartesian_to_spherical(&spherical_to_cartesian(&original));
 /// assert!((roundtrip.r - original.r).abs() < 1e-10);
 /// ```
-#[must_use]
 pub fn cartesian_to_spherical(p: &CartesianPoint) -> SphericalPoint {
     let r = (p.x * p.x + p.y * p.y + p.z * p.z).sqrt();
     if r < f64::EPSILON {
@@ -42,7 +40,6 @@ pub fn cartesian_to_spherical(p: &CartesianPoint) -> SphericalPoint {
 ///
 /// Assumes the unit sphere (r=1.0) represents the surface. Altitude is
 /// the excess radius above 1.0, clamped to zero for sub-unit radii.
-#[must_use]
 pub fn spherical_to_geo(p: &SphericalPoint) -> GeoPoint {
     let lat = 90.0 - p.phi.to_degrees();
     let lon = theta_to_longitude(p.theta);
@@ -54,7 +51,6 @@ pub fn spherical_to_geo(p: &SphericalPoint) -> GeoPoint {
 ///
 /// Latitude maps to polar angle phi, longitude to azimuthal angle theta,
 /// and altitude adds to the unit radius.
-#[must_use]
 pub fn geo_to_spherical(p: &GeoPoint) -> SphericalPoint {
     let phi = (90.0 - p.lat).to_radians();
     let theta = normalize_theta(p.lon.to_radians());
@@ -63,13 +59,11 @@ pub fn geo_to_spherical(p: &GeoPoint) -> SphericalPoint {
 }
 
 /// Converts a Cartesian point to geographic coordinates via spherical.
-#[must_use]
 pub fn cartesian_to_geo(p: &CartesianPoint) -> GeoPoint {
     spherical_to_geo(&cartesian_to_spherical(p))
 }
 
 /// Converts geographic coordinates to Cartesian via spherical.
-#[must_use]
 pub fn geo_to_cartesian(p: &GeoPoint) -> CartesianPoint {
     spherical_to_cartesian(&geo_to_spherical(p))
 }

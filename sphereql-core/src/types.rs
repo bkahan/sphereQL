@@ -139,7 +139,6 @@ impl CartesianPoint {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
-    #[must_use]
     pub fn normalize(&self) -> Self {
         let mag = self.magnitude();
         if mag < f64::EPSILON {
