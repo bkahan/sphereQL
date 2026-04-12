@@ -363,6 +363,8 @@ impl<T: SpatialItem> PartialEq for ProxyDistEntry<T> {
     }
 }
 
+// Safety: proxy_distance is derived from dot products of unit vectors, never NaN in practice.
+// BinaryHeap requires Eq; Ord impl below uses unwrap_or(Equal) as a NaN guard.
 impl<T: SpatialItem> Eq for ProxyDistEntry<T> {}
 
 impl<T: SpatialItem> PartialOrd for ProxyDistEntry<T> {

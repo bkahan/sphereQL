@@ -155,7 +155,8 @@ impl BandInput {
 
 impl WedgeInput {
     pub fn to_core(&self) -> Result<Wedge, async_graphql::Error> {
-        Ok(Wedge::new(self.theta_min, self.theta_max))
+        Wedge::new(self.theta_min, self.theta_max)
+            .map_err(|e| async_graphql::Error::new(e.to_string()))
     }
 }
 

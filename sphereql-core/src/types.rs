@@ -139,7 +139,7 @@ impl CartesianPoint {
 
     pub fn normalize(&self) -> Self {
         let mag = self.magnitude();
-        if mag == 0.0 {
+        if mag < f64::EPSILON {
             return Self::origin();
         }
         Self {
