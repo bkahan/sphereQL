@@ -300,9 +300,9 @@ impl Projection for RandomProjection {
     }
 }
 
-// --- Shared projection math ---
+// --- Shared projection math (pub(crate) for reuse by kernel_pca) ---
 
-fn project_xyz_to_spherical(x: f64, y: f64, z: f64, r: f64) -> SphericalPoint {
+pub(crate) fn project_xyz_to_spherical(x: f64, y: f64, z: f64, r: f64) -> SphericalPoint {
     let cart = CartesianPoint::new(x, y, z).normalize();
     if cart.magnitude() < f64::EPSILON {
         return SphericalPoint::new_unchecked(r, 0.0, 0.0);
@@ -311,13 +311,13 @@ fn project_xyz_to_spherical(x: f64, y: f64, z: f64, r: f64) -> SphericalPoint {
     SphericalPoint::new_unchecked(r, sp.theta, sp.phi)
 }
 
-// --- Linear algebra primitives ---
+// --- Linear algebra primitives (pub(crate) for reuse by kernel_pca) ---
 
-fn dot(a: &[f64], b: &[f64]) -> f64 {
+pub(crate) fn dot(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum()
 }
 
-fn normalize_vec(v: &mut [f64]) -> f64 {
+pub(crate) fn normalize_vec(v: &mut [f64]) -> f64 {
     let mag = v.iter().map(|x| x * x).sum::<f64>().sqrt();
     if mag > f64::EPSILON {
         for x in v.iter_mut() {
@@ -404,17 +404,18 @@ fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> (Vec<Vec<f64>>
 }
 
 // --- Deterministic PRNG (SplitMix64 + Box-Muller) ---
+// pub(crate) for reuse by kernel_pca module.
 
-struct SplitMix64 {
+pub(crate) struct SplitMix64 {
     state: u64,
 }
 
 impl SplitMix64 {
-    fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         Self { state: seed }
     }
 
-    fn next_u64(&mut self) -> u64 {
+    pub(crate) fn next_u64(&mut self) -> u64 {
         self.state = self.state.wrapping_add(0x9e3779b97f4a7c15);
         let mut z = self.state;
         z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
@@ -422,11 +423,11 @@ impl SplitMix64 {
         z ^ (z >> 31)
     }
 
-    fn next_f64(&mut self) -> f64 {
+    pub(crate) fn next_f64(&mut self) -> f64 {
         (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
     }
 
-    fn normal(&mut self) -> f64 {
+    pub(crate) fn normal(&mut self) -> f64 {
         let u1 = self.next_f64().max(f64::MIN_POSITIVE);
         let u2 = self.next_f64();
         (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos()
