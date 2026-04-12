@@ -31,14 +31,20 @@ sphereql = { version = "0.1", features = ["full"] }
 
 | Feature          | Includes                                         | Dependencies              |
 | ---------------- | ------------------------------------------------ | ------------------------- |
-| `core` (default) | Math primitives, conversions, distances, regions | --                        |
+| `core` (default) | Math primitives, conversions, distances, regions | —                         |
 | `index`          | Spatial indexing and queries                     | `core`                    |
 | `layout`         | Layout strategies and quality metrics            | `core`, `index`           |
 | `embed`          | Embedding projection (PCA, random) and pipeline  | `core`, `index`, `layout` |
 | `graphql`        | GraphQL schema, subscriptions, event bus         | `core`, `index`           |
 | `vectordb`       | Vector store bridge and hybrid search            | `embed`                   |
 | `pinecone`       | Pinecone backend for vectordb                    | `vectordb`                |
-| `full`           | Everything                                       | All of the above          |
+| `qdrant`         | Qdrant gRPC backend for vectordb                 | `vectordb`                |
+| `full`           | All of the above except `pinecone` and `qdrant`  | All non-backend features  |
+
+> **Note:** `full` does not activate the `pinecone` or `qdrant` features because
+> they pull in heavy external dependencies (`reqwest` and `qdrant-client`
+> respectively). Enable them explicitly if you need a specific backend:
+> `features = ["full", "qdrant"]`.
 
 ### Basic Usage
 
