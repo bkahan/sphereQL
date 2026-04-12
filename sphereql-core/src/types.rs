@@ -14,6 +14,7 @@ use crate::error::SphereQlError;
 /// let p = SphericalPoint::new(1.0, 0.5, 0.7).unwrap();
 /// assert_eq!(p.r, 1.0);
 /// ```
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SphericalPoint {
     pub r: f64,
@@ -113,6 +114,7 @@ impl approx::RelativeEq for SphericalPoint {
 /// let p = CartesianPoint::new(1.0, 0.0, 0.0);
 /// assert_eq!(p.magnitude(), 1.0);
 /// ```
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CartesianPoint {
     pub x: f64,
@@ -137,6 +139,7 @@ impl CartesianPoint {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
+    #[must_use]
     pub fn normalize(&self) -> Self {
         let mag = self.magnitude();
         if mag < f64::EPSILON {
@@ -181,6 +184,7 @@ impl approx::RelativeEq for CartesianPoint {
     }
 }
 
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct GeoPoint {
     pub lat: f64,

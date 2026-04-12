@@ -5,6 +5,16 @@ use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
 
+// ── Errors ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum PipelineError {
+    #[error("categories length ({cat}) must equal embeddings length ({emb})")]
+    LengthMismatch { cat: usize, emb: usize },
+    #[error("need at least 3 embeddings, got {0}")]
+    TooFewEmbeddings(usize),
+}
+
 // ── Input contract ──────────────────────────────────────────────────────
 
 /// Input to construct a SphereQL pipeline.
@@ -124,7 +134,7 @@ impl SphereQLPipeline {
     /// - `input.categories[i]` is the category for sentence `i`
     /// - `input.embeddings[i]` is the embedding vector for sentence `i`
     /// - All embedding vectors must have the same dimensionality (>= 3).
-    pub fn new(input: PipelineInput) -> Self {
+    pub fn new(input: PipelineInput) -> Result<Self, PipelineError> {
         let embeddings: Vec<Embedding> = input
             .embeddings
             .iter()
@@ -143,16 +153,17 @@ impl SphereQLPipeline {
         categories: Vec<String>,
         embeddings: Vec<Embedding>,
         pca: PcaProjection,
-    ) -> Self {
+    ) -> Result<Self, PipelineError> {
         let n = embeddings.len();
-        assert_eq!(
-            n,
-            categories.len(),
-            "categories.len() ({}) must equal embeddings.len() ({})",
-            categories.len(),
-            n
-        );
-        assert!(n >= 3, "need at least 3 embeddings");
+        if n != categories.len() {
+            return Err(PipelineError::LengthMismatch {
+                cat: categories.len(),
+                emb: n,
+            });
+        }
+        if n < 3 {
+            return Err(PipelineError::TooFewEmbeddings(n));
+        }
 
         let mut index = EmbeddingIndex::builder(pca.clone())
             .uniform_shells(10, 1.0)
@@ -176,13 +187,13 @@ impl SphereQLPipeline {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             pca,
             index,
             categories,
             cart_points,
             ids,
-        }
+        })
     }
 
     /// Execute a typed query against the pipeline.
@@ -454,7 +465,7 @@ mod tests {
     #[test]
     fn pipeline_nearest() {
         let (input, query) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let result = pipeline.query(SphereQLQuery::Nearest { k: 5 }, &query);
         match result {
             SphereQLOutput::Nearest(items) => {
@@ -468,7 +479,7 @@ mod tests {
     #[test]
     fn pipeline_globs() {
         let (input, query) = make_input(30, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let result = pipeline.query(
             SphereQLQuery::DetectGlobs {
                 k: Some(2),
@@ -489,7 +500,7 @@ mod tests {
     #[test]
     fn pipeline_concept_path() {
         let (input, query) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let result = pipeline.query(
             SphereQLQuery::ConceptPath {
                 source_id: "s-0000",
@@ -511,7 +522,7 @@ mod tests {
     #[test]
     fn pipeline_local_manifold() {
         let (input, query) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let result = pipeline.query(SphereQLQuery::LocalManifold { neighborhood_k: 10 }, &query);
         match result {
             SphereQLOutput::LocalManifold(m) => {
@@ -525,14 +536,14 @@ mod tests {
     #[test]
     fn test_exported_points_count() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         assert_eq!(pipeline.exported_points().len(), 20);
     }
 
     #[test]
     fn test_exported_points_fields() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         for p in pipeline.exported_points() {
             assert!(p.r >= 0.0, "r must be non-negative");
             assert!(
@@ -549,7 +560,7 @@ mod tests {
     #[test]
     fn test_exported_points_categories() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let points = pipeline.exported_points();
         for (i, p) in points.iter().enumerate() {
             let expected = if i < 10 { "group_a" } else { "group_b" };
@@ -560,7 +571,7 @@ mod tests {
     #[test]
     fn test_to_json_parseable() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let json = pipeline.to_json();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(parsed.len(), 20);
@@ -569,7 +580,7 @@ mod tests {
     #[test]
     fn test_to_csv_lines() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let csv = pipeline.to_csv();
         let lines: Vec<&str> = csv.lines().collect();
         assert_eq!(
@@ -582,7 +593,7 @@ mod tests {
     #[test]
     fn test_explained_variance() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let ratio = pipeline.explained_variance_ratio();
         assert!(ratio > 0.0 && ratio <= 1.0);
     }
@@ -590,7 +601,7 @@ mod tests {
     #[test]
     fn test_unique_categories() {
         let (input, _) = make_input(20, 10);
-        let pipeline = SphereQLPipeline::new(input);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
         let cats = pipeline.unique_categories();
         assert_eq!(cats.len(), 2);
         assert_eq!(cats[0], "group_a");

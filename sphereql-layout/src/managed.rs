@@ -35,7 +35,7 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
         }
 
         let item = self.items.remove(index);
-        self.positions.remove(index);
+        let _ = self.positions.remove(index);
         self.dirty.remove(&index);
 
         if index != self.items.len() {
