@@ -423,8 +423,8 @@ impl SphereQLPipeline {
         for p in &points {
             out.push_str(&format!(
                 "\"{}\",\"{}\",{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6},{:.6}\n",
-                p.id.replace('"', "\"\"'),
-                p.category.replace('"', "\"\"'),
+                p.id.replace('"', "\"\""),
+                p.category.replace('"', "\"\""),
                 p.r,
                 p.theta,
                 p.phi,
