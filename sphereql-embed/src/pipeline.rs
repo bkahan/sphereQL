@@ -20,7 +20,7 @@ pub enum PipelineError {
 /// Input to construct a SphereQL pipeline.
 ///
 /// - `categories`: one category string per sentence, same length as `embeddings`
-/// - `embeddings`: one Vec<f64> per sentence, all same dimensionality
+/// - `embeddings`: one `Vec<f64>` per sentence, all same dimensionality
 /// - Both vectors must have the same length.
 pub struct PipelineInput {
     pub categories: Vec<String>,

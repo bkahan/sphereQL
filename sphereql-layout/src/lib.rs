@@ -1,3 +1,9 @@
+//! Layout engines for distributing items on S².
+//!
+//! Strategies: Fibonacci spiral ([`UniformLayout`]), k-means clustering
+//! ([`ClusteredLayout`]), force-directed simulation ([`ForceDirectedLayout`]),
+//! and incremental managed layouts ([`ManagedLayout`]).
+
 pub mod clustered;
 pub mod force;
 pub mod managed;
