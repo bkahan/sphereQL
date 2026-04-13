@@ -58,9 +58,10 @@ pub struct KernelPcaProjection {
     /// Top-3 eigenvalues of the centered kernel matrix (descending).
     eigenvalues: [f64; 3],
 
-    /// Column means of the **raw** kernel matrix K.
-    /// col_means\[i\] = (1/n) Σⱼ K_{ij}.
-    col_means: Vec<f64>,
+    /// Row means of the **raw** kernel matrix K.
+    /// row_means\[i\] = (1/n) Σⱼ K_{ij}.
+    /// Since K is symmetric (K_{ij} = K_{ji}), row and column means are identical.
+    row_means: Vec<f64>,
 
     /// Grand mean of the **raw** kernel matrix K.
     /// (1/n²) Σ_{i,j} K_{ij}.
@@ -132,9 +133,8 @@ impl KernelPcaProjection {
             return 1.0;
         }
         let explained: f64 = self.eigenvalues.iter().sum();
-        // eigenvalues from power iteration on K̃ are the raw eigenvalues;
-        // total_variance = trace(K̃)/n, and eigenvalues relate to variance
-        // via λ_l/n (since K̃ = n·Cov in feature space). Divide both by n.
+        // Eigenvalues are eigenvalues of K̃ directly. trace(K̃) = n * total_variance,
+        // so the explained ratio = Σλ_l / trace(K̃) = Σλ_l / (n * total_variance).
         (explained / (self.total_variance * self.training_data.len() as f64)).clamp(0.0, 1.0)
     }
 
@@ -184,27 +184,28 @@ impl KernelPcaProjection {
         }
 
         // 4. Centering statistics on the raw kernel matrix
-        //    col_means[i] = (1/n) Σ_j K_{ij}
+        //    row_means[i] = (1/n) Σ_j K_{ij}
         //    grand_mean   = (1/n²) Σ_{i,j} K_{ij}
-        let mut col_means = vec![0.0; n];
+        //    Since K is symmetric, row_means[i] == col_means[i].
+        let mut row_means = vec![0.0; n];
         let mut grand_sum = 0.0;
         for i in 0..n {
             let mut row_sum = 0.0;
             for j in 0..n {
                 row_sum += kernel_flat[i * n + j];
             }
-            col_means[i] = row_sum / n as f64;
+            row_means[i] = row_sum / n as f64;
             grand_sum += row_sum;
         }
         let grand_mean = grand_sum / (n * n) as f64;
 
         // 5. Centre the kernel matrix (Schölkopf eq. 4):
-        //    K̃_{ij} = K_{ij} − col_means[i] − col_means[j] + grand_mean
+        //    K̃_{ij} = K_{ij} − row_means[i] − row_means[j] + grand_mean
         //
         //    We overwrite kernel_flat in place to save memory.
         for i in 0..n {
             for j in 0..n {
-                kernel_flat[i * n + j] -= col_means[i] + col_means[j] - grand_mean;
+                kernel_flat[i * n + j] -= row_means[i] + row_means[j] - grand_mean;
             }
         }
 
@@ -236,7 +237,7 @@ impl KernelPcaProjection {
             inv_two_sigma_sq,
             alphas,
             eigenvalues,
-            col_means,
+            row_means,
             grand_mean,
             total_variance,
             dim,
@@ -261,9 +262,11 @@ impl KernelPcaProjection {
         // mean(k_z)
         let mean_k_z: f64 = k_z.iter().sum::<f64>() / n as f64;
 
-        // Centre: k̃_z[i] = k_z[i] − mean(k_z) − col_means[i] + grand_mean
+        // Centre (Schölkopf eq. 4, out-of-sample extension):
+        //   k̃(z, x_i) = k(z,x_i) − (1/n)Σ_l k(z,x_l) − (1/n)Σ_l k(x_i,x_l) + grand_mean
+        // The third term is the column mean of K (≡ row mean, since K is symmetric).
         let k_z_centered: Vec<f64> = (0..n)
-            .map(|i| k_z[i] - mean_k_z - self.col_means[i] + self.grand_mean)
+            .map(|i| k_z[i] - mean_k_z - self.row_means[i] + self.grand_mean)
             .collect();
 
         // Project: f_l = Σ_i α^l_i · k̃_z[i]
@@ -320,12 +323,12 @@ impl Projection for KernelPcaProjection {
         let normalized = embedding.normalized();
         let (x, y, z, spherical_potential) = self.kernel_project(&normalized);
 
-        let projection_magnitude = (x * x + y * y + z * z).sqrt();
+        let projection_sq = x * x + y * y + z * z;
+        let projection_magnitude = projection_sq.sqrt();
 
         // Per-point certainty from reconstruction error (Hoffmann eq. 11):
         //   p(z)  = p_S(z) − Σ f_l(z)²
         //   certainty = 1 − p(z)/p_S(z) = (Σ f_l²) / p_S(z)
-        let projection_sq = x * x + y * y + z * z;
         let certainty = if spherical_potential > f64::EPSILON {
             (projection_sq / spherical_potential).clamp(0.0, 1.0)
         } else {
@@ -382,6 +385,7 @@ fn auto_sigma(data: &[Vec<f64>]) -> f64 {
     }
 
     let mut distances = Vec::new();
+    // Fixed seed for deterministic σ selection across runs.
     let mut rng = SplitMix64::new(0xCAFE_BABE);
 
     if n <= 100 {
@@ -440,6 +444,7 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
         let mut eigenvalue = 0.0;
 
         for _ in 0..max_iters {
+            // u = M · v
             let mut u = vec![0.0; n];
             for (i, ui) in u.iter_mut().enumerate() {
                 let row_start = i * n;
@@ -450,6 +455,11 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
                 *ui = s;
             }
 
+            // Rayleigh quotient: λ ≈ v · (M · v) = v · u
+            // Computed before deflation/normalization corrupts u.
+            eigenvalue = dot(&v, &u);
+
+            // Gram-Schmidt deflation against previously found eigenvectors
             for prev in &vectors {
                 let proj = dot(&u, prev);
                 for (ui, &pi) in u.iter_mut().zip(prev.iter()) {
@@ -461,20 +471,6 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
             if mag < f64::EPSILON {
                 break;
             }
-
-            // Rayleigh quotient for eigenvalue estimate
-            eigenvalue = {
-                let mut s = 0.0;
-                for i in 0..n {
-                    let row_start = i * n;
-                    let mut mv_i = 0.0;
-                    for j in 0..n {
-                        mv_i += matrix[row_start + j] * u[j];
-                    }
-                    s += u[i] * mv_i;
-                }
-                s
-            };
 
             let change = 1.0 - dot(&u, &v).abs();
             v = u;
