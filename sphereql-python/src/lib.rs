@@ -34,6 +34,7 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<core_types::PyProjectedPoint>()?;
         m.add_class::<projection::PyPcaProjection>()?;
         m.add_class::<projection::PyRandomProjection>()?;
+        m.add_class::<projection::PyKernelPcaProjection>()?;
         m.add_class::<pipeline::Pipeline>()?;
         m.add_class::<types::Nearest>()?;
         m.add_class::<types::Path>()?;

@@ -3,6 +3,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 
+use sphereql_embed::kernel_pca::KernelPcaProjection;
 use sphereql_embed::projection::{PcaProjection, Projection, RandomProjection};
 use sphereql_embed::types::{Embedding, RadialStrategy};
 
@@ -251,5 +252,114 @@ impl PyRandomProjection {
 
     fn __repr__(&self) -> String {
         format!("RandomProjection(dim={})", self.inner.dimensionality())
+    }
+}
+
+// ── KernelPcaProjection ───────────────────────────────────────────────
+
+#[pyclass(name = "KernelPcaProjection")]
+pub struct PyKernelPcaProjection {
+    inner: KernelPcaProjection,
+}
+
+#[pymethods]
+impl PyKernelPcaProjection {
+    #[classmethod]
+    #[pyo3(signature = (embeddings, *, sigma=None, radial=None, volumetric=false))]
+    fn fit(
+        _cls: &Bound<'_, PyType>,
+        embeddings: &Bound<'_, PyAny>,
+        sigma: Option<f64>,
+        radial: Option<&Bound<'_, PyAny>>,
+        volumetric: bool,
+    ) -> PyResult<Self> {
+        let embs = extract_embeddings_2d(embeddings)?;
+        let strategy = match radial {
+            Some(r) => parse_radial(r)?,
+            None => RadialStrategy::Magnitude,
+        };
+        let kpca = match sigma {
+            Some(s) => KernelPcaProjection::fit_with_sigma(&embs, s, strategy),
+            None => KernelPcaProjection::fit(&embs, strategy),
+        };
+        let kpca = if volumetric {
+            kpca.with_volumetric(true)
+        } else {
+            kpca
+        };
+        Ok(Self { inner: kpca })
+    }
+
+    #[getter]
+    fn dimensionality(&self) -> usize {
+        self.inner.dimensionality()
+    }
+
+    #[getter]
+    fn explained_variance_ratio(&self) -> f64 {
+        self.inner.explained_variance_ratio()
+    }
+
+    #[getter]
+    fn sigma(&self) -> f64 {
+        self.inner.sigma()
+    }
+
+    #[getter]
+    fn num_training_points(&self) -> usize {
+        self.inner.num_training_points()
+    }
+
+    fn project(&self, embedding: &Bound<'_, PyAny>) -> PyResult<PySphericalPoint> {
+        let emb = extract_embedding(embedding)?;
+        Ok(PySphericalPoint::from_inner(self.inner.project(&emb)))
+    }
+
+    fn project_rich(&self, embedding: &Bound<'_, PyAny>) -> PyResult<PyProjectedPoint> {
+        let emb = extract_embedding(embedding)?;
+        Ok(PyProjectedPoint::from_inner(self.inner.project_rich(&emb)))
+    }
+
+    fn project_batch<'py>(
+        &self,
+        py: Python<'py>,
+        embeddings: &Bound<'py, PyAny>,
+    ) -> PyResult<Vec<PySphericalPoint>> {
+        let embs = extract_embeddings_2d(embeddings)?;
+        let results = py.detach(|| {
+            embs.iter()
+                .map(|e| self.inner.project(e))
+                .collect::<Vec<_>>()
+        });
+        Ok(results
+            .into_iter()
+            .map(PySphericalPoint::from_inner)
+            .collect())
+    }
+
+    fn project_rich_batch<'py>(
+        &self,
+        py: Python<'py>,
+        embeddings: &Bound<'py, PyAny>,
+    ) -> PyResult<Vec<PyProjectedPoint>> {
+        let embs = extract_embeddings_2d(embeddings)?;
+        let results = py.detach(|| {
+            embs.iter()
+                .map(|e| self.inner.project_rich(e))
+                .collect::<Vec<_>>()
+        });
+        Ok(results
+            .into_iter()
+            .map(PyProjectedPoint::from_inner)
+            .collect())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "KernelPcaProjection(dim={}, sigma={:.4}, explained_variance={:.4})",
+            self.inner.dimensionality(),
+            self.inner.sigma(),
+            self.inner.explained_variance_ratio()
+        )
     }
 }

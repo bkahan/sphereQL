@@ -228,6 +228,98 @@ class TestPcaProjection:
         assert "dim=" in r
 
 
+class TestKernelPcaProjection:
+    @pytest.fixture
+    def embeddings(self):
+        np.random.seed(42)
+        return np.random.randn(20, 64)
+
+    @pytest.fixture
+    def kpca(self, embeddings):
+        return sphereql.KernelPcaProjection.fit(embeddings)
+
+    def test_fit_and_project(self, kpca, embeddings):
+        pt = kpca.project(embeddings[0])
+        assert isinstance(pt, sphereql.SphericalPoint)
+        assert pt.r > 0
+        assert 0 <= pt.theta < 2 * math.pi
+        assert 0 <= pt.phi <= math.pi
+
+    def test_project_rich(self, kpca, embeddings):
+        rpt = kpca.project_rich(embeddings[0])
+        assert isinstance(rpt, sphereql.ProjectedPoint)
+        assert 0 <= rpt.certainty <= 1
+
+    def test_batch(self, kpca, embeddings):
+        pts = kpca.project_batch(embeddings[:5])
+        assert len(pts) == 5
+        for pt in pts:
+            assert isinstance(pt, sphereql.SphericalPoint)
+
+    def test_rich_batch(self, kpca, embeddings):
+        rpts = kpca.project_rich_batch(embeddings[:5])
+        assert len(rpts) == 5
+        for rpt in rpts:
+            assert isinstance(rpt, sphereql.ProjectedPoint)
+
+    def test_explained_variance(self, kpca):
+        assert 0 < kpca.explained_variance_ratio <= 1.0
+
+    def test_dimensionality(self, kpca):
+        assert kpca.dimensionality == 64
+
+    def test_sigma(self, kpca):
+        assert kpca.sigma > 0
+
+    def test_num_training_points(self, kpca):
+        assert kpca.num_training_points == 20
+
+    def test_explicit_sigma(self, embeddings):
+        kpca = sphereql.KernelPcaProjection.fit(embeddings, sigma=0.5)
+        assert abs(kpca.sigma - 0.5) < 1e-12
+
+    def test_volumetric(self, embeddings):
+        kpca_vol = sphereql.KernelPcaProjection.fit(embeddings, volumetric=True)
+        pt = kpca_vol.project(embeddings[0])
+        assert isinstance(pt, sphereql.SphericalPoint)
+
+    def test_radial_fixed(self, embeddings):
+        kpca = sphereql.KernelPcaProjection.fit(embeddings, radial=2.5)
+        pt = kpca.project(embeddings[0])
+        assert abs(pt.r - 2.5) < 1e-10
+
+    def test_radial_magnitude(self, embeddings):
+        kpca = sphereql.KernelPcaProjection.fit(embeddings, radial="magnitude")
+        pt = kpca.project(embeddings[0])
+        assert pt.r > 0
+
+    def test_invalid_radial(self, embeddings):
+        with pytest.raises(ValueError, match="unknown radial strategy"):
+            sphereql.KernelPcaProjection.fit(embeddings, radial="invalid")
+
+    def test_repr(self, kpca):
+        r = repr(kpca)
+        assert "KernelPcaProjection(" in r
+        assert "sigma=" in r
+
+    def test_out_of_sample(self, kpca):
+        np.random.seed(99)
+        new_vec = np.random.randn(64)
+        pt = kpca.project(new_vec)
+        assert isinstance(pt, sphereql.SphericalPoint)
+
+    def test_f32_input(self):
+        embs = np.random.randn(20, 64).astype(np.float32)
+        kpca = sphereql.KernelPcaProjection.fit(embs)
+        pt = kpca.project(embs[0])
+        assert isinstance(pt, sphereql.SphericalPoint)
+
+    def test_list_input(self, kpca, embeddings):
+        vec_list = [float(x) for x in embeddings[0]]
+        pt = kpca.project(vec_list)
+        assert isinstance(pt, sphereql.SphericalPoint)
+
+
 class TestRandomProjection:
     def test_deterministic(self):
         rp1 = sphereql.RandomProjection(64, seed=123)
