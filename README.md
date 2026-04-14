@@ -10,7 +10,7 @@ spatial queries, and interactive visualization.**
 
 sphereQL maps vectors from any embedding model (OpenAI, Cohere, sentence-transformers,
 etc.) onto spherical coordinates via PCA or Kernel PCA, then indexes them with
-shell/sector spatial partitioning for sub-millisecond nearest-neighbor lookups.
+shell/sector spatial partitioning for fast nearest-neighbor lookups.
 The result: you can search, cluster, trace concept paths, and visualize hundreds
 of thousands of embeddings on a 3D sphere -- from Rust, Python, or the browser
 via WASM.
@@ -443,16 +443,22 @@ The spatial index uses a two-tier partitioning scheme:
   `1 - dot(a, b)` instead of the full Vincenty formula, reducing per-item
   cost to 3 multiplications + 2 additions
 
-Benchmark results (10,000 points, 384 dimensions, 20 clusters):
+Benchmark results (10,000 points, 384 dimensions, 20 clusters, 200 queries):
 
-| Method | k | Precision@1 | nDCG@k | Mean latency |
+| Method | k | Precision@k | nDCG@k | Mean latency |
 |---|---|---|---|---|
-| Brute-force cosine | 5 | 1.000 | 1.000 | 172 ms |
-| SphereQL-only | 5 | 1.000 | 0.745 | 2.1 us |
-| Hybrid (recall=2x) | 5 | 1.000 | 0.982 | 159 ms |
+| Brute-force ANN | 5 | 1.000 | 1.000 | 154 ms |
+| SphereQL PCA | 1 | 1.000 | 1.000 | 1.7 ms |
+| SphereQL PCA | 5 | 0.205 | 0.745 | 1.6 ms |
+| SphereQL KPCA | 5 | 0.204 | 0.746 | 84 ms |
+| Hybrid (r=k*2) | 5 | 1.000 | 1.000 | 155 ms |
 
-SphereQL-only queries run **~80,000x faster** than brute-force but trade precision
-beyond k=1. The hybrid approach recovers most precision at near brute-force latency.
+SphereQL PCA queries run **~90x faster** than brute-force with perfect precision
+at k=1. Precision degrades at higher k due to the lossy 384-d to 3-d projection
+(~2.8% explained variance). The hybrid approach recovers full precision via
+cosine re-ranking in the original space, at near brute-force latency. Improving
+the speed/precision tradeoff at higher k is an active development priority.
+
 For full results see [`docs/benchmark-analysis.md`](docs/benchmark-analysis.md) and
 [`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md).
 

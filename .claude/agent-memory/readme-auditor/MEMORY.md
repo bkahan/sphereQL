@@ -1,0 +1,1 @@
+- [Benchmark accuracy crisis](project_benchmark_accuracy.md) -- README perf claims are 3 orders of magnitude wrong vs actual data
