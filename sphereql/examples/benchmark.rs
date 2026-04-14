@@ -1,4 +1,5 @@
-//! Retrieval benchmark: Vanilla ANN vs SphereQL Hybrid vs SphereQL-only.
+//! Retrieval benchmark: Vanilla ANN vs SphereQL (PCA) vs SphereQL (Kernel PCA)
+//! vs Hybrid search.
 //!
 //! Run with:
 //!   cargo run --example benchmark -p sphereql --features full --release
@@ -7,6 +8,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use sphereql::embed::pipeline::{SphereQLOutput, SphereQLQuery};
+use sphereql::embed::{Embedding, EmbeddingIndex, KernelPcaProjection, RadialStrategy};
 use sphereql::vectordb::{
     BridgeConfig, InMemoryStore, VectorRecord, VectorStoreBridge, store::VectorStore,
 };
@@ -261,9 +263,39 @@ async fn main() {
     let evr = bridge.projection().unwrap().explained_variance_ratio();
 
     eprintln!(
-        "Index built in {} ms, PCA EVR: {:.1}%",
+        "PCA index built in {} ms, EVR: {:.1}%",
         build_time_ms,
         evr * 100.0
+    );
+
+    // Build Kernel PCA index
+    eprintln!("Building Kernel PCA index...");
+    let kpca_start = Instant::now();
+
+    let embs: Vec<Embedding> = dataset
+        .records
+        .iter()
+        .map(|r| Embedding::from(r.vector.as_slice()))
+        .collect();
+
+    let kpca = KernelPcaProjection::fit(&embs, RadialStrategy::Magnitude).with_volumetric(true);
+    let kpca_evr = kpca.explained_variance_ratio();
+
+    let mut kpca_index = EmbeddingIndex::builder(kpca)
+        .uniform_shells(10, 1.0)
+        .theta_divisions(12)
+        .phi_divisions(6)
+        .build();
+
+    for (i, emb) in embs.iter().enumerate() {
+        kpca_index.insert(format!("s-{i:04}"), emb);
+    }
+
+    let kpca_build_ms = kpca_start.elapsed().as_millis();
+    eprintln!(
+        "Kernel PCA index built in {} ms, EVR: {:.1}%",
+        kpca_build_ms,
+        kpca_evr * 100.0
     );
 
     let ks = [1, 5, 10, 20];
@@ -276,6 +308,8 @@ async fn main() {
         let _ = bridge.store().search(&q.vector, 20).await;
         let _ = bridge.hybrid_search(&q.vector, 20, 80).await;
         let _ = bridge.query(SphereQLQuery::Nearest { k: 20 }, &q.vector);
+        let query_emb = Embedding::from(q.vector.as_slice());
+        let _ = kpca_index.search_nearest(&query_emb, 20);
     }
 
     // --- Vanilla ANN ---
@@ -309,8 +343,8 @@ async fn main() {
         });
     }
 
-    // --- SphereQL-only ---
-    eprintln!("Running SphereQL-only...");
+    // --- SphereQL PCA-only ---
+    eprintln!("Running SphereQL PCA-only...");
     for &k in &ks {
         let mut latencies = Vec::with_capacity(NUM_QUERIES);
         let mut precisions = Vec::with_capacity(NUM_QUERIES);
@@ -344,7 +378,47 @@ async fn main() {
         }
 
         all_results.push(MethodResult {
-            method: "SphereQL-only".into(),
+            method: "SphereQL PCA".into(),
+            k,
+            precision: precisions.iter().sum::<f64>() / NUM_QUERIES as f64,
+            recall: recalls.iter().sum::<f64>() / NUM_QUERIES as f64,
+            ndcg: ndcgs.iter().sum::<f64>() / NUM_QUERIES as f64,
+            mean_us: latencies.iter().sum::<f64>() / NUM_QUERIES as f64,
+            p99_us: p99(latencies),
+        });
+    }
+
+    // --- SphereQL Kernel PCA-only ---
+    eprintln!("Running SphereQL Kernel PCA-only...");
+    for &k in &ks {
+        let mut latencies = Vec::with_capacity(NUM_QUERIES);
+        let mut precisions = Vec::with_capacity(NUM_QUERIES);
+        let mut recalls = Vec::with_capacity(NUM_QUERIES);
+        let mut ndcgs = Vec::with_capacity(NUM_QUERIES);
+
+        for (qi, q) in dataset.queries.iter().enumerate() {
+            let query_emb = Embedding::from(q.vector.as_slice());
+            let start = Instant::now();
+            let results = kpca_index.search_nearest(&query_emb, k);
+            let elapsed = start.elapsed().as_micros() as f64;
+            latencies.push(elapsed);
+
+            // Map pipeline IDs (s-NNNN) back to record IDs (p-NNNN)
+            let mapped_ids: Vec<String> = results
+                .iter()
+                .filter_map(|r| {
+                    let idx: usize = r.item.id.strip_prefix("s-")?.parse().ok()?;
+                    Some(dataset.records.get(idx)?.id.clone())
+                })
+                .collect();
+
+            precisions.push(precision_at_k(&mapped_ids, &truth_ids[qi], k));
+            recalls.push(recall_at_k(&mapped_ids, &truth_ids[qi], k));
+            ndcgs.push(ndcg_at_k(&mapped_ids, &truth_relevance[qi], k));
+        }
+
+        all_results.push(MethodResult {
+            method: "SphereQL KPCA".into(),
             k,
             precision: precisions.iter().sum::<f64>() / NUM_QUERIES as f64,
             recall: recalls.iter().sum::<f64>() / NUM_QUERIES as f64,
@@ -389,11 +463,15 @@ async fn main() {
     }
 
     // --- Output ---
-    println!("## SphereQL Hybrid Search Benchmark");
+    println!("## SphereQL Retrieval Benchmark");
     println!("Dataset: {TOTAL} points, {DIM}-d, {NUM_CLUSTERS} clusters");
     println!("Queries: {NUM_QUERIES}");
-    println!("PCA explained variance: {:.1}%", evr * 100.0);
-    println!("Index build time: {build_time_ms} ms");
+    println!(
+        "PCA EVR: {:.1}%  |  Kernel PCA EVR: {:.1}%",
+        evr * 100.0,
+        kpca_evr * 100.0
+    );
+    println!("PCA build: {build_time_ms} ms  |  Kernel PCA build: {kpca_build_ms} ms");
     println!();
     println!(
         "| {:<20} | {:>2} | {:>11} | {:>8} | {:>6} | {:>9} | {:>8} |",
@@ -435,7 +513,9 @@ async fn main() {
             "num_queries": NUM_QUERIES,
         },
         "pca_explained_variance_ratio": evr,
-        "index_build_time_ms": build_time_ms,
+        "pca_build_time_ms": build_time_ms,
+        "kpca_explained_variance_ratio": kpca_evr,
+        "kpca_build_time_ms": kpca_build_ms,
         "results": json_results,
     });
 
