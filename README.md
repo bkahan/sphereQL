@@ -1,24 +1,71 @@
 # sphereQL
 
-Production-grade spherical coordinate operations library for Rust with GraphQL integration.
+[![CI](https://github.com/bkahan/sphereQL/actions/workflows/ci.yml/badge.svg)](https://github.com/bkahan/sphereQL/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/sphereql.svg)](https://crates.io/crates/sphereql)
+[![PyPI](https://img.shields.io/pypi/v/sphereql.svg)](https://pypi.org/project/sphereql/)
 
-sphereQL provides a layered architecture for working with spherical coordinates — from core math primitives through spatial indexing, layout engines, embedding projection, and a ready-to-use GraphQL API.
+**Project high-dimensional embeddings onto a 3D sphere for fast semantic search,
+spatial queries, and interactive visualization.**
 
-## Crates
+sphereQL maps vectors from any embedding model (OpenAI, Cohere, sentence-transformers,
+etc.) onto spherical coordinates via PCA or Kernel PCA, then indexes them with
+shell/sector spatial partitioning for sub-millisecond nearest-neighbor lookups.
+The result: you can search, cluster, trace concept paths, and visualize hundreds
+of thousands of embeddings on a 3D sphere -- from Rust, Python, or the browser
+via WASM.
 
-| Crate              | Description                                                                       |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `sphereql-core`    | Spherical math primitives: points, conversions, distances, interpolation, regions |
-| `sphereql-index`   | Spatial indexing with shell/sector partitioning for fast queries                  |
-| `sphereql-layout`  | Layout engine: uniform (Fibonacci), clustered (k-means), force-directed           |
-| `sphereql-embed`   | Vector embedding projection: PCA and random projection from high-D to S²          |
-| `sphereql-graphql` | async-graphql integration with queries, subscriptions, and event bus              |
-| `sphereql-vectordb`| Vector store integration (in-memory, Pinecone, Qdrant) with hybrid search        |
-| `sphereql-wasm`    | WebAssembly bindings for the embedding pipeline                                   |
-| `sphereql-python`  | Python bindings via PyO3/maturin                                                  |
-| `sphereql`         | Umbrella crate with feature flags for selective imports                           |
+## Use Cases
 
-## Quick Start
+- **Semantic search** -- project embeddings to S^2 and query nearest neighbors
+  in microseconds, with optional cosine-similarity re-ranking in the original
+  space for precision
+- **Knowledge visualization** -- render your entire embedding corpus as an
+  interactive 3D sphere, colored by category, explorable in the browser
+- **Concept path tracing** -- find the shortest semantic path between two
+  concepts through projected space
+- **Cluster detection** -- automatically discover concept "globs" (dense regions)
+  on the sphere surface
+- **Geospatial indexing** -- use the core library for pure spherical geometry:
+  coordinate conversions, great-circle distances, region queries (cone, cap,
+  shell, band, wedge)
+- **Vector database bridge** -- connect Qdrant or Pinecone collections to
+  sphereQL's pipeline for hybrid search and spherical coordinate enrichment
+
+## Architecture
+
+```text
+                    sphereql (umbrella crate, feature-gated)
+                    |
+    +---------------+------+------------------+
+    |               |      |                  |
+sphereql-graphql  sphereql-vectordb           |
+    |               |                         |
+    |           sphereql-embed                |
+    |               |                         |
+    |           sphereql-layout               |
+    |               |                         |
+    +----------sphereql-index                 |
+                    |                         |
+                sphereql-core ----------------+
+
+    sphereql-python  (PyO3 bindings via maturin)
+    sphereql-wasm    (wasm-bindgen bindings)
+```
+
+| Crate | Description |
+|---|---|
+| `sphereql-core` | Spherical math primitives: points (`SphericalPoint`, `CartesianPoint`, `GeoPoint`), coordinate conversions, distance metrics (angular, great-circle, chord, cosine), interpolation (slerp, nlerp), and region types (cone, cap, shell, band, wedge) |
+| `sphereql-index` | Spatial indexing with composite shell + sector partitioning, k-NN search, cone/cap/shell/band/wedge/region queries, and cached Cartesian vectors for fast angular distance proxy |
+| `sphereql-layout` | Layout engines for distributing items on S^2: Fibonacci spiral (uniform), k-means clustering, force-directed simulation, and incremental managed layouts with quality metrics |
+| `sphereql-embed` | Embedding projection via PCA, Kernel PCA (Gaussian/RBF), or random projection. Query pipeline with k-NN, similarity threshold, concept paths, glob detection, and local manifold fitting |
+| `sphereql-graphql` | async-graphql schema with cone/shell/band/wedge/region queries, k-NN search, distance calculations, and real-time subscriptions via a broadcast event bus |
+| `sphereql-vectordb` | Vector store bridge for InMemory, Qdrant (gRPC), and Pinecone backends. Handles sync, PCA fitting, projection, and hybrid search with cosine re-ranking |
+| `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline, projections, vector store bridges, and interactive 3D visualization |
+| `sphereql-wasm` | WebAssembly bindings via wasm-bindgen for running the embedding pipeline in the browser |
+| `sphereql` | Umbrella crate with feature flags for selective imports |
+
+## Quick Start (Rust)
 
 Add to your `Cargo.toml`:
 
@@ -29,24 +76,27 @@ sphereql = { version = "0.1", features = ["full"] }
 
 ### Feature Flags
 
-| Feature          | Includes                                         | Dependencies              |
-| ---------------- | ------------------------------------------------ | ------------------------- |
-| `core` (default) | Math primitives, conversions, distances, regions | —                         |
-| `index`          | Spatial indexing and queries                     | `core`                    |
-| `layout`         | Layout strategies and quality metrics            | `core`, `index`           |
-| `embed`          | Embedding projection (PCA, random) and pipeline  | `core`, `index`, `layout` |
-| `graphql`        | GraphQL schema, subscriptions, event bus         | `core`, `index`           |
-| `vectordb`       | Vector store bridge and hybrid search            | `embed`                   |
-| `pinecone`       | Pinecone backend for vectordb                    | `vectordb`                |
-| `qdrant`         | Qdrant gRPC backend for vectordb                 | `vectordb`                |
-| `full`           | All of the above except `pinecone` and `qdrant`  | All non-backend features  |
+| Feature | Includes | Dependencies |
+|---|---|---|
+| `core` (default) | Math primitives, conversions, distances, regions | -- |
+| `index` | Spatial indexing and queries | `core` |
+| `layout` | Layout strategies and quality metrics | `core`, `index` |
+| `embed` | Embedding projection (PCA, Kernel PCA, random) and pipeline | `core`, `index`, `layout` |
+| `graphql` | GraphQL schema, subscriptions, event bus | `core`, `index` |
+| `vectordb` | Vector store bridge and hybrid search | `embed` |
+| `pinecone` | Pinecone backend for vectordb | `vectordb` |
+| `full` | All of the above except `pinecone` | All non-backend features |
 
-> **Note:** `full` does not activate the `pinecone` or `qdrant` features because
-> they pull in heavy external dependencies (`reqwest` and `qdrant-client`
-> respectively). Enable them explicitly if you need a specific backend:
-> `features = ["full", "qdrant"]`.
+> **Note:** `full` does not activate the `pinecone` feature because it pulls in
+> `reqwest`. Enable it explicitly if you need the Pinecone backend:
+> `features = ["full", "pinecone"]`.
+>
+> The `qdrant` feature is available on `sphereql-vectordb` and `sphereql-python`
+> directly but is not re-exported through the umbrella crate. Use
+> `sphereql-vectordb` with `features = ["qdrant"]` for Rust, or
+> `pip install sphereql[qdrant]` for Python.
 
-### Basic Usage
+### Spherical Math
 
 ```rust
 use sphereql::core::*;
@@ -58,11 +108,15 @@ let p2 = SphericalPoint::new(1.0, 1.2, 1.5).unwrap();
 // Convert to Cartesian
 let cart = spherical_to_cartesian(&p1);
 
+// Convert to geographic (lat/lon/alt)
+let geo = spherical_to_geo(&p1);
+
 // Compute distances
 let angle = angular_distance(&p1, &p2);
 let arc = great_circle_distance(&p1, &p2, 6371.0); // Earth radius in km
+let chord = chord_distance(&p1, &p2);
 
-// Interpolate along great circle
+// Interpolate along a great circle
 let midpoint = slerp(&p1, &p2, 0.5);
 ```
 
@@ -72,22 +126,38 @@ let midpoint = slerp(&p1, &p2, 0.5);
 use sphereql::core::*;
 use sphereql::index::*;
 
+// Define your item type
+#[derive(Debug, Clone)]
+struct Star { id: u64, pos: SphericalPoint }
+
+impl SpatialItem for Star {
+    type Id = u64;
+    fn id(&self) -> &u64 { &self.id }
+    fn position(&self) -> &SphericalPoint { &self.pos }
+}
+
 // Build a spatial index
-let mut index = SpatialIndexBuilder::new()
+let mut index = SpatialIndex::<Star>::builder()
     .uniform_shells(5, 10.0)
     .theta_divisions(12)
     .phi_divisions(6)
     .build();
 
-// Insert items (must implement SpatialItem trait)
-index.insert(my_item);
+// Insert items
+index.insert(Star {
+    id: 1,
+    pos: SphericalPoint::new_unchecked(1.0, 0.5, 0.8),
+});
 
 // Query: find items within a cone
-let cone = Cone::new(apex, axis, half_angle).unwrap();
+let apex = SphericalPoint::origin();
+let axis = SphericalPoint::new(1.0, 0.5, 0.8).unwrap();
+let cone = Cone::new(apex, axis, 0.3).unwrap();
 let result = index.query_cone(&cone);
 
 // Find k nearest neighbors
-let neighbors = index.nearest(&target_point, 5);
+let target = SphericalPoint::new(1.0, 0.5, 0.8).unwrap();
+let neighbors = index.nearest(&target, 5);
 ```
 
 ### Layout Engine
@@ -98,13 +168,17 @@ use sphereql::layout::*;
 
 // Uniform distribution via Fibonacci spiral
 let layout = UniformLayout::new();
-let result = layout.layout(&items, &mapper);
 
 // Clustered layout with k-means
-let layout = ClusteredLayout::new().with_clusters(4).with_spread(0.3);
+let layout = ClusteredLayout::new()
+    .with_clusters(4)
+    .with_spread(0.3);
 
 // Force-directed simulation
-let layout = ForceDirectedLayout::default();
+let layout = ForceDirectedLayout::new()
+    .with_iterations(100)
+    .with_repulsion(1.0)
+    .with_cooling(0.95);
 ```
 
 ### Embedding Projection
@@ -112,22 +186,54 @@ let layout = ForceDirectedLayout::default();
 ```rust
 use sphereql::embed::*;
 
-// Fit PCA projection from a corpus of embeddings
-let corpus: Vec<Embedding> = load_embeddings();
+// Prepare embeddings (e.g., 384-dimensional sentence-transformer output)
+let corpus: Vec<Embedding> = vectors
+    .into_iter()
+    .map(Embedding::new)
+    .collect();
+
+// Fit PCA projection from a corpus
 let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude);
 
-// Project high-dimensional vectors to the sphere
-let point = pca.project(&query_embedding);
+// Or use Kernel PCA for non-linear manifold structure
+let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Magnitude);
 
-// Build a spatial index over embeddings
-let mut index = EmbeddingIndex::builder(pca)
-    .uniform_shells(10, 1.0)
-    .theta_divisions(12)
-    .phi_divisions(6)
-    .build();
+// Project a single embedding to the sphere
+let point = pca.project(&corpus[0]);
 
-// Search: k nearest neighbors in projected space
-let results = index.search_nearest(&query, 5);
+// Use the full pipeline for search, concept paths, and more
+let input = PipelineInput {
+    categories: categories,     // Vec<String>, one per embedding
+    embeddings: raw_vectors,    // Vec<Vec<f64>>
+};
+let pipeline = SphereQLPipeline::new(input).unwrap();
+
+// k-NN search
+let query = PipelineQuery { embedding: query_vec };
+let results = pipeline.query(
+    SphereQLQuery::Nearest { k: 5 },
+    &query,
+);
+
+// Concept path between two items
+let path = pipeline.query(
+    SphereQLQuery::ConceptPath {
+        source_id: "s-0001",
+        target_id: "s-0042",
+        graph_k: 10,
+    },
+    &query,
+);
+
+// Detect clusters on the sphere
+let globs = pipeline.query(
+    SphereQLQuery::DetectGlobs { k: None, max_k: 10 },
+    &query,
+);
+
+// Export for visualization
+let points = pipeline.exported_points();
+let evr = pipeline.explained_variance_ratio();
 ```
 
 ### GraphQL Integration
@@ -137,7 +243,7 @@ use sphereql::graphql::*;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-// Build schema with defaults
+// Build schema with sensible defaults
 let schema = create_schema_with_defaults();
 
 // Or configure manually
@@ -155,63 +261,200 @@ let result = schema.execute(r#"{
 }"#).await;
 ```
 
-### Python
+## Quick Start (Python)
+
+### Install
 
 ```bash
-cd sphereql-python
-pip install maturin
-maturin develop
+pip install sphereql
 ```
+
+For Qdrant vector database support:
+
+```bash
+pip install sphereql[qdrant]
+```
+
+### Semantic Search
 
 ```python
 import sphereql
 
-# Build a pipeline from embeddings
-pipeline = sphereql.Pipeline(
-    categories=["science", "cooking", "sports"],
-    embeddings=[[0.1, 0.2, ...], [0.3, 0.4, ...], [0.5, 0.6, ...]],
-)
+categories = ["science", "science", "cooking", "cooking", "sports"]
+embeddings = [
+    [0.1, 0.9, 0.3, 0.0],
+    [0.2, 0.8, 0.4, 0.1],
+    [0.9, 0.1, 0.0, 0.5],
+    [0.8, 0.2, 0.1, 0.4],
+    [0.4, 0.4, 0.8, 0.2],
+]
 
-# Query nearest neighbors
-results = pipeline.nearest([0.15, 0.25, ...], k=3)
+pipeline = sphereql.Pipeline(categories, embeddings)
+
+# k-nearest neighbors
+query = [0.15, 0.85, 0.35, 0.05]
+results = pipeline.nearest(query, k=3)
 for r in results:
-    print(f"{r.category}: {r.distance:.4f}")
+    print(f"{r.id}  {r.category}  distance={r.distance:.4f}")
 
-# Export projected points
+# Similarity threshold search
+similar = pipeline.similar_above(query, min_cosine=0.8)
+
+# Concept path between items
+path = pipeline.concept_path("s-0000", "s-0003", graph_k=10)
+
+# Cluster detection
+globs = pipeline.detect_globs(max_k=10)
+
+# Local manifold fitting
+manifold = pipeline.local_manifold(query, neighborhood_k=10)
+
+# Export projected coordinates
 points = pipeline.exported_points()
-print(pipeline.explained_variance_ratio)
+print(f"Explained variance ratio: {pipeline.explained_variance_ratio:.4f}")
+```
+
+### Interactive 3D Visualization
+
+```python
+import sphereql
+
+# Opens an interactive WebGL sphere in your browser
+sphereql.visualize(categories, embeddings, title="My Embeddings")
+
+# Or visualize from an existing pipeline
+sphereql.visualize_pipeline(pipeline, title="Pipeline View")
+```
+
+### Vector Database Bridge
+
+```python
+import sphereql
+
+# In-memory store (for testing and small datasets)
+store = sphereql.InMemoryStore("my-collection", dimension=384)
+store.upsert([
+    {"id": "doc-1", "vector": embedding_1, "metadata": {"category": "science"}},
+    {"id": "doc-2", "vector": embedding_2, "metadata": {"category": "cooking"}},
+])
+
+bridge = sphereql.VectorStoreBridge(store)
+bridge.build_pipeline(category_key="category")
+
+# Hybrid search: angular candidates + cosine re-ranking
+results = bridge.hybrid_search(query_vec, final_k=5, recall_k=20)
+```
+
+### Core Types in Python
+
+```python
+import sphereql
+
+# Spherical/Cartesian/Geo point types
+p = sphereql.SphericalPoint(1.0, 0.5, 0.8)
+c = sphereql.spherical_to_cartesian(p)
+g = sphereql.spherical_to_geo(p)
+
+# Distance functions
+d = sphereql.angular_distance(p1, p2)
+gc = sphereql.great_circle_distance(p1, p2, radius=6371.0)
+
+# Projection classes
+pca = sphereql.PcaProjection.fit(embeddings, radial="magnitude")
+kpca = sphereql.KernelPcaProjection.fit(embeddings, radial="magnitude")
+rp = sphereql.RandomProjection(dimension=384, radial=1.0, seed=42)
+```
+
+## Quick Start (WASM)
+
+```bash
+# Build the WASM package
+cd sphereql-wasm
+wasm-pack build --target web
+```
+
+```javascript
+import init, { Pipeline } from './pkg/sphereql_wasm.js';
+
+await init();
+
+const pipeline = new Pipeline(JSON.stringify({
+  categories: ["science", "cooking", "sports"],
+  embeddings: [[0.1, 0.9, 0.3], [0.9, 0.1, 0.0], [0.4, 0.4, 0.8]]
+}));
+
+// Returns JSON string
+const results = pipeline.nearest(
+  JSON.stringify({ embedding: [0.15, 0.85, 0.35] }),
+  3
+);
+console.log(JSON.parse(results));
 ```
 
 ## Coordinate System
 
-sphereQL uses the physics convention for spherical coordinates:
+sphereQL uses the **physics convention** for spherical coordinates:
 
-- **r** — radial distance from origin (r >= 0)
-- **theta** — azimuthal angle in the xy-plane from the x-axis, range [0, 2*pi*)
-- **phi** — polar angle from the z-axis, range [0, pi]
+- **r** -- radial distance from origin (r >= 0)
+- **theta** -- azimuthal angle in the xy-plane from the x-axis, range [0, 2*pi)
+- **phi** -- polar angle from the z-axis, range [0, pi]
 
-## Architecture
+Geographic coordinates use standard (lat, lon, alt) with latitude in [-90, 90]
+and longitude in [-180, 180].
 
-```text
-sphereql (umbrella, feature-gated)
-  |
-  +-- sphereql-graphql (async-graphql schema, subscriptions)
-  |     |
-  +-- sphereql-vectordb (vector store bridge, hybrid search)
-  |     |
-  +-- sphereql-embed (PCA/random projection, semantic pipeline)
-  |     |
-  +-- sphereql-layout (layout strategies, quality metrics)
-  |     |
-  +-----+-- sphereql-index (spatial partitioning, queries)
-  |           |
-  +-----------+-- sphereql-core (math primitives, zero dependencies*)
+## How Embedding Projection Works
 
-  sphereql-wasm (WASM bindings for sphereql-embed pipeline)
-  sphereql-python (PyO3 bindings via maturin)
-```
+sphereQL projects high-dimensional vectors (e.g., 384-d sentence-transformer
+output) down to 3D spherical coordinates:
 
-\* Core depends only on `serde`, `thiserror`, and `approx`.
+1. **Normalize** -- all embeddings are L2-normalized to the unit hypersphere
+2. **Center** -- subtract the corpus mean
+3. **Reduce** -- find the top 3 principal components via PCA (linear) or
+   Kernel PCA with Gaussian/RBF kernel (non-linear manifold preservation)
+4. **Map** -- the 3 components become Cartesian (x, y, z), which convert to
+   spherical (r, theta, phi)
+
+The **radial coordinate** is configurable via `RadialStrategy`:
+- `Magnitude` (default): r = pre-normalization L2 magnitude of the embedding,
+  encoding "confidence" or specificity
+- `Fixed(value)`: constant radius for all points (pure angular projection)
+- `MagnitudeTransform(fn)`: custom transform (e.g., log-scaling)
+
+**Important:** This projection is inherently lossy. The explained variance ratio
+(EVR) indicates how much angular structure is preserved. For typical transformer
+embeddings, expect 2-5% EVR at 3 dimensions. sphereQL compensates with **hybrid
+search**: fast angular-distance candidate retrieval in projected space, followed
+by cosine similarity re-ranking in the original embedding space.
+
+**Kernel PCA** (new) captures non-linear manifold structure (curved clusters,
+rings, spirals) that linear PCA crushes flat. It uses the Gaussian kernel
+k(x, y) = exp(-||x-y||^2 / 2*sigma^2) with automatic sigma selection via the
+median heuristic. See the [kernel PCA source](sphereql-embed/src/kernel_pca.rs)
+for mathematical details and references.
+
+## Performance
+
+The spatial index uses a two-tier partitioning scheme:
+
+- **Shell partitioning** -- radial shells for fast r-range filtering
+- **Sector partitioning** -- angular sectors (theta x phi grid) for spatial
+  locality
+- **Cosine proxy** -- k-NN uses precomputed unit Cartesian vectors and
+  `1 - dot(a, b)` instead of the full Vincenty formula, reducing per-item
+  cost to 3 multiplications + 2 additions
+
+Benchmark results (10,000 points, 384 dimensions, 20 clusters):
+
+| Method | k | Precision@1 | nDCG@k | Mean latency |
+|---|---|---|---|---|
+| Brute-force cosine | 5 | 1.000 | 1.000 | 172 ms |
+| SphereQL-only | 5 | 1.000 | 0.745 | 2.1 us |
+| Hybrid (recall=2x) | 5 | 1.000 | 0.982 | 159 ms |
+
+SphereQL-only queries run **~80,000x faster** than brute-force but trade precision
+beyond k=1. The hybrid approach recovers most precision at near brute-force latency.
+For full results see [`docs/benchmark-analysis.md`](docs/benchmark-analysis.md) and
+[`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md).
 
 ## Examples
 
@@ -219,44 +462,94 @@ sphereql (umbrella, feature-gated)
 # Basic spherical math
 cargo run --example basic_positioning -p sphereql --features core
 
-# Spatial indexing demo
+# Spatial indexing and geospatial queries
 cargo run --example geospatial -p sphereql --features index
 
-# GraphQL schema demo
+# GraphQL server
 cargo run --example graphql_server -p sphereql --features full
 
-# Embedding projection demos
+# Embedding projection
 cargo run --example word_embeddings -p sphereql --features embed
 cargo run --example semantic_search -p sphereql --features embed
 cargo run --example auto_categorize -p sphereql --features embed
+
+# End-to-end transformer embedding pipeline
+cargo run --example e2e_transformer -p sphereql --features embed
+
+# Benchmarks
+cargo run --example benchmark -p sphereql --features full
+```
+
+Python examples are in [`sphereql-python/examples/`](sphereql-python/examples/):
+
+```bash
+cd sphereql-python
+pip install maturin numpy
+maturin develop
+
+python examples/quickstart.py
+python examples/kernel_pca.py
+python examples/dataset.py
 ```
 
 ## Running Tests
 
 ```bash
-# All tests
+# All workspace tests
 cargo test --workspace
 
-# With clippy
+# All features (including qdrant/pinecone compile checks)
+cargo test --workspace --all-features
+
+# Clippy lint pass
 cargo clippy --workspace --all-features --all-targets
+
+# Python tests
+cd sphereql-python
+maturin develop
+pytest -v
 
 # Benchmarks
 cargo bench -p sphereql-core
 cargo bench -p sphereql-index
 ```
 
-## Performance Notes
+## CI
 
-The embedding pipeline projects high-dimensional vectors (e.g., 384-d) down to 3D
-spherical coordinates via PCA. This projection is inherently lossy — the explained
-variance ratio (EVR) indicates how much information is preserved. For typical
-transformer embeddings, expect 2-5% EVR at 3D.
+The [CI pipeline](.github/workflows/ci.yml) runs on every push and PR to `main`:
 
-sphereQL compensates with hybrid search: fast angular-distance candidate retrieval
-in projected space, followed by cosine similarity re-ranking in the original
-embedding space. See [`docs/benchmark-analysis.md`](docs/benchmark-analysis.md) and
-[`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md) for details.
+- `cargo test --workspace --all-features` + doc-tests
+- `cargo clippy` with `-Dwarnings`
+- `cargo fmt --check`
+- Per-feature compilation matrix (core, index, layout, embed, graphql, vectordb,
+  full, no-default-features)
+- Python build + `pytest` on Python 3.12
+
+A separate [release workflow](.github/workflows/python-publish.yml) builds
+cross-platform wheels (Linux x86_64/aarch64, macOS x86_64/aarch64, Windows
+x86_64) and publishes to PyPI on GitHub release.
+
+## Project Status
+
+sphereQL is at **v0.1.0** (alpha). The API is functional and tested but may
+change before 1.0. Current priorities:
+
+- Improving search precision at higher k values
+- HNSW or VP-tree indexing for better recall without brute-force fallback
+- Streaming/incremental PCA for large-scale datasets
+- Published crate on crates.io
+
+## Contributing
+
+Contributions are welcome. To get started:
+
+1. Fork the repo and create a feature branch
+2. Run `cargo test --workspace --all-features` and `cargo clippy --workspace --all-features --all-targets`
+3. For Python changes, run `cd sphereql-python && maturin develop && pytest -v`
+4. Open a PR against `main`
+
+The codebase uses Rust 2024 edition. All CI checks must pass before merge.
 
 ## License
 
-MIT
+[MIT](LICENSE)
