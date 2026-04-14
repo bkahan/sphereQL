@@ -362,7 +362,9 @@ fn string_to_point_id(id: &str) -> PointId {
         u16::from_be_bytes([hash[4], hash[5]]),
         u16::from_be_bytes([hash[6], hash[7]]),
         u16::from_be_bytes([hash[8], hash[9]]),
-        u64::from_be_bytes([0, 0, hash[10], hash[11], hash[12], hash[13], hash[14], hash[15]]),
+        u64::from_be_bytes([
+            0, 0, hash[10], hash[11], hash[12], hash[13], hash[14], hash[15]
+        ]),
     );
     PointId::from(uuid)
 }

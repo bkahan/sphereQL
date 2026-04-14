@@ -193,7 +193,10 @@ macro_rules! impl_bridge_queries {
         ) -> PyResult<Vec<Bound<'py, PyDict>>> {
             let results = self
                 .$rt_field
-                .block_on(self.$bridge_field.hybrid_search(&embedding, final_k, recall_k))
+                .block_on(
+                    self.$bridge_field
+                        .hybrid_search(&embedding, final_k, recall_k),
+                )
                 .map_err(vstore_err)?;
 
             results
@@ -213,7 +216,10 @@ macro_rules! impl_bridge_queries {
         }
 
         fn __repr__(&self) -> String {
-            format!(concat!($repr_name, "(records={})"), self.$bridge_field.len())
+            format!(
+                concat!($repr_name, "(records={})"),
+                self.$bridge_field.len()
+            )
         }
     };
 }

@@ -39,9 +39,7 @@ impl Pipeline {
             .enumerate()
             .map(|(i, v)| {
                 v.as_str()
-                    .ok_or_else(|| {
-                        JsError::new(&format!("category at index {i} must be a string"))
-                    })
+                    .ok_or_else(|| JsError::new(&format!("category at index {i} must be a string")))
                     .map(|s| s.to_string())
             })
             .collect::<Result<Vec<_>, _>>()?;

@@ -11,7 +11,12 @@ fn sample_positions(positions: &[SphericalPoint]) -> Vec<SphericalPoint> {
         return positions.to_vec();
     }
     let step = positions.len() / MAX_QUALITY_N;
-    positions.iter().step_by(step).take(MAX_QUALITY_N).copied().collect()
+    positions
+        .iter()
+        .step_by(step)
+        .take(MAX_QUALITY_N)
+        .copied()
+        .collect()
 }
 
 pub fn compute_dispersion(positions: &[SphericalPoint]) -> f64 {

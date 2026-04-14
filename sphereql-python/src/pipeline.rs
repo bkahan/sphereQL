@@ -87,9 +87,7 @@ impl Pipeline {
                     .enumerate()
                     .map(|(j, v)| {
                         v.as_f64().ok_or_else(|| {
-                            PyValueError::new_err(format!(
-                                "embedding[{i}][{j}] must be a number"
-                            ))
+                            PyValueError::new_err(format!("embedding[{i}][{j}] must be a number"))
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()
@@ -116,7 +114,12 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, k=5))]
-    fn nearest(&self, py: Python<'_>, query: &Bound<'_, PyAny>, k: usize) -> PyResult<Vec<Nearest>> {
+    fn nearest(
+        &self,
+        py: Python<'_>,
+        query: &Bound<'_, PyAny>,
+        k: usize,
+    ) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
         let pq = PipelineQuery {
             embedding: emb.values,
@@ -145,13 +148,19 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, min_cosine=0.8))]
-    fn similar_above(&self, py: Python<'_>, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
+    fn similar_above(
+        &self,
+        py: Python<'_>,
+        query: &Bound<'_, PyAny>,
+        min_cosine: f64,
+    ) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
         let result = py.detach(|| {
-            self.inner.query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
+            self.inner
+                .query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
         });
         match result {
             SphereQLOutput::KNearest(items) => Ok(items.iter().map(Nearest::from).collect()),
@@ -160,7 +169,12 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, min_cosine=0.8))]
-    fn similar_above_json(&self, py: Python<'_>, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<String> {
+    fn similar_above_json(
+        &self,
+        py: Python<'_>,
+        query: &Bound<'_, PyAny>,
+        min_cosine: f64,
+    ) -> PyResult<String> {
         let results = self.similar_above(py, query, min_cosine)?;
         let out: Vec<_> = results
             .iter()

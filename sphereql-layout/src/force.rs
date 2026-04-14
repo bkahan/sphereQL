@@ -74,7 +74,12 @@ impl ForceDirectedLayout {
 
         let (positions, n) = if n > Self::MAX_QUALITY_N {
             let step = n / Self::MAX_QUALITY_N;
-            let sampled: Vec<_> = positions.iter().step_by(step).take(Self::MAX_QUALITY_N).copied().collect();
+            let sampled: Vec<_> = positions
+                .iter()
+                .step_by(step)
+                .take(Self::MAX_QUALITY_N)
+                .copied()
+                .collect();
             let len = sampled.len();
             (sampled, len)
         } else {

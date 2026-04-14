@@ -249,8 +249,18 @@ fn compute_quality(
 
     let (positions, assignments, n) = if n > MAX_QUALITY_N {
         let step = n / MAX_QUALITY_N;
-        let sampled_pos: Vec<_> = positions.iter().step_by(step).take(MAX_QUALITY_N).copied().collect();
-        let sampled_asgn: Vec<_> = assignments.iter().step_by(step).take(MAX_QUALITY_N).copied().collect();
+        let sampled_pos: Vec<_> = positions
+            .iter()
+            .step_by(step)
+            .take(MAX_QUALITY_N)
+            .copied()
+            .collect();
+        let sampled_asgn: Vec<_> = assignments
+            .iter()
+            .step_by(step)
+            .take(MAX_QUALITY_N)
+            .copied()
+            .collect();
         let len = sampled_pos.len();
         (sampled_pos, sampled_asgn, len)
     } else {
