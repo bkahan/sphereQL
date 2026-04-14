@@ -125,6 +125,37 @@ class RandomProjection:
         embeddings: NDArray[np.float64] | NDArray[np.float32] | list[list[float]],
     ) -> list[ProjectedPoint]: ...
 
+class KernelPcaProjection:
+    """Kernel PCA projection from high-dimensional embeddings to spherical coordinates."""
+
+    dimensionality: int
+    explained_variance_ratio: float
+    sigma: float
+    num_training_points: int
+    @classmethod
+    def fit(
+        cls,
+        embeddings: NDArray[np.float64] | NDArray[np.float32] | list[list[float]],
+        *,
+        sigma: Optional[float] = None,
+        radial: str | float | None = None,
+        volumetric: bool = False,
+    ) -> KernelPcaProjection: ...
+    def project(
+        self, embedding: NDArray[np.float64] | NDArray[np.float32] | Sequence[float]
+    ) -> SphericalPoint: ...
+    def project_rich(
+        self, embedding: NDArray[np.float64] | NDArray[np.float32] | Sequence[float]
+    ) -> ProjectedPoint: ...
+    def project_batch(
+        self,
+        embeddings: NDArray[np.float64] | NDArray[np.float32] | list[list[float]],
+    ) -> list[SphericalPoint]: ...
+    def project_rich_batch(
+        self,
+        embeddings: NDArray[np.float64] | NDArray[np.float32] | list[list[float]],
+    ) -> list[ProjectedPoint]: ...
+
 # ── Pipeline ───────────────────────────────────────────────────────────
 
 class Pipeline:

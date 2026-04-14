@@ -28,21 +28,34 @@ fn parse_radial(radial: &Bound<'_, PyAny>) -> PyResult<RadialStrategy> {
     }
 }
 
+fn validate_finite(values: &[f64]) -> PyResult<()> {
+    if let Some(i) = values.iter().position(|v| !v.is_finite()) {
+        return Err(PyValueError::new_err(format!(
+            "embedding values must be finite (no NaN or Inf), found {} at index {i}",
+            values[i]
+        )));
+    }
+    Ok(())
+}
+
 pub(crate) fn extract_embedding(obj: &Bound<'_, PyAny>) -> PyResult<Embedding> {
     // Try numpy 1D array first
     if let Ok(arr) = obj.cast::<PyArray1<f64>>() {
         let readonly = arr.try_readonly()?;
-        return Ok(Embedding::new(readonly.as_slice()?.to_vec()));
+        let values = readonly.as_slice()?.to_vec();
+        validate_finite(&values)?;
+        return Ok(Embedding::new(values));
     }
     // Try numpy 1D array of f32 (upcast)
     if let Ok(arr) = obj.cast::<PyArray1<f32>>() {
         let readonly = arr.try_readonly()?;
-        return Ok(Embedding::new(
-            readonly.as_slice()?.iter().map(|&v| v as f64).collect(),
-        ));
+        let values: Vec<f64> = readonly.as_slice()?.iter().map(|&v| v as f64).collect();
+        validate_finite(&values)?;
+        return Ok(Embedding::new(values));
     }
     // Fall back to list[float]
     let vec: Vec<f64> = obj.extract()?;
+    validate_finite(&vec)?;
     Ok(Embedding::new(vec))
 }
 
@@ -53,6 +66,7 @@ pub(crate) fn extract_embeddings_2d(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Embe
         let rows = shape[0];
         let cols = shape[1];
         let slice = arr.as_slice()?;
+        validate_finite(slice)?;
         return Ok((0..rows)
             .map(|i| Embedding::new(slice[i * cols..(i + 1) * cols].to_vec()))
             .collect());
@@ -63,19 +77,22 @@ pub(crate) fn extract_embeddings_2d(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Embe
         let rows = shape[0];
         let cols = shape[1];
         let slice = arr.as_slice()?;
+        let values: Vec<f64> = slice.iter().map(|&v| v as f64).collect();
+        validate_finite(&values)?;
         return Ok((0..rows)
-            .map(|i| {
-                Embedding::new(
-                    slice[i * cols..(i + 1) * cols]
-                        .iter()
-                        .map(|&v| v as f64)
-                        .collect(),
-                )
-            })
+            .map(|i| Embedding::new(values[i * cols..(i + 1) * cols].to_vec()))
             .collect());
     }
     // Fall back to list[list[float]]
     let vecs: Vec<Vec<f64>> = obj.extract()?;
+    for (i, v) in vecs.iter().enumerate() {
+        if let Some(j) = v.iter().position(|val| !val.is_finite()) {
+            return Err(PyValueError::new_err(format!(
+                "embedding values must be finite (no NaN or Inf), found {} at [{i}][{j}]",
+                v[j]
+            )));
+        }
+    }
     Ok(vecs.into_iter().map(Embedding::new).collect())
 }
 

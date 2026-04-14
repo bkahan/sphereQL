@@ -96,9 +96,10 @@ impl<S: VectorStore> VectorStoreBridge<S> {
                     got: r.vector.len(),
                 });
             }
-            if r.vector.iter().all(|&v| v.abs() < f64::EPSILON) {
+            let mag: f64 = r.vector.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if mag < 1e-9 {
                 return Err(VectorStoreError::InvalidConfig(format!(
-                    "record '{}' (index {i}) is a zero vector",
+                    "record '{}' (index {i}) is a near-zero vector (magnitude {mag:.2e})",
                     r.id
                 )));
             }

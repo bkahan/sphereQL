@@ -141,6 +141,11 @@ impl CartesianPoint {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
 
+    /// Returns the unit vector in this point's direction.
+    ///
+    /// For zero-magnitude inputs (magnitude < `f64::EPSILON`), returns the
+    /// origin `(0, 0, 0)`. Callers that require a unit vector (e.g. nlerp)
+    /// must check for this case.
     pub fn normalize(&self) -> Self {
         let mag = self.magnitude();
         if mag < f64::EPSILON {

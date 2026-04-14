@@ -116,14 +116,12 @@ pub fn euclidean_distance(a: &CartesianPoint, b: &CartesianPoint) -> f64 {
 /// ```
 #[must_use]
 pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    debug_assert_eq!(a.len(), b.len(), "vectors must have equal length");
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        norm_a += a[i] * a[i];
-        norm_b += b[i] * b[i];
+    assert_eq!(a.len(), b.len(), "vectors must have equal length for cosine similarity");
+    let (mut dot, mut norm_a, mut norm_b) = (0.0, 0.0, 0.0);
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
     }
     let denom = norm_a.sqrt() * norm_b.sqrt();
     if denom < f64::EPSILON {

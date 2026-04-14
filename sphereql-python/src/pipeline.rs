@@ -64,21 +64,37 @@ impl Pipeline {
             .as_array()
             .ok_or_else(|| PyValueError::new_err("missing 'categories' array"))?
             .iter()
-            .map(|v| v.as_str().unwrap_or("unknown").to_string())
-            .collect();
+            .enumerate()
+            .map(|(i, v)| {
+                v.as_str()
+                    .ok_or_else(|| {
+                        PyValueError::new_err(format!("category at index {i} must be a string"))
+                    })
+                    .map(|s| s.to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let embeddings: Vec<Vec<f64>> = parsed["embeddings"]
             .as_array()
             .ok_or_else(|| PyValueError::new_err("missing 'embeddings' array"))?
             .iter()
-            .map(|row| {
-                row.as_array()
-                    .unwrap_or(&vec![])
-                    .iter()
-                    .map(|v| v.as_f64().unwrap_or(0.0))
-                    .collect()
+            .enumerate()
+            .map(|(i, row)| {
+                let arr = row.as_array().ok_or_else(|| {
+                    PyValueError::new_err(format!("embedding at index {i} must be an array"))
+                })?;
+                arr.iter()
+                    .enumerate()
+                    .map(|(j, v)| {
+                        v.as_f64().ok_or_else(|| {
+                            PyValueError::new_err(format!(
+                                "embedding[{i}][{j}] must be a number"
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let dim = embeddings.first().map(|e| e.len()).unwrap_or(0);
         let inner = SphereQLPipeline::new(PipelineInput {

@@ -65,6 +65,10 @@ pub fn nlerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
         ac.z + t * (bc.z - ac.z),
     );
 
+    if lerped.magnitude() < f64::EPSILON {
+        return SphericalPoint::new_unchecked(1.0, a.theta, a.phi);
+    }
+
     cartesian_to_spherical(&lerped.normalize())
 }
 

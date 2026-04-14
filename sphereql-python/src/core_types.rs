@@ -191,6 +191,10 @@ impl PyGeoPoint {
     pub(crate) fn from_inner(inner: GeoPoint) -> Self {
         Self { inner }
     }
+
+    pub(crate) fn inner_geo(&self) -> &GeoPoint {
+        &self.inner
+    }
 }
 
 // ── ProjectedPoint ─────────────────────────────────────────────────────
@@ -292,9 +296,5 @@ pub fn py_spherical_to_geo(p: &PySphericalPoint) -> PyGeoPoint {
 #[pyfunction]
 #[pyo3(name = "geo_to_spherical")]
 pub fn py_geo_to_spherical(p: &PyGeoPoint) -> PySphericalPoint {
-    PySphericalPoint::from_inner(rust_geo_to_spherical(&GeoPoint::new_unchecked(
-        p.lat(),
-        p.lon(),
-        p.alt(),
-    )))
+    PySphericalPoint::from_inner(rust_geo_to_spherical(p.inner_geo()))
 }

@@ -113,7 +113,10 @@ pub struct Wedge {
 
 impl Wedge {
     pub fn new(theta_min: f64, theta_max: f64) -> Result<Self, SphereQlError> {
-        if !(0.0..TAU).contains(&theta_min) || !(0.0..TAU).contains(&theta_max) {
+        if !(0.0..TAU).contains(&theta_min)
+            || !(0.0..TAU).contains(&theta_max)
+            || theta_min == theta_max
+        {
             return Err(SphereQlError::InvalidWedgeBounds {
                 theta_min,
                 theta_max,
