@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::Client;
@@ -71,11 +72,18 @@ pub struct PineconeStore {
 impl PineconeStore {
     pub fn new(config: PineconeConfig) -> Result<Self, VectorStoreError> {
         let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| VectorStoreError::Connection(e.to_string()))?;
 
         let host = config.host.trim_end_matches('/');
-        let base_url = if host.starts_with("http://") || host.starts_with("https://") {
+        if host.starts_with("http://") {
+            return Err(VectorStoreError::InvalidConfig(
+                "Pinecone host must use HTTPS, not HTTP".into(),
+            ));
+        }
+        let base_url = if host.starts_with("https://") {
             host.to_string()
         } else {
             format!("https://{host}")

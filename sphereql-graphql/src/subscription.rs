@@ -53,16 +53,22 @@ impl SphericalSubscriptionRoot {
         let region = region.to_core()?;
 
         let stream = async_graphql::async_stream::stream! {
-            while let Ok(event) = rx.recv().await {
-                if event.event_type == SpatialEventType::Entered {
-                    let core_point = SphericalPoint::new_unchecked(
-                        event.point.r,
-                        event.point.theta,
-                        event.point.phi,
-                    );
-                    if region.contains(&core_point) {
-                        yield event;
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if event.event_type == SpatialEventType::Entered {
+                            let core_point = SphericalPoint::new_unchecked(
+                                event.point.r,
+                                event.point.theta,
+                                event.point.phi,
+                            );
+                            if region.contains(&core_point) {
+                                yield event;
+                            }
+                        }
                     }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         };
@@ -80,16 +86,22 @@ impl SphericalSubscriptionRoot {
         let region = region.to_core()?;
 
         let stream = async_graphql::async_stream::stream! {
-            while let Ok(event) = rx.recv().await {
-                if event.event_type == SpatialEventType::Left {
-                    let core_point = SphericalPoint::new_unchecked(
-                        event.point.r,
-                        event.point.theta,
-                        event.point.phi,
-                    );
-                    if region.contains(&core_point) {
-                        yield event;
+            loop {
+                match rx.recv().await {
+                    Ok(event) => {
+                        if event.event_type == SpatialEventType::Left {
+                            let core_point = SphericalPoint::new_unchecked(
+                                event.point.r,
+                                event.point.theta,
+                                event.point.phi,
+                            );
+                            if region.contains(&core_point) {
+                                yield event;
+                            }
+                        }
                     }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         };
@@ -102,8 +114,12 @@ impl SphericalSubscriptionRoot {
         let mut rx = bus.subscribe();
 
         let stream = async_graphql::async_stream::stream! {
-            while let Ok(event) = rx.recv().await {
-                yield event;
+            loop {
+                match rx.recv().await {
+                    Ok(event) => { yield event; }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
             }
         };
 

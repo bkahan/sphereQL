@@ -350,19 +350,21 @@ fn f32_to_f64(v: &[f32]) -> Vec<f64> {
 
 // \u2500\u2500 Point ID mapping \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
-/// Deterministic FNV-1a hash: string \u2192 u64 PointId.
+/// Deterministic SHA-256 based UUID PointId.
+/// Uses first 128 bits of SHA-256, formatted as a UUID string that
+/// Qdrant accepts natively. Collision-resistant unlike the prior FNV-1a.
 fn string_to_point_id(id: &str) -> PointId {
-    let hash = fnv1a_64(id.as_bytes());
-    PointId::from(hash)
-}
-
-fn fnv1a_64(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for &byte in data {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
-    }
-    hash
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(id.as_bytes());
+    let uuid = format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]),
+        u16::from_be_bytes([hash[4], hash[5]]),
+        u16::from_be_bytes([hash[6], hash[7]]),
+        u16::from_be_bytes([hash[8], hash[9]]),
+        u64::from_be_bytes([0, 0, hash[10], hash[11], hash[12], hash[13], hash[14], hash[15]]),
+    );
+    PointId::from(uuid)
 }
 
 fn point_id_to_string(id: &PointId) -> String {
@@ -481,17 +483,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fnv1a_deterministic() {
-        assert_eq!(fnv1a_64(b"hello"), fnv1a_64(b"hello"));
-        assert_ne!(fnv1a_64(b"hello"), fnv1a_64(b"world"));
+    fn point_id_deterministic() {
+        let a = string_to_point_id("hello");
+        let b = string_to_point_id("hello");
+        let c = string_to_point_id("world");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 
     #[test]
-    fn point_id_roundtrip() {
+    fn point_id_is_uuid_format() {
         let id = string_to_point_id("my-record-id");
         let s = point_id_to_string(&id);
-        let id2 = PointId::from(s.parse::<u64>().unwrap());
-        assert_eq!(id, id2);
+        assert_eq!(s.len(), 36);
+        assert_eq!(s.chars().filter(|&c| c == '-').count(), 4);
     }
 
     #[test]

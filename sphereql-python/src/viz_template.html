@@ -43,6 +43,7 @@ canvas{position:absolute;top:0;left:0}
 <script>
 const D=/*__SPHEREQL_DATA__*/;
 const pts=D.points,N=pts.length;
+const escHtml=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
 // Category colors
 const catSet=[...new Set(pts.map(p=>p.cat))].sort();
@@ -179,7 +180,7 @@ canvas.addEventListener("mousemove",e=>{
   const idx=getHovered(e);
   if(idx>=0){
     const p=pts[idx];
-    tooltip.innerHTML=`<b>${p.label||"Point "+idx}</b><br>Category: ${p.cat}<br>\u03b8=${p.theta.toFixed(3)} \u03c6=${p.phi.toFixed(3)} r=${p.r.toFixed(3)}`;
+    tooltip.innerHTML=`<b>${escHtml(p.label||"Point "+idx)}</b><br>Category: ${escHtml(p.cat)}<br>\u03b8=${p.theta.toFixed(3)} \u03c6=${p.phi.toFixed(3)} r=${p.r.toFixed(3)}`;
     tooltip.style.display="block";
     tooltip.style.left=(e.clientX+12)+"px";
     tooltip.style.top=(e.clientY+12)+"px";
@@ -243,7 +244,7 @@ function selectPoint(idx){
   catTag.textContent=p.cat;catTag.style.background=catColor[p.cat]+"33";catTag.style.color=catColor[p.cat];
   document.getElementById("info-coords").innerHTML=`\u03b8=${p.theta.toFixed(4)} &nbsp; \u03c6=${p.phi.toFixed(4)} &nbsp; r=${p.r.toFixed(4)}`;
   const nbDiv=document.getElementById("info-neighbors");
-  nbDiv.innerHTML=dists.map(d=>`<div class="nb" data-idx="${d.i}">${pts[d.i].label||"Point "+d.i} <span class="dist">${d.d.toFixed(4)}</span></div>`).join("");
+  nbDiv.innerHTML=dists.map(d=>`<div class="nb" data-idx="${d.i}">${escHtml(pts[d.i].label||"Point "+d.i)} <span class="dist">${d.d.toFixed(4)}</span></div>`).join("");
   nbDiv.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));
   info.classList.add("visible");
 }
@@ -269,7 +270,7 @@ const legendDiv=document.getElementById("legend-items");
 const catCounts={};pts.forEach(p=>catCounts[p.cat]=(catCounts[p.cat]||0)+1);
 catSet.forEach(cat=>{
   const row=document.createElement("div");row.className="lrow";
-  row.innerHTML=`<span class="ldot" style="background:${catColor[cat]}"></span><span class="lbl">${cat}</span><span class="lcnt">${catCounts[cat]}</span>`;
+  row.innerHTML=`<span class="ldot" style="background:${catColor[cat]}"></span><span class="lbl">${escHtml(cat)}</span><span class="lcnt">${catCounts[cat]}</span>`;
   row.addEventListener("click",()=>{
     catVisible[cat]=!catVisible[cat];
     row.classList.toggle("dim",!catVisible[cat]);

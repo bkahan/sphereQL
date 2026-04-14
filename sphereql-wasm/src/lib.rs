@@ -283,28 +283,43 @@ struct ManifoldOut {
 
 // ── Server-side cache (Node.js only, not available in browser WASM) ────
 
+fn validate_cache_filename(path: &str) -> Result<std::path::PathBuf, JsError> {
+    let name = std::path::Path::new(path)
+        .file_name()
+        .ok_or_else(|| JsError::new("cache path must be a plain filename, not a directory path"))?;
+    if name != std::ffi::OsStr::new(path) {
+        return Err(JsError::new(
+            "cache path must not contain path separators (no directory traversal)",
+        ));
+    }
+    let cache_dir = std::path::PathBuf::from(".sphereql_cache");
+    Ok(cache_dir.join(name))
+}
+
 /// Read a cached SphereQL result from disk.
-/// Returns the JSON string if the file exists, or None.
-///
-/// Only available when targeting Node.js (wasi or server-side runtimes).
-/// Will return None in browser environments where std::fs is unavailable.
+/// `path` must be a plain filename (no directory separators). Files are
+/// resolved relative to `.sphereql_cache/`.
 #[wasm_bindgen]
-pub fn cache_read(path: &str) -> Option<String> {
+pub fn cache_read(path: &str) -> Result<Option<String>, JsError> {
     #[cfg(target_arch = "wasm32")]
     {
         let _ = path;
-        None
+        Ok(None)
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        std::fs::read_to_string(path).ok()
+        let resolved = validate_cache_filename(path)?;
+        match std::fs::read_to_string(&resolved) {
+            Ok(contents) => Ok(Some(contents)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(JsError::new(&e.to_string())),
+        }
     }
 }
 
 /// Write a SphereQL result to disk for caching.
-///
-/// Only available when targeting Node.js (wasi or server-side runtimes).
-/// Returns an error in browser environments where std::fs is unavailable.
+/// `path` must be a plain filename (no directory separators). Files are
+/// written to `.sphereql_cache/`.
 #[wasm_bindgen]
 pub fn cache_write(path: &str, json: &str) -> Result<(), JsError> {
     #[cfg(target_arch = "wasm32")]
@@ -316,6 +331,10 @@ pub fn cache_write(path: &str, json: &str) -> Result<(), JsError> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        std::fs::write(path, json).map_err(|e| JsError::new(&e.to_string()))
+        let resolved = validate_cache_filename(path)?;
+        if let Some(parent) = resolved.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| JsError::new(&e.to_string()))?;
+        }
+        std::fs::write(&resolved, json).map_err(|e| JsError::new(&e.to_string()))
     }
 }
