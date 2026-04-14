@@ -441,13 +441,13 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
 
         for _ in 0..max_iters {
             let mut u = vec![0.0; n];
-            for i in 1..n {
+            for (i, u_i) in u.iter_mut().enumerate().skip(1) {
                 let row_start = i * n;
                 let mut s = 0.0;
                 for j in 0..n {
                     s += matrix[row_start + j] * v[j];
                 }
-                u[i] = s;
+                *u_i = s;
             }
 
             for prev in &vectors {

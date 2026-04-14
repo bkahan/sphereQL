@@ -78,13 +78,18 @@ impl PineconeStore {
             .map_err(|e| VectorStoreError::Connection(e.to_string()))?;
 
         let host = config.host.trim_end_matches('/');
-        if host.starts_with("http://") {
-            return Err(VectorStoreError::InvalidConfig(
-                "Pinecone host must use HTTPS, not HTTP".into(),
-            ));
-        }
         let base_url = if host.starts_with("https://") {
             host.to_string()
+        } else if let Some(after_scheme) = host.strip_prefix("http://") {
+            // Allow plain HTTP only for localhost (dev/testing)
+            let host_part = after_scheme.split(':').next().unwrap_or(after_scheme);
+            if host_part == "localhost" || host_part == "127.0.0.1" || host_part == "[::1]" {
+                host.to_string()
+            } else {
+                return Err(VectorStoreError::InvalidConfig(
+                    "Pinecone host must use HTTPS (HTTP is only allowed for localhost)".into(),
+                ));
+            }
         } else {
             format!("https://{host}")
         };
