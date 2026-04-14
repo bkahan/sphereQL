@@ -219,12 +219,12 @@ impl SphereQLPipeline {
 
             SphereQLQuery::SimilarAbove { min_cosine } => {
                 let results = self.index.search_similar(&emb, min_cosine);
+                let sp_q = self.pca.project(&emb);
                 SphereQLOutput::KNearest(
                     results
                         .items
                         .iter()
                         .map(|item| {
-                            let sp_q = self.pca.project(&emb);
                             let d = angular_distance(&sp_q, item.position());
                             NearestResult {
                                 id: item.id.clone(),

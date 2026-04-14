@@ -4,6 +4,7 @@ use sphereql_embed::pipeline::{
     GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
     SphereQLQuery,
 };
+use sphereql_embed::projection::Projection;
 
 /// WASM-exposed pipeline. Constructed once with corpus data, then queried
 /// repeatedly from JavaScript.
@@ -87,6 +88,13 @@ impl Pipeline {
     /// Returns JSON: `[{id, category, distance}, ...]`
     pub fn nearest(&self, query_json: &str, k: usize) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
+        let expected_dim = self.inner.pca().dimensionality();
+        if emb.embedding.len() != expected_dim {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected_dim}, got {}",
+                emb.embedding.len()
+            )));
+        }
         let result = self.inner.query(SphereQLQuery::Nearest { k }, &emb);
         match result {
             SphereQLOutput::Nearest(items) => {
@@ -101,6 +109,13 @@ impl Pipeline {
     /// Returns JSON: `[{id, category, distance}, ...]`
     pub fn similar_above(&self, query_json: &str, min_cosine: f64) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
+        let expected_dim = self.inner.pca().dimensionality();
+        if emb.embedding.len() != expected_dim {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected_dim}, got {}",
+                emb.embedding.len()
+            )));
+        }
         let result = self
             .inner
             .query(SphereQLQuery::SimilarAbove { min_cosine }, &emb);
@@ -123,6 +138,13 @@ impl Pipeline {
         query_json: &str,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
+        let expected_dim = self.inner.pca().dimensionality();
+        if emb.embedding.len() != expected_dim {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected_dim}, got {}",
+                emb.embedding.len()
+            )));
+        }
         let result = self.inner.query(
             SphereQLQuery::ConceptPath {
                 source_id,
@@ -161,6 +183,13 @@ impl Pipeline {
         query_json: &str,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
+        let expected_dim = self.inner.pca().dimensionality();
+        if emb.embedding.len() != expected_dim {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected_dim}, got {}",
+                emb.embedding.len()
+            )));
+        }
         let k_opt = if k == 0 { None } else { Some(k) };
         let result = self
             .inner
@@ -182,6 +211,13 @@ impl Pipeline {
         neighborhood_k: usize,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
+        let expected_dim = self.inner.pca().dimensionality();
+        if emb.embedding.len() != expected_dim {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected_dim}, got {}",
+                emb.embedding.len()
+            )));
+        }
         let result = self
             .inner
             .query(SphereQLQuery::LocalManifold { neighborhood_k }, &emb);

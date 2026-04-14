@@ -61,6 +61,8 @@ impl ForceDirectedLayout {
         spherical_to_cartesian(&unit)
     }
 
+    const MAX_QUALITY_N: usize = 5000;
+
     fn compute_quality(positions: &[SphericalPoint], n: usize) -> LayoutQuality {
         if n <= 1 {
             return LayoutQuality {
@@ -69,6 +71,15 @@ impl ForceDirectedLayout {
                 silhouette_score: 0.0,
             };
         }
+
+        let (positions, n) = if n > Self::MAX_QUALITY_N {
+            let step = n / Self::MAX_QUALITY_N;
+            let sampled: Vec<_> = positions.iter().step_by(step).take(Self::MAX_QUALITY_N).copied().collect();
+            let len = sampled.len();
+            (sampled, len)
+        } else {
+            (positions.to_vec(), n)
+        };
 
         let ideal_spacing = (4.0 * PI / n as f64).sqrt();
         let mut min_dist = f64::MAX;

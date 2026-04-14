@@ -47,6 +47,7 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
                 .collect();
             self.dirty = shifted;
         }
+        self.dirty.retain(|&i| i < self.items.len());
 
         Some(item)
     }

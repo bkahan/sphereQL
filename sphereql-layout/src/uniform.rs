@@ -76,10 +76,9 @@ impl<T: Clone> LayoutStrategy<T> for UniformLayout {
             };
         }
 
-        // Call mapper on each item per the trait contract, even though we discard the result
-        for item in items {
-            let _ = mapper.map(item);
-        }
+        // UniformLayout places items on a Fibonacci lattice; the mapper's
+        // semantic positions are intentionally ignored.
+        let _ = mapper;
 
         let entries: Vec<LayoutEntry<T>> = items
             .iter()

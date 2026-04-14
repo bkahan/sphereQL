@@ -230,6 +230,8 @@ fn local_frame(center: &CartesianPoint) -> (CartesianPoint, CartesianPoint) {
     (u, v)
 }
 
+const MAX_QUALITY_N: usize = 5000;
+
 fn compute_quality(
     positions: &[SphericalPoint],
     assignments: &[usize],
@@ -244,6 +246,16 @@ fn compute_quality(
             silhouette_score: 0.0,
         };
     }
+
+    let (positions, assignments, n) = if n > MAX_QUALITY_N {
+        let step = n / MAX_QUALITY_N;
+        let sampled_pos: Vec<_> = positions.iter().step_by(step).take(MAX_QUALITY_N).copied().collect();
+        let sampled_asgn: Vec<_> = assignments.iter().step_by(step).take(MAX_QUALITY_N).copied().collect();
+        let len = sampled_pos.len();
+        (sampled_pos, sampled_asgn, len)
+    } else {
+        (positions.to_vec(), assignments.to_vec(), n)
+    };
 
     // Dispersion: average inter-cluster center distance / PI
     let mut cluster_point_sets: Vec<Vec<CartesianPoint>> = vec![vec![]; num_clusters];

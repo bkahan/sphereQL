@@ -243,6 +243,12 @@ impl<T: SpatialItem> SectorIndex<T> {
     /// Treats the theta and phi angular extents as legs of a right triangle
     /// on the sphere. Overestimates for large sectors, which is the safe
     /// direction for candidate pruning.
+    /// Conservative upper bound on the angular diagonal of a single sector,
+    /// accounting for the latitude-dependent shrinkage of theta arcs.
+    ///
+    /// Uses the equatorial sin(phi)=1 as worst case, since this is a global
+    /// bound. Near-pole sectors have smaller effective diagonals, so this
+    /// overestimates for them — safe for candidate pruning.
     pub(crate) fn sector_diagonal(&self) -> f64 {
         let d_theta = TAU / self.theta_divisions as f64;
         let d_phi = PI / self.phi_divisions as f64;

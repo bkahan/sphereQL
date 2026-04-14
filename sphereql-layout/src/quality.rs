@@ -4,7 +4,18 @@ use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::types::LayoutQuality;
 
+const MAX_QUALITY_N: usize = 5000;
+
+fn sample_positions(positions: &[SphericalPoint]) -> Vec<SphericalPoint> {
+    if positions.len() <= MAX_QUALITY_N {
+        return positions.to_vec();
+    }
+    let step = positions.len() / MAX_QUALITY_N;
+    positions.iter().step_by(step).take(MAX_QUALITY_N).copied().collect()
+}
+
 pub fn compute_dispersion(positions: &[SphericalPoint]) -> f64 {
+    let positions = sample_positions(positions);
     let n = positions.len();
     if n <= 1 {
         return 1.0;
@@ -26,6 +37,7 @@ pub fn compute_dispersion(positions: &[SphericalPoint]) -> f64 {
 }
 
 pub fn compute_overlap(positions: &[SphericalPoint], threshold: f64) -> f64 {
+    let positions = sample_positions(positions);
     let n = positions.len();
     if n < 2 {
         return 0.0;

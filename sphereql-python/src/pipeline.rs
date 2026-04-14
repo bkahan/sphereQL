@@ -116,20 +116,21 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, k=5))]
-    fn nearest(&self, query: &Bound<'_, PyAny>, k: usize) -> PyResult<Vec<Nearest>> {
+    fn nearest(&self, py: Python<'_>, query: &Bound<'_, PyAny>, k: usize) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        match self.inner.query(SphereQLQuery::Nearest { k }, &pq) {
+        let result = py.detach(|| self.inner.query(SphereQLQuery::Nearest { k }, &pq));
+        match result {
             SphereQLOutput::Nearest(items) => Ok(items.iter().map(Nearest::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
         }
     }
 
     #[pyo3(signature = (query, k=5))]
-    fn nearest_json(&self, query: &Bound<'_, PyAny>, k: usize) -> PyResult<String> {
-        let results = self.nearest(query, k)?;
+    fn nearest_json(&self, py: Python<'_>, query: &Bound<'_, PyAny>, k: usize) -> PyResult<String> {
+        let results = self.nearest(py, query, k)?;
         let out: Vec<_> = results
             .iter()
             .map(|r| {
@@ -144,23 +145,23 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (query, min_cosine=0.8))]
-    fn similar_above(&self, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
+    fn similar_above(&self, py: Python<'_>, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        match self
-            .inner
-            .query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
-        {
+        let result = py.detach(|| {
+            self.inner.query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
+        });
+        match result {
             SphereQLOutput::KNearest(items) => Ok(items.iter().map(Nearest::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
         }
     }
 
     #[pyo3(signature = (query, min_cosine=0.8))]
-    fn similar_above_json(&self, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<String> {
-        let results = self.similar_above(query, min_cosine)?;
+    fn similar_above_json(&self, py: Python<'_>, query: &Bound<'_, PyAny>, min_cosine: f64) -> PyResult<String> {
+        let results = self.similar_above(py, query, min_cosine)?;
         let out: Vec<_> = results
             .iter()
             .map(|r| {

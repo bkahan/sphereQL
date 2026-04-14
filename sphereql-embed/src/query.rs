@@ -173,6 +173,10 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// runs Dijkstra's algorithm weighted by angular distance. The resulting
     /// path traces the chain of closest intermediate concepts connecting
     /// the source to the target.
+    ///
+    /// **Complexity:** O(n^2 * k) — the k-NN graph is rebuilt from scratch
+    /// on every call. Not suitable for large indices (>5000 items) without
+    /// caching.
     pub fn concept_path(&self, source_id: &str, target_id: &str, k: usize) -> Option<ConceptPath> {
         let items = self.index.all_items();
         let n = items.len();
