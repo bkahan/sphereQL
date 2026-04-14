@@ -197,7 +197,7 @@ fn p99(mut latencies: Vec<f64>) -> f64 {
 // ── Result types ─────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-struct MethodResult { 
+struct MethodResult {
     method: String,
     k: usize,
     precision: f64,
