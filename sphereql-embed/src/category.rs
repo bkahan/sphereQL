@@ -429,12 +429,11 @@ impl CategoryLayer {
 
         let mut adjacency: Vec<Vec<CategoryEdge>> = vec![Vec::new(); num_cats];
         for i in 0..num_cats {
-            for j in 0..num_cats {
+            for (j, &cd) in centroid_dists[i].iter().enumerate() {
                 if i == j {
                     continue;
                 }
                 let bridge_count = bridges.get(&(i, j)).map_or(0, |b| b.len());
-                let cd = centroid_dists[i][j];
                 let weight = cd / (1.0 + bridge_count as f64);
 
                 adjacency[i].push(CategoryEdge {
