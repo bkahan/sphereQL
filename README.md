@@ -6,14 +6,16 @@
 [![PyPI](https://img.shields.io/pypi/v/sphereql.svg)](https://pypi.org/project/sphereql/)
 
 **Project high-dimensional embeddings onto a 3D sphere for fast semantic search,
-spatial queries, and interactive visualization.**
+spatial queries, category-aware exploration, and interactive visualization.**
 
 sphereQL maps vectors from any embedding model (OpenAI, Cohere, sentence-transformers,
 etc.) onto spherical coordinates via PCA or Kernel PCA, then indexes them with
-shell/sector spatial partitioning for fast nearest-neighbor lookups.
-The result: you can search, cluster, trace concept paths, and visualize hundreds
-of thousands of embeddings on a 3D sphere -- from Rust, Python, or the browser
-via WASM.
+shell/sector spatial partitioning for fast nearest-neighbor lookups. A built-in
+Category Enrichment Layer automatically computes inter-category relationships,
+detects bridge concepts, and creates inner spheres for high-resolution
+within-category search. The result: you can search, cluster, trace concept paths
+across categories, and visualize hundreds of thousands of embeddings on a 3D
+sphere -- from Rust, Python, or the browser via WASM.
 
 ## Use Cases
 
@@ -26,6 +28,9 @@ via WASM.
   concepts through projected space
 - **Cluster detection** -- automatically discover concept "globs" (dense regions)
   on the sphere surface
+- **Category enrichment** -- automatic inter-category graph with bridge detection,
+  category-level concept paths, cohesion metrics, and hierarchical inner spheres
+  for high-resolution within-category drill-down
 - **Geospatial indexing** -- use the core library for pure spherical geometry:
   coordinate conversions, great-circle distances, region queries (cone, cap,
   shell, band, wedge)
@@ -58,11 +63,11 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-core` | Spherical math primitives: points (`SphericalPoint`, `CartesianPoint`, `GeoPoint`), coordinate conversions, distance metrics (angular, great-circle, chord, cosine), interpolation (slerp, nlerp), and region types (cone, cap, shell, band, wedge) |
 | `sphereql-index` | Spatial indexing with composite shell + sector partitioning, k-NN search, cone/cap/shell/band/wedge/region queries, and cached Cartesian vectors for fast angular distance proxy |
 | `sphereql-layout` | Layout engines for distributing items on S^2: Fibonacci spiral (uniform), k-means clustering, force-directed simulation, and incremental managed layouts with quality metrics |
-| `sphereql-embed` | Embedding projection via PCA, Kernel PCA (Gaussian/RBF), or random projection. Query pipeline with k-NN, similarity threshold, concept paths, glob detection, and local manifold fitting |
+| `sphereql-embed` | Embedding projection via PCA, Kernel PCA (Gaussian/RBF), or random projection. Query pipeline with k-NN, similarity threshold, concept paths, glob detection, local manifold fitting, and Category Enrichment Layer (inter-category graph, bridge detection, inner spheres, drill-down) |
 | `sphereql-graphql` | async-graphql schema with cone/shell/band/wedge/region queries, k-NN search, distance calculations, and real-time subscriptions via a broadcast event bus |
 | `sphereql-vectordb` | Vector store bridge for InMemory, Qdrant (gRPC), and Pinecone backends. Handles sync, PCA fitting, projection, and hybrid search with cosine re-ranking |
-| `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline, projections, vector store bridges, and interactive 3D visualization |
-| `sphereql-wasm` | WebAssembly bindings via wasm-bindgen for running the embedding pipeline in the browser |
+| `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline (including category enrichment), projections, vector store bridges, and interactive 3D visualization |
+| `sphereql-wasm` | WebAssembly bindings via wasm-bindgen for running the embedding pipeline (including category enrichment) in the browser |
 | `sphereql` | Umbrella crate with feature flags for selective imports |
 
 ## Quick Start (Rust)
@@ -231,6 +236,32 @@ let globs = pipeline.query(
     &query,
 );
 
+// --- Category Enrichment Layer ---
+
+// Find the shortest category-level path (e.g., "science" -> "cooking")
+let cat_path = pipeline.query(
+    SphereQLQuery::CategoryConceptPath {
+        source_category: "science",
+        target_category: "cooking",
+    },
+    &query,
+);
+
+// Nearest neighbor categories
+let neighbors = pipeline.query(
+    SphereQLQuery::CategoryNeighbors { category: "science", k: 3 },
+    &query,
+);
+
+// Drill down into a category (uses inner sphere if available)
+let drill = pipeline.query(
+    SphereQLQuery::DrillDown { category: "science", k: 5 },
+    &query,
+);
+
+// Category stats: summaries, cohesion, inner sphere reports
+let stats = pipeline.query(SphereQLQuery::CategoryStats, &query);
+
 // Export for visualization
 let points = pipeline.exported_points();
 let evr = pipeline.explained_variance_ratio();
@@ -309,6 +340,27 @@ globs = pipeline.detect_globs(max_k=10)
 # Local manifold fitting
 manifold = pipeline.local_manifold(query, neighborhood_k=10)
 
+# --- Category Enrichment ---
+
+# Category-level concept path
+cat_path = pipeline.category_concept_path("science", "cooking")
+if cat_path:
+    for step in cat_path.steps:
+        print(f"  {step.category_name} (d={step.cumulative_distance:.4f})")
+
+# Nearest neighbor categories
+neighbors = pipeline.category_neighbors("science", k=3)
+for n in neighbors:
+    print(f"  {n.name}: cohesion={n.cohesion:.4f}, members={n.member_count}")
+
+# Drill down within a category (uses inner sphere if available)
+hits = pipeline.drill_down("science", query, k=5)
+for h in hits:
+    print(f"  item={h.item_index} distance={h.distance:.4f} inner={h.used_inner_sphere}")
+
+# Category stats (summaries + inner sphere reports)
+summaries, inner_reports = pipeline.category_stats()
+
 # Export projected coordinates
 points = pipeline.exported_points()
 print(f"Explained variance ratio: {pipeline.explained_variance_ratio:.4f}")
@@ -383,12 +435,20 @@ const pipeline = new Pipeline(JSON.stringify({
   embeddings: [[0.1, 0.9, 0.3], [0.9, 0.1, 0.0], [0.4, 0.4, 0.8]]
 }));
 
-// Returns JSON string
+// k-NN search (returns JSON string)
 const results = pipeline.nearest(
-  JSON.stringify({ embedding: [0.15, 0.85, 0.35] }),
+  JSON.stringify([0.15, 0.85, 0.35]),
   3
 );
 console.log(JSON.parse(results));
+
+// Category enrichment
+const catPath = JSON.parse(pipeline.category_concept_path("science", "cooking"));
+const neighbors = JSON.parse(pipeline.category_neighbors("science", 2));
+const stats = JSON.parse(pipeline.category_stats());
+const drillDown = JSON.parse(pipeline.drill_down(
+  "science", 5, JSON.stringify([0.15, 0.85, 0.35])
+));
 ```
 
 ## Coordinate System
@@ -479,6 +539,9 @@ cargo run --example word_embeddings -p sphereql --features embed
 cargo run --example semantic_search -p sphereql --features embed
 cargo run --example auto_categorize -p sphereql --features embed
 
+# Category enrichment (inter-category graph, bridges, inner spheres)
+cargo run --example category_enrichment -p sphereql --features embed
+
 # End-to-end transformer embedding pipeline
 cargo run --example e2e_transformer -p sphereql --features embed
 
@@ -486,7 +549,8 @@ cargo run --example e2e_transformer -p sphereql --features embed
 cargo run --example benchmark -p sphereql --features full
 ```
 
-Python examples are in [`sphereql-python/examples/`](sphereql-python/examples/):
+Python examples are in [`sphereql-python/examples/`](sphereql-python/examples/) and
+[`examples/`](examples/):
 
 ```bash
 cd sphereql-python
@@ -496,6 +560,9 @@ maturin develop
 python examples/quickstart.py
 python examples/kernel_pca.py
 python examples/dataset.py
+
+# Category enrichment (from repo root)
+python examples/category_enrichment.py
 ```
 
 ## Running Tests
@@ -538,11 +605,14 @@ x86_64) and publishes to PyPI on GitHub release.
 ## Project Status
 
 sphereQL is at **v0.1.0** (alpha). The API is functional and tested but may
-change before 1.0. Current priorities:
+change before 1.0. Recent additions include the Category Enrichment Layer
+(inter-category graph, bridge detection, inner spheres) with full support
+across Rust, Python, and WASM. Current priorities:
 
 - Improving search precision at higher k values
 - HNSW or VP-tree indexing for better recall without brute-force fallback
 - Streaming/incremental PCA for large-scale datasets
+- GraphQL integration for category enrichment queries
 - Published crate on crates.io
 
 ## Contributing
