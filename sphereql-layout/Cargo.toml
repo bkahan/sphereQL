@@ -7,8 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sphereql-core = { path = "../sphereql-core" }
-sphereql-index = { path = "../sphereql-index" }
+sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
+sphereql-index = { version = "0.1.0-alpha", path = "../sphereql-index" }
 
 [dev-dependencies]
 proptest = "1"

@@ -598,22 +598,38 @@ The [CI pipeline](.github/workflows/ci.yml) runs on every push and PR to `main`:
   full, no-default-features)
 - Python build + `pytest` on Python 3.12
 
-A separate [release workflow](.github/workflows/python-publish.yml) builds
-cross-platform wheels (Linux x86_64/aarch64, macOS x86_64/aarch64, Windows
-x86_64) and publishes to PyPI on GitHub release.
+Separate release workflows publish to
+[crates.io](.github/workflows/crates-publish.yml) and
+[PyPI](.github/workflows/python-publish.yml) automatically when a GitHub
+Release is created. PyPI wheels are built for Linux x86_64/aarch64, macOS
+x86_64/aarch64, and Windows x86_64.
 
 ## Project Status
 
-sphereQL is at **v0.1.0** (alpha). The API is functional and tested but may
-change before 1.0. Recent additions include the Category Enrichment Layer
-(inter-category graph, bridge detection, inner spheres) with full support
-across Rust, Python, and WASM. Current priorities:
+sphereQL is at **v0.1.0-alpha**. The core API is functional and covered by
+400+ tests, but may change before 1.0.
+
+### Known Limitations
+
+- **Search precision degrades at higher k.** The 384-d to 3-d projection is
+  inherently lossy (~2-5% explained variance). Precision at k=1 is perfect;
+  at k=5 it drops to ~20%. Use hybrid search (angular recall + cosine
+  re-ranking) for production precision. See
+  [`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md).
+- **GraphQL does not expose category enrichment.** The GraphQL crate
+  operates on the raw spatial index, not the embedding pipeline. Category
+  queries (concept paths, neighbors, drill-down, stats) are available in
+  Rust, Python, and WASM but not yet through GraphQL.
+- **Inner spheres require 20+ items per category.** Categories below this
+  threshold fall back to the outer sphere for drill-down queries. This is
+  by design (small categories don't benefit from a separate projection).
+
+### Roadmap
 
 - Improving search precision at higher k values
 - HNSW or VP-tree indexing for better recall without brute-force fallback
 - Streaming/incremental PCA for large-scale datasets
 - GraphQL integration for category enrichment queries
-- Published crate on crates.io
 
 ## Contributing
 

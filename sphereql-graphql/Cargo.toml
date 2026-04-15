@@ -7,8 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sphereql-core = { path = "../sphereql-core" }
-sphereql-index = { path = "../sphereql-index" }
+sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
+sphereql-index = { version = "0.1.0-alpha", path = "../sphereql-index" }
 async-graphql = "6"
 tokio = { version = "1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }

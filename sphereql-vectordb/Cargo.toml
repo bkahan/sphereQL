@@ -12,8 +12,8 @@ pinecone = ["dep:reqwest"]
 qdrant = ["dep:qdrant-client", "dep:sha2"]
 
 [dependencies]
-sphereql-core = { path = "../sphereql-core" }
-sphereql-embed = { path = "../sphereql-embed" }
+sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
+sphereql-embed = { version = "0.1.0-alpha", path = "../sphereql-embed" }
 
 async-trait = "0.1"
 tokio = { version = "1", features = ["sync"] }

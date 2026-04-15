@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sphereql-core = { path = "../sphereql-core" }
-sphereql-index = { path = "../sphereql-index" }
-sphereql-layout = { path = "../sphereql-layout" }
+sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
+sphereql-index = { version = "0.1.0-alpha", path = "../sphereql-index" }
+sphereql-layout = { version = "0.1.0-alpha", path = "../sphereql-layout" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

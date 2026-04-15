@@ -1,0 +1,56 @@
+name: Crates.io Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Publish in dependency order. Each crate waits for its dependencies
+      # to propagate on the registry before publishing.
+      - name: Publish sphereql-core
+        run: cargo publish -p sphereql-core
+      - name: Wait for registry
+        run: sleep 30
+
+      - name: Publish sphereql-index
+        run: cargo publish -p sphereql-index
+      - name: Wait for registry
+        run: sleep 30
+
+      - name: Publish sphereql-layout
+        run: cargo publish -p sphereql-layout
+      - name: Wait for registry
+        run: sleep 30
+
+      - name: Publish sphereql-embed
+        run: cargo publish -p sphereql-embed
+      - name: Wait for registry
+        run: sleep 30
+
+      - name: Publish sphereql-graphql
+        run: cargo publish -p sphereql-graphql
+      - name: Wait for registry
+        run: sleep 30
+
+      - name: Publish sphereql-vectordb
+        run: cargo publish -p sphereql-vectordb
+      - name: Wait for registry
+        run: sleep 30
+
+      - name: Publish sphereql (umbrella)
+        run: cargo publish -p sphereql
