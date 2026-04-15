@@ -7,7 +7,7 @@ use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 ///
 /// Implementations exist for:
 /// - [`InMemoryStore`](crate::InMemoryStore) \u2014 always available, for testing and small datasets
-/// - [`QdrantStore`](crate::qdrant::QdrantStore) \u2014 behind the `qdrant` feature flag
+/// - `QdrantStore` \u2014 behind the `qdrant` feature flag
 ///
 /// All methods accept `&self` \u2014 implementations must handle interior
 /// mutability (typically via `RwLock` or the backend's own concurrency).

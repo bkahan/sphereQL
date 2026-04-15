@@ -1,6 +1,9 @@
 use sphereql_core::*;
 use sphereql_index::SpatialItem;
 
+use crate::category::{
+    BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
+};
 use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
@@ -83,6 +86,18 @@ pub enum SphereQLOutput {
     ConceptPath(Option<PathResult>),
     Globs(Vec<GlobSummary>),
     LocalManifold(ManifoldResult),
+    // ── Phase 3: category-level outputs ─────────────────────────────────
+    /// Result of a category-level concept path query.
+    CategoryConceptPath(Option<CategoryPath>),
+    /// Nearest neighbor categories to a given category.
+    CategoryNeighbors(Vec<CategorySummary>),
+    /// Drill-down results within a single category.
+    DrillDown(Vec<DrillDownResult>),
+    /// Summary statistics for all categories and inner spheres.
+    CategoryStats {
+        summaries: Vec<CategorySummary>,
+        inner_sphere_reports: Vec<InnerSphereReport>,
+    },
 }
 
 /// Typed query request.
@@ -101,6 +116,19 @@ pub enum SphereQLQuery<'a> {
     DetectGlobs { k: Option<usize>, max_k: usize },
     /// Fit a local manifold around the query point.
     LocalManifold { neighborhood_k: usize },
+    // ── Phase 3: category-level queries ─────────────────────────────────
+    /// Find the shortest path between two categories through the category graph.
+    CategoryConceptPath {
+        source_category: &'a str,
+        target_category: &'a str,
+    },
+    /// Find the k nearest neighbor categories to the given category.
+    CategoryNeighbors { category: &'a str, k: usize },
+    /// Drill down into a category: k-NN within the category, using the
+    /// inner sphere's projection if available.
+    DrillDown { category: &'a str, k: usize },
+    /// Get summary statistics for all categories and inner spheres.
+    CategoryStats,
 }
 
 /// Projected data for a single item, suitable for export or visualization.
@@ -126,6 +154,10 @@ pub struct SphereQLPipeline {
     categories: Vec<String>,
     cart_points: Vec<[f64; 3]>,
     ids: Vec<String>,
+    /// Stored embeddings for category layer queries (drill-down, etc.).
+    _embeddings: Vec<Embedding>,
+    /// Category enrichment layer: summaries, graph, bridges, inner spheres.
+    category_layer: CategoryLayer,
 }
 
 impl SphereQLPipeline {
@@ -187,12 +219,21 @@ impl SphereQLPipeline {
             })
             .collect();
 
+        // Build the category enrichment layer (Phase 1+2)
+        let projected_positions: Vec<SphericalPoint> =
+            embeddings.iter().map(|e| pca.project(e)).collect();
+
+        let category_layer =
+            CategoryLayer::build(&categories, &embeddings, &projected_positions, &pca);
+
         Ok(Self {
             pca,
             index,
             categories,
             cart_points,
             ids,
+            _embeddings: embeddings,
+            category_layer,
         })
     }
 
@@ -299,6 +340,34 @@ impl SphereQLPipeline {
                     variance_ratio: m.variance_ratio,
                 })
             }
+
+            // ── Phase 3: category-level query dispatch ─────────────────
+            SphereQLQuery::CategoryConceptPath {
+                source_category,
+                target_category,
+            } => {
+                let path = self
+                    .category_layer
+                    .category_path(source_category, target_category);
+                SphereQLOutput::CategoryConceptPath(path)
+            }
+
+            SphereQLQuery::CategoryNeighbors { category, k } => {
+                let neighbors = self.category_layer.category_neighbors(category, k);
+                SphereQLOutput::CategoryNeighbors(neighbors.into_iter().cloned().collect())
+            }
+
+            SphereQLQuery::DrillDown { category, k } => {
+                let results = self
+                    .category_layer
+                    .drill_down_with_projection(category, &emb, &self.pca, k);
+                SphereQLOutput::DrillDown(results)
+            }
+
+            SphereQLQuery::CategoryStats => SphereQLOutput::CategoryStats {
+                summaries: self.category_layer.summaries.clone(),
+                inner_sphere_reports: self.category_layer.inner_sphere_stats(),
+            },
         }
     }
 
@@ -388,23 +457,48 @@ impl SphereQLPipeline {
 
     /// Number of unique categories in the corpus.
     pub fn num_categories(&self) -> usize {
-        let mut seen = std::collections::HashSet::new();
-        for cat in &self.categories {
-            seen.insert(cat.as_str());
-        }
-        seen.len()
+        self.category_layer.num_categories()
     }
 
     /// Unique category names in insertion order.
     pub fn unique_categories(&self) -> Vec<String> {
-        let mut seen = std::collections::HashSet::new();
-        let mut result = Vec::new();
-        for cat in &self.categories {
-            if seen.insert(cat.as_str()) {
-                result.push(cat.clone());
-            }
-        }
-        result
+        self.category_layer
+            .summaries
+            .iter()
+            .map(|s| s.name.clone())
+            .collect()
+    }
+
+    // ── Phase 3: category-level accessors ──────────────────────────────
+
+    /// Access the category enrichment layer directly.
+    pub fn category_layer(&self) -> &CategoryLayer {
+        &self.category_layer
+    }
+
+    /// Shortcut: find the shortest path between two categories.
+    pub fn category_path(&self, source: &str, target: &str) -> Option<CategoryPath> {
+        self.category_layer.category_path(source, target)
+    }
+
+    /// Shortcut: get bridge items between two categories.
+    pub fn bridge_items(&self, source: &str, target: &str, max: usize) -> Vec<&BridgeItem> {
+        self.category_layer.bridge_items(source, target, max)
+    }
+
+    /// Shortcut: check if a category has an inner sphere.
+    pub fn has_inner_sphere(&self, category: &str) -> bool {
+        self.category_layer.has_inner_sphere(category)
+    }
+
+    /// Shortcut: number of categories with inner spheres.
+    pub fn num_inner_spheres(&self) -> usize {
+        self.category_layer.num_inner_spheres()
+    }
+
+    /// Shortcut: inner sphere statistics for all categories.
+    pub fn inner_sphere_stats(&self) -> Vec<InnerSphereReport> {
+        self.category_layer.inner_sphere_stats()
     }
 
     /// Serialize all projected points as a JSON array string.
@@ -446,10 +540,8 @@ mod tests {
     fn make_input(n: usize, dim: usize) -> (PipelineInput, PipelineQuery) {
         let mut embeddings = Vec::with_capacity(n);
         let mut categories = Vec::with_capacity(n);
-        // Create n embeddings in dim dimensions with some structure
         for i in 0..n {
             let mut v = vec![0.0; dim];
-            // Put half in "group_a" (strong first component) and half in "group_b" (strong second)
             if i < n / 2 {
                 v[0] = 1.0 + (i as f64 * 0.01);
                 v[1] = 0.1;
@@ -473,6 +565,8 @@ mod tests {
             query,
         )
     }
+
+    // ── Existing tests (unchanged) ─────────────────────────────────────
 
     #[test]
     fn pipeline_nearest() {
@@ -599,17 +693,15 @@ mod tests {
             lines[0],
             "id,category,r,theta,phi,x,y,z,certainty,intensity"
         );
-        assert_eq!(lines.len(), 21); // header + 20 data lines
+        assert_eq!(lines.len(), 21);
     }
 
     #[test]
     fn test_to_csv_quoted_fields() {
-        // Verify that the CSV output properly quotes string fields
         let (input, _) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
         let csv = pipeline.to_csv();
         let data_line = csv.lines().nth(1).unwrap();
-        // First field (id) should be quoted
         assert!(data_line.starts_with('"'), "id field should be quoted");
     }
 
@@ -630,5 +722,140 @@ mod tests {
         assert_eq!(cats[0], "group_a");
         assert_eq!(cats[1], "group_b");
         assert_eq!(pipeline.num_categories(), 2);
+    }
+
+    // ── Phase 3 tests: category layer integration ──────────────────────
+
+    #[test]
+    fn pipeline_builds_category_layer() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        assert_eq!(pipeline.category_layer().num_categories(), 2);
+    }
+
+    #[test]
+    fn pipeline_category_path_query() {
+        let (input, query) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let result = pipeline.query(
+            SphereQLQuery::CategoryConceptPath {
+                source_category: "group_a",
+                target_category: "group_b",
+            },
+            &query,
+        );
+        match result {
+            SphereQLOutput::CategoryConceptPath(Some(path)) => {
+                assert!(path.steps.len() >= 2);
+                assert_eq!(path.steps.first().unwrap().category_name, "group_a");
+                assert_eq!(path.steps.last().unwrap().category_name, "group_b");
+                assert!(path.total_distance > 0.0);
+            }
+            _ => panic!("expected CategoryConceptPath(Some)"),
+        }
+    }
+
+    #[test]
+    fn pipeline_category_path_shortcut() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let path = pipeline.category_path("group_a", "group_b");
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert_eq!(path.steps.first().unwrap().category_name, "group_a");
+        assert_eq!(path.steps.last().unwrap().category_name, "group_b");
+    }
+
+    #[test]
+    fn pipeline_category_path_unknown() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        assert!(pipeline.category_path("group_a", "nonexistent").is_none());
+    }
+
+    #[test]
+    fn pipeline_category_neighbors_query() {
+        let (input, query) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let result = pipeline.query(
+            SphereQLQuery::CategoryNeighbors {
+                category: "group_a",
+                k: 5,
+            },
+            &query,
+        );
+        match result {
+            SphereQLOutput::CategoryNeighbors(neighbors) => {
+                assert_eq!(neighbors.len(), 1);
+                assert_eq!(neighbors[0].name, "group_b");
+            }
+            _ => panic!("expected CategoryNeighbors"),
+        }
+    }
+
+    #[test]
+    fn pipeline_drill_down_query() {
+        let (input, query) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let result = pipeline.query(
+            SphereQLQuery::DrillDown {
+                category: "group_a",
+                k: 5,
+            },
+            &query,
+        );
+        match result {
+            SphereQLOutput::DrillDown(results) => {
+                assert!(!results.is_empty());
+                assert!(results.len() <= 5);
+                for w in results.windows(2) {
+                    assert!(w[0].distance <= w[1].distance);
+                }
+            }
+            _ => panic!("expected DrillDown"),
+        }
+    }
+
+    #[test]
+    fn pipeline_category_stats_query() {
+        let (input, query) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let result = pipeline.query(SphereQLQuery::CategoryStats, &query);
+        match result {
+            SphereQLOutput::CategoryStats {
+                summaries,
+                inner_sphere_reports,
+            } => {
+                assert_eq!(summaries.len(), 2);
+                assert_eq!(inner_sphere_reports.len(), 0);
+            }
+            _ => panic!("expected CategoryStats"),
+        }
+    }
+
+    #[test]
+    fn pipeline_bridge_items_shortcut() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let _ = pipeline.bridge_items("group_a", "group_b", 5);
+    }
+
+    #[test]
+    fn pipeline_inner_sphere_shortcuts() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        assert!(!pipeline.has_inner_sphere("group_a"));
+        assert_eq!(pipeline.num_inner_spheres(), 0);
+        assert!(pipeline.inner_sphere_stats().is_empty());
+    }
+
+    #[test]
+    fn pipeline_category_layer_accessor() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let layer = pipeline.category_layer();
+        assert_eq!(layer.num_categories(), 2);
+        assert!(layer.get_category("group_a").is_some());
+        assert!(layer.get_category("group_b").is_some());
     }
 }
