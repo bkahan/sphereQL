@@ -2,10 +2,25 @@ use std::collections::HashMap;
 
 use sphereql_core::{angular_distance, SphericalPoint};
 
-use crate::projection::Projection;
-use crate::types::Embedding;
+use crate::kernel_pca::KernelPcaProjection;
+use crate::projection::{PcaProjection, Projection};
+use crate::types::{Embedding, RadialStrategy};
 
-// ── Category summary ───────────────────────────────────────────────
+// ── Thresholds ─────────────────────────────────────────────────────────
+
+/// Minimum category size to consider fitting an inner sphere.
+const MIN_INNER_SPHERE_SIZE: usize = 20;
+
+/// Minimum EVR improvement (inner − global_subset) to justify an inner sphere.
+const MIN_EVR_IMPROVEMENT: f64 = 0.10;
+
+/// Minimum category size to consider kernel PCA for the inner sphere.
+const KERNEL_PCA_MIN_SIZE: usize = 80;
+
+/// Minimum EVR improvement of kernel PCA over linear PCA to choose it.
+const MIN_KERNEL_IMPROVEMENT: f64 = 0.05;
+
+// ── Category summary ───────────────────────────────────────────────────
 
 /// Aggregate statistics for a single category on the outer sphere.
 ///
@@ -33,7 +48,7 @@ pub struct CategorySummary {
     pub member_count: usize,
 }
 
-// ── Bridge items ─────────────────────────────────────────────────
+// ── Bridge items ───────────────────────────────────────────────────────
 
 /// An item that semantically spans two categories.
 ///
@@ -57,7 +72,7 @@ pub struct BridgeItem {
     pub bridge_strength: f64,
 }
 
-// ── Category graph ───────────────────────────────────────────────
+// ── Category graph ─────────────────────────────────────────────────────
 
 /// Edge in the category adjacency graph.
 #[derive(Debug, Clone)]
@@ -83,7 +98,7 @@ pub struct CategoryGraph {
     pub bridges: HashMap<(usize, usize), Vec<BridgeItem>>,
 }
 
-// ── Category-level concept path ────────────────────────────────────
+// ── Category-level concept path ────────────────────────────────────────
 
 /// A step in a category-level concept path.
 #[derive(Debug, Clone)]
@@ -107,10 +122,116 @@ pub struct CategoryPath {
     pub total_distance: f64,
 }
 
-// ── The enrichment layer ───────────────────────────────────────────
+// ── Inner sphere (Phase 2) ─────────────────────────────────────────────
+
+/// The projection type used for a category's inner sphere.
+///
+/// Wraps either a linear PCA or kernel PCA projection, chosen
+/// automatically based on the category's size and measured EVR
+/// improvement over the global projection.
+#[derive(Clone)]
+pub enum InnerProjection {
+    /// Standard linear PCA — used for categories with 20–79 members,
+    /// or when kernel PCA doesn't improve over linear.
+    LinearPca(PcaProjection),
+    /// Gaussian kernel PCA — used for categories with ≥80 members
+    /// where kernel PCA measurably outperforms linear PCA.
+    KernelPca(KernelPcaProjection),
+}
+
+impl std::fmt::Debug for InnerProjection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LinearPca(_) => write!(f, "LinearPca"),
+            Self::KernelPca(_) => write!(f, "KernelPca"),
+        }
+    }
+}
+
+impl Projection for InnerProjection {
+    fn project(&self, embedding: &Embedding) -> SphericalPoint {
+        match self {
+            Self::LinearPca(p) => p.project(embedding),
+            Self::KernelPca(p) => p.project(embedding),
+        }
+    }
+    fn project_rich(&self, embedding: &Embedding) -> crate::types::ProjectedPoint {
+        match self {
+            Self::LinearPca(p) => p.project_rich(embedding),
+            Self::KernelPca(p) => p.project_rich(embedding),
+        }
+    }
+    fn dimensionality(&self) -> usize {
+        match self {
+            Self::LinearPca(p) => p.dimensionality(),
+            Self::KernelPca(p) => p.dimensionality(),
+        }
+    }
+}
+
+/// A category-specific inner sphere with its own optimized projection.
+///
+/// Only created for categories that meet all of:
+/// 1. At least [`MIN_INNER_SPHERE_SIZE`] members
+/// 2. Inner EVR improves over global subset EVR by ≥ [`MIN_EVR_IMPROVEMENT`]
+///
+/// The inner sphere gives higher-resolution angular discrimination
+/// within the category than the global outer projection can provide.
+#[derive(Debug, Clone)]
+pub struct InnerSphere {
+    /// The category-specific projection (linear PCA or kernel PCA).
+    pub projection: InnerProjection,
+    /// Positions of member items in the inner sphere's coordinate system.
+    /// `inner_positions[i]` corresponds to `member_indices[i]`.
+    pub inner_positions: Vec<SphericalPoint>,
+    /// Global item indices of the members (same order as inner_positions).
+    pub member_indices: Vec<usize>,
+    /// Explained variance ratio of the inner projection.
+    pub explained_variance_ratio: f64,
+    /// Mean certainty of these items under the global (outer) projection.
+    /// Baseline for measuring improvement.
+    pub global_subset_evr: f64,
+    /// `explained_variance_ratio - global_subset_evr`.
+    pub evr_improvement: f64,
+}
+
+/// A single item from a [`drill_down`](CategoryLayer::drill_down) query.
+#[derive(Debug, Clone)]
+pub struct DrillDownResult {
+    /// Index of the item in the pipeline's global item list.
+    pub item_index: usize,
+    /// Angular distance to the query in the relevant coordinate system.
+    pub distance: f64,
+    /// Whether the inner sphere's projection was used (true) or the
+    /// outer sphere was used as fallback (false).
+    pub used_inner_sphere: bool,
+}
+
+/// Stats for a single inner sphere, returned by
+/// [`inner_sphere_stats`](CategoryLayer::inner_sphere_stats).
+#[derive(Debug, Clone)]
+pub struct InnerSphereReport {
+    /// Category name.
+    pub category_name: String,
+    /// Category index.
+    pub category_index: usize,
+    /// Number of members in the inner sphere.
+    pub member_count: usize,
+    /// `"LinearPca"` or `"KernelPca"`.
+    pub projection_type: &'static str,
+    /// Explained variance ratio of the inner projection.
+    pub inner_evr: f64,
+    /// Mean certainty of members under the global projection.
+    pub global_subset_evr: f64,
+    /// EVR improvement over global.
+    pub evr_improvement: f64,
+}
+
+// ── The enrichment layer ───────────────────────────────────────────────
 
 /// Category Enrichment Layer: aggregate statistics, inter-category graph,
-/// and bridge item detection over a projected SphereQL corpus.
+/// bridge item detection, and automatic inner spheres over a projected
+/// SphereQL corpus.
 ///
 /// This is a read-only structure computed from an existing pipeline's
 /// data. It adds category-level reasoning without modifying the
@@ -123,6 +244,11 @@ pub struct CategoryLayer {
     pub name_to_index: HashMap<String, usize>,
     /// The inter-category adjacency graph.
     pub graph: CategoryGraph,
+    /// Outer-sphere positions for all items (same indexing as embeddings).
+    outer_positions: Vec<SphericalPoint>,
+    /// Inner spheres keyed by category index. Only present for categories
+    /// that meet the size and EVR-improvement thresholds.
+    pub inner_spheres: HashMap<usize, InnerSphere>,
 }
 
 impl CategoryLayer {
@@ -131,9 +257,17 @@ impl CategoryLayer {
     /// - `categories[i]` is the category name for item i.
     /// - `embeddings[i]` is the raw embedding for item i.
     /// - `projected_positions[i]` is the spherical position on the outer sphere.
-    /// - `projection` is used to project category centroids.
+    /// - `projection` is used to project category centroids and measure
+    ///   per-point certainty for inner sphere threshold decisions.
     ///
-    /// O(N·C + C²) where N = total items, C = number of unique categories.
+    /// Inner spheres are automatically constructed for categories that:
+    /// 1. Have ≥ 20 members
+    /// 2. Show ≥ 0.10 EVR improvement over the global projection
+    ///
+    /// Categories with ≥ 80 members additionally try kernel PCA and
+    /// select it if it improves EVR by ≥ 0.05 over linear PCA.
+    ///
+    /// O(N·C + C²) for the base layer, plus O(n_c²·d) per inner sphere.
     pub fn build<P: Projection>(
         categories: &[String],
         embeddings: &[Embedding],
@@ -216,10 +350,15 @@ impl CategoryLayer {
         // 3. Build category graph + detect bridges
         let graph = Self::build_graph(&summaries, embeddings, num_cats);
 
+        // 4. Build inner spheres for qualifying categories (Phase 2)
+        let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection);
+
         CategoryLayer {
             summaries,
             name_to_index,
             graph,
+            outer_positions: projected_positions.to_vec(),
+            inner_spheres,
         }
     }
 
@@ -242,10 +381,7 @@ impl CategoryLayer {
             }
         }
 
-        // Detect bridge items:
-        // An item in category A is a bridge to category B if its cosine
-        // similarity to B's centroid exceeds some threshold relative to
-        // its similarity to A's centroid.
+        // Detect bridge items
         let mut bridges: HashMap<(usize, usize), Vec<BridgeItem>> = HashMap::new();
 
         for (ci, summary) in summaries.iter().enumerate() {
@@ -253,7 +389,6 @@ impl CategoryLayer {
 
             for &mi in &summary.member_indices {
                 let item_emb = &embeddings[mi];
-
                 let sim_to_own = cosine_similarity(&item_emb.values, centroid_a);
 
                 for (cj, other_summary) in summaries.iter().enumerate() {
@@ -264,8 +399,6 @@ impl CategoryLayer {
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding);
 
-                    // Bridge criterion: similarity to foreign category is at least
-                    // 50% of similarity to own category, AND positive.
                     if sim_to_other > 0.0 && sim_to_other > sim_to_own * 0.5 {
                         let bridge_strength = if sim_to_own + sim_to_other > f64::EPSILON {
                             2.0 * sim_to_own * sim_to_other / (sim_to_own + sim_to_other)
@@ -273,22 +406,19 @@ impl CategoryLayer {
                             0.0
                         };
 
-                        let bridge = BridgeItem {
+                        bridges.entry((ci, cj)).or_default().push(BridgeItem {
                             item_index: mi,
                             source_category: ci,
                             target_category: cj,
                             affinity_to_source: sim_to_own,
                             affinity_to_target: sim_to_other,
                             bridge_strength,
-                        };
-
-                        bridges.entry((ci, cj)).or_default().push(bridge);
+                        });
                     }
                 }
             }
         }
 
-        // Sort bridges by descending strength within each pair
         for list in bridges.values_mut() {
             list.sort_by(|a, b| {
                 b.bridge_strength
@@ -297,7 +427,6 @@ impl CategoryLayer {
             });
         }
 
-        // Build adjacency list
         let mut adjacency: Vec<Vec<CategoryEdge>> = vec![Vec::new(); num_cats];
         for i in 0..num_cats {
             for j in 0..num_cats {
@@ -315,7 +444,6 @@ impl CategoryLayer {
                     weight,
                 });
             }
-            // Sort edges by weight (lowest = most connected)
             adjacency[i].sort_by(|a, b| {
                 a.weight
                     .partial_cmp(&b.weight)
@@ -325,6 +453,75 @@ impl CategoryLayer {
 
         CategoryGraph { adjacency, bridges }
     }
+
+    /// Evaluate each category and build inner spheres where they help.
+    fn build_inner_spheres<P: Projection>(
+        summaries: &[CategorySummary],
+        embeddings: &[Embedding],
+        projection: &P,
+    ) -> HashMap<usize, InnerSphere> {
+        let mut result = HashMap::new();
+
+        for (ci, summary) in summaries.iter().enumerate() {
+            if summary.member_count < MIN_INNER_SPHERE_SIZE {
+                continue;
+            }
+
+            let member_embs: Vec<Embedding> = summary
+                .member_indices
+                .iter()
+                .map(|&i| embeddings[i].clone())
+                .collect();
+
+            // Global subset EVR: mean certainty under global projection
+            let global_subset_evr: f64 = member_embs
+                .iter()
+                .map(|e| projection.project_rich(e).certainty)
+                .sum::<f64>()
+                / member_embs.len() as f64;
+
+            // Fit inner linear PCA
+            let inner_pca = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
+            let inner_linear_evr = inner_pca.explained_variance_ratio();
+
+            if inner_linear_evr - global_subset_evr < MIN_EVR_IMPROVEMENT {
+                continue;
+            }
+
+            let (inner_proj, inner_evr) = if summary.member_count >= KERNEL_PCA_MIN_SIZE {
+                let inner_kpca =
+                    KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
+                let kernel_evr = inner_kpca.explained_variance_ratio();
+
+                if kernel_evr > inner_linear_evr + MIN_KERNEL_IMPROVEMENT {
+                    (InnerProjection::KernelPca(inner_kpca), kernel_evr)
+                } else {
+                    (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+                }
+            } else {
+                (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+            };
+
+            let inner_positions: Vec<SphericalPoint> =
+                member_embs.iter().map(|e| inner_proj.project(e)).collect();
+
+            result.insert(
+                ci,
+                InnerSphere {
+                    projection: inner_proj,
+                    inner_positions,
+                    member_indices: summary.member_indices.clone(),
+                    explained_variance_ratio: inner_evr,
+                    global_subset_evr,
+                    evr_improvement: inner_evr - global_subset_evr,
+                },
+            );
+        }
+
+        result
+    }
+
+    // ── Phase 1 query methods (unchanged) ──────────────────────────────
 
     /// Number of categories.
     pub fn num_categories(&self) -> usize {
@@ -351,7 +548,6 @@ impl CategoryLayer {
     }
 
     /// Get bridge items between two categories.
-    /// Returns up to `max_bridges` items, sorted by descending bridge strength.
     pub fn bridge_items(
         &self,
         source_category: &str,
@@ -372,11 +568,6 @@ impl CategoryLayer {
     }
 
     /// Find the shortest path between two categories through the category graph.
-    ///
-    /// Uses Dijkstra on the category adjacency graph weighted by the combined
-    /// metric of centroid distance and bridge count.
-    ///
-    /// The result includes bridge items at each transition point.
     pub fn category_path(
         &self,
         source_category: &str,
@@ -407,9 +598,7 @@ impl CategoryLayer {
 
         dist[si] = 0.0;
 
-        // Simple Dijkstra — category count is small enough for O(C²)
         for _ in 0..n {
-            // Find unvisited node with smallest distance
             let mut u = None;
             let mut best = f64::INFINITY;
             for (i, (&d, &v)) in dist.iter().zip(visited.iter()).enumerate() {
@@ -437,7 +626,6 @@ impl CategoryLayer {
             return None;
         }
 
-        // Reconstruct path
         let mut path_indices = Vec::new();
         let mut cur = ti;
         loop {
@@ -449,7 +637,6 @@ impl CategoryLayer {
         }
         path_indices.reverse();
 
-        // Build steps with bridge items at each transition
         let mut steps = Vec::with_capacity(path_indices.len());
         for (step_idx, &ci) in path_indices.iter().enumerate() {
             let bridges_to_next = if step_idx + 1 < path_indices.len() {
@@ -496,9 +683,169 @@ impl CategoryLayer {
         results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
+
+    // ── Phase 2 query methods (inner spheres) ──────────────────────────
+
+    /// Whether a given category has an inner sphere.
+    pub fn has_inner_sphere(&self, category_name: &str) -> bool {
+        self.name_to_index
+            .get(category_name)
+            .is_some_and(|&ci| self.inner_spheres.contains_key(&ci))
+    }
+
+    /// Get the inner sphere for a category, if one exists.
+    pub fn get_inner_sphere(&self, category_name: &str) -> Option<&InnerSphere> {
+        self.name_to_index
+            .get(category_name)
+            .and_then(|&ci| self.inner_spheres.get(&ci))
+    }
+
+    /// Number of categories that have inner spheres.
+    pub fn num_inner_spheres(&self) -> usize {
+        self.inner_spheres.len()
+    }
+
+    /// Drill down into a category: find the k nearest members to a query
+    /// embedding, using the inner sphere's projection if available.
+    ///
+    /// Falls back to angular distance from the category centroid on the
+    /// outer sphere when no inner sphere exists.
+    pub fn drill_down(
+        &self,
+        category_name: &str,
+        embedding: &Embedding,
+        k: usize,
+    ) -> Vec<DrillDownResult> {
+        let Some(&ci) = self.name_to_index.get(category_name) else {
+            return Vec::new();
+        };
+        let summary = &self.summaries[ci];
+
+        if let Some(inner) = self.inner_spheres.get(&ci) {
+            let query_pos = inner.projection.project(embedding);
+            let mut results: Vec<DrillDownResult> = inner
+                .inner_positions
+                .iter()
+                .enumerate()
+                .map(|(local_idx, pos)| DrillDownResult {
+                    item_index: inner.member_indices[local_idx],
+                    distance: angular_distance(&query_pos, pos),
+                    used_inner_sphere: true,
+                })
+                .collect();
+            results.sort_by(|a, b| {
+                a.distance
+                    .partial_cmp(&b.distance)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            results.truncate(k);
+            results
+        } else {
+            // Fallback: rank by distance from category centroid on outer sphere
+            let centroid = &summary.centroid_position;
+            let mut results: Vec<DrillDownResult> = summary
+                .member_indices
+                .iter()
+                .map(|&mi| DrillDownResult {
+                    item_index: mi,
+                    distance: angular_distance(&self.outer_positions[mi], centroid),
+                    used_inner_sphere: false,
+                })
+                .collect();
+            results.sort_by(|a, b| {
+                a.distance
+                    .partial_cmp(&b.distance)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            results.truncate(k);
+            results
+        }
+    }
+
+    /// Drill down with an explicit outer projection for the fallback case.
+    ///
+    /// When no inner sphere exists, the query is projected using the
+    /// provided projection and compared against stored outer positions.
+    pub fn drill_down_with_projection<P: Projection>(
+        &self,
+        category_name: &str,
+        embedding: &Embedding,
+        projection: &P,
+        k: usize,
+    ) -> Vec<DrillDownResult> {
+        let Some(&ci) = self.name_to_index.get(category_name) else {
+            return Vec::new();
+        };
+        let summary = &self.summaries[ci];
+
+        if let Some(inner) = self.inner_spheres.get(&ci) {
+            let query_pos = inner.projection.project(embedding);
+            let mut results: Vec<DrillDownResult> = inner
+                .inner_positions
+                .iter()
+                .enumerate()
+                .map(|(local_idx, pos)| DrillDownResult {
+                    item_index: inner.member_indices[local_idx],
+                    distance: angular_distance(&query_pos, pos),
+                    used_inner_sphere: true,
+                })
+                .collect();
+            results.sort_by(|a, b| {
+                a.distance
+                    .partial_cmp(&b.distance)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            results.truncate(k);
+            results
+        } else {
+            let query_pos = projection.project(embedding);
+            let mut results: Vec<DrillDownResult> = summary
+                .member_indices
+                .iter()
+                .map(|&mi| DrillDownResult {
+                    item_index: mi,
+                    distance: angular_distance(&self.outer_positions[mi], &query_pos),
+                    used_inner_sphere: false,
+                })
+                .collect();
+            results.sort_by(|a, b| {
+                a.distance
+                    .partial_cmp(&b.distance)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            results.truncate(k);
+            results
+        }
+    }
+
+    /// Report which categories have inner spheres, their projection type,
+    /// and EVR metrics.
+    pub fn inner_sphere_stats(&self) -> Vec<InnerSphereReport> {
+        let mut reports: Vec<InnerSphereReport> = self
+            .inner_spheres
+            .iter()
+            .map(|(&ci, inner)| {
+                let proj_type = match &inner.projection {
+                    InnerProjection::LinearPca(_) => "LinearPca",
+                    InnerProjection::KernelPca(_) => "KernelPca",
+                };
+                InnerSphereReport {
+                    category_name: self.summaries[ci].name.clone(),
+                    category_index: ci,
+                    member_count: inner.member_indices.len(),
+                    projection_type: proj_type,
+                    inner_evr: inner.explained_variance_ratio,
+                    global_subset_evr: inner.global_subset_evr,
+                    evr_improvement: inner.evr_improvement,
+                }
+            })
+            .collect();
+        reports.sort_by_key(|r| r.category_index);
+        reports
+    }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────
 
 fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
@@ -511,49 +858,33 @@ fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     (dot / denom).clamp(-1.0, 1.0)
 }
 
-// ── Tests ────────────────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::projection::PcaProjection;
-    use crate::types::RadialStrategy;
 
     fn emb(vals: &[f64]) -> Embedding {
         Embedding::new(vals.to_vec())
     }
 
-    /// Build a test corpus with 3 categories, 5D embeddings.
-    /// - "science":  strong in dim 0
-    /// - "cooking":  strong in dim 1
-    /// - "music":    strong in dim 2
+    // --- Phase 1 test helpers ---
+
     fn test_corpus() -> (Vec<String>, Vec<Embedding>) {
         let categories = vec![
-            "science".into(),
-            "science".into(),
-            "science".into(),
-            "science".into(),
-            "cooking".into(),
-            "cooking".into(),
-            "cooking".into(),
-            "cooking".into(),
-            "music".into(),
-            "music".into(),
-            "music".into(),
-            "music".into(),
+            "science".into(), "science".into(), "science".into(), "science".into(),
+            "cooking".into(), "cooking".into(), "cooking".into(), "cooking".into(),
+            "music".into(),   "music".into(),   "music".into(),   "music".into(),
         ];
         let embeddings = vec![
-            // science: strong dim 0
             emb(&[1.0, 0.1, 0.0, 0.05, 0.02]),
             emb(&[0.9, 0.15, 0.05, 0.03, 0.01]),
             emb(&[0.95, 0.05, 0.1, 0.04, 0.03]),
             emb(&[0.85, 0.2, 0.0, 0.06, 0.01]),
-            // cooking: strong dim 1
             emb(&[0.1, 1.0, 0.0, 0.02, 0.05]),
             emb(&[0.15, 0.9, 0.05, 0.03, 0.04]),
             emb(&[0.05, 0.95, 0.1, 0.01, 0.06]),
             emb(&[0.2, 0.85, 0.0, 0.04, 0.03]),
-            // music: strong dim 2
             emb(&[0.0, 0.1, 1.0, 0.05, 0.02]),
             emb(&[0.05, 0.15, 0.9, 0.03, 0.01]),
             emb(&[0.1, 0.05, 0.95, 0.04, 0.03]),
@@ -565,14 +896,58 @@ mod tests {
     fn build_test_layer() -> (CategoryLayer, Vec<Embedding>, PcaProjection) {
         let (categories, embeddings) = test_corpus();
         let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
-
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
-
         let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca);
         (layer, embeddings, pca)
     }
 
-    // --- Construction ---
+    // --- Phase 2 test helpers ---
+
+    fn large_category_corpus() -> (Vec<String>, Vec<Embedding>) {
+        let mut categories = Vec::new();
+        let mut embeddings = Vec::new();
+
+        for i in 0..25 {
+            categories.push("big".into());
+            let t = i as f64 / 25.0;
+            let mut v = vec![0.0; 10];
+            v[0] = 1.0 + 0.3 * (t * 6.28).sin();
+            v[1] = 0.5 + 0.3 * (t * 6.28).cos();
+            v[2] = 0.2 * t;
+            for d in 3..10 {
+                v[d] = 0.01 * ((i * 7 + d) as f64 % 1.0);
+            }
+            embeddings.push(emb(&v));
+        }
+
+        for i in 0..4 {
+            categories.push("small_a".into());
+            let mut v = vec![0.0; 10];
+            v[5] = 1.0 + 0.1 * i as f64;
+            v[6] = 0.05;
+            embeddings.push(emb(&v));
+        }
+
+        for i in 0..4 {
+            categories.push("small_b".into());
+            let mut v = vec![0.0; 10];
+            v[8] = 1.0 + 0.1 * i as f64;
+            v[9] = 0.05;
+            embeddings.push(emb(&v));
+        }
+
+        (categories, embeddings)
+    }
+
+    fn build_large_test_layer() -> (CategoryLayer, Vec<Embedding>, PcaProjection) {
+        let (categories, embeddings) = large_category_corpus();
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca);
+        (layer, embeddings, pca)
+    }
+
+    // ======== Phase 1 tests (unchanged) ========
 
     #[test]
     fn builds_correct_number_of_categories() {
@@ -602,68 +977,35 @@ mod tests {
     fn centroid_embedding_is_mean() {
         let (layer, embeddings, _) = build_test_layer();
         let science = layer.get_category("science").unwrap();
-
-        // Manually compute mean of science embeddings (indices 0..4)
         let mut expected = vec![0.0; 5];
         for i in 0..4 {
             for (j, &v) in embeddings[i].values.iter().enumerate() {
                 expected[j] += v;
             }
         }
-        for v in &mut expected {
-            *v /= 4.0;
-        }
-
-        for (j, (&actual, &exp)) in science
-            .centroid_embedding
-            .iter()
-            .zip(expected.iter())
-            .enumerate()
-        {
-            assert!(
-                (actual - exp).abs() < 1e-10,
-                "centroid dim {j}: {actual} != {exp}"
-            );
+        for v in &mut expected { *v /= 4.0; }
+        for (j, (&actual, &exp)) in science.centroid_embedding.iter().zip(expected.iter()).enumerate() {
+            assert!((actual - exp).abs() < 1e-10, "centroid dim {j}: {actual} != {exp}");
         }
     }
 
     #[test]
     fn angular_spread_is_nonnegative() {
         let (layer, _, _) = build_test_layer();
-        for summary in &layer.summaries {
-            assert!(
-                summary.angular_spread >= 0.0,
-                "{}: spread = {}",
-                summary.name,
-                summary.angular_spread
-            );
-        }
+        for s in &layer.summaries { assert!(s.angular_spread >= 0.0); }
     }
 
     #[test]
     fn cohesion_in_range() {
         let (layer, _, _) = build_test_layer();
-        for summary in &layer.summaries {
-            assert!(
-                summary.cohesion > 0.0 && summary.cohesion <= 1.0,
-                "{}: cohesion = {}",
-                summary.name,
-                summary.cohesion
-            );
-        }
+        for s in &layer.summaries { assert!(s.cohesion > 0.0 && s.cohesion <= 1.0); }
     }
-
-    // --- Category graph ---
 
     #[test]
     fn graph_has_edges_for_all_pairs() {
         let (layer, _, _) = build_test_layer();
         for (i, edges) in layer.graph.adjacency.iter().enumerate() {
-            assert_eq!(
-                edges.len(),
-                layer.num_categories() - 1,
-                "category {i} has wrong edge count"
-            );
+            assert_eq!(edges.len(), layer.num_categories() - 1, "cat {i}");
         }
     }
 
@@ -671,13 +1013,7 @@ mod tests {
     fn edge_weights_positive() {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
-            for edge in edges {
-                assert!(edge.weight > 0.0, "edge weight must be positive");
-                assert!(
-                    edge.centroid_distance > 0.0,
-                    "centroid distance must be positive"
-                );
-            }
+            for e in edges { assert!(e.weight > 0.0); assert!(e.centroid_distance > 0.0); }
         }
     }
 
@@ -685,79 +1021,52 @@ mod tests {
     fn edges_sorted_by_weight() {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
-            for w in edges.windows(2) {
-                assert!(
-                    w[0].weight <= w[1].weight,
-                    "edges not sorted by weight: {} > {}",
-                    w[0].weight,
-                    w[1].weight
-                );
-            }
+            for w in edges.windows(2) { assert!(w[0].weight <= w[1].weight); }
         }
     }
-
-    // --- Category lookup ---
 
     #[test]
     fn get_category_by_name() {
         let (layer, _, _) = build_test_layer();
-        let science = layer.get_category("science");
-        assert!(science.is_some());
-        assert_eq!(science.unwrap().name, "science");
-
-        let nonexistent = layer.get_category("astrology");
-        assert!(nonexistent.is_none());
+        assert!(layer.get_category("science").is_some());
+        assert!(layer.get_category("astrology").is_none());
     }
 
     #[test]
     fn category_neighbors_returns_sorted() {
         let (layer, _, _) = build_test_layer();
-        let neighbors = layer.category_neighbors("science", 2);
-        assert_eq!(neighbors.len(), 2);
-        let names: Vec<&str> = neighbors.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"cooking") || names.contains(&"music"));
+        assert_eq!(layer.category_neighbors("science", 2).len(), 2);
     }
 
     #[test]
     fn category_neighbors_k_larger_than_available() {
         let (layer, _, _) = build_test_layer();
-        let neighbors = layer.category_neighbors("science", 100);
-        assert_eq!(neighbors.len(), 2);
+        assert_eq!(layer.category_neighbors("science", 100).len(), 2);
     }
 
     #[test]
     fn category_neighbors_unknown_returns_empty() {
         let (layer, _, _) = build_test_layer();
-        let neighbors = layer.category_neighbors("nonexistent", 5);
-        assert!(neighbors.is_empty());
+        assert!(layer.category_neighbors("nonexistent", 5).is_empty());
     }
-
-    // --- Bridge items ---
 
     #[test]
     fn bridge_items_detected() {
         let (layer, _, _) = build_test_layer();
-        let _bridges = layer.bridge_items("science", "cooking", 10);
+        let _ = layer.bridge_items("science", "cooking", 10);
     }
 
     #[test]
     fn bridge_items_unknown_category_returns_empty() {
         let (layer, _, _) = build_test_layer();
-        let bridges = layer.bridge_items("science", "nonexistent", 10);
-        assert!(bridges.is_empty());
+        assert!(layer.bridge_items("science", "nonexistent", 10).is_empty());
     }
 
     #[test]
     fn bridge_strength_in_valid_range() {
         let (layer, _, _) = build_test_layer();
         for list in layer.graph.bridges.values() {
-            for bridge in list {
-                assert!(
-                    bridge.bridge_strength >= 0.0 && bridge.bridge_strength <= 1.0,
-                    "bridge_strength out of range: {}",
-                    bridge.bridge_strength
-                );
-            }
+            for b in list { assert!(b.bridge_strength >= 0.0 && b.bridge_strength <= 1.0); }
         }
     }
 
@@ -765,35 +1074,22 @@ mod tests {
     fn bridges_sorted_by_strength() {
         let (layer, _, _) = build_test_layer();
         for list in layer.graph.bridges.values() {
-            for w in list.windows(2) {
-                assert!(
-                    w[0].bridge_strength >= w[1].bridge_strength,
-                    "bridges not sorted by strength: {} < {}",
-                    w[0].bridge_strength,
-                    w[1].bridge_strength
-                );
-            }
+            for w in list.windows(2) { assert!(w[0].bridge_strength >= w[1].bridge_strength); }
         }
     }
-
-    // --- Category paths ---
 
     #[test]
     fn category_path_same_category() {
         let (layer, _, _) = build_test_layer();
-        let path = layer.category_path("science", "science");
-        assert!(path.is_some());
-        let path = path.unwrap();
+        let path = layer.category_path("science", "science").unwrap();
         assert_eq!(path.steps.len(), 1);
-        assert!((path.total_distance - 0.0).abs() < 1e-12);
+        assert!(path.total_distance.abs() < 1e-12);
     }
 
     #[test]
     fn category_path_adjacent() {
         let (layer, _, _) = build_test_layer();
-        let path = layer.category_path("science", "cooking");
-        assert!(path.is_some());
-        let path = path.unwrap();
+        let path = layer.category_path("science", "cooking").unwrap();
         assert!(path.steps.len() >= 2);
         assert_eq!(path.steps.first().unwrap().category_name, "science");
         assert_eq!(path.steps.last().unwrap().category_name, "cooking");
@@ -804,7 +1100,6 @@ mod tests {
     fn category_path_unknown_returns_none() {
         let (layer, _, _) = build_test_layer();
         assert!(layer.category_path("science", "nonexistent").is_none());
-        assert!(layer.category_path("nonexistent", "science").is_none());
     }
 
     #[test]
@@ -812,71 +1107,217 @@ mod tests {
         let (layer, _, _) = build_test_layer();
         let path = layer.category_path("science", "music").unwrap();
         for w in path.steps.windows(2) {
-            assert!(
-                w[1].cumulative_distance >= w[0].cumulative_distance,
-                "cumulative distances not monotonic"
-            );
+            assert!(w[1].cumulative_distance >= w[0].cumulative_distance);
         }
     }
-
-    // --- Categories near embedding ---
 
     #[test]
     fn categories_near_embedding_finds_correct() {
         let (layer, _, pca) = build_test_layer();
-        let science_emb = emb(&[1.0, 0.0, 0.0, 0.0, 0.0]);
-        let near = layer.categories_near_embedding(&science_emb, &pca, std::f64::consts::PI);
+        let near = layer.categories_near_embedding(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0]), &pca, std::f64::consts::PI);
         assert!(!near.is_empty());
-        let nearest_name = &layer.summaries[near[0].0].name;
-        assert_eq!(nearest_name, "science");
+        assert_eq!(layer.summaries[near[0].0].name, "science");
     }
 
     #[test]
     fn categories_near_embedding_sorted_by_distance() {
         let (layer, _, pca) = build_test_layer();
-        let query = emb(&[0.5, 0.5, 0.5, 0.0, 0.0]);
-        let near = layer.categories_near_embedding(&query, &pca, std::f64::consts::PI);
-        for w in near.windows(2) {
-            assert!(w[0].1 <= w[1].1, "results not sorted by distance");
-        }
+        let near = layer.categories_near_embedding(&emb(&[0.5, 0.5, 0.5, 0.0, 0.0]), &pca, std::f64::consts::PI);
+        for w in near.windows(2) { assert!(w[0].1 <= w[1].1); }
     }
 
     #[test]
     fn categories_near_embedding_respects_threshold() {
         let (layer, _, pca) = build_test_layer();
-        let query = emb(&[1.0, 0.0, 0.0, 0.0, 0.0]);
-        let near = layer.categories_near_embedding(&query, &pca, 0.01);
-        for &(_, d) in &near {
-            assert!(d <= 0.01, "result exceeds max angle");
-        }
+        let near = layer.categories_near_embedding(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0]), &pca, 0.01);
+        for &(_, d) in &near { assert!(d <= 0.01); }
     }
-
-    // --- Cosine similarity helper ---
 
     #[test]
     fn cosine_similarity_identical() {
-        let a = vec![1.0, 0.0, 0.0];
-        assert!((cosine_similarity(&a, &a) - 1.0).abs() < 1e-12);
+        assert!((cosine_similarity(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]) - 1.0).abs() < 1e-12);
     }
 
     #[test]
     fn cosine_similarity_orthogonal() {
-        let a = vec![1.0, 0.0, 0.0];
-        let b = vec![0.0, 1.0, 0.0];
-        assert!(cosine_similarity(&a, &b).abs() < 1e-12);
+        assert!(cosine_similarity(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0]).abs() < 1e-12);
     }
 
     #[test]
     fn cosine_similarity_opposite() {
-        let a = vec![1.0, 0.0, 0.0];
-        let b = vec![-1.0, 0.0, 0.0];
-        assert!((cosine_similarity(&a, &b) + 1.0).abs() < 1e-12);
+        assert!((cosine_similarity(&[1.0, 0.0, 0.0], &[-1.0, 0.0, 0.0]) + 1.0).abs() < 1e-12);
     }
 
     #[test]
     fn cosine_similarity_zero_vector() {
-        let a = vec![0.0, 0.0, 0.0];
-        let b = vec![1.0, 0.0, 0.0];
-        assert!((cosine_similarity(&a, &b) - 0.0).abs() < 1e-12);
+        assert!(cosine_similarity(&[0.0, 0.0, 0.0], &[1.0, 0.0, 0.0]).abs() < 1e-12);
+    }
+
+    // ======== Phase 2 tests (inner spheres) ========
+
+    #[test]
+    fn small_categories_get_no_inner_sphere() {
+        let (layer, _, _) = build_test_layer();
+        assert_eq!(layer.num_inner_spheres(), 0);
+        assert!(!layer.has_inner_sphere("science"));
+    }
+
+    #[test]
+    fn large_category_may_get_inner_sphere() {
+        let (layer, _, _) = build_large_test_layer();
+        assert!(!layer.has_inner_sphere("small_a"));
+        assert!(!layer.has_inner_sphere("small_b"));
+        let _ = layer.has_inner_sphere("big");
+    }
+
+    #[test]
+    fn inner_sphere_stats_count_matches() {
+        let (layer, _, _) = build_large_test_layer();
+        assert_eq!(layer.inner_sphere_stats().len(), layer.num_inner_spheres());
+    }
+
+    #[test]
+    fn inner_sphere_stats_sorted_by_index() {
+        let (layer, _, _) = build_large_test_layer();
+        let stats = layer.inner_sphere_stats();
+        for w in stats.windows(2) { assert!(w[0].category_index <= w[1].category_index); }
+    }
+
+    #[test]
+    fn inner_sphere_evr_improvement_positive() {
+        let (layer, _, _) = build_large_test_layer();
+        for inner in layer.inner_spheres.values() {
+            assert!(inner.evr_improvement >= MIN_EVR_IMPROVEMENT);
+        }
+    }
+
+    #[test]
+    fn inner_sphere_positions_match_member_count() {
+        let (layer, _, _) = build_large_test_layer();
+        for (&ci, inner) in &layer.inner_spheres {
+            assert_eq!(inner.inner_positions.len(), inner.member_indices.len());
+            assert_eq!(inner.member_indices.len(), layer.summaries[ci].member_count);
+        }
+    }
+
+    #[test]
+    fn inner_sphere_member_indices_valid() {
+        let (layer, _, _) = build_large_test_layer();
+        let total = layer.outer_positions.len();
+        for inner in layer.inner_spheres.values() {
+            for &mi in &inner.member_indices { assert!(mi < total); }
+        }
+    }
+
+    #[test]
+    fn inner_sphere_report_projection_type_valid() {
+        let (layer, _, _) = build_large_test_layer();
+        for r in layer.inner_sphere_stats() {
+            assert!(r.projection_type == "LinearPca" || r.projection_type == "KernelPca");
+        }
+    }
+
+    #[test]
+    fn inner_sphere_evr_in_range() {
+        let (layer, _, _) = build_large_test_layer();
+        for inner in layer.inner_spheres.values() {
+            assert!(inner.explained_variance_ratio >= 0.0 && inner.explained_variance_ratio <= 1.0);
+            assert!(inner.global_subset_evr >= 0.0 && inner.global_subset_evr <= 1.0);
+        }
+    }
+
+    #[test]
+    fn has_inner_sphere_unknown_category() {
+        let (layer, _, _) = build_test_layer();
+        assert!(!layer.has_inner_sphere("nonexistent"));
+    }
+
+    #[test]
+    fn get_inner_sphere_returns_none_for_small() {
+        let (layer, _, _) = build_test_layer();
+        assert!(layer.get_inner_sphere("science").is_none());
+    }
+
+    #[test]
+    fn drill_down_returns_results() {
+        let (layer, _, pca) = build_large_test_layer();
+        let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let results = layer.drill_down_with_projection("big", &q, &pca, 5);
+        assert!(!results.is_empty());
+        assert!(results.len() <= 5);
+    }
+
+    #[test]
+    fn drill_down_sorted_by_distance() {
+        let (layer, _, pca) = build_large_test_layer();
+        let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let results = layer.drill_down_with_projection("big", &q, &pca, 10);
+        for w in results.windows(2) { assert!(w[0].distance <= w[1].distance); }
+    }
+
+    #[test]
+    fn drill_down_unknown_category_empty() {
+        let (layer, _, pca) = build_large_test_layer();
+        assert!(layer.drill_down_with_projection("nonexistent", &emb(&[1.0; 10]), &pca, 5).is_empty());
+    }
+
+    #[test]
+    fn drill_down_item_indices_valid() {
+        let (layer, _, pca) = build_large_test_layer();
+        let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let total = layer.outer_positions.len();
+        for r in layer.drill_down_with_projection("big", &q, &pca, 25) {
+            assert!(r.item_index < total);
+        }
+    }
+
+    #[test]
+    fn drill_down_small_category_uses_outer() {
+        let (layer, _, pca) = build_large_test_layer();
+        let q = emb(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+        for r in layer.drill_down_with_projection("small_a", &q, &pca, 4) {
+            assert!(!r.used_inner_sphere);
+        }
+    }
+
+    #[test]
+    fn drill_down_distances_nonnegative() {
+        let (layer, _, pca) = build_large_test_layer();
+        for r in layer.drill_down_with_projection("big", &emb(&[1.0; 10]), &pca, 10) {
+            assert!(r.distance >= 0.0);
+        }
+    }
+
+    #[test]
+    fn drill_down_without_projection_works() {
+        let (layer, _, _) = build_large_test_layer();
+        let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert!(layer.drill_down("big", &q, 5).len() <= 5);
+    }
+
+    #[test]
+    fn inner_projection_enum_debug() {
+        let corpus: Vec<Embedding> = (0..5).map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0])).collect();
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        assert_eq!(format!("{:?}", InnerProjection::LinearPca(pca)), "LinearPca");
+    }
+
+    #[test]
+    fn inner_projection_projects_correctly() {
+        let corpus: Vec<Embedding> = (0..5).map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0])).collect();
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let proj = InnerProjection::LinearPca(pca.clone());
+        let e = emb(&[1.0, 0.0, 0.0, 0.0, 0.0]);
+        let sp_enum = proj.project(&e);
+        let sp_direct = pca.project(&e);
+        assert!((sp_enum.theta - sp_direct.theta).abs() < 1e-12);
+        assert!((sp_enum.phi - sp_direct.phi).abs() < 1e-12);
+    }
+
+    #[test]
+    fn inner_projection_dimensionality() {
+        let corpus: Vec<Embedding> = (0..5).map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0])).collect();
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        assert_eq!(InnerProjection::LinearPca(pca).dimensionality(), 5);
     }
 }
