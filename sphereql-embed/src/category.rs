@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sphereql_core::{angular_distance, SphericalPoint};
+use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::kernel_pca::KernelPcaProjection;
 use crate::projection::{PcaProjection, Projection};
@@ -172,8 +172,8 @@ impl Projection for InnerProjection {
 /// A category-specific inner sphere with its own optimized projection.
 ///
 /// Only created for categories that meet all of:
-/// 1. At least [`MIN_INNER_SPHERE_SIZE`] members
-/// 2. Inner EVR improves over global subset EVR by ≥ [`MIN_EVR_IMPROVEMENT`]
+/// 1. At least `MIN_INNER_SPHERE_SIZE` members
+/// 2. Inner EVR improves over global subset EVR by ≥ `MIN_EVR_IMPROVEMENT`
 ///
 /// The inner sphere gives higher-resolution angular discrimination
 /// within the category than the global outer projection can provide.
@@ -489,8 +489,7 @@ impl CategoryLayer {
             }
 
             let (inner_proj, inner_evr) = if summary.member_count >= KERNEL_PCA_MIN_SIZE {
-                let inner_kpca =
-                    KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
+                let inner_kpca = KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
                 let kernel_evr = inner_kpca.explained_variance_ratio();
 
                 if kernel_evr > inner_linear_evr + MIN_KERNEL_IMPROVEMENT {
@@ -573,12 +572,8 @@ impl CategoryLayer {
         source_category: &str,
         target_category: &str,
     ) -> Option<CategoryPath> {
-        let Some(&si) = self.name_to_index.get(source_category) else {
-            return None;
-        };
-        let Some(&ti) = self.name_to_index.get(target_category) else {
-            return None;
-        };
+        let &si = self.name_to_index.get(source_category)?;
+        let &ti = self.name_to_index.get(target_category)?;
         if si == ti {
             return Some(CategoryPath {
                 steps: vec![CategoryPathStep {
@@ -872,9 +867,18 @@ mod tests {
 
     fn test_corpus() -> (Vec<String>, Vec<Embedding>) {
         let categories = vec![
-            "science".into(), "science".into(), "science".into(), "science".into(),
-            "cooking".into(), "cooking".into(), "cooking".into(), "cooking".into(),
-            "music".into(),   "music".into(),   "music".into(),   "music".into(),
+            "science".into(),
+            "science".into(),
+            "science".into(),
+            "science".into(),
+            "cooking".into(),
+            "cooking".into(),
+            "cooking".into(),
+            "cooking".into(),
+            "music".into(),
+            "music".into(),
+            "music".into(),
+            "music".into(),
         ];
         let embeddings = vec![
             emb(&[1.0, 0.1, 0.0, 0.05, 0.02]),
@@ -983,22 +987,36 @@ mod tests {
                 expected[j] += v;
             }
         }
-        for v in &mut expected { *v /= 4.0; }
-        for (j, (&actual, &exp)) in science.centroid_embedding.iter().zip(expected.iter()).enumerate() {
-            assert!((actual - exp).abs() < 1e-10, "centroid dim {j}: {actual} != {exp}");
+        for v in &mut expected {
+            *v /= 4.0;
+        }
+        for (j, (&actual, &exp)) in science
+            .centroid_embedding
+            .iter()
+            .zip(expected.iter())
+            .enumerate()
+        {
+            assert!(
+                (actual - exp).abs() < 1e-10,
+                "centroid dim {j}: {actual} != {exp}"
+            );
         }
     }
 
     #[test]
     fn angular_spread_is_nonnegative() {
         let (layer, _, _) = build_test_layer();
-        for s in &layer.summaries { assert!(s.angular_spread >= 0.0); }
+        for s in &layer.summaries {
+            assert!(s.angular_spread >= 0.0);
+        }
     }
 
     #[test]
     fn cohesion_in_range() {
         let (layer, _, _) = build_test_layer();
-        for s in &layer.summaries { assert!(s.cohesion > 0.0 && s.cohesion <= 1.0); }
+        for s in &layer.summaries {
+            assert!(s.cohesion > 0.0 && s.cohesion <= 1.0);
+        }
     }
 
     #[test]
@@ -1013,7 +1031,10 @@ mod tests {
     fn edge_weights_positive() {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
-            for e in edges { assert!(e.weight > 0.0); assert!(e.centroid_distance > 0.0); }
+            for e in edges {
+                assert!(e.weight > 0.0);
+                assert!(e.centroid_distance > 0.0);
+            }
         }
     }
 
@@ -1021,7 +1042,9 @@ mod tests {
     fn edges_sorted_by_weight() {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
-            for w in edges.windows(2) { assert!(w[0].weight <= w[1].weight); }
+            for w in edges.windows(2) {
+                assert!(w[0].weight <= w[1].weight);
+            }
         }
     }
 
@@ -1066,7 +1089,9 @@ mod tests {
     fn bridge_strength_in_valid_range() {
         let (layer, _, _) = build_test_layer();
         for list in layer.graph.bridges.values() {
-            for b in list { assert!(b.bridge_strength >= 0.0 && b.bridge_strength <= 1.0); }
+            for b in list {
+                assert!(b.bridge_strength >= 0.0 && b.bridge_strength <= 1.0);
+            }
         }
     }
 
@@ -1074,7 +1099,9 @@ mod tests {
     fn bridges_sorted_by_strength() {
         let (layer, _, _) = build_test_layer();
         for list in layer.graph.bridges.values() {
-            for w in list.windows(2) { assert!(w[0].bridge_strength >= w[1].bridge_strength); }
+            for w in list.windows(2) {
+                assert!(w[0].bridge_strength >= w[1].bridge_strength);
+            }
         }
     }
 
@@ -1114,7 +1141,11 @@ mod tests {
     #[test]
     fn categories_near_embedding_finds_correct() {
         let (layer, _, pca) = build_test_layer();
-        let near = layer.categories_near_embedding(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0]), &pca, std::f64::consts::PI);
+        let near = layer.categories_near_embedding(
+            &emb(&[1.0, 0.0, 0.0, 0.0, 0.0]),
+            &pca,
+            std::f64::consts::PI,
+        );
         assert!(!near.is_empty());
         assert_eq!(layer.summaries[near[0].0].name, "science");
     }
@@ -1122,15 +1153,23 @@ mod tests {
     #[test]
     fn categories_near_embedding_sorted_by_distance() {
         let (layer, _, pca) = build_test_layer();
-        let near = layer.categories_near_embedding(&emb(&[0.5, 0.5, 0.5, 0.0, 0.0]), &pca, std::f64::consts::PI);
-        for w in near.windows(2) { assert!(w[0].1 <= w[1].1); }
+        let near = layer.categories_near_embedding(
+            &emb(&[0.5, 0.5, 0.5, 0.0, 0.0]),
+            &pca,
+            std::f64::consts::PI,
+        );
+        for w in near.windows(2) {
+            assert!(w[0].1 <= w[1].1);
+        }
     }
 
     #[test]
     fn categories_near_embedding_respects_threshold() {
         let (layer, _, pca) = build_test_layer();
         let near = layer.categories_near_embedding(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0]), &pca, 0.01);
-        for &(_, d) in &near { assert!(d <= 0.01); }
+        for &(_, d) in &near {
+            assert!(d <= 0.01);
+        }
     }
 
     #[test]
@@ -1180,7 +1219,9 @@ mod tests {
     fn inner_sphere_stats_sorted_by_index() {
         let (layer, _, _) = build_large_test_layer();
         let stats = layer.inner_sphere_stats();
-        for w in stats.windows(2) { assert!(w[0].category_index <= w[1].category_index); }
+        for w in stats.windows(2) {
+            assert!(w[0].category_index <= w[1].category_index);
+        }
     }
 
     #[test]
@@ -1205,7 +1246,9 @@ mod tests {
         let (layer, _, _) = build_large_test_layer();
         let total = layer.outer_positions.len();
         for inner in layer.inner_spheres.values() {
-            for &mi in &inner.member_indices { assert!(mi < total); }
+            for &mi in &inner.member_indices {
+                assert!(mi < total);
+            }
         }
     }
 
@@ -1252,13 +1295,19 @@ mod tests {
         let (layer, _, pca) = build_large_test_layer();
         let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let results = layer.drill_down_with_projection("big", &q, &pca, 10);
-        for w in results.windows(2) { assert!(w[0].distance <= w[1].distance); }
+        for w in results.windows(2) {
+            assert!(w[0].distance <= w[1].distance);
+        }
     }
 
     #[test]
     fn drill_down_unknown_category_empty() {
         let (layer, _, pca) = build_large_test_layer();
-        assert!(layer.drill_down_with_projection("nonexistent", &emb(&[1.0; 10]), &pca, 5).is_empty());
+        assert!(
+            layer
+                .drill_down_with_projection("nonexistent", &emb(&[1.0; 10]), &pca, 5)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1297,14 +1346,21 @@ mod tests {
 
     #[test]
     fn inner_projection_enum_debug() {
-        let corpus: Vec<Embedding> = (0..5).map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0])).collect();
+        let corpus: Vec<Embedding> = (0..5)
+            .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
+            .collect();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
-        assert_eq!(format!("{:?}", InnerProjection::LinearPca(pca)), "LinearPca");
+        assert_eq!(
+            format!("{:?}", InnerProjection::LinearPca(pca)),
+            "LinearPca"
+        );
     }
 
     #[test]
     fn inner_projection_projects_correctly() {
-        let corpus: Vec<Embedding> = (0..5).map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0])).collect();
+        let corpus: Vec<Embedding> = (0..5)
+            .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
+            .collect();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
         let proj = InnerProjection::LinearPca(pca.clone());
         let e = emb(&[1.0, 0.0, 0.0, 0.0, 0.0]);
@@ -1316,7 +1372,9 @@ mod tests {
 
     #[test]
     fn inner_projection_dimensionality() {
-        let corpus: Vec<Embedding> = (0..5).map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0])).collect();
+        let corpus: Vec<Embedding> = (0..5)
+            .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
+            .collect();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
         assert_eq!(InnerProjection::LinearPca(pca).dimensionality(), 5);
     }

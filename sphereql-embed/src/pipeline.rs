@@ -155,7 +155,7 @@ pub struct SphereQLPipeline {
     cart_points: Vec<[f64; 3]>,
     ids: Vec<String>,
     /// Stored embeddings for category layer queries (drill-down, etc.).
-    embeddings: Vec<Embedding>,
+    _embeddings: Vec<Embedding>,
     /// Category enrichment layer: summaries, graph, bridges, inner spheres.
     category_layer: CategoryLayer,
 }
@@ -232,7 +232,7 @@ impl SphereQLPipeline {
             categories,
             cart_points,
             ids,
-            embeddings,
+            _embeddings: embeddings,
             category_layer,
         })
     }
@@ -285,17 +285,19 @@ impl SphereQLPipeline {
                 graph_k,
             } => {
                 let path = self.index.concept_path(source_id, target_id, graph_k);
-                SphereQLOutput::ConceptPath(path.map(|p| PathResult {
-                    total_distance: p.total_distance,
-                    steps: p
-                        .steps
-                        .iter()
-                        .map(|s| PipelinePathStep {
-                            id: s.id.clone(),
-                            category: self.cat_for(&s.id),
-                            cumulative_distance: s.cumulative_distance,
-                        })
-                        .collect(),
+                SphereQLOutput::ConceptPath(path.map(|p| {
+                    PathResult {
+                        total_distance: p.total_distance,
+                        steps: p
+                            .steps
+                            .iter()
+                            .map(|s| PipelinePathStep {
+                                id: s.id.clone(),
+                                category: self.cat_for(&s.id),
+                                cumulative_distance: s.cumulative_distance,
+                            })
+                            .collect(),
+                    }
                 }))
             }
 
@@ -356,9 +358,9 @@ impl SphereQLPipeline {
             }
 
             SphereQLQuery::DrillDown { category, k } => {
-                let results =
-                    self.category_layer
-                        .drill_down_with_projection(category, &emb, &self.pca, k);
+                let results = self
+                    .category_layer
+                    .drill_down_with_projection(category, &emb, &self.pca, k);
                 SphereQLOutput::DrillDown(results)
             }
 

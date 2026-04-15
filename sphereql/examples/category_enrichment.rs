@@ -64,12 +64,35 @@ fn main() {
 
     // Science (6 items)
     let science_docs: Vec<(&str, Vec<(usize, f64)>)> = vec![
-        ("Speed of light", vec![(PHYSICS, 1.0), (ENERGY, 0.6), (MATH, 0.3)]),
-        ("DNA structure", vec![(BIOLOGY, 1.0), (CHEMISTRY, 0.5), (NATURE, 0.4)]),
-        ("Quantum entanglement", vec![(PHYSICS, 0.9), (MATH, 0.5), (ENERGY, 0.4)]),
-        ("Photosynthesis", vec![(BIOLOGY, 0.8), (CHEMISTRY, 0.7), (ENERGY, 0.8), (NATURE, 0.6)]),
-        ("General relativity", vec![(PHYSICS, 0.9), (MATH, 0.8), (ENERGY, 0.3)]),
-        ("Cell division", vec![(BIOLOGY, 0.9), (CHEMISTRY, 0.3), (NATURE, 0.5)]),
+        (
+            "Speed of light",
+            vec![(PHYSICS, 1.0), (ENERGY, 0.6), (MATH, 0.3)],
+        ),
+        (
+            "DNA structure",
+            vec![(BIOLOGY, 1.0), (CHEMISTRY, 0.5), (NATURE, 0.4)],
+        ),
+        (
+            "Quantum entanglement",
+            vec![(PHYSICS, 0.9), (MATH, 0.5), (ENERGY, 0.4)],
+        ),
+        (
+            "Photosynthesis",
+            vec![
+                (BIOLOGY, 0.8),
+                (CHEMISTRY, 0.7),
+                (ENERGY, 0.8),
+                (NATURE, 0.6),
+            ],
+        ),
+        (
+            "General relativity",
+            vec![(PHYSICS, 0.9), (MATH, 0.8), (ENERGY, 0.3)],
+        ),
+        (
+            "Cell division",
+            vec![(BIOLOGY, 0.9), (CHEMISTRY, 0.3), (NATURE, 0.5)],
+        ),
     ];
     for (i, (label, feats)) in science_docs.iter().enumerate() {
         categories.push("science".to_string());
@@ -79,12 +102,32 @@ fn main() {
 
     // Cooking (6 items)
     let cooking_docs: Vec<(&str, Vec<(usize, f64)>)> = vec![
-        ("Preheat the oven", vec![(COOKING, 1.0), (HEAT, 0.9), (FLAVOR, 0.2)]),
-        ("Simmer the sauce", vec![(COOKING, 0.9), (HEAT, 0.7), (FLAVOR, 0.6)]),
-        ("Season with paprika", vec![(COOKING, 0.8), (FLAVOR, 1.0), (CHEMISTRY, 0.2)]),
+        (
+            "Preheat the oven",
+            vec![(COOKING, 1.0), (HEAT, 0.9), (FLAVOR, 0.2)],
+        ),
+        (
+            "Simmer the sauce",
+            vec![(COOKING, 0.9), (HEAT, 0.7), (FLAVOR, 0.6)],
+        ),
+        (
+            "Season with paprika",
+            vec![(COOKING, 0.8), (FLAVOR, 1.0), (CHEMISTRY, 0.2)],
+        ),
         ("Fold egg whites", vec![(COOKING, 0.9), (FLAVOR, 0.4)]),
-        ("Caramelize onions", vec![(COOKING, 0.8), (HEAT, 0.8), (FLAVOR, 0.7), (CHEMISTRY, 0.3)]),
-        ("Fermentation process", vec![(COOKING, 0.6), (CHEMISTRY, 0.7), (BIOLOGY, 0.4), (NATURE, 0.3)]),
+        (
+            "Caramelize onions",
+            vec![(COOKING, 0.8), (HEAT, 0.8), (FLAVOR, 0.7), (CHEMISTRY, 0.3)],
+        ),
+        (
+            "Fermentation process",
+            vec![
+                (COOKING, 0.6),
+                (CHEMISTRY, 0.7),
+                (BIOLOGY, 0.4),
+                (NATURE, 0.3),
+            ],
+        ),
     ];
     for (i, (label, feats)) in cooking_docs.iter().enumerate() {
         categories.push("cooking".to_string());
@@ -94,11 +137,26 @@ fn main() {
 
     // Music (5 items)
     let music_docs: Vec<(&str, Vec<(usize, f64)>)> = vec![
-        ("Symphony climax", vec![(MUSIC, 1.0), (PERFORM, 0.7), (EMOTION, 0.8), (ENERGY, 0.5)]),
-        ("Concert hall voice", vec![(MUSIC, 0.9), (PERFORM, 0.9), (EMOTION, 0.6)]),
-        ("Polyrhythm drumming", vec![(MUSIC, 0.8), (PERFORM, 0.6), (RHYTHM, 1.0)]),
-        ("Jazz improvisation", vec![(MUSIC, 0.7), (PERFORM, 0.8), (RHYTHM, 0.6), (EMOTION, 0.5)]),
-        ("Electronic synthesis", vec![(MUSIC, 0.6), (TECH, 0.7), (RHYTHM, 0.5), (ENERGY, 0.4)]),
+        (
+            "Symphony climax",
+            vec![(MUSIC, 1.0), (PERFORM, 0.7), (EMOTION, 0.8), (ENERGY, 0.5)],
+        ),
+        (
+            "Concert hall voice",
+            vec![(MUSIC, 0.9), (PERFORM, 0.9), (EMOTION, 0.6)],
+        ),
+        (
+            "Polyrhythm drumming",
+            vec![(MUSIC, 0.8), (PERFORM, 0.6), (RHYTHM, 1.0)],
+        ),
+        (
+            "Jazz improvisation",
+            vec![(MUSIC, 0.7), (PERFORM, 0.8), (RHYTHM, 0.6), (EMOTION, 0.5)],
+        ),
+        (
+            "Electronic synthesis",
+            vec![(MUSIC, 0.6), (TECH, 0.7), (RHYTHM, 0.5), (ENERGY, 0.4)],
+        ),
     ];
     for (i, (label, feats)) in music_docs.iter().enumerate() {
         categories.push("music".to_string());
@@ -109,10 +167,24 @@ fn main() {
     // History (5 items)
     let history_docs: Vec<(&str, Vec<(usize, f64)>)> = vec![
         ("Fall of Rome", vec![(HISTORY, 1.0), (CIVILIZE, 0.8)]),
-        ("Industrial Revolution", vec![(HISTORY, 0.8), (TECH, 0.7), (ENERGY, 0.6), (CIVILIZE, 0.6)]),
+        (
+            "Industrial Revolution",
+            vec![(HISTORY, 0.8), (TECH, 0.7), (ENERGY, 0.6), (CIVILIZE, 0.6)],
+        ),
         ("Ancient Egypt", vec![(HISTORY, 0.9), (CIVILIZE, 1.0)]),
-        ("Renaissance art", vec![(HISTORY, 0.7), (CIVILIZE, 0.5), (EMOTION, 0.6), (PERFORM, 0.3)]),
-        ("Space race", vec![(HISTORY, 0.6), (TECH, 0.8), (PHYSICS, 0.4), (ENERGY, 0.5)]),
+        (
+            "Renaissance art",
+            vec![
+                (HISTORY, 0.7),
+                (CIVILIZE, 0.5),
+                (EMOTION, 0.6),
+                (PERFORM, 0.3),
+            ],
+        ),
+        (
+            "Space race",
+            vec![(HISTORY, 0.6), (TECH, 0.8), (PHYSICS, 0.4), (ENERGY, 0.5)],
+        ),
     ];
     for (i, (label, feats)) in history_docs.iter().enumerate() {
         categories.push("history".to_string());
@@ -188,7 +260,10 @@ fn main() {
                 String::new()
             };
 
-            println!("  ● {} (d={:.4})", step.category_name, step.cumulative_distance);
+            println!(
+                "  ● {} (d={:.4})",
+                step.category_name, step.cumulative_distance
+            );
             if !arrow.is_empty() {
                 println!("{arrow}");
             }
@@ -258,9 +333,7 @@ fn main() {
     println!("\n━━━ Inner Sphere Status ━━━\n");
     let stats = pipeline.inner_sphere_stats();
     if stats.is_empty() {
-        println!(
-            "  No inner spheres materialized (all categories have < 20 items,",
-        );
+        println!("  No inner spheres materialized (all categories have < 20 items,",);
         println!("  or EVR improvement was below the 0.10 threshold).");
         println!("  In a real corpus with 50+ items per category, inner spheres");
         println!("  would automatically activate for categories where they help.");
