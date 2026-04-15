@@ -1,6 +1,9 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use sphereql_embed::category::{
+    BridgeItem, CategoryPath, CategoryPathStep, CategorySummary, DrillDownResult, InnerSphereReport,
+};
 use sphereql_embed::pipeline::{GlobSummary, ManifoldResult, NearestResult, PathResult};
 
 // ── Nearest ────────────────────────────────────────────────────────────
@@ -328,6 +331,237 @@ impl From<&ManifoldResult> for Manifold {
             centroid: m.centroid,
             normal: m.normal,
             variance_ratio: m.variance_ratio,
+        }
+    }
+}
+
+// ── CategorySummary ───────────────────────────────────────────────────
+
+#[pyclass(name = "CategorySummaryInfo", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyCategorySummary {
+    #[pyo3(get)]
+    pub name: String,
+    #[pyo3(get)]
+    pub member_count: usize,
+    #[pyo3(get)]
+    pub centroid_theta: f64,
+    #[pyo3(get)]
+    pub centroid_phi: f64,
+    #[pyo3(get)]
+    pub angular_spread: f64,
+    #[pyo3(get)]
+    pub cohesion: f64,
+}
+
+#[pymethods]
+impl PyCategorySummary {
+    fn __repr__(&self) -> String {
+        format!(
+            "CategorySummaryInfo(name={:?}, members={}, cohesion={:.4})",
+            self.name, self.member_count, self.cohesion
+        )
+    }
+}
+
+impl From<&CategorySummary> for PyCategorySummary {
+    fn from(s: &CategorySummary) -> Self {
+        Self {
+            name: s.name.clone(),
+            member_count: s.member_count,
+            centroid_theta: s.centroid_position.theta,
+            centroid_phi: s.centroid_position.phi,
+            angular_spread: s.angular_spread,
+            cohesion: s.cohesion,
+        }
+    }
+}
+
+// ── BridgeItem ────────────────────────────────────────────────────────
+
+#[pyclass(name = "BridgeItemInfo", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyBridgeItem {
+    #[pyo3(get)]
+    pub item_index: usize,
+    #[pyo3(get)]
+    pub source_category: usize,
+    #[pyo3(get)]
+    pub target_category: usize,
+    #[pyo3(get)]
+    pub affinity_to_source: f64,
+    #[pyo3(get)]
+    pub affinity_to_target: f64,
+    #[pyo3(get)]
+    pub bridge_strength: f64,
+}
+
+#[pymethods]
+impl PyBridgeItem {
+    fn __repr__(&self) -> String {
+        format!(
+            "BridgeItemInfo(item={}, src={}, tgt={}, strength={:.4})",
+            self.item_index, self.source_category, self.target_category, self.bridge_strength
+        )
+    }
+}
+
+impl From<&BridgeItem> for PyBridgeItem {
+    fn from(b: &BridgeItem) -> Self {
+        Self {
+            item_index: b.item_index,
+            source_category: b.source_category,
+            target_category: b.target_category,
+            affinity_to_source: b.affinity_to_source,
+            affinity_to_target: b.affinity_to_target,
+            bridge_strength: b.bridge_strength,
+        }
+    }
+}
+
+// ── CategoryPathStep ──────────────────────────────────────────────────
+
+#[pyclass(name = "CategoryPathStep", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyCategoryPathStep {
+    #[pyo3(get)]
+    pub category_index: usize,
+    #[pyo3(get)]
+    pub category_name: String,
+    #[pyo3(get)]
+    pub cumulative_distance: f64,
+    #[pyo3(get)]
+    pub bridges_to_next: Vec<PyBridgeItem>,
+}
+
+#[pymethods]
+impl PyCategoryPathStep {
+    fn __repr__(&self) -> String {
+        format!(
+            "CategoryPathStep(category={:?}, distance={:.4}, bridges={})",
+            self.category_name,
+            self.cumulative_distance,
+            self.bridges_to_next.len()
+        )
+    }
+}
+
+impl From<&CategoryPathStep> for PyCategoryPathStep {
+    fn from(s: &CategoryPathStep) -> Self {
+        Self {
+            category_index: s.category_index,
+            category_name: s.category_name.clone(),
+            cumulative_distance: s.cumulative_distance,
+            bridges_to_next: s.bridges_to_next.iter().map(PyBridgeItem::from).collect(),
+        }
+    }
+}
+
+// ── CategoryPath ──────────────────────────────────────────────────────
+
+#[pyclass(name = "CategoryPathResult", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyCategoryPath {
+    #[pyo3(get)]
+    pub total_distance: f64,
+    #[pyo3(get)]
+    pub steps: Vec<PyCategoryPathStep>,
+}
+
+#[pymethods]
+impl PyCategoryPath {
+    fn __repr__(&self) -> String {
+        format!(
+            "CategoryPathResult(steps={}, total_distance={:.4})",
+            self.steps.len(),
+            self.total_distance
+        )
+    }
+}
+
+impl From<&CategoryPath> for PyCategoryPath {
+    fn from(p: &CategoryPath) -> Self {
+        Self {
+            total_distance: p.total_distance,
+            steps: p.steps.iter().map(PyCategoryPathStep::from).collect(),
+        }
+    }
+}
+
+// ── DrillDown ─────────────────────────────────────────────────────────
+
+#[pyclass(name = "DrillDownHit", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDrillDown {
+    #[pyo3(get)]
+    pub item_index: usize,
+    #[pyo3(get)]
+    pub distance: f64,
+    #[pyo3(get)]
+    pub used_inner_sphere: bool,
+}
+
+#[pymethods]
+impl PyDrillDown {
+    fn __repr__(&self) -> String {
+        format!(
+            "DrillDownHit(item={}, distance={:.4}, inner={})",
+            self.item_index, self.distance, self.used_inner_sphere
+        )
+    }
+}
+
+impl From<&DrillDownResult> for PyDrillDown {
+    fn from(r: &DrillDownResult) -> Self {
+        Self {
+            item_index: r.item_index,
+            distance: r.distance,
+            used_inner_sphere: r.used_inner_sphere,
+        }
+    }
+}
+
+// ── InnerSphereReport ─────────────────────────────────────────────────
+
+#[pyclass(name = "InnerSphereInfo", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyInnerSphereReport {
+    #[pyo3(get)]
+    pub category_name: String,
+    #[pyo3(get)]
+    pub category_index: usize,
+    #[pyo3(get)]
+    pub member_count: usize,
+    #[pyo3(get)]
+    pub projection_type: String,
+    #[pyo3(get)]
+    pub inner_evr: f64,
+    #[pyo3(get)]
+    pub global_subset_evr: f64,
+    #[pyo3(get)]
+    pub evr_improvement: f64,
+}
+
+#[pymethods]
+impl PyInnerSphereReport {
+    fn __repr__(&self) -> String {
+        format!(
+            "InnerSphereInfo(category={:?}, members={}, evr={:.4}, improvement={:.4})",
+            self.category_name, self.member_count, self.inner_evr, self.evr_improvement
+        )
+    }
+}
+
+impl From<&InnerSphereReport> for PyInnerSphereReport {
+    fn from(r: &InnerSphereReport) -> Self {
+        Self {
+            category_name: r.category_name.clone(),
+            category_index: r.category_index,
+            member_count: r.member_count,
+            projection_type: r.projection_type.to_string(),
+            inner_evr: r.inner_evr,
+            global_subset_evr: r.global_subset_evr,
+            evr_improvement: r.evr_improvement,
         }
     }
 }

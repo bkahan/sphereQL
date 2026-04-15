@@ -41,6 +41,12 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<types::PathStep>()?;
         m.add_class::<types::Glob>()?;
         m.add_class::<types::Manifold>()?;
+        m.add_class::<types::PyCategorySummary>()?;
+        m.add_class::<types::PyBridgeItem>()?;
+        m.add_class::<types::PyCategoryPathStep>()?;
+        m.add_class::<types::PyCategoryPath>()?;
+        m.add_class::<types::PyDrillDown>()?;
+        m.add_class::<types::PyInnerSphereReport>()?;
         m.add_function(wrap_pyfunction!(viz::visualize, m)?)?;
         m.add_function(wrap_pyfunction!(viz::visualize_pipeline, m)?)?;
     }

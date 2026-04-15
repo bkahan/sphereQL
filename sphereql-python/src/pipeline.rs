@@ -2,7 +2,10 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::projection::{PyPcaProjection, extract_embedding, extract_embeddings_2d};
-use crate::types::{Glob, Manifold, Nearest, Path};
+use crate::types::{
+    Glob, Manifold, Nearest, Path, PyCategoryPath, PyCategorySummary, PyDrillDown,
+    PyInnerSphereReport,
+};
 use sphereql_embed::pipeline::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
@@ -370,5 +373,87 @@ impl Pipeline {
 
     fn __repr__(&self) -> String {
         format!("Pipeline(items={})", self.inner.num_items())
+    }
+
+    // ── Category Enrichment Layer ──────────────────────────────────────
+
+    #[pyo3(signature = (source_category, target_category))]
+    fn category_concept_path(
+        &self,
+        source_category: &str,
+        target_category: &str,
+    ) -> PyResult<Option<PyCategoryPath>> {
+        let pq = PipelineQuery {
+            embedding: vec![0.0; self.dim],
+        };
+        match self.inner.query(
+            SphereQLQuery::CategoryConceptPath {
+                source_category,
+                target_category,
+            },
+            &pq,
+        ) {
+            SphereQLOutput::CategoryConceptPath(path) => {
+                Ok(path.as_ref().map(PyCategoryPath::from))
+            }
+            _ => Err(PyValueError::new_err("unexpected output type")),
+        }
+    }
+
+    #[pyo3(signature = (category, k=5))]
+    fn category_neighbors(&self, category: &str, k: usize) -> PyResult<Vec<PyCategorySummary>> {
+        let pq = PipelineQuery {
+            embedding: vec![0.0; self.dim],
+        };
+        match self
+            .inner
+            .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
+        {
+            SphereQLOutput::CategoryNeighbors(summaries) => {
+                Ok(summaries.iter().map(PyCategorySummary::from).collect())
+            }
+            _ => Err(PyValueError::new_err("unexpected output type")),
+        }
+    }
+
+    #[pyo3(signature = (category, query, k=10))]
+    fn drill_down(
+        &self,
+        category: &str,
+        query: &Bound<'_, PyAny>,
+        k: usize,
+    ) -> PyResult<Vec<PyDrillDown>> {
+        let emb = extract_embedding(query)?;
+        let pq = PipelineQuery {
+            embedding: emb.values,
+        };
+        match self
+            .inner
+            .query(SphereQLQuery::DrillDown { category, k }, &pq)
+        {
+            SphereQLOutput::DrillDown(results) => {
+                Ok(results.iter().map(PyDrillDown::from).collect())
+            }
+            _ => Err(PyValueError::new_err("unexpected output type")),
+        }
+    }
+
+    fn category_stats(&self) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
+        let pq = PipelineQuery {
+            embedding: vec![0.0; self.dim],
+        };
+        match self.inner.query(SphereQLQuery::CategoryStats, &pq) {
+            SphereQLOutput::CategoryStats {
+                summaries,
+                inner_sphere_reports,
+            } => Ok((
+                summaries.iter().map(PyCategorySummary::from).collect(),
+                inner_sphere_reports
+                    .iter()
+                    .map(PyInnerSphereReport::from)
+                    .collect(),
+            )),
+            _ => Err(PyValueError::new_err("unexpected output type")),
+        }
     }
 }

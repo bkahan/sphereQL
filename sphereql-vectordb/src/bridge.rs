@@ -491,4 +491,131 @@ mod tests {
             _ => panic!("expected ConceptPath(Some)"),
         }
     }
+
+    // ── Category enrichment through bridge ────────────────────────────
+
+    #[tokio::test]
+    async fn category_concept_path_through_bridge() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.0; 10];
+        let result = bridge
+            .query(
+                SphereQLQuery::CategoryConceptPath {
+                    source_category: "group_a",
+                    target_category: "group_b",
+                },
+                &query_vec,
+            )
+            .unwrap();
+
+        match result {
+            SphereQLOutput::CategoryConceptPath(Some(path)) => {
+                assert!(path.steps.len() >= 2);
+                assert_eq!(path.steps.first().unwrap().category_name, "group_a");
+                assert_eq!(path.steps.last().unwrap().category_name, "group_b");
+                assert!(path.total_distance > 0.0);
+            }
+            SphereQLOutput::CategoryConceptPath(None) => {
+                panic!("expected a path between group_a and group_b")
+            }
+            _ => panic!("expected CategoryConceptPath"),
+        }
+    }
+
+    #[tokio::test]
+    async fn category_neighbors_through_bridge() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.0; 10];
+        let result = bridge
+            .query(
+                SphereQLQuery::CategoryNeighbors {
+                    category: "group_a",
+                    k: 5,
+                },
+                &query_vec,
+            )
+            .unwrap();
+
+        match result {
+            SphereQLOutput::CategoryNeighbors(neighbors) => {
+                assert!(!neighbors.is_empty());
+                assert_eq!(neighbors[0].name, "group_b");
+            }
+            _ => panic!("expected CategoryNeighbors"),
+        }
+    }
+
+    #[tokio::test]
+    async fn drill_down_through_bridge() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.9; 10];
+        let result = bridge
+            .query(
+                SphereQLQuery::DrillDown {
+                    category: "group_a",
+                    k: 5,
+                },
+                &query_vec,
+            )
+            .unwrap();
+
+        match result {
+            SphereQLOutput::DrillDown(results) => {
+                assert!(!results.is_empty());
+                assert!(results.len() <= 5);
+                for w in results.windows(2) {
+                    assert!(w[0].distance <= w[1].distance);
+                }
+            }
+            _ => panic!("expected DrillDown"),
+        }
+    }
+
+    #[tokio::test]
+    async fn category_stats_through_bridge() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.0; 10];
+        let result = bridge
+            .query(SphereQLQuery::CategoryStats, &query_vec)
+            .unwrap();
+
+        match result {
+            SphereQLOutput::CategoryStats {
+                summaries,
+                inner_sphere_reports,
+            } => {
+                assert_eq!(summaries.len(), 2);
+                let names: Vec<&str> = summaries.iter().map(|s| s.name.as_str()).collect();
+                assert!(names.contains(&"group_a"));
+                assert!(names.contains(&"group_b"));
+                for s in &summaries {
+                    assert!(s.member_count > 0);
+                    assert!(s.cohesion > 0.0 && s.cohesion <= 1.0);
+                }
+                // 10 items per group is below the inner sphere threshold (20)
+                assert!(inner_sphere_reports.is_empty());
+            }
+            _ => panic!("expected CategoryStats"),
+        }
+    }
 }
