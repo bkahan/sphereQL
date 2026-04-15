@@ -915,11 +915,11 @@ mod tests {
             categories.push("big".into());
             let t = i as f64 / 25.0;
             let mut v = vec![0.0; 10];
-            v[0] = 1.0 + 0.3 * (t * 6.28).sin();
-            v[1] = 0.5 + 0.3 * (t * 6.28).cos();
+            v[0] = 1.0 + 0.3 * (t * std::f64::consts::TAU).sin();
+            v[1] = 0.5 + 0.3 * (t * std::f64::consts::TAU).cos();
             v[2] = 0.2 * t;
-            for d in 3..10 {
-                v[d] = 0.01 * ((i * 7 + d) as f64 % 1.0);
+            for (d, slot) in v.iter_mut().enumerate().take(10).skip(3) {
+                *slot = 0.01 * ((i * 7 + d) as f64 % 1.0);
             }
             embeddings.push(emb(&v));
         }
@@ -982,8 +982,8 @@ mod tests {
         let (layer, embeddings, _) = build_test_layer();
         let science = layer.get_category("science").unwrap();
         let mut expected = vec![0.0; 5];
-        for i in 0..4 {
-            for (j, &v) in embeddings[i].values.iter().enumerate() {
+        for emb in embeddings.iter().take(4) {
+            for (j, &v) in emb.values.iter().enumerate() {
                 expected[j] += v;
             }
         }

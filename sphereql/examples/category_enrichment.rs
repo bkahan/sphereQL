@@ -11,7 +11,7 @@
 //!   cargo run --example category_enrichment --features embed
 
 use sphereql::embed::{
-    Embedding, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
+    PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
 
 // ---------------------------------------------------------------------------
