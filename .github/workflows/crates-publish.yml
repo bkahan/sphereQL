@@ -25,32 +25,32 @@ jobs:
       - name: Publish sphereql-core
         run: cargo publish -p sphereql-core
       - name: Wait for registry
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish sphereql-index
         run: cargo publish -p sphereql-index
       - name: Wait for registry
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish sphereql-layout
         run: cargo publish -p sphereql-layout
       - name: Wait for registry
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish sphereql-embed
         run: cargo publish -p sphereql-embed
       - name: Wait for registry
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish sphereql-graphql
         run: cargo publish -p sphereql-graphql
       - name: Wait for registry
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish sphereql-vectordb
         run: cargo publish -p sphereql-vectordb
       - name: Wait for registry
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish sphereql (umbrella)
         run: cargo publish -p sphereql
