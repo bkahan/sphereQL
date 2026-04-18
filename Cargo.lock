@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "serde_json",
  "sphereql-core",
@@ -2338,7 +2338,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-core"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "criterion",
@@ -2349,7 +2349,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-embed"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "serde",
@@ -2362,7 +2362,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-graphql"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "async-graphql",
  "serde",
@@ -2373,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-index"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "criterion",
@@ -2384,7 +2384,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-layout"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "proptest",
@@ -2395,7 +2395,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-python"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "async-trait",
  "numpy",
@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-vectordb"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "async-trait",
@@ -2430,7 +2430,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-wasm"
-version = "0.1.0-alpha-1"
+version = "0.1.0-alpha-2"
 dependencies = [
  "js-sys",
  "serde",
