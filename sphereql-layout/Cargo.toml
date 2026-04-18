@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 
 [dependencies]
 sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
