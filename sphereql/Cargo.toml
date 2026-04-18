@@ -65,3 +65,7 @@ required-features = ["full"]
 [[example]]
 name = "category_enrichment"
 required-features = ["embed"]
+
+[[example]]
+name = "ai_knowledge_navigator"
+required-features = ["embed"]
