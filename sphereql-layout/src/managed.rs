@@ -94,7 +94,7 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
             .collect();
 
         let result = strategy.layout(&dirty_items, mapper);
-        for (i, entry) in dirty_indices.iter().zip(result.entries.into_iter()) {
+        for (i, entry) in dirty_indices.iter().zip(result.entries) {
             self.positions[*i] = entry.position;
         }
 
