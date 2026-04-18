@@ -43,7 +43,10 @@ jobs:
           manylinux: auto
           working-directory: sphereql-python
           before-all: |
-            yum install -y python3-devel || true
+            # Symlink manylinux container's Python into PATH so maturin can find it
+            if [ -d /opt/python ]; then
+              ln -sf /opt/python/cp312-cp312/bin/python3 /usr/local/bin/python3
+            fi
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.target }}
