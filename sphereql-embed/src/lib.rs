@@ -9,6 +9,7 @@
 pub mod category;
 pub mod kernel_pca;
 pub mod mapper;
+pub mod navigator;
 pub mod pipeline;
 pub mod projection;
 pub mod query;
@@ -17,6 +18,7 @@ pub mod types;
 pub use category::*;
 pub use kernel_pca::*;
 pub use mapper::*;
+pub use navigator::*;
 pub use pipeline::*;
 pub use projection::*;
 pub use query::*;
