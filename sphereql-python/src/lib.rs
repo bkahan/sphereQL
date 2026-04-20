@@ -3,6 +3,8 @@ use pyo3::prelude::*;
 #[cfg(feature = "core")]
 mod core_types;
 #[cfg(feature = "embed")]
+mod nav;
+#[cfg(feature = "embed")]
 mod pipeline;
 #[cfg(feature = "embed")]
 mod projection;
@@ -47,6 +49,14 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<types::PyCategoryPath>()?;
         m.add_class::<types::PyDrillDown>()?;
         m.add_class::<types::PyInnerSphereReport>()?;
+        m.add_class::<nav::PyNavigatorConfig>()?;
+        m.add_class::<nav::PyNavigatorReport>()?;
+        m.add_class::<nav::PyAntipodalReport>()?;
+        m.add_class::<nav::PyCoverageReport>()?;
+        m.add_class::<nav::PyVoronoiCell>()?;
+        m.add_class::<nav::PyCurvatureTriple>()?;
+        m.add_class::<nav::PyLuneReport>()?;
+        m.add_function(wrap_pyfunction!(nav::run_navigator, m)?)?;
         m.add_function(wrap_pyfunction!(viz::visualize, m)?)?;
         m.add_function(wrap_pyfunction!(viz::visualize_pipeline, m)?)?;
     }
