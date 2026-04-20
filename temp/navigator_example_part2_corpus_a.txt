@@ -1,0 +1,38 @@
+// Part 2 of 5: build_corpus() — Physics through Engineering
+// Categories: physics, biology, computer_science, philosophy, economics,
+//             music, medicine, linguistics, mathematics, chemistry,
+//             psychology, engineering
+
+fn build_corpus() -> Vec<Concept> {
+    vec![
+        // ── Physics (15) ──────────────────────────────────────────────
+        Concept { label: "Newtonian mechanics", category: "physics",
+            features: vec![(FORCE, 1.0), (ENERGY, 0.7), (MATH, 0.6), (SPACE, 0.5)] },
+        Concept { label: "Quantum field theory", category: "physics",
+            features: vec![(QUANTUM, 1.0), (ENERGY, 0.8), (MATH, 0.9), (WAVE, 0.6)] },
+        Concept { label: "General relativity", category: "physics",
+            features: vec![(SPACE, 1.0), (ENERGY, 0.7), (MATH, 0.9), (FORCE, 0.6)] },
+        Concept { label: "Thermodynamics", category: "physics",
+            features: vec![(ENERGY, 1.0), (ENTROPY, 0.9), (CHEMISTRY, 0.3), (SYSTEMS, 0.4)] },
+        Concept { label: "Electromagnetism", category: "physics",
+            features: vec![(FORCE, 0.8), (ENERGY, 0.8), (WAVE, 0.9), (MATH, 0.5)] },
+        Concept { label: "Statistical mechanics", category: "physics",
+            features: vec![(STATISTICS, 0.8), (ENERGY, 0.7), (ENTROPY, 0.8), (MATH, 0.7)] },
+        Concept { label: "Optics", category: "physics",
+            features: vec![(WAVE, 1.0), (ENERGY, 0.5), (SPACE, 0.4), (PATTERN, 0.3)] },
+        Concept { label: "Particle physics", category: "physics",
+            features: vec![(QUANTUM, 0.9), (ENERGY, 0.9), (FORCE, 0.7), (MATH, 0.6)] },
+        Concept { label: "Cosmology", category: "physics",
+            features: vec![(SPACE, 0.9), (ENERGY, 0.6), (MATH, 0.5), (ENTROPY, 0.4)] },
+        Concept { label: "Fluid dynamics", category: "physics",
+            features: vec![(FORCE, 0.7), (ENERGY, 0.6), (MATH, 0.7), (WAVE, 0.5), (SYSTEMS, 0.3)] },
+        Concept { label: "Acoustics", category: "physics",
+            features: vec![(WAVE, 0.9), (SOUND, 0.8), (ENERGY, 0.4), (PATTERN, 0.5), (MATH, 0.3)] },
+        Concept { label: "Information theory (physics)", category: "physics",
+            features: vec![(ENTROPY, 0.9), (INFORMATION, 0.8), (MATH, 0.7), (COMPUTATION, 0.4)] },
+        Concept { label: "Biophysics", category: "physics",
+            features: vec![(ENERGY, 0.6), (LIFE, 0.5), (CHEMISTRY, 0.5), (FORCE, 0.4), (SYSTEMS, 0.3)] },
+        Concept { label: "Nuclear physics", category: "physics",
+            features: vec![(QUANTUM, 0.8), (ENERGY, 1.0), (FORCE, 0.8)] },
+        Concept { label: "Condensed matter", category: "physics",
+            features: vec![(QUANTUM, 0.6), (STRUCTURE, 0.7), (ENERGY, 0.5), (MATH, 0.5)] },
