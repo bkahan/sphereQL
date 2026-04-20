@@ -9,6 +9,7 @@ pub mod distance;
 pub mod error;
 pub mod interpolation;
 pub mod regions;
+pub mod spatial;
 pub mod types;
 
 pub use conversions::*;
@@ -16,4 +17,5 @@ pub use distance::*;
 pub use error::*;
 pub use interpolation::*;
 pub use regions::*;
+pub use spatial::*;
 pub use types::*;
