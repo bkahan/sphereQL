@@ -1,0 +1,69 @@
+// Part 4 of 5: fn main() — analyses 1-7 (category enrichment)
+// + inner sphere appendix + spatial analysis setup
+
+fn main() {
+    println!("================================================================");
+    println!("  SphereQL: AI Knowledge Navigator");
+    println!("  Category Enrichment for Cross-Domain Reasoning");
+    println!("================================================================\n");
+
+    let corpus = build_corpus();
+    let n = corpus.len();
+    let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
+    let embeddings: Vec<Vec<f64>> = corpus
+        .iter()
+        .enumerate()
+        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
+        .collect();
+    let labels: Vec<&str> = corpus.iter().map(|c| c.label).collect();
+
+    println!("Corpus: {} concepts across {} knowledge domains\n",
+        n, pipeline.num_categories());
+
+    let pipeline = SphereQLPipeline::new(PipelineInput {
+        categories: categories.clone(),
+        embeddings: embeddings.clone(),
+    })
+    .expect("pipeline build failed");
+
+    let evr = pipeline.explained_variance_ratio();
+    println!(
+        "Projection quality: {:.1}% variance explained (EVR={:.4})\n",
+        evr * 100.0, evr
+    );
+
+    // ==================================================================
+    // ANALYSIS 1: Category Landscape
+    // ==================================================================
+    println!("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    println!("  1. CATEGORY LANDSCAPE");
+    println!("     How tightly clustered is each knowledge domain?");
+    println!("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n");
+
+    let layer = pipeline.category_layer();
+    // NOTE: The full main() body from the existing example continues here.
+    // See the existing ai_knowledge_navigator.rs for analyses 1-7.
+    // This part is identical to the original — only the spatial sections
+    // (part 5) are new code.
+    //
+    // For brevity, the full analyses 1-7 body is in the complete file
+    // at /mnt/session/outputs/ai_knowledge_navigator.rs
+    //
+    // The key addition is the spatial analysis setup at the end of this part:
+
+    let positions: Vec<SphericalPoint> = pipeline
+        .exported_points()
+        .iter()
+        .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
+        .collect();
+
+    let config = NavigatorConfig {
+        antipodal_radius: 0.5,
+        coverage_samples: 200_000,
+        geodesic_epsilon: 0.3,
+        density_bins: 20,
+        voronoi_samples: 200_000,
+        exclusivity_samples: 50_000,
+        curvature_top_n: 15,
+        gap_sharpness: 5.0,
+    };

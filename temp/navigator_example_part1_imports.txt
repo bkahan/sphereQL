@@ -1,12 +1,18 @@
+// AI Knowledge Navigator — Full Example (Part 1 of 5)
+// Imports, constants, embed(), Concept struct.
+// Concatenate all 5 parts to produce ai_knowledge_navigator.rs
+//
+// Order: part1_imports → part2_corpus_a → part3_corpus_b → part4_main → part5_spatial
+
 //! AI Knowledge Navigator — Category Enrichment + Spatial Analysis Demo
 //!
 //! Demonstrates SphereQL's Category Enrichment Layer and all 7 spherical
 //! spatial analysis research areas. The corpus simulates an AI's knowledge
 //! across 23 academic domains with deliberately placed "bridge concepts".
 //!
-//! Analyses 1–7: Category enrichment (cohesion, adjacency, bridges, paths,
+//! Analyses 1-7: Category enrichment (cohesion, adjacency, bridges, paths,
 //!   globs, drill-down, reasoning chains)
-//! Analyses §1–§7: Spherical spatial queries (antipodal, coverage, geodesic
+//! Analyses §1-§7: Spherical spatial queries (antipodal, coverage, geodesic
 //!   sweeps, Voronoi, overlap, curvature, lunes)
 //!
 //! Run with:
@@ -18,8 +24,6 @@ use sphereql::embed::{
     gap_confidence,
 };
 use sphereql::core::SphericalPoint;
-
-// ── Semantic axes ─────────────────────────────────────────────────────────
 
 const DIM: usize = 32;
 const ENERGY: usize = 0;
@@ -75,7 +79,3 @@ struct Concept {
     category: &'static str,
     features: Vec<(usize, f64)>,
 }
-
-// The build_corpus() function is unchanged — it returns the full corpus.
-// Omitted here for brevity in the commit message; see the file for the
-// complete 330-concept corpus across 23 categories.

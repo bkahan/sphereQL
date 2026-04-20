@@ -1,0 +1,352 @@
+// Part 5 of 5: Spherical spatial analyses §1-§7 + summary
+// §1 Antipodal, §2 Coverage, §3 Geodesic, §4 Voronoi,
+// §5 Overlap, §6 Curvature, §7 Lunes
+
+    println!("\n\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
+    println!("\u2551  SPHERICAL SPATIAL ANALYSIS \u2014 7 Research Areas             \u2551");
+    println!("\u2551  Queries that exploit S\u00b2 properties: finite area,          \u2551");
+    println!("\u2551  antipodality, great circles, solid angles, curvature      \u2551");
+    println!("\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n");
+
+    let report = run_full_analysis(
+        layer, &positions, &categories, evr, &config,
+    );
+
+    // ==================================================================
+    // §1: ANTIPODAL ANALYSIS
+    // ==================================================================
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a71. ANTIPODAL ANALYSIS");
+    println!("  Every point on S\u00b2 has a unique antipode at distance \u03c0.");
+    println!("  Is \"the opposite of physics\" semantically meaningful?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    println!("  {:<20} {:>10} {:>12} {:>20}",
+        "Category", "Coherence", "Items@Anti", "Dominant@Anti");
+    println!("  {}", "\u2500".repeat(65));
+
+    for ar in &report.antipodal {
+        let dominant = ar.dominant_antipodal_category
+            .as_deref()
+            .unwrap_or("(empty)");
+        println!("  {:<20} {:>10.3} {:>12} {:>20}",
+            ar.category_name,
+            ar.antipodal_coherence,
+            ar.antipodal_items.len(),
+            dominant,
+        );
+    }
+
+    if let Some(best) = report.antipodal.iter()
+        .max_by(|a, b| a.antipodal_coherence.partial_cmp(&b.antipodal_coherence).unwrap())
+    {
+        println!("\n  Highest antipodal coherence: {} ({:.3})",
+            best.category_name, best.antipodal_coherence);
+        if best.antipodal_coherence > 1.5 {
+            println!("  \u2192 The antipodal region has MORE structure than chance.");
+            println!("    This suggests a genuine \"semantic opposite\" exists.");
+        } else if best.antipodal_coherence > 0.5 {
+            println!("  \u2192 Moderate structure \u2014 some signal, some noise.");
+        } else {
+            println!("  \u2192 Low coherence \u2014 the antipode is mostly projection noise.");
+        }
+    }
+
+    println!("\n  Evaluation: Geometric validity \u2713 (antipodes are unique on S\u00b2,");
+    println!("  undefined in R^n). Semantic fidelity depends on EVR.");
+
+    // ==================================================================
+    // §2: COVERAGE & KNOWLEDGE GAP CARTOGRAPHY
+    // ==================================================================
+    println!("\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a72. COVERAGE & KNOWLEDGE GAP CARTOGRAPHY");
+    println!("  S\u00b2 has finite area 4\u03c0 sr. How much is \"claimed\"?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    let cov = &report.coverage;
+    println!("  Coverage fraction:  {:.2}% of S\u00b2", cov.coverage_fraction * 100.0);
+    println!("  Covered area:       {:.3} sr (of {:.3} sr total)",
+        cov.covered_area, 4.0 * std::f64::consts::PI);
+    println!("  Overlap area:       {:.3} sr (multi-claimed territory)", cov.overlap_area);
+    println!("  Void samples:       {} / {} ({:.1}% of sphere is unclaimed)",
+        cov.void_samples, cov.total_samples,
+        (1.0 - cov.coverage_fraction) * 100.0);
+
+    println!("\n  Per-category cap sizes:");
+    println!("  {:<20} {:>12} {:>12}", "Category", "Half-angle\u00b0", "Solid angle");
+    println!("  {}", "\u2500".repeat(47));
+    for cap in &cov.category_caps {
+        println!("  {:<20} {:>12.2} {:>12.4}",
+            cap.name, cap.half_angle.to_degrees(), cap.solid_angle);
+    }
+
+    println!("\n  Gap-aware confidence (sigmoid, sharpness={}):", config.gap_sharpness);
+    let test_points = [
+        ("At physics centroid", layer.summaries.iter()
+            .find(|s| s.name == "physics")
+            .map(|s| s.centroid_position)
+            .unwrap_or(positions[0])),
+        ("At music centroid", layer.summaries.iter()
+            .find(|s| s.name == "music")
+            .map(|s| s.centroid_position)
+            .unwrap_or(positions[0])),
+        ("North pole (likely void)", SphericalPoint::new_unchecked(1.0, 0.0, 0.01)),
+        ("South pole (likely void)", SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01)),
+    ];
+    for (name, pt) in &test_points {
+        let conf = gap_confidence(pt, layer, config.gap_sharpness);
+        println!("    {:<30} confidence = {:.4}", name, conf);
+    }
+
+    println!("\n  Evaluation: Coverage is well-defined only on bounded manifolds.");
+    println!("  In R^n there's no finite area to compute fractions against.");
+
+    // ==================================================================
+    // §3: GEODESIC SWEEP QUERIES
+    // ==================================================================
+    println!("\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a73. GEODESIC SWEEP \u2014 Great Circle Interpolation");
+    println!("  What concepts lie \"between\" two domains?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    let sweep_pairs = [
+        ("physics", "music"),
+        ("computer_science", "philosophy"),
+        ("biology", "economics"),
+    ];
+
+    for (src, tgt) in &sweep_pairs {
+        if let Some(sweep) = category_geodesic_sweep(
+            layer, src, tgt, &positions, &categories,
+            config.geodesic_epsilon, config.density_bins,
+        ) {
+            println!("  {} \u2192 {} (arc = {:.3} rad, {:.1}\u00b0)",
+                src, tgt, sweep.arc_length, sweep.arc_length.to_degrees());
+            println!("    Items within \u03b5={:.1}\u00b0 of arc: {}",
+                config.geodesic_epsilon.to_degrees(), sweep.items.len());
+            println!("    Gap fraction: {:.1}% of density bins empty",
+                sweep.gap_fraction * 100.0);
+
+            let max_d = *sweep.density_profile.iter().max().unwrap_or(&1).max(&1);
+            let spark: String = sweep.density_profile.iter()
+                .map(|&d| {
+                    let level = (d as f64 / max_d as f64 * 7.0) as usize;
+                    ['\u2591', '\u2591', '\u2592', '\u2592', '\u2593', '\u2593', '\u2588', '\u2588'][level.min(7)]
+                })
+                .collect();
+            println!("    Density profile: [{}]", spark);
+
+            let mut cat_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+            for item in &sweep.items {
+                *cat_counts.entry(item.category.as_str()).or_default() += 1;
+            }
+            let mut sorted_cats: Vec<_> = cat_counts.iter().collect();
+            sorted_cats.sort_by_key(|&(_, c)| std::cmp::Reverse(*c));
+            let top_3: Vec<String> = sorted_cats.iter().take(3)
+                .map(|(cat, count)| format!("{} ({})", cat, count))
+                .collect();
+            if !top_3.is_empty() {
+                println!("    Top categories along arc: {}", top_3.join(", "));
+            }
+            println!();
+        }
+    }
+
+    println!("  Geodesic deviation of category paths:");
+    println!("  (How far does the Dijkstra path stray from the direct arc?)\n");
+    let dev_pairs = [
+        ("physics", "music"),
+        ("computer_science", "religion"),
+        ("biology", "law"),
+    ];
+    for (src, tgt) in &dev_pairs {
+        if let Some(dev) = category_path_deviation(layer, src, tgt) {
+            println!("    {} \u2192 {}: deviation = {:.4} rad ({:.2}\u00b0)",
+                src, tgt, dev, dev.to_degrees());
+        }
+    }
+
+    println!("\n  Evaluation: Great circles are geodesics on S\u00b2 \u2014 the unique");
+    println!("  shortest path. R^n has no natural \"between\" operator.");
+
+    // ==================================================================
+    // §4: SPHERICAL VORONOI TESSELLATION
+    // ==================================================================
+    println!("\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a74. VORONOI TESSELLATION \u2014 Territory and Efficiency");
+    println!("  Which domains claim the most sphere real-estate?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    let vor = &report.voronoi;
+    println!("  Total Voronoi area: {:.3} sr (expected {:.3} = 4\u03c0)",
+        vor.total_area, 4.0 * std::f64::consts::PI);
+
+    println!("\n  {:<20} {:>8} {:>6} {:>10} {:>10}",
+        "Category", "Area sr", "Items", "Efficiency", "GrphOvlp");
+    println!("  {}", "\u2500".repeat(58));
+
+    let mut cells = vor.cells.clone();
+    cells.sort_by(|a, b| b.cell_area.partial_cmp(&a.cell_area).unwrap());
+    for cell in &cells {
+        println!("  {:<20} {:>8.3} {:>6} {:>10.2} {:>10.2}",
+            cell.category_name, cell.cell_area, cell.item_count,
+            cell.territorial_efficiency, cell.graph_neighbor_overlap);
+    }
+
+    if let Some(hog) = cells.iter()
+        .max_by(|a, b| a.cell_area.partial_cmp(&b.cell_area).unwrap())
+    {
+        println!("\n  Largest Voronoi cell: {} ({:.3} sr)", hog.category_name, hog.cell_area);
+    }
+    if let Some(eff) = cells.iter()
+        .max_by(|a, b| a.territorial_efficiency.partial_cmp(&b.territorial_efficiency).unwrap())
+    {
+        println!("  Most efficient: {} ({:.2} items/sr)", eff.category_name, eff.territorial_efficiency);
+    }
+
+    let mean_overlap: f64 = cells.iter().map(|c| c.graph_neighbor_overlap).sum::<f64>()
+        / cells.len().max(1) as f64;
+    println!("  Mean Voronoi\u2194Graph neighbor overlap (Jaccard): {:.3}", mean_overlap);
+
+    println!("\n  Evaluation: Voronoi tessellation requires bounded manifold.");
+    println!("  In R^n, Voronoi cells extend to infinity \u2014 areas are undefined.");
+
+    // ==================================================================
+    // §5: OVERLAP & EXCLUSIVITY
+    // ==================================================================
+    println!("\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a75. SOLID ANGLE BUDGETS \u2014 Overlap & Exclusivity");
+    println!("  Which domains contest the same territory?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    let ov = &report.overlap;
+    if ov.pairs.is_empty() {
+        println!("  No overlapping cap pairs detected.");
+    } else {
+        println!("  Top overlapping pairs:");
+        println!("  {:<20} {:<20} {:>12} {:>8}",
+            "Category A", "Category B", "Overlap sr", "Bridges");
+        println!("  {}", "\u2500".repeat(64));
+        for pair in ov.pairs.iter().take(10) {
+            println!("  {:<20} {:<20} {:>12.5} {:>8}",
+                pair.category_a, pair.category_b,
+                pair.intersection_area, pair.bridge_count);
+        }
+    }
+
+    println!("\n  Per-category exclusivity (1.0 = no overlap with anyone):");
+    println!("  {:<20} {:>10} {:>12}", "Category", "Cap area", "Exclusivity");
+    println!("  {}", "\u2500".repeat(45));
+    let mut excls = ov.exclusivities.clone();
+    excls.sort_by(|a, b| a.exclusivity.partial_cmp(&b.exclusivity).unwrap());
+    for e in &excls {
+        let bar_len = (e.exclusivity * 20.0) as usize;
+        let bar: String = "\u2588".repeat(bar_len) + &"\u2591".repeat(20 - bar_len);
+        println!("  {:<20} {:>10.4} {:>12.3} [{}]",
+            e.category_name, e.cap_area, e.exclusivity, bar);
+    }
+
+    println!("\n  Evaluation: Solid angles are finite on S\u00b2. Overlap fractions");
+    println!("  are geometrically meaningful and predict bridge density.");
+
+    // ==================================================================
+    // §6: CURVATURE SIGNATURES
+    // ==================================================================
+    println!("\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a76. SPHERICAL EXCESS \u2014 Curvature Signatures");
+    println!("  Which category triples have the most non-Euclidean geometry?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    let curv = &report.curvature;
+    println!("  Top {} triples by spherical excess:", curv.top_triples.len());
+    println!("  {:<50} {:>12}", "Triple", "Excess (sr)");
+    println!("  {}", "\u2500".repeat(65));
+    for triple in curv.top_triples.iter().take(10) {
+        let name = format!("{} \u00d7 {} \u00d7 {}",
+            triple.categories[0], triple.categories[1], triple.categories[2]);
+        println!("  {:<50} {:>12.6}", name, triple.excess);
+    }
+
+    println!("\n  Per-category curvature signatures:");
+    println!("  {:<20} {:>10} {:>10} {:>10}",
+        "Category", "Mean E", "Min E", "Max E");
+    println!("  {}", "\u2500".repeat(53));
+    let mut sigs = curv.signatures.clone();
+    sigs.sort_by(|a, b| b.mean_excess.partial_cmp(&a.mean_excess).unwrap());
+    for sig in &sigs {
+        println!("  {:<20} {:>10.6} {:>10.6} {:>10.6}",
+            sig.category_name, sig.mean_excess, sig.min_excess, sig.max_excess);
+    }
+
+    if let Some(high) = sigs.first() {
+        println!("\n  Highest mean curvature: {} \u2014 deeply embedded in S\u00b2 geometry.", high.category_name);
+        println!("  Hypothesis: high-curvature categories have more non-linear");
+        println!("  relationships and may be harder for flat-space reasoning.");
+    }
+
+    println!("\n  Evaluation: Spherical excess = 0 in Euclidean space. This metric");
+    println!("  is literally the \"curvature tax\" \u2014 unique to curved manifolds.");
+
+    // ==================================================================
+    // §7: LUNE DECOMPOSITION
+    // ==================================================================
+    println!("\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    println!("  \u00a77. LUNE DECOMPOSITION \u2014 Bridge Asymmetry");
+    println!("  Do bridges lean toward one domain or the other?");
+    println!("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n");
+
+    if report.lunes.is_empty() {
+        println!("  No category pairs with bridges to decompose.");
+    } else {
+        println!("  {:<35} {:>4} {:>4} {:>4} {:>8} {:>8}",
+            "Pair", "\u2192A", "\u2192B", "=", "Asym", "V-div");
+        println!("  {}", "\u2500".repeat(68));
+        let mut lunes = report.lunes.clone();
+        lunes.sort_by(|a, b| b.asymmetry.partial_cmp(&a.asymmetry).unwrap());
+        for lune in lunes.iter().take(15) {
+            let pair = format!("{} \u2194 {}", lune.category_a, lune.category_b);
+            println!("  {:<35} {:>4} {:>4} {:>4} {:>8.3} {:>8.5}",
+                pair,
+                lune.a_leaning_count, lune.b_leaning_count,
+                lune.on_bisector_count, lune.asymmetry,
+                lune.bisector_voronoi_divergence);
+        }
+
+        let mean_asym: f64 = report.lunes.iter().map(|l| l.asymmetry).sum::<f64>()
+            / report.lunes.len().max(1) as f64;
+        let max_div = report.lunes.iter()
+            .map(|l| l.bisector_voronoi_divergence)
+            .fold(0.0_f64, f64::max);
+
+        println!("\n  Mean asymmetry: {:.3} (0=symmetric, 1=fully one-sided)", mean_asym);
+        println!("  Max bisector-Voronoi divergence: {:.5} rad", max_div);
+        if max_div > 0.01 {
+            println!("  \u2192 Divergence > 0 means curvature displaces domain boundaries");
+            println!("    from where flat-space geometry would predict them.");
+        }
+    }
+
+    println!("\n  Evaluation: Lunes are the region between two great circles \u2014");
+    println!("  a construct unique to S\u00b2. The bisector-Voronoi divergence");
+    println!("  directly measures the curvature's effect on domain boundaries.");
+
+    // ==================================================================
+    // SUMMARY
+    // ==================================================================
+    println!("\n\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
+    println!("\u2551  SUMMARY                                                    \u2551");
+    println!("\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d\n");
+
+    println!("  Corpus:     {} concepts across {} categories", n, pipeline.num_categories());
+    println!("  EVR:        {:.1}% variance explained", evr * 100.0);
+    println!("  Coverage:   {:.1}% of S\u00b2", cov.coverage_fraction * 100.0);
+    println!("  Voronoi:    {} cells, total area {:.3} sr", vor.cells.len(), vor.total_area);
+    println!("  Overlaps:   {} category pairs with shared territory", ov.pairs.len());
+    println!("  Curvature:  {} triples analyzed", curv.top_triples.len());
+    println!("  Lunes:      {} pairs with bridge decomposition", report.lunes.len());
+
+    println!("\n  All 7 spherical analyses exploit properties unique to S\u00b2:");
+    println!("  finite area, antipodality, great circles, solid angles, and curvature.");
+    println!("  These queries are ill-defined or degenerate in unbounded R^n.");
+    println!("\n================================================================");
+}
