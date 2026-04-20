@@ -277,6 +277,8 @@ class PathStep:
     id: str
     category: str
     cumulative_distance: float
+    hop_distance: float
+    bridge_strength: float | None
     def to_json(self) -> str: ...
     @staticmethod
     def from_json(json: str) -> PathStep: ...

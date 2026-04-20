@@ -165,6 +165,8 @@ impl Pipeline {
                             id: s.id.clone(),
                             category: s.category.clone(),
                             cumulative_distance: s.cumulative_distance,
+                            hop_distance: s.hop_distance,
+                            bridge_strength: s.bridge_strength,
                         })
                         .collect(),
                 }
@@ -416,6 +418,8 @@ struct PathStepOut {
     id: String,
     category: String,
     cumulative_distance: f64,
+    hop_distance: f64,
+    bridge_strength: Option<f64>,
 }
 
 #[derive(serde::Serialize)]

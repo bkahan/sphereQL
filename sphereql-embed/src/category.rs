@@ -83,8 +83,13 @@ pub struct CategoryEdge {
     pub centroid_distance: f64,
     /// Number of bridge items connecting these two categories.
     pub bridge_count: usize,
+    /// Strongest bridge connecting these two categories (0.0 if no bridges).
+    pub max_bridge_strength: f64,
+    /// Mean bridge strength across all bridges (0.0 if no bridges).
+    pub mean_bridge_strength: f64,
     /// Combined edge weight (lower = more connected).
-    /// Computed as centroid_distance / (1 + bridge_count).
+    /// Computed as `centroid_distance / (1 + bridge_count * mean_bridge_strength)`.
+    /// This prefers fewer strong bridges over many weak ones.
     pub weight: f64,
 }
 
@@ -433,13 +438,26 @@ impl CategoryLayer {
                 if i == j {
                     continue;
                 }
-                let bridge_count = bridges.get(&(i, j)).map_or(0, |b| b.len());
-                let weight = cd / (1.0 + bridge_count as f64);
+                let bridge_list = bridges.get(&(i, j));
+                let bridge_count = bridge_list.map_or(0, |b| b.len());
+                let max_bridge_strength = bridge_list
+                    .and_then(|b| b.first().map(|item| item.bridge_strength))
+                    .unwrap_or(0.0);
+                let mean_bridge_strength = bridge_list
+                    .map(|b| {
+                        let sum: f64 = b.iter().map(|item| item.bridge_strength).sum();
+                        sum / b.len() as f64
+                    })
+                    .unwrap_or(0.0);
+
+                let weight = cd / (1.0 + bridge_count as f64 * mean_bridge_strength);
 
                 adjacency[i].push(CategoryEdge {
                     target: j,
                     centroid_distance: cd,
                     bridge_count,
+                    max_bridge_strength,
+                    mean_bridge_strength,
                     weight,
                 });
             }
@@ -1043,6 +1061,42 @@ mod tests {
         for edges in &layer.graph.adjacency {
             for w in edges.windows(2) {
                 assert!(w[0].weight <= w[1].weight);
+            }
+        }
+    }
+
+    #[test]
+    fn edge_bridge_strength_fields_populated() {
+        let (layer, _, _) = build_test_layer();
+        for edges in &layer.graph.adjacency {
+            for e in edges {
+                assert!(e.max_bridge_strength >= 0.0 && e.max_bridge_strength <= 1.0);
+                assert!(e.mean_bridge_strength >= 0.0 && e.mean_bridge_strength <= 1.0);
+                assert!(e.mean_bridge_strength <= e.max_bridge_strength + 1e-10);
+                if e.bridge_count > 0 {
+                    assert!(e.max_bridge_strength > 0.0);
+                    assert!(e.mean_bridge_strength > 0.0);
+                } else {
+                    assert!(e.max_bridge_strength == 0.0);
+                    assert!(e.mean_bridge_strength == 0.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn edge_weight_incorporates_bridge_strength() {
+        let (layer, _, _) = build_test_layer();
+        for edges in &layer.graph.adjacency {
+            for e in edges {
+                let expected = e.centroid_distance
+                    / (1.0 + e.bridge_count as f64 * e.mean_bridge_strength);
+                assert!(
+                    (e.weight - expected).abs() < 1e-10,
+                    "weight {:.6} != expected {:.6}",
+                    e.weight,
+                    expected
+                );
             }
         }
     }

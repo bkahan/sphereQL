@@ -84,14 +84,18 @@ pub struct PathStep {
     pub category: String,
     #[pyo3(get)]
     pub cumulative_distance: f64,
+    #[pyo3(get)]
+    pub hop_distance: f64,
+    #[pyo3(get)]
+    pub bridge_strength: Option<f64>,
 }
 
 #[pymethods]
 impl PathStep {
     fn __repr__(&self) -> String {
         format!(
-            "PathStep(id={:?}, category={:?}, cumulative_distance={:.4})",
-            self.id, self.category, self.cumulative_distance
+            "PathStep(id={:?}, category={:?}, cumulative_distance={:.4}, hop={:.4})",
+            self.id, self.category, self.cumulative_distance, self.hop_distance
         )
     }
 
@@ -104,6 +108,8 @@ impl PathStep {
             "id": self.id,
             "category": self.category,
             "cumulative_distance": self.cumulative_distance,
+            "hop_distance": self.hop_distance,
+            "bridge_strength": self.bridge_strength,
         }))
         .map_err(|e| PyValueError::new_err(e.to_string()))
     }
@@ -116,6 +122,8 @@ impl PathStep {
             id: v["id"].as_str().unwrap_or("").to_string(),
             category: v["category"].as_str().unwrap_or("").to_string(),
             cumulative_distance: v["cumulative_distance"].as_f64().unwrap_or(0.0),
+            hop_distance: v["hop_distance"].as_f64().unwrap_or(0.0),
+            bridge_strength: v["bridge_strength"].as_f64(),
         })
     }
 }
@@ -176,6 +184,8 @@ impl Path {
                 id: s["id"].as_str().unwrap_or("").to_string(),
                 category: s["category"].as_str().unwrap_or("").to_string(),
                 cumulative_distance: s["cumulative_distance"].as_f64().unwrap_or(0.0),
+                hop_distance: s["hop_distance"].as_f64().unwrap_or(0.0),
+                bridge_strength: s["bridge_strength"].as_f64(),
             })
             .collect();
         Ok(Self {
@@ -196,6 +206,8 @@ impl From<&PathResult> for Path {
                     id: s.id.clone(),
                     category: s.category.clone(),
                     cumulative_distance: s.cumulative_distance,
+                    hop_distance: s.hop_distance,
+                    bridge_strength: s.bridge_strength,
                 })
                 .collect(),
         }
