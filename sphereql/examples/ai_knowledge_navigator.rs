@@ -9623,7 +9623,7 @@ fn main() {
             (s.name.as_str(), total)
         })
         .collect();
-    cat_bridge_totals.sort_by(|a, b| b.1.cmp(&a.1));
+    cat_bridge_totals.sort_by_key(|x| std::cmp::Reverse(x.1));
 
     for (name, total) in &cat_bridge_totals {
         let bar = "█".repeat((*total / 10).min(40));
@@ -10379,7 +10379,7 @@ fn main() {
             .iter()
             .map(|s| (&s.name, s.member_count))
             .collect();
-        sizes.sort_by(|a, b| b.1.cmp(&a.1));
+        sizes.sort_by_key(|x| std::cmp::Reverse(x.1));
         for (name, count) in sizes.iter().take(10) {
             let bar = "█".repeat(*count);
             let threshold_marker = if *count >= 20 { " ✓ (eligible)" } else { "" };
