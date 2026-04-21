@@ -501,7 +501,7 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
 
             let all_bridge_indices: Vec<usize> = bridges_ij
                 .into_iter()
-                .chain(bridges_ji.into_iter())
+                .chain(bridges_ji)
                 .flat_map(|list| list.iter().map(|b| b.item_index))
                 .collect();
 
