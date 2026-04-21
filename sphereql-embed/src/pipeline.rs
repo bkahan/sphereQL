@@ -60,6 +60,10 @@ pub struct PipelinePathStep {
     pub id: String,
     pub category: String,
     pub cumulative_distance: f64,
+    /// Angular distance of this individual hop (0.0 for the first step).
+    pub hop_distance: f64,
+    /// Bridge strength used on cross-category hops (None for same-category or unbridged paths).
+    pub bridge_strength: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -295,6 +299,8 @@ impl SphereQLPipeline {
                                 id: s.id.clone(),
                                 category: self.cat_for(&s.id),
                                 cumulative_distance: s.cumulative_distance,
+                                hop_distance: s.hop_distance,
+                                bridge_strength: s.bridge_strength,
                             })
                             .collect(),
                     }

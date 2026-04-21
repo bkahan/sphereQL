@@ -6,6 +6,9 @@ use sphereql_index::*;
 use crate::projection::Projection;
 use crate::types::{Embedding, ProjectedPoint};
 
+/// (neighbor_index, effective_weight, raw_angular_dist, bridge_strength_if_cross_category)
+type AdjEdge = (usize, f64, f64, Option<f64>);
+
 #[derive(Debug, Clone)]
 pub struct EmbeddingItem {
     pub id: String,
@@ -252,9 +255,151 @@ impl<P: Projection> EmbeddingIndex<P> {
         let mut path = Vec::new();
         let mut cur = target_idx;
         loop {
+            let hop_distance = prev[cur]
+                .and_then(|p| adj[p].iter().find(|&&(v, _)| v == cur).map(|&(_, d)| d))
+                .unwrap_or(0.0);
             path.push(PathStep {
                 id: items[cur].id.clone(),
                 cumulative_distance: dist[cur],
+                hop_distance,
+                category: None,
+                bridge_strength: None,
+            });
+            match prev[cur] {
+                Some(p) => cur = p,
+                None => break,
+            }
+        }
+        path.reverse();
+
+        Some(ConceptPath {
+            total_distance: dist[target_idx],
+            steps: path,
+        })
+    }
+
+    /// Find a semantic path that prefers hops with strong conceptual bridges.
+    ///
+    /// Like [`concept_path`](Self::concept_path), but when a hop crosses a
+    /// category boundary, the edge weight is penalized inversely by bridge
+    /// strength. This means the algorithm greedily routes through the
+    /// strongest available bridges rather than taking the geodesically
+    /// shortest path.
+    ///
+    /// - `categories`: maps item ID → category index.
+    /// - `bridge_strengths`: maps (cat_a, cat_b) → max bridge strength for
+    ///   that pair. Missing entries are treated as 0 (maximum penalty).
+    ///
+    /// Edge weight formula for cross-category hops:
+    ///   `angular_distance / (bridge_strength + epsilon)`
+    /// Same-category hops use raw angular distance.
+    pub fn concept_path_bridged(
+        &self,
+        source_id: &str,
+        target_id: &str,
+        k: usize,
+        categories: &HashMap<&str, usize>,
+        bridge_strengths: &HashMap<(usize, usize), f64>,
+    ) -> Option<ConceptPath> {
+        let items = self.index.all_items();
+        let n = items.len();
+        if n < 2 {
+            return None;
+        }
+
+        let id_to_idx: HashMap<&str, usize> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item.id.as_str(), i))
+            .collect();
+
+        let source_idx = *id_to_idx.get(source_id)?;
+        let target_idx = *id_to_idx.get(target_id)?;
+
+        // Look up category for each item index
+        let item_cats: Vec<Option<usize>> = items
+            .iter()
+            .map(|item| categories.get(item.id.as_str()).copied())
+            .collect();
+
+        // Build k-NN adjacency list with bridge-aware weights
+        // Store (neighbor, effective_weight, raw_angular_dist, bridge_str_if_cross)
+        let mut adj: Vec<Vec<AdjEdge>> = vec![Vec::new(); n];
+        for (i, item) in items.iter().enumerate() {
+            let nearest = self.index.nearest(item.position(), k + 1);
+            for result in &nearest {
+                if let Some(&j) = id_to_idx.get(result.item.id.as_str())
+                    && i != j
+                {
+                    let angular_dist = result.distance;
+                    let (weight, bridge_str) =
+                        cross_category_weight(angular_dist, &item_cats, i, j, bridge_strengths);
+                    adj[i].push((j, weight, angular_dist, bridge_str));
+                }
+            }
+        }
+        // Symmetrize
+        let snapshot: Vec<Vec<AdjEdge>> = adj.clone();
+        for (i, edges) in snapshot.iter().enumerate() {
+            for &(j, w, d, bs) in edges {
+                if !adj[j].iter().any(|&(k, _, _, _)| k == i) {
+                    adj[j].push((i, w, d, bs));
+                }
+            }
+        }
+
+        // Dijkstra on effective weights
+        let mut dist = vec![f64::INFINITY; n];
+        let mut prev: Vec<Option<usize>> = vec![None; n];
+        let mut heap = BinaryHeap::new();
+
+        dist[source_idx] = 0.0;
+        heap.push(DijkstraEntry {
+            dist: 0.0,
+            node: source_idx,
+        });
+
+        while let Some(entry) = heap.pop() {
+            let u = entry.node;
+            if entry.dist > dist[u] {
+                continue;
+            }
+            if u == target_idx {
+                break;
+            }
+            for &(v, w, _, _) in &adj[u] {
+                let nd = dist[u] + w;
+                if nd < dist[v] {
+                    dist[v] = nd;
+                    prev[v] = Some(u);
+                    heap.push(DijkstraEntry { dist: nd, node: v });
+                }
+            }
+        }
+
+        if dist[target_idx].is_infinite() {
+            return None;
+        }
+
+        // Reconstruct with bridge metadata
+        let mut path = Vec::new();
+        let mut cur = target_idx;
+        loop {
+            let edge_info = prev[cur].and_then(|p| {
+                adj[p]
+                    .iter()
+                    .find(|&&(v, _, _, _)| v == cur)
+                    .map(|&(_, _, raw_d, bs)| (raw_d, bs))
+            });
+            let hop_distance = edge_info.map_or(0.0, |(d, _)| d);
+            let bridge_str = edge_info.and_then(|(_, bs)| bs);
+
+            path.push(PathStep {
+                id: items[cur].id.clone(),
+                cumulative_distance: dist[cur],
+                hop_distance,
+                category: item_cats[cur],
+                bridge_strength: bridge_str,
             });
             match prev[cur] {
                 Some(p) => cur = p,
@@ -282,6 +427,13 @@ pub struct ConceptPath {
 pub struct PathStep {
     pub id: String,
     pub cumulative_distance: f64,
+    /// Angular distance of this hop (0.0 for the first step).
+    pub hop_distance: f64,
+    /// Category index of this item (None if no category info was provided).
+    pub category: Option<usize>,
+    /// Bridge strength used on the hop *to* this step (None for same-category
+    /// hops or the first step). Present only when `concept_path_bridged` is used.
+    pub bridge_strength: Option<f64>,
 }
 
 #[derive(PartialEq)]
@@ -765,6 +917,37 @@ fn normalize3(v: &[f64; 3]) -> [f64; 3] {
     [v[0] / mag, v[1] / mag, v[2] / mag]
 }
 
+/// Compute the effective edge weight for a hop between two items.
+///
+/// Same-category hops use raw angular distance. Cross-category hops are
+/// penalized inversely by the bridge strength between the two categories:
+///   `angular_dist / (bridge_strength + ε)`
+///
+/// Returns (effective_weight, Option<bridge_strength>).
+/// The bridge_strength is None for same-category hops.
+fn cross_category_weight(
+    angular_dist: f64,
+    item_cats: &[Option<usize>],
+    i: usize,
+    j: usize,
+    bridge_strengths: &HashMap<(usize, usize), f64>,
+) -> (f64, Option<f64>) {
+    const EPSILON: f64 = 0.01;
+
+    match (item_cats[i], item_cats[j]) {
+        (Some(ci), Some(cj)) if ci != cj => {
+            let bs = bridge_strengths
+                .get(&(ci, cj))
+                .or_else(|| bridge_strengths.get(&(cj, ci)))
+                .copied()
+                .unwrap_or(0.0);
+            let weight = angular_dist / (bs + EPSILON);
+            (weight, Some(bs))
+        }
+        _ => (angular_dist, None),
+    }
+}
+
 /// Builds SphereQL [`Region`]s from semantic constraints on embeddings.
 pub struct SemanticQuery;
 
@@ -1053,5 +1236,196 @@ mod tests {
         for item in &result.items {
             assert!(region.contains(item.position()));
         }
+    }
+
+    // --- concept_path PathStep fields ---
+
+    #[test]
+    fn concept_path_populates_hop_distance() {
+        let corpus = test_corpus();
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let mut idx = EmbeddingIndex::builder(pca)
+            .theta_divisions(4)
+            .phi_divisions(3)
+            .build();
+
+        for (i, e) in corpus.iter().enumerate() {
+            idx.insert(format!("item-{i}"), e);
+        }
+
+        if let Some(path) = idx.concept_path("item-0", "item-4", 3) {
+            assert!(path.steps[0].hop_distance == 0.0, "first step has no hop");
+            for step in &path.steps[1..] {
+                assert!(
+                    step.hop_distance > 0.0,
+                    "subsequent steps should have a hop distance"
+                );
+            }
+            assert!(path.steps.iter().all(|s| s.category.is_none()));
+            assert!(path.steps.iter().all(|s| s.bridge_strength.is_none()));
+        }
+    }
+
+    // --- concept_path_bridged ---
+
+    #[test]
+    fn concept_path_bridged_same_category_equals_unbridged() {
+        let corpus = test_corpus();
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let mut idx = EmbeddingIndex::builder(pca)
+            .theta_divisions(4)
+            .phi_divisions(3)
+            .build();
+
+        for (i, e) in corpus.iter().enumerate() {
+            idx.insert(format!("item-{i}"), e);
+        }
+
+        // All items in the same category — bridged path should equal unbridged
+        let categories: HashMap<&str, usize> = (0..6)
+            .map(|i| {
+                (
+                    ["item-0", "item-1", "item-2", "item-3", "item-4", "item-5"][i],
+                    0,
+                )
+            })
+            .collect();
+        let bridges = HashMap::new();
+
+        let unbridged = idx.concept_path("item-0", "item-3", 3);
+        let bridged = idx.concept_path_bridged("item-0", "item-3", 3, &categories, &bridges);
+
+        match (unbridged, bridged) {
+            (Some(u), Some(b)) => {
+                assert_eq!(u.steps.len(), b.steps.len());
+                assert!((u.total_distance - b.total_distance).abs() < 1e-10);
+                for step in &b.steps {
+                    assert_eq!(step.category, Some(0));
+                    assert!(step.bridge_strength.is_none());
+                }
+            }
+            (None, None) => {} // both unreachable is fine
+            _ => panic!("bridged and unbridged should agree on reachability"),
+        }
+    }
+
+    #[test]
+    fn concept_path_bridged_penalizes_weak_bridges() {
+        let rp = RandomProjection::new(5, RadialStrategy::Fixed(1.0), 42);
+        let mut idx = EmbeddingIndex::builder(rp)
+            .theta_divisions(4)
+            .phi_divisions(3)
+            .build();
+
+        // Create two clusters in different categories
+        // Category 0: items close to [1, 0, 0, 0, 0]
+        idx.insert("a0", &emb(&[1.0, 0.0, 0.0, 0.0, 0.0]));
+        idx.insert("a1", &emb(&[0.9, 0.1, 0.0, 0.0, 0.0]));
+        // Category 1: items close to [0, 1, 0, 0, 0]
+        idx.insert("b0", &emb(&[0.0, 1.0, 0.0, 0.0, 0.0]));
+        idx.insert("b1", &emb(&[0.1, 0.9, 0.0, 0.0, 0.0]));
+
+        let mut categories: HashMap<&str, usize> = HashMap::new();
+        categories.insert("a0", 0);
+        categories.insert("a1", 0);
+        categories.insert("b0", 1);
+        categories.insert("b1", 1);
+
+        // Weak bridge between categories
+        let mut weak_bridges = HashMap::new();
+        weak_bridges.insert((0, 1), 0.05);
+
+        // Strong bridge between categories
+        let mut strong_bridges = HashMap::new();
+        strong_bridges.insert((0, 1), 0.95);
+
+        let weak_path = idx.concept_path_bridged("a0", "b0", 3, &categories, &weak_bridges);
+        let strong_path = idx.concept_path_bridged("a0", "b0", 3, &categories, &strong_bridges);
+
+        // Both should find a path (same topology)
+        // But weak bridge should have higher total_distance
+        if let (Some(weak), Some(strong)) = (weak_path, strong_path) {
+            assert!(
+                weak.total_distance > strong.total_distance,
+                "weak bridge ({:.4}) should produce higher cost than strong ({:.4})",
+                weak.total_distance,
+                strong.total_distance
+            );
+        }
+    }
+
+    #[test]
+    fn concept_path_bridged_populates_bridge_metadata() {
+        let rp = RandomProjection::new(5, RadialStrategy::Fixed(1.0), 42);
+        let mut idx = EmbeddingIndex::builder(rp)
+            .theta_divisions(4)
+            .phi_divisions(3)
+            .build();
+
+        idx.insert("a", &emb(&[1.0, 0.0, 0.0, 0.0, 0.0]));
+        idx.insert("b", &emb(&[0.5, 0.5, 0.0, 0.0, 0.0]));
+        idx.insert("c", &emb(&[0.0, 1.0, 0.0, 0.0, 0.0]));
+
+        let mut categories: HashMap<&str, usize> = HashMap::new();
+        categories.insert("a", 0);
+        categories.insert("b", 0);
+        categories.insert("c", 1);
+
+        let mut bridges = HashMap::new();
+        bridges.insert((0, 1), 0.7);
+
+        if let Some(path) = idx.concept_path_bridged("a", "c", 3, &categories, &bridges) {
+            // Each step should have category metadata
+            for step in &path.steps {
+                assert!(step.category.is_some());
+            }
+            // At least one cross-category hop should have bridge_strength
+            let has_bridge = path.steps.iter().any(|s| s.bridge_strength.is_some());
+            assert!(
+                has_bridge,
+                "should record bridge strength on cross-category hop"
+            );
+        }
+    }
+
+    // --- cross_category_weight ---
+
+    #[test]
+    fn cross_category_weight_same_category() {
+        let cats = vec![Some(0), Some(0)];
+        let bridges = HashMap::new();
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        assert!((weight - 0.5).abs() < 1e-10);
+        assert!(bs.is_none());
+    }
+
+    #[test]
+    fn cross_category_weight_different_categories_no_bridge() {
+        let cats = vec![Some(0), Some(1)];
+        let bridges = HashMap::new();
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        // 0.5 / (0.0 + 0.01) = 50.0
+        assert!((weight - 50.0).abs() < 1e-10);
+        assert_eq!(bs, Some(0.0));
+    }
+
+    #[test]
+    fn cross_category_weight_strong_bridge() {
+        let cats = vec![Some(0), Some(1)];
+        let mut bridges = HashMap::new();
+        bridges.insert((0, 1), 0.9);
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        // 0.5 / (0.9 + 0.01) = ~0.5495
+        assert!(weight < 1.0);
+        assert_eq!(bs, Some(0.9));
+    }
+
+    #[test]
+    fn cross_category_weight_no_category_info() {
+        let cats = vec![None, Some(1)];
+        let bridges = HashMap::new();
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        assert!((weight - 0.5).abs() < 1e-10);
+        assert!(bs.is_none());
     }
 }
