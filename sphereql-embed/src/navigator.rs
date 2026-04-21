@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use sphereql_core::spatial::*;
-use sphereql_core::{angular_distance, SphericalPoint};
+use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::category::CategoryLayer;
 
@@ -117,11 +117,12 @@ pub struct CategoryCapInfo {
     pub solid_angle: f64,
 }
 
-pub fn knowledge_coverage(
-    layer: &CategoryLayer,
-    num_samples: usize,
-) -> KnowledgeCoverageReport {
-    let centers: Vec<SphericalPoint> = layer.summaries.iter().map(|s| s.centroid_position).collect();
+pub fn knowledge_coverage(layer: &CategoryLayer, num_samples: usize) -> KnowledgeCoverageReport {
+    let centers: Vec<SphericalPoint> = layer
+        .summaries
+        .iter()
+        .map(|s| s.centroid_position)
+        .collect();
     let half_angles: Vec<f64> = layer.summaries.iter().map(|s| s.angular_spread).collect();
     let report = estimate_coverage(&centers, &half_angles, num_samples);
 
@@ -149,7 +150,11 @@ pub fn knowledge_coverage(
 /// Gap-aware confidence: sigmoid falloff based on void_distance.
 #[must_use]
 pub fn gap_confidence(query: &SphericalPoint, layer: &CategoryLayer, sharpness: f64) -> f64 {
-    let centers: Vec<SphericalPoint> = layer.summaries.iter().map(|s| s.centroid_position).collect();
+    let centers: Vec<SphericalPoint> = layer
+        .summaries
+        .iter()
+        .map(|s| s.centroid_position)
+        .collect();
     let half_angles: Vec<f64> = layer.summaries.iter().map(|s| s.angular_spread).collect();
     let vd = void_distance(query, &centers, &half_angles);
     1.0 / (1.0 + (sharpness * vd).exp())
@@ -187,19 +192,27 @@ pub fn category_geodesic_sweep(
     let tgt = layer.get_category(target_category)?;
 
     let hits = geodesic_sweep(
-        &src.centroid_position, &tgt.centroid_position,
-        all_positions, epsilon,
+        &src.centroid_position,
+        &tgt.centroid_position,
+        all_positions,
+        epsilon,
     );
 
-    let items: Vec<GeodesicSweepItem> = hits.iter().map(|&(idx, dist)| GeodesicSweepItem {
-        item_index: idx,
-        category: all_categories[idx].clone(),
-        distance_to_arc: dist,
-    }).collect();
+    let items: Vec<GeodesicSweepItem> = hits
+        .iter()
+        .map(|&(idx, dist)| GeodesicSweepItem {
+            item_index: idx,
+            category: all_categories[idx].clone(),
+            distance_to_arc: dist,
+        })
+        .collect();
 
     let profile = geodesic_density_profile(
-        &src.centroid_position, &tgt.centroid_position,
-        all_positions, epsilon, density_bins,
+        &src.centroid_position,
+        &tgt.centroid_position,
+        all_positions,
+        epsilon,
+        density_bins,
     );
 
     let gap_fraction = if profile.is_empty() {
@@ -224,7 +237,9 @@ pub fn category_path_deviation(layer: &CategoryLayer, source: &str, target: &str
     if path.steps.len() < 2 {
         return Some(0.0);
     }
-    let waypoints: Vec<SphericalPoint> = path.steps.iter()
+    let waypoints: Vec<SphericalPoint> = path
+        .steps
+        .iter()
         .map(|step| layer.summaries[step.category_index].centroid_position)
         .collect();
     Some(geodesic_deviation(&waypoints))
@@ -249,37 +264,60 @@ pub struct VoronoiCellReport {
 }
 
 pub fn voronoi_analysis(layer: &CategoryLayer, num_samples: usize) -> VoronoiReport {
-    let centroids: Vec<SphericalPoint> = layer.summaries.iter().map(|s| s.centroid_position).collect();
+    let centroids: Vec<SphericalPoint> = layer
+        .summaries
+        .iter()
+        .map(|s| s.centroid_position)
+        .collect();
     let cells = spherical_voronoi(&centroids, num_samples);
 
-    let cell_reports: Vec<VoronoiCellReport> = cells.iter().enumerate().map(|(i, cell)| {
-        let summary = &layer.summaries[i];
-        let voronoi_neighbors: Vec<String> = cell.neighbor_indices.iter()
-            .map(|&j| layer.summaries[j].name.clone()).collect();
+    let cell_reports: Vec<VoronoiCellReport> = cells
+        .iter()
+        .enumerate()
+        .map(|(i, cell)| {
+            let summary = &layer.summaries[i];
+            let voronoi_neighbors: Vec<String> = cell
+                .neighbor_indices
+                .iter()
+                .map(|&j| layer.summaries[j].name.clone())
+                .collect();
 
-        let efficiency = if cell.area > 1e-15 {
-            summary.member_count as f64 / cell.area
-        } else { 0.0 };
+            let efficiency = if cell.area > 1e-15 {
+                summary.member_count as f64 / cell.area
+            } else {
+                0.0
+            };
 
-        let graph_neighbors: Vec<usize> = layer.graph.adjacency[i].iter().map(|e| e.target).collect();
-        let voronoi_set: std::collections::HashSet<usize> = cell.neighbor_indices.iter().copied().collect();
-        let graph_set: std::collections::HashSet<usize> = graph_neighbors.iter().copied().collect();
-        let intersection = voronoi_set.intersection(&graph_set).count();
-        let union_count = voronoi_set.union(&graph_set).count();
-        let overlap = if union_count > 0 { intersection as f64 / union_count as f64 } else { 1.0 };
+            let graph_neighbors: Vec<usize> =
+                layer.graph.adjacency[i].iter().map(|e| e.target).collect();
+            let voronoi_set: std::collections::HashSet<usize> =
+                cell.neighbor_indices.iter().copied().collect();
+            let graph_set: std::collections::HashSet<usize> =
+                graph_neighbors.iter().copied().collect();
+            let intersection = voronoi_set.intersection(&graph_set).count();
+            let union_count = voronoi_set.union(&graph_set).count();
+            let overlap = if union_count > 0 {
+                intersection as f64 / union_count as f64
+            } else {
+                1.0
+            };
 
-        VoronoiCellReport {
-            category_name: summary.name.clone(),
-            cell_area: cell.area,
-            voronoi_neighbors,
-            item_count: summary.member_count,
-            territorial_efficiency: efficiency,
-            graph_neighbor_overlap: overlap,
-        }
-    }).collect();
+            VoronoiCellReport {
+                category_name: summary.name.clone(),
+                cell_area: cell.area,
+                voronoi_neighbors,
+                item_count: summary.member_count,
+                territorial_efficiency: efficiency,
+                graph_neighbor_overlap: overlap,
+            }
+        })
+        .collect();
 
     let total_area: f64 = cell_reports.iter().map(|c| c.cell_area).sum();
-    VoronoiReport { cells: cell_reports, total_area }
+    VoronoiReport {
+        cells: cell_reports,
+        total_area,
+    }
 }
 
 // ── §5: Overlap & Exclusivity Analysis ───────────────────────────────
@@ -307,38 +345,60 @@ pub struct CategoryExclusivity {
 }
 
 pub fn overlap_analysis(layer: &CategoryLayer, mc_samples_per_cap: usize) -> OverlapReport {
-    let centers: Vec<SphericalPoint> = layer.summaries.iter().map(|s| s.centroid_position).collect();
+    let centers: Vec<SphericalPoint> = layer
+        .summaries
+        .iter()
+        .map(|s| s.centroid_position)
+        .collect();
     let half_angles: Vec<f64> = layer.summaries.iter().map(|s| s.angular_spread).collect();
     let raw_overlaps = pairwise_overlaps(&centers, &half_angles);
 
-    let pairs: Vec<OverlapPair> = raw_overlaps.iter().map(|ov| {
-        let bridge_count = layer.graph.bridges.get(&(ov.category_a, ov.category_b)).map_or(0, |b| b.len())
-            + layer.graph.bridges.get(&(ov.category_b, ov.category_a)).map_or(0, |b| b.len());
-        let ratio = if bridge_count > 0 {
-            ov.intersection_area / bridge_count as f64
-        } else if ov.intersection_area > 1e-15 {
-            f64::INFINITY
-        } else { 0.0 };
+    let pairs: Vec<OverlapPair> = raw_overlaps
+        .iter()
+        .map(|ov| {
+            let bridge_count = layer
+                .graph
+                .bridges
+                .get(&(ov.category_a, ov.category_b))
+                .map_or(0, |b| b.len())
+                + layer
+                    .graph
+                    .bridges
+                    .get(&(ov.category_b, ov.category_a))
+                    .map_or(0, |b| b.len());
+            let ratio = if bridge_count > 0 {
+                ov.intersection_area / bridge_count as f64
+            } else if ov.intersection_area > 1e-15 {
+                f64::INFINITY
+            } else {
+                0.0
+            };
 
-        OverlapPair {
-            category_a: layer.summaries[ov.category_a].name.clone(),
-            category_b: layer.summaries[ov.category_b].name.clone(),
-            intersection_area: ov.intersection_area,
-            bridge_count,
-            overlap_bridge_ratio: ratio,
-        }
-    }).collect();
+            OverlapPair {
+                category_a: layer.summaries[ov.category_a].name.clone(),
+                category_b: layer.summaries[ov.category_b].name.clone(),
+                intersection_area: ov.intersection_area,
+                bridge_count,
+                overlap_bridge_ratio: ratio,
+            }
+        })
+        .collect();
 
-    let exclusivities: Vec<CategoryExclusivity> = (0..layer.summaries.len()).map(|i| {
-        let exc = cap_exclusivity(i, &centers, &half_angles, mc_samples_per_cap);
-        CategoryExclusivity {
-            category_name: layer.summaries[i].name.clone(),
-            cap_area: cap_solid_angle(half_angles[i]),
-            exclusivity: exc,
-        }
-    }).collect();
+    let exclusivities: Vec<CategoryExclusivity> = (0..layer.summaries.len())
+        .map(|i| {
+            let exc = cap_exclusivity(i, &centers, &half_angles, mc_samples_per_cap);
+            CategoryExclusivity {
+                category_name: layer.summaries[i].name.clone(),
+                cap_area: cap_solid_angle(half_angles[i]),
+                exclusivity: exc,
+            }
+        })
+        .collect();
 
-    OverlapReport { pairs, exclusivities }
+    OverlapReport {
+        pairs,
+        exclusivities,
+    }
 }
 
 // ── §6: Curvature Signatures ───────────────────────────────────────
@@ -364,7 +424,11 @@ pub struct CategoryCurvatureSignature {
 }
 
 pub fn curvature_analysis(layer: &CategoryLayer, top_n: usize) -> CurvatureReport {
-    let centroids: Vec<SphericalPoint> = layer.summaries.iter().map(|s| s.centroid_position).collect();
+    let centroids: Vec<SphericalPoint> = layer
+        .summaries
+        .iter()
+        .map(|s| s.centroid_position)
+        .collect();
     let n = centroids.len();
 
     let mut triples: Vec<CurvatureTriple> = Vec::new();
@@ -383,23 +447,34 @@ pub fn curvature_analysis(layer: &CategoryLayer, top_n: usize) -> CurvatureRepor
             }
         }
     }
-    triples.sort_by(|a, b| b.excess.partial_cmp(&a.excess).unwrap_or(std::cmp::Ordering::Equal));
+    triples.sort_by(|a, b| {
+        b.excess
+            .partial_cmp(&a.excess)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    let signatures: Vec<CategoryCurvatureSignature> = (0..n).map(|target| {
-        let sig = curvature_signature(target, &centroids);
-        let (mean, min, max) = if sig.is_empty() {
-            (0.0, 0.0, 0.0)
-        } else {
-            let sum: f64 = sig.iter().sum();
-            (sum / sig.len() as f64, sig[0], sig[sig.len() - 1])
-        };
-        CategoryCurvatureSignature {
-            category_name: layer.summaries[target].name.clone(),
-            mean_excess: mean, max_excess: max, min_excess: min,
-        }
-    }).collect();
+    let signatures: Vec<CategoryCurvatureSignature> = (0..n)
+        .map(|target| {
+            let sig = curvature_signature(target, &centroids);
+            let (mean, min, max) = if sig.is_empty() {
+                (0.0, 0.0, 0.0)
+            } else {
+                let sum: f64 = sig.iter().sum();
+                (sum / sig.len() as f64, sig[0], sig[sig.len() - 1])
+            };
+            CategoryCurvatureSignature {
+                category_name: layer.summaries[target].name.clone(),
+                mean_excess: mean,
+                max_excess: max,
+                min_excess: min,
+            }
+        })
+        .collect();
 
-    CurvatureReport { top_triples: triples.into_iter().take(top_n).collect(), signatures }
+    CurvatureReport {
+        top_triples: triples.into_iter().take(top_n).collect(),
+        signatures,
+    }
 }
 
 // ── §7: Lune Decomposition ─────────────────────────────────────────
@@ -424,12 +499,15 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let bridges_ij = layer.graph.bridges.get(&(i, j));
             let bridges_ji = layer.graph.bridges.get(&(j, i));
 
-            let all_bridge_indices: Vec<usize> = bridges_ij.into_iter()
+            let all_bridge_indices: Vec<usize> = bridges_ij
+                .into_iter()
                 .chain(bridges_ji.into_iter())
                 .flat_map(|list| list.iter().map(|b| b.item_index))
                 .collect();
 
-            if all_bridge_indices.is_empty() { continue; }
+            if all_bridge_indices.is_empty() {
+                continue;
+            }
 
             let ca = &layer.summaries[i].centroid_position;
             let cb = &layer.summaries[j].centroid_position;
@@ -446,7 +524,9 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let total = (a_count + b_count + on_count) as f64;
             let asymmetry = if total > 0.0 {
                 (a_count as f64 - b_count as f64).abs() / total
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
             let _bisector_normal = angular_bisector_normal(ca, cb);
             let mid = sphereql_core::slerp(ca, cb, 0.5);
@@ -454,7 +534,9 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let mut min_dist = f64::INFINITY;
             let mut closest_other = None;
             for (k, summary) in layer.summaries.iter().enumerate() {
-                if k == i || k == j { continue; }
+                if k == i || k == j {
+                    continue;
+                }
                 let d = angular_distance(&mid, &summary.centroid_position);
                 if d < min_dist {
                     min_dist = d;
@@ -466,8 +548,14 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
                 let d_i = angular_distance(&mid, ca);
                 let d_j = angular_distance(&mid, cb);
                 let d_expected = d_i.min(d_j);
-                if min_dist < d_expected { (d_expected - min_dist).abs() } else { 0.0 }
-            } else { 0.0 };
+                if min_dist < d_expected {
+                    (d_expected - min_dist).abs()
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
 
             reports.push(LuneReport {
                 category_a: layer.summaries[i].name.clone(),
@@ -531,7 +619,12 @@ pub fn run_full_analysis(
     evr: f64,
     config: &NavigatorConfig,
 ) -> NavigatorReport {
-    let antipodal = antipodal_analysis(layer, all_positions, all_categories, config.antipodal_radius);
+    let antipodal = antipodal_analysis(
+        layer,
+        all_positions,
+        all_categories,
+        config.antipodal_radius,
+    );
     let coverage = knowledge_coverage(layer, config.coverage_samples);
     let voronoi = voronoi_analysis(layer, config.voronoi_samples);
     let overlap = overlap_analysis(layer, config.exclusivity_samples);
@@ -539,7 +632,12 @@ pub fn run_full_analysis(
     let lunes = lune_analysis(layer, all_positions);
 
     NavigatorReport {
-        antipodal, coverage, voronoi, overlap, curvature, lunes,
+        antipodal,
+        coverage,
+        voronoi,
+        overlap,
+        curvature,
+        lunes,
         num_categories: layer.summaries.len(),
         num_items: all_positions.len(),
         explained_variance_ratio: evr,
@@ -581,12 +679,15 @@ mod tests {
         let pipeline = SphereQLPipeline::new(PipelineInput {
             categories: categories.clone(),
             embeddings,
-        }).unwrap();
+        })
+        .unwrap();
         (pipeline, categories)
     }
 
     fn get_positions(pipeline: &SphereQLPipeline) -> Vec<SphericalPoint> {
-        pipeline.exported_points().iter()
+        pipeline
+            .exported_points()
+            .iter()
             .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
             .collect()
     }
@@ -645,7 +746,9 @@ mod tests {
         let report = curvature_analysis(pipeline.category_layer(), 5);
         assert_eq!(report.top_triples.len(), 1);
         assert_eq!(report.signatures.len(), 3);
-        for sig in &report.signatures { assert!(sig.mean_excess >= 0.0); }
+        for sig in &report.signatures {
+            assert!(sig.mean_excess >= 0.0);
+        }
     }
 
     #[test]
@@ -653,7 +756,9 @@ mod tests {
         let (pipeline, _) = make_test_pipeline();
         let positions = get_positions(&pipeline);
         let reports = lune_analysis(pipeline.category_layer(), &positions);
-        for r in &reports { assert!(r.asymmetry >= 0.0 && r.asymmetry <= 1.0); }
+        for r in &reports {
+            assert!(r.asymmetry >= 0.0 && r.asymmetry <= 1.0);
+        }
     }
 
     #[test]
@@ -662,7 +767,11 @@ mod tests {
         let positions = get_positions(&pipeline);
         let evr = pipeline.explained_variance_ratio();
         let report = run_full_analysis(
-            pipeline.category_layer(), &positions, &categories, evr, &NavigatorConfig::default(),
+            pipeline.category_layer(),
+            &positions,
+            &categories,
+            evr,
+            &NavigatorConfig::default(),
         );
         assert_eq!(report.num_categories, 3);
         assert_eq!(report.num_items, 30);
