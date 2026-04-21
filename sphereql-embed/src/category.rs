@@ -1089,8 +1089,8 @@ mod tests {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
             for e in edges {
-                let expected = e.centroid_distance
-                    / (1.0 + e.bridge_count as f64 * e.mean_bridge_strength);
+                let expected =
+                    e.centroid_distance / (1.0 + e.bridge_count as f64 * e.mean_bridge_strength);
                 assert!(
                     (e.weight - expected).abs() < 1e-10,
                     "weight {:.6} != expected {:.6}",

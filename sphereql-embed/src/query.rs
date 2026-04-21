@@ -6,6 +6,9 @@ use sphereql_index::*;
 use crate::projection::Projection;
 use crate::types::{Embedding, ProjectedPoint};
 
+/// (neighbor_index, effective_weight, raw_angular_dist, bridge_strength_if_cross_category)
+type AdjEdge = (usize, f64, f64, Option<f64>);
+
 #[derive(Debug, Clone)]
 pub struct EmbeddingItem {
     pub id: String,
@@ -321,7 +324,7 @@ impl<P: Projection> EmbeddingIndex<P> {
 
         // Build k-NN adjacency list with bridge-aware weights
         // Store (neighbor, effective_weight, raw_angular_dist, bridge_str_if_cross)
-        let mut adj: Vec<Vec<(usize, f64, f64, Option<f64>)>> = vec![Vec::new(); n];
+        let mut adj: Vec<Vec<AdjEdge>> = vec![Vec::new(); n];
         for (i, item) in items.iter().enumerate() {
             let nearest = self.index.nearest(item.position(), k + 1);
             for result in &nearest {
@@ -336,7 +339,7 @@ impl<P: Projection> EmbeddingIndex<P> {
             }
         }
         // Symmetrize
-        let snapshot: Vec<Vec<(usize, f64, f64, Option<f64>)>> = adj.clone();
+        let snapshot: Vec<Vec<AdjEdge>> = adj.clone();
         for (i, edges) in snapshot.iter().enumerate() {
             for &(j, w, d, bs) in edges {
                 if !adj[j].iter().any(|&(k, _, _, _)| k == i) {
@@ -1253,7 +1256,10 @@ mod tests {
         if let Some(path) = idx.concept_path("item-0", "item-4", 3) {
             assert!(path.steps[0].hop_distance == 0.0, "first step has no hop");
             for step in &path.steps[1..] {
-                assert!(step.hop_distance > 0.0, "subsequent steps should have a hop distance");
+                assert!(
+                    step.hop_distance > 0.0,
+                    "subsequent steps should have a hop distance"
+                );
             }
             assert!(path.steps.iter().all(|s| s.category.is_none()));
             assert!(path.steps.iter().all(|s| s.bridge_strength.is_none()));
@@ -1277,7 +1283,12 @@ mod tests {
 
         // All items in the same category — bridged path should equal unbridged
         let categories: HashMap<&str, usize> = (0..6)
-            .map(|i| (["item-0", "item-1", "item-2", "item-3", "item-4", "item-5"][i], 0))
+            .map(|i| {
+                (
+                    ["item-0", "item-1", "item-2", "item-3", "item-4", "item-5"][i],
+                    0,
+                )
+            })
             .collect();
         let bridges = HashMap::new();
 
@@ -1370,7 +1381,10 @@ mod tests {
             }
             // At least one cross-category hop should have bridge_strength
             let has_bridge = path.steps.iter().any(|s| s.bridge_strength.is_some());
-            assert!(has_bridge, "should record bridge strength on cross-category hop");
+            assert!(
+                has_bridge,
+                "should record bridge strength on cross-category hop"
+            );
         }
     }
 
