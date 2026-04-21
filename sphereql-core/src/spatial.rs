@@ -19,7 +19,6 @@ use crate::types::{CartesianPoint, SphericalPoint};
 ///
 /// The antipode has θ′ = θ + π (mod 2π) and φ′ = π − φ.
 /// Radial coordinate is preserved.
-#[must_use]
 pub fn antipode(p: &SphericalPoint) -> SphericalPoint {
     let theta = (p.theta + PI) % std::f64::consts::TAU;
     let phi = PI - p.phi;
@@ -35,11 +34,7 @@ pub fn antipode(p: &SphericalPoint) -> SphericalPoint {
 /// Values > 1 mean the region is denser than chance; < 1 means sparser.
 /// Returns 0.0 if `points` is empty.
 #[must_use]
-pub fn region_coherence(
-    center: &SphericalPoint,
-    radius: f64,
-    points: &[SphericalPoint],
-) -> f64 {
+pub fn region_coherence(center: &SphericalPoint, radius: f64, points: &[SphericalPoint]) -> f64 {
     if points.is_empty() || radius <= 0.0 {
         return 0.0;
     }
@@ -148,11 +143,7 @@ pub enum LuneSide {
 /// The bisector plane is defined by the great circle equidistant from `a`
 /// and `b`. Points on A's side are angularly closer to A than to B.
 #[must_use]
-pub fn lune_classify(
-    a: &SphericalPoint,
-    b: &SphericalPoint,
-    point: &SphericalPoint,
-) -> LuneSide {
+pub fn lune_classify(a: &SphericalPoint, b: &SphericalPoint, point: &SphericalPoint) -> LuneSide {
     let da = angular_distance(a, point);
     let db = angular_distance(b, point);
     let diff = da - db;
@@ -219,8 +210,7 @@ pub fn distance_to_great_circle_arc(
     let proj_mag = (proj_x * proj_x + proj_y * proj_y + proj_z * proj_z).sqrt();
 
     if proj_mag < 1e-15 {
-        return angular_distance(point, arc_start)
-            .min(angular_distance(point, arc_end));
+        return angular_distance(point, arc_start).min(angular_distance(point, arc_end));
     }
 
     let cp = [proj_x / proj_mag, proj_y / proj_mag, proj_z / proj_mag];
@@ -233,8 +223,7 @@ pub fn distance_to_great_circle_arc(
     if (d_a_cp + d_cp_b - arc_len).abs() < 1e-10 {
         gc_dist
     } else {
-        angular_distance(point, arc_start)
-            .min(angular_distance(point, arc_end))
+        angular_distance(point, arc_start).min(angular_distance(point, arc_end))
     }
 }
 
@@ -253,11 +242,7 @@ pub fn geodesic_sweep(
         .enumerate()
         .filter_map(|(i, p)| {
             let d = distance_to_great_circle_arc(p, arc_start, arc_end);
-            if d <= epsilon {
-                Some((i, d))
-            } else {
-                None
-            }
+            if d <= epsilon { Some((i, d)) } else { None }
         })
         .collect();
     hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -319,10 +304,7 @@ pub struct VoronoiCell {
 /// for 31 cells; 1_000_000 gives ~0.3%.
 ///
 /// NOTE: exact Delaunay-on-S² via convex hull may be added later.
-pub fn spherical_voronoi(
-    generators: &[SphericalPoint],
-    num_samples: usize,
-) -> Vec<VoronoiCell> {
+pub fn spherical_voronoi(generators: &[SphericalPoint], num_samples: usize) -> Vec<VoronoiCell> {
     let n = generators.len();
     if n == 0 {
         return Vec::new();
@@ -377,9 +359,8 @@ pub fn spherical_voronoi(
 
     (0..n)
         .map(|i| {
-            let neighbor_indices: Vec<usize> = (0..n)
-                .filter(|&j| j != i && neighbor_hits[i][j])
-                .collect();
+            let neighbor_indices: Vec<usize> =
+                (0..n).filter(|&j| j != i && neighbor_hits[i][j]).collect();
             VoronoiCell {
                 generator_index: i,
                 neighbor_indices,
@@ -484,20 +465,15 @@ pub struct PairwiseOverlap {
 }
 
 /// Computes pairwise cap overlaps, sorted by descending intersection area.
-pub fn pairwise_overlaps(
-    centers: &[SphericalPoint],
-    half_angles: &[f64],
-) -> Vec<PairwiseOverlap> {
+pub fn pairwise_overlaps(centers: &[SphericalPoint], half_angles: &[f64]) -> Vec<PairwiseOverlap> {
     assert_eq!(centers.len(), half_angles.len());
     let n = centers.len();
     let mut overlaps = Vec::with_capacity(n * (n - 1) / 2);
 
     for i in 0..n {
         for j in (i + 1)..n {
-            let area = cap_intersection_area(
-                &centers[i], half_angles[i],
-                &centers[j], half_angles[j],
-            );
+            let area =
+                cap_intersection_area(&centers[i], half_angles[i], &centers[j], half_angles[j]);
             if area > 1e-15 {
                 overlaps.push(PairwiseOverlap {
                     category_a: i,
@@ -575,11 +551,7 @@ pub fn cap_exclusivity(
 /// Uses L'Huilier's theorem:
 ///   E = 4·arctan(√[tan(s/2)·tan((s−a)/2)·tan((s−b)/2)·tan((s−c)/2)])
 #[must_use]
-pub fn spherical_excess(
-    a: &SphericalPoint,
-    b: &SphericalPoint,
-    c: &SphericalPoint,
-) -> f64 {
+pub fn spherical_excess(a: &SphericalPoint, b: &SphericalPoint, c: &SphericalPoint) -> f64 {
     let side_a = angular_distance(b, c);
     let side_b = angular_distance(a, c);
     let side_c = angular_distance(a, b);
@@ -600,10 +572,7 @@ pub fn spherical_excess(
 
 /// Curvature signature: distribution of spherical excesses across all
 /// triples that include the point at `target`. Sorted ascending.
-pub fn curvature_signature(
-    target: usize,
-    all_points: &[SphericalPoint],
-) -> Vec<f64> {
+pub fn curvature_signature(target: usize, all_points: &[SphericalPoint]) -> Vec<f64> {
     let n = all_points.len();
     if n < 3 || target >= n {
         return Vec::new();
@@ -791,7 +760,11 @@ mod tests {
         let a = unit(0.0, FRAC_PI_2);
         let b = unit(FRAC_PI_2, FRAC_PI_2);
         let pole = unit(0.0, 0.0);
-        assert_relative_eq!(distance_to_great_circle_arc(&pole, &a, &b), FRAC_PI_2, epsilon = 1e-6);
+        assert_relative_eq!(
+            distance_to_great_circle_arc(&pole, &a, &b),
+            FRAC_PI_2,
+            epsilon = 1e-6
+        );
     }
 
     #[test]
@@ -850,9 +823,7 @@ mod tests {
 
     #[test]
     fn voronoi_total_area_is_4pi() {
-        let gens: Vec<SphericalPoint> = (0..6)
-            .map(|i| unit(i as f64 * 1.0, FRAC_PI_2))
-            .collect();
+        let gens: Vec<SphericalPoint> = (0..6).map(|i| unit(i as f64 * 1.0, FRAC_PI_2)).collect();
         let cells = spherical_voronoi(&gens, 100_000);
         let total: f64 = cells.iter().map(|c| c.area).sum();
         assert_relative_eq!(total, 4.0 * PI, epsilon = 0.5);
@@ -921,9 +892,7 @@ mod tests {
 
     #[test]
     fn curvature_signature_length() {
-        let points: Vec<SphericalPoint> = (0..5)
-            .map(|i| unit(i as f64 * 1.0, FRAC_PI_2))
-            .collect();
+        let points: Vec<SphericalPoint> = (0..5).map(|i| unit(i as f64 * 1.0, FRAC_PI_2)).collect();
         assert_eq!(curvature_signature(0, &points).len(), 6);
     }
 
@@ -931,21 +900,30 @@ mod tests {
     fn lune_classify_closer_to_a() {
         let a = unit(0.0, FRAC_PI_2);
         let b = unit(PI, FRAC_PI_2);
-        assert_eq!(lune_classify(&a, &b, &unit(0.1, FRAC_PI_2)), LuneSide::CloserToA);
+        assert_eq!(
+            lune_classify(&a, &b, &unit(0.1, FRAC_PI_2)),
+            LuneSide::CloserToA
+        );
     }
 
     #[test]
     fn lune_classify_closer_to_b() {
         let a = unit(0.0, FRAC_PI_2);
         let b = unit(PI, FRAC_PI_2);
-        assert_eq!(lune_classify(&a, &b, &unit(PI - 0.1, FRAC_PI_2)), LuneSide::CloserToB);
+        assert_eq!(
+            lune_classify(&a, &b, &unit(PI - 0.1, FRAC_PI_2)),
+            LuneSide::CloserToB
+        );
     }
 
     #[test]
     fn lune_classify_on_bisector() {
         let a = unit(0.0, FRAC_PI_2);
         let b = unit(PI, FRAC_PI_2);
-        assert_eq!(lune_classify(&a, &b, &unit(FRAC_PI_2, FRAC_PI_2)), LuneSide::OnBisector);
+        assert_eq!(
+            lune_classify(&a, &b, &unit(FRAC_PI_2, FRAC_PI_2)),
+            LuneSide::OnBisector
+        );
     }
 
     #[test]
