@@ -13,6 +13,7 @@ pub mod navigator;
 pub mod pipeline;
 pub mod projection;
 pub mod query;
+pub mod spatial_quality;
 pub mod types;
 
 pub use category::*;
@@ -22,4 +23,5 @@ pub use navigator::*;
 pub use pipeline::*;
 pub use projection::*;
 pub use query::*;
+pub use spatial_quality::*;
 pub use types::*;
