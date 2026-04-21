@@ -29,6 +29,7 @@ sphereql-vectordb = { version = "0.1.0-alpha", path = "../sphereql-vectordb", op
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1"
+sphereql-corpus = { path = "../sphereql-corpus" }
 
 [[example]]
 name = "basic_positioning"
@@ -68,4 +69,8 @@ required-features = ["embed"]
 
 [[example]]
 name = "ai_knowledge_navigator"
+required-features = ["embed"]
+
+[[example]]
+name = "spatial_analysis"
 required-features = ["embed"]
