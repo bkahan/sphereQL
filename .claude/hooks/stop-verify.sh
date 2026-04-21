@@ -14,7 +14,7 @@ INPUT=$(cat)
 
 # Prevent infinite loop: if this hook already blocked once and Claude
 # retried, allow the stop
-STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
+STOP_ACTIVE=$(echo "$INPUT" | python -c "import json,sys; d=json.load(sys.stdin); print(str(d.get('stop_hook_active', False)).lower())" 2>/dev/null || echo "false")
 if [ "$STOP_ACTIVE" = "true" ]; then
   exit 0
 fi
@@ -71,7 +71,7 @@ fi
 # --- Test suite ---
 TEST_RUNNER=""
 if [ -f "package.json" ]; then
-  HAS_TEST=$(jq -r '.scripts.test // empty' package.json 2>/dev/null)
+  HAS_TEST=$(python -c "import json; d=json.load(open('package.json')); print(d.get('scripts',{}).get('test',''))" 2>/dev/null)
   if [ -n "$HAS_TEST" ] && [ "$HAS_TEST" != "echo \"Error: no test specified\" && exit 1" ]; then
     TEST_RUNNER="npm test"
   fi

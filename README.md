@@ -56,6 +56,8 @@ sphereql-graphql  sphereql-vectordb           |
 
     sphereql-python  (PyO3 bindings via maturin)
     sphereql-wasm    (wasm-bindgen bindings)
+
+    sphereql-corpus  (shared example data, no runtime deps)
 ```
 
 | Crate | Description |
@@ -69,6 +71,7 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline (including category enrichment), projections, vector store bridges, and interactive 3D visualization |
 | `sphereql-wasm` | WebAssembly bindings via wasm-bindgen for running the embedding pipeline (including category enrichment) in the browser |
 | `sphereql` | Umbrella crate with feature flags for selective imports |
+| `sphereql-corpus` | Shared test corpus for examples: 775 concepts across 31 academic domains with hand-crafted 128-dim embeddings. Used by the `ai_knowledge_navigator` and `spatial_analysis` examples to stress-test projection and category enrichment |
 
 ## Quick Start (Rust)
 
@@ -547,6 +550,17 @@ cargo run --example e2e_transformer -p sphereql --features embed
 
 # Benchmarks
 cargo run --example benchmark -p sphereql --features full
+```
+
+### Category enrichment & spatial analysis (uses sphereql-corpus)
+
+```bash
+# AI Knowledge Navigator -- 13 analyses demonstrating the Category Enrichment Layer
+cargo run --example ai_knowledge_navigator -p sphereql --features embed
+
+# Spatial Analysis on S^2 -- every geometric primitive (antipode, Voronoi,
+# geodesic sweep, lunes, curvature) raw and navigator-wrapped
+cargo run --example spatial_analysis -p sphereql --features embed
 ```
 
 Python examples are in [`sphereql-python/examples/`](sphereql-python/examples/) and

@@ -2328,6 +2328,7 @@ version = "0.1.0-alpha-2"
 dependencies = [
  "serde_json",
  "sphereql-core",
+ "sphereql-corpus",
  "sphereql-embed",
  "sphereql-graphql",
  "sphereql-index",
@@ -2346,6 +2347,10 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "sphereql-corpus"
+version = "0.1.0-alpha-2"
 
 [[package]]
 name = "sphereql-embed"
