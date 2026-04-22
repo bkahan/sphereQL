@@ -36,10 +36,11 @@
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::config::PipelineConfig;
 use crate::corpus_features::{CorpusFeatures, CORPUS_FEATURE_COUNT};
+use crate::tuner::TuneReport;
 
 /// One observation for the meta-learner: "on this corpus profile, this
 /// config was found to be best under this metric."
@@ -66,8 +67,46 @@ pub struct MetaTrainingRecord {
 }
 
 impl MetaTrainingRecord {
-    /// Save a list of records as a JSON array to disk.
+    /// Build a record from the ingredients of one tuner run.
+    ///
+    /// `corpus_id` and `strategy_label` are free-form strings the caller
+    /// provides for provenance — the tuner doesn't know either on its
+    /// own. `timestamp` defaults to seconds-since-Unix-epoch (sortable,
+    /// unambiguous, dependency-free); swap in your own format via
+    /// [`Self::with_timestamp`] if you want human-readable.
+    pub fn from_tune_result(
+        corpus_id: impl Into<String>,
+        features: CorpusFeatures,
+        report: &TuneReport,
+        strategy_label: impl Into<String>,
+    ) -> Self {
+        Self {
+            corpus_id: corpus_id.into(),
+            features,
+            best_config: report.best_config.clone(),
+            best_score: report.best_score,
+            metric_name: report.metric_name.clone(),
+            strategy: strategy_label.into(),
+            timestamp: default_timestamp(),
+        }
+    }
+
+    /// Replace the timestamp. Useful when the caller has a preferred
+    /// format (e.g. an RFC 3339 string from `chrono`).
+    pub fn with_timestamp(mut self, ts: impl Into<String>) -> Self {
+        self.timestamp = ts.into();
+        self
+    }
+
+    /// Save a list of records as a JSON array to disk. Creates parent
+    /// directories as needed.
     pub fn save_list(records: &[Self], path: impl AsRef<Path>) -> io::Result<()> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
         let json = serde_json::to_string_pretty(records)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         fs::write(path, json)
@@ -82,6 +121,47 @@ impl MetaTrainingRecord {
         }
         let raw = fs::read_to_string(path)?;
         serde_json::from_str(&raw).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    }
+
+    /// Default on-disk training-store path: `~/.sphereql/meta_records.json`.
+    ///
+    /// Resolves `$HOME` on Unix, falling back to `$USERPROFILE` on
+    /// Windows. Returns an error if neither is set (rare — would mean
+    /// the process is running without a user profile).
+    pub fn default_store_path() -> io::Result<PathBuf> {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "neither HOME nor USERPROFILE is set",
+                )
+            })?;
+        Ok(PathBuf::from(home).join(".sphereql").join("meta_records.json"))
+    }
+
+    /// Append this record to the user's default training store.
+    /// Creates parent dirs and the file itself if they don't exist yet,
+    /// so repeat calls naturally accumulate a dataset across tuner runs.
+    pub fn append_to_default_store(&self) -> io::Result<PathBuf> {
+        let path = Self::default_store_path()?;
+        let mut records = Self::load_list(&path)?;
+        records.push(self.clone());
+        Self::save_list(&records, &path)?;
+        Ok(path)
+    }
+
+    /// Load all records from the user's default training store. Returns
+    /// an empty vec if the store doesn't exist yet.
+    pub fn load_default_store() -> io::Result<Vec<Self>> {
+        Self::load_list(Self::default_store_path()?)
+    }
+}
+
+fn default_timestamp() -> String {
+    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => d.as_secs().to_string(),
+        Err(_) => "0".to_string(),
     }
 }
 
@@ -401,5 +481,79 @@ mod tests {
         let path = std::env::temp_dir().join("sphereql_nonexistent_12345.json");
         let loaded = MetaTrainingRecord::load_list(&path).unwrap();
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn from_tune_result_copies_fields() {
+        let mut cfg = PipelineConfig::default();
+        cfg.projection_kind = ProjectionKind::LaplacianEigenmap;
+        let report = TuneReport {
+            metric_name: "connectivity_composite".to_string(),
+            best_score: 0.42,
+            best_config: cfg.clone(),
+            trials: Vec::new(),
+            failures: Vec::new(),
+        };
+        let r = MetaTrainingRecord::from_tune_result(
+            "test_corpus",
+            feat(100, 5, 0.1, 0.5),
+            &report,
+            "random{budget=24,seed=42}",
+        );
+        assert_eq!(r.corpus_id, "test_corpus");
+        assert_eq!(r.metric_name, "connectivity_composite");
+        assert!((r.best_score - 0.42).abs() < 1e-12);
+        assert_eq!(r.best_config.projection_kind, ProjectionKind::LaplacianEigenmap);
+        assert_eq!(r.strategy, "random{budget=24,seed=42}");
+        // Timestamp should be epoch-seconds-ish — a non-empty numeric string.
+        assert!(!r.timestamp.is_empty());
+        assert!(r.timestamp.parse::<u64>().is_ok());
+    }
+
+    #[test]
+    fn with_timestamp_overrides_default() {
+        let report = TuneReport {
+            metric_name: "m".to_string(),
+            best_score: 0.5,
+            best_config: PipelineConfig::default(),
+            trials: Vec::new(),
+            failures: Vec::new(),
+        };
+        let r = MetaTrainingRecord::from_tune_result(
+            "c",
+            feat(10, 2, 0.1, 0.3),
+            &report,
+            "s",
+        )
+        .with_timestamp("2026-04-22T12:00:00Z");
+        assert_eq!(r.timestamp, "2026-04-22T12:00:00Z");
+    }
+
+    #[test]
+    fn save_list_creates_parent_dirs() {
+        let dir = std::env::temp_dir().join(format!(
+            "sphereql_create_test_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join("records.json");
+
+        let r = record("r1", feat(100, 5, 0.1, 0.5), ProjectionKind::Pca, 0.4);
+        MetaTrainingRecord::save_list(&[r], &path).unwrap();
+        assert!(path.exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_store_path_resolves() {
+        // Verify the helper returns a path under $HOME or $USERPROFILE.
+        // We can't assert the exact path (portability + test isolation),
+        // just that it resolves and ends with the expected filename.
+        let path = MetaTrainingRecord::default_store_path().unwrap();
+        assert!(path.ends_with("meta_records.json"));
+        assert!(path
+            .iter()
+            .any(|c| c.to_string_lossy() == ".sphereql"));
     }
 }

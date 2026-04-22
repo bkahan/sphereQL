@@ -78,3 +78,7 @@ required-features = ["embed"]
 [[example]]
 name = "auto_tune"
 required-features = ["embed"]
+
+[[example]]
+name = "meta_learn"
+required-features = ["embed"]

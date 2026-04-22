@@ -7,9 +7,11 @@ use crate::category::{
 use crate::config::{PipelineConfig, ProjectionKind};
 use crate::configured_projection::ConfiguredProjection;
 use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
+use crate::corpus_features::CorpusFeatures;
 use crate::domain_groups::{detect_domain_groups, DomainGroup};
 use crate::kernel_pca::KernelPcaProjection;
 use crate::laplacian::LaplacianEigenmapProjection;
+use crate::meta_model::MetaModel;
 use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
@@ -213,6 +215,29 @@ impl SphereQLPipeline {
             projection,
             config,
         )
+    }
+
+    /// Build a pipeline using a config predicted by a [`MetaModel`].
+    ///
+    /// Extracts [`CorpusFeatures`] from the input, asks the model for a
+    /// predicted [`PipelineConfig`], then builds the pipeline with it.
+    /// Returns the pipeline alongside the extracted features and the
+    /// predicted config so the caller can log, audit, or save them as a
+    /// new [`MetaTrainingRecord`](crate::meta_model::MetaTrainingRecord).
+    ///
+    /// This is the "tune-or-recall" entry point: once you've accumulated
+    /// a handful of training records, call this instead of
+    /// [`auto_tune`](crate::tuner::auto_tune) when you want to skip
+    /// search entirely. For a warm-start hybrid, use the predicted
+    /// config as `base_config` in a small-budget tuner run.
+    pub fn new_from_metamodel<M: MetaModel>(
+        input: PipelineInput,
+        model: &M,
+    ) -> Result<(Self, CorpusFeatures, PipelineConfig), PipelineError> {
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let predicted = model.predict(&features);
+        let pipeline = Self::new_with_config(input, predicted.clone())?;
+        Ok((pipeline, features, predicted))
     }
 
     /// Build a pipeline from pre-computed embeddings and an existing PCA
@@ -1205,5 +1230,40 @@ mod tests {
         for w in hier.windows(2) {
             assert!(w[0].distance <= w[1].distance);
         }
+    }
+
+    #[test]
+    fn new_from_metamodel_uses_predicted_config() {
+        use crate::corpus_features::CorpusFeatures;
+        use crate::meta_model::{MetaTrainingRecord, NearestNeighborMetaModel};
+
+        let (input, _) = make_input(20, 10);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+
+        // Hand-built training record: "on a corpus shaped like this, a
+        // LaplacianEigenmap config wins". The NN model has only one
+        // point so it always returns this config.
+        let mut target_config = PipelineConfig::default();
+        target_config.projection_kind = ProjectionKind::LaplacianEigenmap;
+        let record = MetaTrainingRecord {
+            corpus_id: "seed".into(),
+            features: features.clone(),
+            best_config: target_config.clone(),
+            best_score: 0.5,
+            metric_name: "test".into(),
+            strategy: "manual".into(),
+            timestamp: "0".into(),
+        };
+
+        let mut model = NearestNeighborMetaModel::new();
+        model.fit(&[record]);
+
+        let (pipeline, _extracted, predicted) =
+            SphereQLPipeline::new_from_metamodel(input, &model).unwrap();
+        assert_eq!(predicted.projection_kind, ProjectionKind::LaplacianEigenmap);
+        assert_eq!(
+            pipeline.projection_kind(),
+            ProjectionKind::LaplacianEigenmap
+        );
     }
 }
