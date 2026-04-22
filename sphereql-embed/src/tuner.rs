@@ -201,34 +201,26 @@ impl SearchSpace {
     /// to the tuner — external callers go through [`auto_tune`] with a
     /// [`SearchStrategy::Random`] strategy.
     pub(crate) fn sample(&self, rng: &mut SplitMix64, base: &PipelineConfig) -> PipelineConfig {
-        let pick_usize =
-            |rng: &mut SplitMix64, vals: &[usize]| vals[rng.next_u64() as usize % vals.len()];
-        let pick_f64 =
-            |rng: &mut SplitMix64, vals: &[f64]| vals[rng.next_u64() as usize % vals.len()];
-        let pick_kind = |rng: &mut SplitMix64, vals: &[ProjectionKind]| {
-            vals[rng.next_u64() as usize % vals.len()]
-        };
-
         let mut cfg = base.clone();
-        cfg.projection_kind = pick_kind(rng, &self.projection_kinds);
+        cfg.projection_kind = pick_uniform(rng, &self.projection_kinds);
         cfg.routing = RoutingConfig {
-            num_domain_groups: pick_usize(rng, &self.num_domain_groups),
-            low_evr_threshold: pick_f64(rng, &self.low_evr_threshold),
+            num_domain_groups: pick_uniform(rng, &self.num_domain_groups),
+            low_evr_threshold: pick_uniform(rng, &self.low_evr_threshold),
         };
         cfg.bridges = BridgeConfig {
-            threshold_base: pick_f64(rng, &self.threshold_base),
-            threshold_evr_penalty: pick_f64(rng, &self.threshold_evr_penalty),
-            overlap_artifact_territorial: pick_f64(rng, &self.overlap_artifact_territorial),
+            threshold_base: pick_uniform(rng, &self.threshold_base),
+            threshold_evr_penalty: pick_uniform(rng, &self.threshold_evr_penalty),
+            overlap_artifact_territorial: pick_uniform(rng, &self.overlap_artifact_territorial),
         };
         cfg.inner_sphere = InnerSphereConfig {
-            min_evr_improvement: pick_f64(rng, &self.min_evr_improvement),
+            min_evr_improvement: pick_uniform(rng, &self.min_evr_improvement),
             ..base.inner_sphere.clone()
         };
 
         if matches!(cfg.projection_kind, ProjectionKind::LaplacianEigenmap) {
             cfg.laplacian = LaplacianConfig {
-                k_neighbors: pick_usize(rng, &self.laplacian_k_neighbors),
-                active_threshold: pick_f64(rng, &self.laplacian_active_threshold),
+                k_neighbors: pick_uniform(rng, &self.laplacian_k_neighbors),
+                active_threshold: pick_uniform(rng, &self.laplacian_active_threshold),
             };
         }
 
@@ -688,6 +680,14 @@ fn hist_f64(
         }
     }
     counts
+}
+
+/// Pick one element of `vals` uniformly at random. Panics if `vals` is
+/// empty — callers always pass non-empty `SearchSpace` axes, so the
+/// empty case would be a programmer error rather than a recoverable
+/// input.
+fn pick_uniform<T: Copy>(rng: &mut SplitMix64, vals: &[T]) -> T {
+    vals[(rng.next_u64() as usize) % vals.len()]
 }
 
 fn sample_categorical(rng: &mut SplitMix64, weights: &[f64]) -> usize {

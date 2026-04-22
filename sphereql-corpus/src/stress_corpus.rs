@@ -1,17 +1,22 @@
-//! Stress-test corpus: extreme sparsity + high noise.
+//! Stress-test corpus: low signal-to-noise on a small per-category signature.
 //!
-//! Built to discriminate between projection families on the regime
-//! `LaplacianEigenmapProjection` was designed for but the built-in
-//! 775-concept corpus doesn't actually exercise. Key characteristics:
+//! Built to discriminate between projection families on a regime the
+//! built-in 775-concept corpus doesn't exercise. Key characteristics:
 //!
 //! - 10 synthetic categories, 30 concepts each (300 total).
-//! - Each concept activates **exactly 2 axes** drawn from its category's
-//!   signature set (out of 128 total dimensions).
-//! - Active-axis values vary smoothly around `1.0` and `0.6` so the
-//!   tuner has real within-category structure to fit.
-//! - Noise amplitude = `0.2` on every inactive axis — 5× the default
-//!   corpus's `0.04`. This crushes the variance captured by PCA and
-//!   should favor connectivity-preserving projections.
+//! - Each concept has exactly **2 authored signal axes** from its
+//!   category's 2-axis signature (out of 128 total dimensions). The
+//!   signal axes carry amplitude ~1.0 and ~0.6.
+//! - Noise amplitude on all inactive axes = `0.2`, 5× the built-in
+//!   corpus's `0.04`. At `active_threshold = 0.05` (the default filter)
+//!   the noise clears the threshold on most non-signal axes, so the
+//!   downstream active-axis count per item is high. The regime this
+//!   corpus really tests is **low signal-to-noise in a small authored
+//!   signature**, not literal sparsity at the filter level. That's the
+//!   setup where variance-maximizing projections (PCA) get pulled
+//!   toward the noise floor while connectivity-preserving projections
+//!   (Laplacian) can still recover the authored signature through
+//!   shared-axis co-activation.
 //!
 //! Usage:
 //!
@@ -43,10 +48,16 @@ pub const STRESS_CONCEPTS_PER_CATEGORY: usize = 30;
 
 /// Build the stress-test corpus.
 ///
-/// Labels and category names are leaked to `&'static str` via `Box::leak`
-/// so they fit [`Concept`]'s signature. Call `build_stress_corpus()` at
-/// most once per process in production code (tests and examples are
-/// fine — the leak is bounded and doesn't accumulate across calls).
+/// # Memory warning
+///
+/// Labels and category names are leaked to `&'static str` via
+/// `Box::leak` so they fit [`Concept`]'s signature. Each call leaks
+/// `STRESS_CATEGORIES * STRESS_CONCEPTS_PER_CATEGORY + STRESS_CATEGORIES`
+/// = 310 strings (a few KB total). **Leaks DO accumulate across calls** —
+/// each invocation leaks a fresh set. Call at most once per process in
+/// production code. Tests and examples are fine: the per-process total
+/// is bounded by the number of calls × 310 strings, which stays in the
+/// low MB even across a full test suite.
 pub fn build_stress_corpus() -> Vec<Concept> {
     let mut out = Vec::with_capacity(STRESS_CATEGORIES * STRESS_CONCEPTS_PER_CATEGORY);
 

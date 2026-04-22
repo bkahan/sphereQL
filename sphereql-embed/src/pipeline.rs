@@ -1339,7 +1339,10 @@ mod tests {
 
         // Reload via load() by routing through a temp file.
         let dir = std::env::temp_dir();
-        let path = dir.join(format!("sphereql_serde_transparent_{}.json", std::process::id()));
+        let path = dir.join(format!(
+            "sphereql_serde_transparent_{}.json",
+            std::process::id()
+        ));
         std::fs::write(&path, &json_via_derive).unwrap();
         let loaded = FeedbackAggregator::load(&path).unwrap();
         assert_eq!(loaded.len(), 1);

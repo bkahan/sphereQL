@@ -14,6 +14,8 @@
 
 use std::collections::HashMap;
 
+use sphereql_core::cosine_similarity;
+
 use crate::config::LaplacianConfig;
 
 /// Low-dimensional profile of a corpus. Computed once per corpus; fed
@@ -62,6 +64,11 @@ pub const CORPUS_FEATURE_COUNT: usize = 10;
 impl CorpusFeatures {
     /// Stable feature names aligned with [`Self::to_vec`]. Useful for
     /// logging, feature importance reports, and CSV headers.
+    ///
+    /// Note: `category_separation_ratio` is deliberately excluded — it's
+    /// a derived ratio of two features already named here, so including
+    /// it would double-count under any distance metric. See
+    /// [`Self::to_vec`].
     pub fn feature_names() -> [&'static str; CORPUS_FEATURE_COUNT] {
         [
             "n_items",
@@ -254,17 +261,6 @@ fn pairwise_similarity(
         }
     }
     if count == 0 { 0.0 } else { sum / count as f64 }
-}
-
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
-    let mag_a: f64 = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let mag_b: f64 = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let denom = mag_a * mag_b;
-    if denom < f64::EPSILON {
-        return 0.0;
-    }
-    (dot / denom).clamp(-1.0, 1.0)
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────

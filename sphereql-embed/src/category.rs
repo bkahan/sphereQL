@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sphereql_core::{SphericalPoint, angular_distance};
+use sphereql_core::{SphericalPoint, angular_distance, cosine_similarity};
 
 use crate::config::PipelineConfig;
 use crate::kernel_pca::KernelPcaProjection;
@@ -1074,17 +1074,6 @@ impl CategoryLayer {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
-
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
-    let mag_a = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let mag_b = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let denom = mag_a * mag_b;
-    if denom < f64::EPSILON {
-        return 0.0;
-    }
-    (dot / denom).clamp(-1.0, 1.0)
-}
 
 // ── Tests ──────────────────────────────────────────────────────────────
 

@@ -166,6 +166,67 @@ impl MetaTrainingRecord {
     }
 }
 
+// ── Shared helpers ─────────────────────────────────────────────────────
+
+/// Per-feature mean + std computed across a training set, used for
+/// z-score normalization by both meta-model implementations.
+///
+/// Returns `(means, stds)`. Features with near-zero variance get a
+/// stored std of `0.0` rather than the true tiny value, so
+/// [`normalize_features`] can detect the degenerate case and zero the
+/// feature out instead of dividing by something that blows up.
+fn compute_feature_stats(
+    records: &[MetaTrainingRecord],
+) -> ([f64; CORPUS_FEATURE_COUNT], [f64; CORPUS_FEATURE_COUNT]) {
+    let mut means = [0.0; CORPUS_FEATURE_COUNT];
+    let mut stds = [0.0; CORPUS_FEATURE_COUNT];
+    let n = records.len();
+    if n == 0 {
+        return (means, [1.0; CORPUS_FEATURE_COUNT]);
+    }
+    let vecs: Vec<[f64; CORPUS_FEATURE_COUNT]> =
+        records.iter().map(|r| r.features.to_vec()).collect();
+
+    for i in 0..CORPUS_FEATURE_COUNT {
+        let mean: f64 = vecs.iter().map(|v| v[i]).sum::<f64>() / n as f64;
+        means[i] = mean;
+        let var: f64 = vecs.iter().map(|v| (v[i] - mean).powi(2)).sum::<f64>() / n as f64;
+        let sd = var.sqrt();
+        stds[i] = if sd > f64::EPSILON { sd } else { 0.0 };
+    }
+    (means, stds)
+}
+
+/// Z-score normalize a raw feature vector against precomputed
+/// `means`/`stds`. Features whose stored std is below `f64::EPSILON`
+/// (zero-variance in the training set) map to `0.0` rather than
+/// dividing by a near-zero number.
+fn normalize_features(
+    raw: &[f64; CORPUS_FEATURE_COUNT],
+    means: &[f64; CORPUS_FEATURE_COUNT],
+    stds: &[f64; CORPUS_FEATURE_COUNT],
+) -> [f64; CORPUS_FEATURE_COUNT] {
+    let mut out = [0.0; CORPUS_FEATURE_COUNT];
+    for i in 0..CORPUS_FEATURE_COUNT {
+        let sd = stds[i];
+        out[i] = if sd > f64::EPSILON {
+            (raw[i] - means[i]) / sd
+        } else {
+            0.0
+        };
+    }
+    out
+}
+
+/// Euclidean distance between two z-score-normalized feature vectors.
+fn normalized_euclidean(a: &[f64; CORPUS_FEATURE_COUNT], b: &[f64; CORPUS_FEATURE_COUNT]) -> f64 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
 // ── Trait ──────────────────────────────────────────────────────────────
 
 /// Predicts a [`PipelineConfig`] from a [`CorpusFeatures`] profile.
@@ -226,36 +287,21 @@ impl NearestNeighborMetaModel {
         &self.records
     }
 
-    fn normalized(&self, raw: &[f64; CORPUS_FEATURE_COUNT]) -> [f64; CORPUS_FEATURE_COUNT] {
-        let mut out = [0.0; CORPUS_FEATURE_COUNT];
-        for i in 0..CORPUS_FEATURE_COUNT {
-            let sd = self.feature_stds[i];
-            out[i] = if sd > f64::EPSILON {
-                (raw[i] - self.feature_means[i]) / sd
-            } else {
-                0.0
-            };
-        }
-        out
-    }
-
     /// Distance from a given feature vector to every stored record,
     /// sorted ascending. Returned as `(record_index, distance)` pairs.
     pub fn rank_candidates(&self, features: &CorpusFeatures) -> Vec<(usize, f64)> {
-        let q = self.normalized(&features.to_vec());
+        let q = normalize_features(&features.to_vec(), &self.feature_means, &self.feature_stds);
         let mut ranked: Vec<(usize, f64)> = self
             .records
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                let v = self.normalized(&r.features.to_vec());
-                let d = q
-                    .iter()
-                    .zip(v.iter())
-                    .map(|(a, b)| (a - b).powi(2))
-                    .sum::<f64>()
-                    .sqrt();
-                (i, d)
+                let v = normalize_features(
+                    &r.features.to_vec(),
+                    &self.feature_means,
+                    &self.feature_stds,
+                );
+                (i, normalized_euclidean(&q, &v))
             })
             .collect();
         ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -266,34 +312,13 @@ impl NearestNeighborMetaModel {
 impl MetaModel for NearestNeighborMetaModel {
     fn fit(&mut self, records: &[MetaTrainingRecord]) {
         self.records = records.to_vec();
-        let n = self.records.len();
-        if n == 0 {
-            self.feature_means = [0.0; CORPUS_FEATURE_COUNT];
-            self.feature_stds = [1.0; CORPUS_FEATURE_COUNT];
-            return;
-        }
-
-        // Compute per-feature mean and std for z-score normalization.
-        for i in 0..CORPUS_FEATURE_COUNT {
-            let mean: f64 = self
-                .records
-                .iter()
-                .map(|r| r.features.to_vec()[i])
-                .sum::<f64>()
-                / n as f64;
-            self.feature_means[i] = mean;
-
-            let var: f64 = self
-                .records
-                .iter()
-                .map(|r| (r.features.to_vec()[i] - mean).powi(2))
-                .sum::<f64>()
-                / n as f64;
-            let sd = var.sqrt();
-            // Keep sd of 0 or near-zero untouched so normalized() can
-            // zero out the degenerate feature rather than explode it.
-            self.feature_stds[i] = if sd > f64::EPSILON { sd } else { 0.0 };
-        }
+        let (means, stds) = compute_feature_stats(&self.records);
+        self.feature_means = means;
+        self.feature_stds = if self.records.is_empty() {
+            [1.0; CORPUS_FEATURE_COUNT]
+        } else {
+            stds
+        };
     }
 
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
@@ -367,36 +392,22 @@ impl DistanceWeightedMetaModel {
         &self.records
     }
 
-    fn normalized(&self, raw: &[f64; CORPUS_FEATURE_COUNT]) -> [f64; CORPUS_FEATURE_COUNT] {
-        let mut out = [0.0; CORPUS_FEATURE_COUNT];
-        for i in 0..CORPUS_FEATURE_COUNT {
-            let sd = self.feature_stds[i];
-            out[i] = if sd > f64::EPSILON {
-                (raw[i] - self.feature_means[i]) / sd
-            } else {
-                0.0
-            };
-        }
-        out
-    }
-
     /// Per-record (weighted_score, distance) pairs for the given query
     /// features, sorted by descending weighted score. Useful for
     /// introspecting why a particular prediction was made.
     pub fn score_candidates(&self, features: &CorpusFeatures) -> Vec<(usize, f64, f64)> {
-        let q = self.normalized(&features.to_vec());
+        let q = normalize_features(&features.to_vec(), &self.feature_means, &self.feature_stds);
         let mut out: Vec<(usize, f64, f64)> = self
             .records
             .iter()
             .enumerate()
             .map(|(i, r)| {
-                let v = self.normalized(&r.features.to_vec());
-                let d = q
-                    .iter()
-                    .zip(v.iter())
-                    .map(|(a, b)| (a - b).powi(2))
-                    .sum::<f64>()
-                    .sqrt();
+                let v = normalize_features(
+                    &r.features.to_vec(),
+                    &self.feature_means,
+                    &self.feature_stds,
+                );
+                let d = normalized_euclidean(&q, &v);
                 let weighted = r.best_score / (d + self.epsilon);
                 (i, weighted, d)
             })
@@ -409,29 +420,13 @@ impl DistanceWeightedMetaModel {
 impl MetaModel for DistanceWeightedMetaModel {
     fn fit(&mut self, records: &[MetaTrainingRecord]) {
         self.records = records.to_vec();
-        let n = self.records.len();
-        if n == 0 {
-            self.feature_means = [0.0; CORPUS_FEATURE_COUNT];
-            self.feature_stds = [1.0; CORPUS_FEATURE_COUNT];
-            return;
-        }
-        for i in 0..CORPUS_FEATURE_COUNT {
-            let mean: f64 = self
-                .records
-                .iter()
-                .map(|r| r.features.to_vec()[i])
-                .sum::<f64>()
-                / n as f64;
-            self.feature_means[i] = mean;
-            let var: f64 = self
-                .records
-                .iter()
-                .map(|r| (r.features.to_vec()[i] - mean).powi(2))
-                .sum::<f64>()
-                / n as f64;
-            let sd = var.sqrt();
-            self.feature_stds[i] = if sd > f64::EPSILON { sd } else { 0.0 };
-        }
+        let (means, stds) = compute_feature_stats(&self.records);
+        self.feature_means = means;
+        self.feature_stds = if self.records.is_empty() {
+            [1.0; CORPUS_FEATURE_COUNT]
+        } else {
+            stds
+        };
     }
 
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
