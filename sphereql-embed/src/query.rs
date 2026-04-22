@@ -3,6 +3,7 @@ use std::collections::{BinaryHeap, HashMap};
 use sphereql_core::*;
 use sphereql_index::*;
 
+use crate::category::BridgeClassification;
 use crate::projection::Projection;
 use crate::types::{Embedding, ProjectedPoint};
 
@@ -281,17 +282,18 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// Find a semantic path that prefers hops with strong conceptual bridges.
     ///
     /// Like [`concept_path`](Self::concept_path), but when a hop crosses a
-    /// category boundary, the edge weight is penalized inversely by bridge
-    /// strength. This means the algorithm greedily routes through the
-    /// strongest available bridges rather than taking the geodesically
-    /// shortest path.
+    /// category boundary, the edge weight is penalized based on the bridge's
+    /// classification:
+    /// - [`BridgeClassification::Genuine`]: `angular_dist / (strength + 0.1)`
+    /// - [`BridgeClassification::Weak`]: `angular_dist / (strength + 0.01)`
+    /// - [`BridgeClassification::OverlapArtifact`]: `angular_dist * 2.0`
+    ///   (shared-territory bridges are actively discouraged — they aren't
+    ///   real connectors).
     ///
     /// - `categories`: maps item ID → category index.
-    /// - `bridge_strengths`: maps (cat_a, cat_b) → max bridge strength for
-    ///   that pair. Missing entries are treated as 0 (maximum penalty).
+    /// - `bridge_strengths`: maps `(cat_a, cat_b) → (max_bridge_strength, classification)`.
+    ///   Missing entries are treated as a weak no-bridge (strength 0, Weak).
     ///
-    /// Edge weight formula for cross-category hops:
-    ///   `angular_distance / (bridge_strength + epsilon)`
     /// Same-category hops use raw angular distance.
     pub fn concept_path_bridged(
         &self,
@@ -299,7 +301,7 @@ impl<P: Projection> EmbeddingIndex<P> {
         target_id: &str,
         k: usize,
         categories: &HashMap<&str, usize>,
-        bridge_strengths: &HashMap<(usize, usize), f64>,
+        bridge_strengths: &HashMap<(usize, usize), (f64, BridgeClassification)>,
     ) -> Option<ConceptPath> {
         let items = self.index.all_items();
         let n = items.len();
@@ -920,8 +922,14 @@ fn normalize3(v: &[f64; 3]) -> [f64; 3] {
 /// Compute the effective edge weight for a hop between two items.
 ///
 /// Same-category hops use raw angular distance. Cross-category hops are
-/// penalized inversely by the bridge strength between the two categories:
-///   `angular_dist / (bridge_strength + ε)`
+/// weighted by the bridge's quality classification:
+/// - `Genuine`:         `angular_dist / (strength + 0.1)`
+/// - `Weak`:            `angular_dist / (strength + 0.01)`  (harsher penalty)
+/// - `OverlapArtifact`: `angular_dist * 2.0`  (actively discouraged — the
+///    two categories share territory, so the "bridge" isn't real)
+///
+/// Unknown cross-category pairs (no entry in `bridge_strengths`) are treated
+/// as `Weak` with strength 0.
 ///
 /// Returns (effective_weight, Option<bridge_strength>).
 /// The bridge_strength is None for same-category hops.
@@ -930,19 +938,21 @@ fn cross_category_weight(
     item_cats: &[Option<usize>],
     i: usize,
     j: usize,
-    bridge_strengths: &HashMap<(usize, usize), f64>,
+    bridge_strengths: &HashMap<(usize, usize), (f64, BridgeClassification)>,
 ) -> (f64, Option<f64>) {
-    const EPSILON: f64 = 0.01;
-
     match (item_cats[i], item_cats[j]) {
         (Some(ci), Some(cj)) if ci != cj => {
-            let bs = bridge_strengths
+            let (strength, classification) = bridge_strengths
                 .get(&(ci, cj))
                 .or_else(|| bridge_strengths.get(&(cj, ci)))
                 .copied()
-                .unwrap_or(0.0);
-            let weight = angular_dist / (bs + EPSILON);
-            (weight, Some(bs))
+                .unwrap_or((0.0, BridgeClassification::Weak));
+            let weight = match classification {
+                BridgeClassification::Genuine => angular_dist / (strength + 0.1),
+                BridgeClassification::OverlapArtifact => angular_dist * 2.0,
+                BridgeClassification::Weak => angular_dist / (strength + 0.01),
+            };
+            (weight, Some(strength))
         }
         _ => (angular_dist, None),
     }
@@ -1333,11 +1343,11 @@ mod tests {
 
         // Weak bridge between categories
         let mut weak_bridges = HashMap::new();
-        weak_bridges.insert((0, 1), 0.05);
+        weak_bridges.insert((0, 1), (0.05, BridgeClassification::Weak));
 
         // Strong bridge between categories
         let mut strong_bridges = HashMap::new();
-        strong_bridges.insert((0, 1), 0.95);
+        strong_bridges.insert((0, 1), (0.95, BridgeClassification::Genuine));
 
         let weak_path = idx.concept_path_bridged("a0", "b0", 3, &categories, &weak_bridges);
         let strong_path = idx.concept_path_bridged("a0", "b0", 3, &categories, &strong_bridges);
@@ -1372,7 +1382,7 @@ mod tests {
         categories.insert("c", 1);
 
         let mut bridges = HashMap::new();
-        bridges.insert((0, 1), 0.7);
+        bridges.insert((0, 1), (0.7, BridgeClassification::Genuine));
 
         if let Some(path) = idx.concept_path_bridged("a", "c", 3, &categories, &bridges) {
             // Each step should have category metadata
@@ -1404,20 +1414,42 @@ mod tests {
         let cats = vec![Some(0), Some(1)];
         let bridges = HashMap::new();
         let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
-        // 0.5 / (0.0 + 0.01) = 50.0
+        // Missing entry → treated as Weak with strength 0: 0.5 / (0 + 0.01) = 50.0
         assert!((weight - 50.0).abs() < 1e-10);
         assert_eq!(bs, Some(0.0));
     }
 
     #[test]
-    fn cross_category_weight_strong_bridge() {
+    fn cross_category_weight_genuine_bridge() {
         let cats = vec![Some(0), Some(1)];
         let mut bridges = HashMap::new();
-        bridges.insert((0, 1), 0.9);
+        bridges.insert((0, 1), (0.9, BridgeClassification::Genuine));
         let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
-        // 0.5 / (0.9 + 0.01) = ~0.5495
-        assert!(weight < 1.0);
+        // Genuine: 0.5 / (0.9 + 0.1) = 0.5
+        assert!((weight - 0.5).abs() < 1e-10);
         assert_eq!(bs, Some(0.9));
+    }
+
+    #[test]
+    fn cross_category_weight_weak_bridge() {
+        let cats = vec![Some(0), Some(1)];
+        let mut bridges = HashMap::new();
+        bridges.insert((0, 1), (0.3, BridgeClassification::Weak));
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        // Weak: 0.5 / (0.3 + 0.01) ≈ 1.6129
+        assert!((weight - 0.5 / 0.31).abs() < 1e-10);
+        assert_eq!(bs, Some(0.3));
+    }
+
+    #[test]
+    fn cross_category_weight_overlap_artifact_discouraged() {
+        let cats = vec![Some(0), Some(1)];
+        let mut bridges = HashMap::new();
+        bridges.insert((0, 1), (0.8, BridgeClassification::OverlapArtifact));
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        // OverlapArtifact: 0.5 * 2.0 = 1.0 (penalty, not reward)
+        assert!((weight - 1.0).abs() < 1e-10);
+        assert_eq!(bs, Some(0.8));
     }
 
     #[test]

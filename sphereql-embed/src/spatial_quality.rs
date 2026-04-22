@@ -10,6 +10,8 @@ use sphereql_core::spatial::{
 };
 use sphereql_core::SphericalPoint;
 
+use crate::category::CategoryGraph;
+
 /// Pre-computed spatial properties of the category layout on S².
 ///
 /// Every field here is derived from the category centroids and angular
@@ -40,6 +42,12 @@ pub struct SpatialQuality {
     /// EVR-adaptive bridge threshold. Higher EVR → looser threshold.
     /// Formula: 0.5 + (1 − EVR)² × 0.4
     pub bridge_threshold: f64,
+
+    /// C×C matrix of spatially-adjusted bridge quality between category pairs.
+    /// `matrix[i][j] = max_bridge_strength(i,j) × territorial_factor(i,j)`.
+    /// Empty until [`Self::set_bridge_quality_matrix`] is called with a
+    /// built [`CategoryGraph`] (done during `CategoryLayer::build`).
+    pub bridge_quality_matrix: Vec<Vec<f64>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,6 +114,23 @@ impl SpatialQuality {
             pairwise_intersections,
             coverage,
             bridge_threshold,
+            bridge_quality_matrix: vec![vec![0.0; n]; n],
+        }
+    }
+
+    /// Populate the C×C `bridge_quality_matrix` from a freshly built graph.
+    ///
+    /// Each cell is `edge.max_bridge_strength × territorial_factor(i, j)`,
+    /// left at 0.0 where no edge exists (including the diagonal).
+    pub fn set_bridge_quality_matrix(&mut self, graph: &CategoryGraph) {
+        let n = self.exclusivities.len();
+        self.bridge_quality_matrix = vec![vec![0.0; n]; n];
+        for (i, edges) in graph.adjacency.iter().enumerate() {
+            for edge in edges {
+                let j = edge.target;
+                self.bridge_quality_matrix[i][j] =
+                    edge.max_bridge_strength * self.territorial_factor(i, j);
+            }
         }
     }
 

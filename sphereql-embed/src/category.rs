@@ -55,9 +55,35 @@ pub struct CategorySummary {
     pub voronoi_area: f64,
     /// Items per steradian of Voronoi cell.
     pub territorial_efficiency: f64,
+    /// Mean territorial-adjusted bridge strength across all outgoing edges.
+    /// 0.0 if this category has no neighbors. Populated after the graph
+    /// is built in [`CategoryLayer::build`].
+    pub bridge_quality: f64,
 }
 
 // ── Bridge items ───────────────────────────────────────────────────────
+
+/// Quality classification for a bridge item.
+///
+/// Assigned after all bridges are collected, comparing each bridge's
+/// strength against the corpus-wide median and the pair's territorial
+/// separation on S².
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeClassification {
+    /// Strength at or above the median and the source/target caps are
+    /// spatially distinct — a real cross-domain connector.
+    Genuine,
+    /// The two categories overlap heavily on S² (low territorial factor).
+    /// This bridge is more shared-territory noise than a genuine connector.
+    OverlapArtifact,
+    /// Strength below median in a territorially clean pair — a real
+    /// connection but not a strong one.
+    Weak,
+}
+
+/// Territorial factor below which a bridge is classified as an overlap
+/// artifact rather than a genuine or weak connector.
+const OVERLAP_ARTIFACT_TERRITORIAL_THRESHOLD: f64 = 0.3;
 
 /// An item that semantically spans two categories.
 ///
@@ -79,6 +105,8 @@ pub struct BridgeItem {
     /// Bridge strength: harmonic mean of the two affinities.
     /// Higher = equally strong connection to both domains.
     pub bridge_strength: f64,
+    /// Quality label assigned after the full bridge set is observed.
+    pub classification: BridgeClassification,
 }
 
 // ── Category graph ─────────────────────────────────────────────────────
@@ -373,6 +401,8 @@ impl CategoryLayer {
                 exclusivity: 0.0,
                 voronoi_area: 0.0,
                 territorial_efficiency: 0.0,
+                // Filled after build_graph() classifies bridges
+                bridge_quality: 0.0,
             });
         }
 
@@ -380,7 +410,7 @@ impl CategoryLayer {
         let centroids: Vec<SphericalPoint> =
             summaries.iter().map(|s| s.centroid_position).collect();
         let half_angles: Vec<f64> = summaries.iter().map(|s| s.angular_spread).collect();
-        let spatial_quality = SpatialQuality::compute(&centroids, &half_angles, evr);
+        let mut spatial_quality = SpatialQuality::compute(&centroids, &half_angles, evr);
 
         // Backfill spatial fields on summaries
         for (i, summary) in summaries.iter_mut().enumerate() {
@@ -393,6 +423,27 @@ impl CategoryLayer {
 
         // 4. Build category graph + detect bridges (spatially informed)
         let graph = Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality);
+
+        // Backfill bridge_quality on summaries using the just-built graph.
+        // bridge_quality = mean of (edge.mean_bridge_strength × territorial_factor)
+        // over all outgoing edges; 0 for isolated categories.
+        for (i, summary) in summaries.iter_mut().enumerate() {
+            let edges = &graph.adjacency[i];
+            if edges.is_empty() {
+                summary.bridge_quality = 0.0;
+            } else {
+                let total: f64 = edges
+                    .iter()
+                    .map(|e| {
+                        e.mean_bridge_strength * spatial_quality.territorial_factor(i, e.target)
+                    })
+                    .sum();
+                summary.bridge_quality = total / edges.len() as f64;
+            }
+        }
+
+        // Populate C×C spatial bridge quality matrix on SpatialQuality.
+        spatial_quality.set_bridge_quality_matrix(&graph);
 
         // 5. Build inner spheres for qualifying categories
         let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection);
@@ -470,9 +521,37 @@ impl CategoryLayer {
                             affinity_to_source: sim_to_own,
                             affinity_to_target: sim_to_other,
                             bridge_strength,
+                            // Populated in the classification pass below.
+                            classification: BridgeClassification::Weak,
                         });
                     }
                 }
+            }
+        }
+
+        // Classification pass: compare each bridge against the corpus-wide
+        // median strength and the pair's territorial separation on S².
+        let mut all_strengths: Vec<f64> = bridges
+            .values()
+            .flat_map(|list| list.iter().map(|b| b.bridge_strength))
+            .collect();
+        let median_strength = if all_strengths.is_empty() {
+            0.0
+        } else {
+            all_strengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            all_strengths[all_strengths.len() / 2]
+        };
+
+        for list in bridges.values_mut() {
+            for b in list.iter_mut() {
+                let tf = spatial.territorial_factor(b.source_category, b.target_category);
+                b.classification = if tf < OVERLAP_ARTIFACT_TERRITORIAL_THRESHOLD {
+                    BridgeClassification::OverlapArtifact
+                } else if b.bridge_strength >= median_strength {
+                    BridgeClassification::Genuine
+                } else {
+                    BridgeClassification::Weak
+                };
             }
         }
 
@@ -1264,6 +1343,41 @@ mod tests {
     fn bridge_items_unknown_category_returns_empty() {
         let (layer, _, _) = build_test_layer();
         assert!(layer.bridge_items("science", "nonexistent", 10).is_empty());
+    }
+
+    #[test]
+    fn bridge_classification_populated() {
+        let (layer, _, _) = build_test_layer();
+        for bridges in layer.graph.bridges.values() {
+            for b in bridges {
+                // Every bridge should have one of the three classifications.
+                assert!(
+                    b.classification == BridgeClassification::Genuine
+                        || b.classification == BridgeClassification::OverlapArtifact
+                        || b.classification == BridgeClassification::Weak
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_quality_nonnegative() {
+        let (layer, _, _) = build_test_layer();
+        for s in &layer.summaries {
+            assert!(s.bridge_quality >= 0.0, "{} has negative bridge_quality", s.name);
+        }
+    }
+
+    #[test]
+    fn bridge_quality_matrix_symmetric_ish() {
+        let (layer, _, _) = build_test_layer();
+        let m = &layer.spatial_quality.bridge_quality_matrix;
+        let n = m.len();
+        assert_eq!(n, layer.num_categories());
+        for (i, row) in m.iter().enumerate() {
+            assert_eq!(row.len(), n);
+            assert_eq!(row[i], 0.0, "diagonal should be zero");
+        }
     }
 
     #[test]
