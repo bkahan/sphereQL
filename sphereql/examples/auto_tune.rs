@@ -1,20 +1,24 @@
 #![allow(clippy::uninlined_format_args)]
-//! Auto-tune the SphereQL pipeline against the built-in 775-concept corpus.
+//! Auto-tune the SphereQL pipeline against the built-in 775-concept corpus,
+//! under two contrasting quality metrics:
 //!
-//! Runs a random sweep over the [`SearchSpace`] using the default composite
-//! quality metric (bridge coherence + territorial health + cluster
-//! silhouette). Prints the winning config, top-5 trial ranking, and the
-//! per-component score breakdown for the winner.
+//! 1. `default_composite` — 40% bridge coherence / 35% territorial health /
+//!    25% cluster silhouette. Silhouette is variance-centric and typically
+//!    rewards PCA's spread.
+//! 2. `connectivity_composite` — 50% graph modularity / 30% bridge
+//!    coherence / 20% territorial health. Modularity evaluates the k-NN
+//!    graph of projected positions; a projection that preserves
+//!    same-category adjacency scores well regardless of total variance.
+//!
+//! Running both head-to-head tests the hypothesis that "PCA wins" is a
+//! metric-choice artifact rather than a property of the corpus.
 //!
 //! Run with:
 //!   cargo run --example auto_tune --features embed --release
-//!
-//! Use --release; each trial rebuilds the pipeline (spatial quality Monte
-//! Carlo + graph + bridge classification) so debug mode is ~5× slower.
 
 use sphereql::embed::{
-    auto_tune, CompositeMetric, PipelineConfig, PipelineInput, QualityMetric, SearchSpace,
-    SearchStrategy,
+    auto_tune, BridgeClassification, CompositeMetric, PipelineConfig, PipelineInput,
+    ProjectionKind, QualityMetric, SearchSpace, SearchStrategy, SphereQLPipeline, TuneReport,
 };
 use sphereql_corpus::{build_corpus, embed};
 
@@ -23,7 +27,7 @@ const RANDOM_SEED: u64 = 0xA17C_ABE_CAFE;
 
 fn main() {
     println!("================================================================");
-    println!("  SphereQL AutoTuner: random sweep on the 775-concept corpus");
+    println!("  SphereQL AutoTuner: metric-choice comparison");
     println!("================================================================\n");
 
     let corpus = build_corpus();
@@ -54,15 +58,106 @@ fn main() {
     println!("  min_evr_improvement ........... {:?}", space.min_evr_improvement);
     println!("  grid cardinality .............. {}\n", space.grid_cardinality());
 
-    let metric = CompositeMetric::default_composite();
+    // Baseline: the default-config pipeline, built once and scored under
+    // each metric below for the "lift over default" comparison.
+    let baseline_pipeline = SphereQLPipeline::new(PipelineInput {
+        categories: categories.clone(),
+        embeddings: embeddings.clone(),
+    })
+    .expect("baseline pipeline build failed");
+
+    // Default (silhouette-weighted) composite.
+    let default_metric = CompositeMetric::default_composite();
+    let default_baseline_score = default_metric.score(&baseline_pipeline);
+    let (default_pipeline, default_report) =
+        run_tune(&categories, &embeddings, &space, &default_metric);
+
+    println!("\n================================================================");
+    println!("  Metric 1: default_composite (silhouette 25%)");
+    println!("================================================================");
+    print_report(
+        &default_pipeline,
+        &default_report,
+        &default_metric,
+        default_baseline_score,
+    );
+
+    // Connectivity (modularity-weighted) composite.
+    let conn_metric = CompositeMetric::connectivity_composite();
+    let conn_baseline_score = conn_metric.score(&baseline_pipeline);
+    let (conn_pipeline, conn_report) = run_tune(&categories, &embeddings, &space, &conn_metric);
+
+    println!("\n================================================================");
+    println!("  Metric 2: connectivity_composite (graph modularity 50%)");
+    println!("================================================================");
+    print_report(
+        &conn_pipeline,
+        &conn_report,
+        &conn_metric,
+        conn_baseline_score,
+    );
+
+    // Side-by-side verdict.
+    println!("\n================================================================");
+    println!("  Head-to-head verdict");
+    println!("================================================================\n");
+    println!(
+        "  {:<24}  {:<20}  {:<20}",
+        "metric", "winning projection", "best score"
+    );
+    println!("  {}", "─".repeat(70));
+    println!(
+        "  {:<24}  {:<20}  {:<20.4}",
+        default_metric.name(),
+        default_pipeline.projection_kind().name(),
+        default_report.best_score,
+    );
+    println!(
+        "  {:<24}  {:<20}  {:<20.4}",
+        conn_metric.name(),
+        conn_pipeline.projection_kind().name(),
+        conn_report.best_score,
+    );
+
+    let metric_flips_winner =
+        default_pipeline.projection_kind() != conn_pipeline.projection_kind();
+    println!();
+    if metric_flips_winner {
+        println!(
+            "  → metric choice FLIPS the winner: {} under silhouette-weighted,",
+            default_pipeline.projection_kind().name()
+        );
+        println!(
+            "    {} under connectivity-weighted. The 'best projection'",
+            conn_pipeline.projection_kind().name()
+        );
+        println!("    conclusion is metric-dependent on this corpus.");
+    } else {
+        println!(
+            "  → {} wins under BOTH metrics. The ranking is robust to",
+            default_pipeline.projection_kind().name()
+        );
+        println!("    the metric choice on this corpus.");
+    }
+
+    println!();
+}
+
+fn run_tune(
+    categories: &[String],
+    embeddings: &[Vec<f64>],
+    space: &SearchSpace,
+    metric: &impl QualityMetric,
+) -> (SphereQLPipeline, TuneReport) {
+    let input = PipelineInput {
+        categories: categories.to_vec(),
+        embeddings: embeddings.to_vec(),
+    };
     let start = std::time::Instant::now();
-    let (best_pipeline, report) = auto_tune(
-        PipelineInput {
-            categories,
-            embeddings,
-        },
-        &space,
-        &metric,
+    let result = auto_tune(
+        input,
+        space,
+        metric,
         SearchStrategy::Random {
             budget: RANDOM_BUDGET,
             seed: RANDOM_SEED,
@@ -70,46 +165,41 @@ fn main() {
         &PipelineConfig::default(),
     )
     .expect("auto_tune failed");
-    let elapsed = start.elapsed();
+    println!(
+        "\n[{}] tuning complete in {:.2}s",
+        metric.name(),
+        start.elapsed().as_secs_f64()
+    );
+    result
+}
 
-    println!("Tuning complete in {:.2}s", elapsed.as_secs_f64());
-    println!("Metric: {}\n", report.metric_name);
-
-    // Baseline for comparison.
-    let default_pipeline = sphereql::embed::SphereQLPipeline::new(PipelineInput {
-        categories: corpus.iter().map(|c| c.category.to_string()).collect(),
-        embeddings: corpus
-            .iter()
-            .enumerate()
-            .map(|(i, c)| embed(&c.features, 1000 + i as u64))
-            .collect(),
-    })
-    .unwrap();
-    let default_score = metric.score(&default_pipeline);
-
-    println!("Score summary:");
-    println!("  default config ......... {:.4}", default_score);
+fn print_report(
+    best_pipeline: &SphereQLPipeline,
+    report: &TuneReport,
+    composite: &CompositeMetric,
+    baseline_score: f64,
+) {
+    println!(
+        "\nScore summary (under {}):",
+        report.metric_name
+    );
+    println!("  default config ......... {:.4}", baseline_score);
     println!("  mean across trials ..... {:.4}", report.mean_score());
     println!("  best (found) ........... {:.4}", report.best_score);
-    let lift = report.best_score - default_score;
+    let lift = report.best_score - baseline_score;
     println!(
         "  lift over default ...... {:+.4}  ({:+.1}%)\n",
         lift,
-        100.0 * lift / default_score.max(1e-12)
+        100.0 * lift / baseline_score.max(1e-12)
     );
 
     println!(
         "Winning projection: {}",
         best_pipeline.projection_kind().name()
     );
-    if best_pipeline.projection_kind()
-        == sphereql::embed::ProjectionKind::LaplacianEigenmap
-    {
+    if best_pipeline.projection_kind() == ProjectionKind::LaplacianEigenmap {
         let lc = &best_pipeline.config().laplacian;
-        println!(
-            "  laplacian_k_neighbors ....... {}",
-            lc.k_neighbors
-        );
+        println!("  laplacian_k_neighbors ....... {}", lc.k_neighbors);
         println!(
             "  laplacian_active_threshold .. {:.3}",
             lc.active_threshold
@@ -118,13 +208,13 @@ fn main() {
 
     println!("\nTop 5 trials (by score):");
     println!(
-        "  {:>4}  {:>6}  {:>6}  {:>18}  {:>8}  {:>10}  {:>10}  {:>10}  {:>10}",
-        "rank", "score", "build", "projection", "groups", "low_evr", "overlap", "base", "evr_pen"
+        "  {:>4}  {:>6}  {:>6}  {:>18}  {:>8}  {:>10}  {:>10}",
+        "rank", "score", "build", "projection", "groups", "low_evr", "overlap"
     );
-    println!("  {}", "─".repeat(102));
+    println!("  {}", "─".repeat(82));
     for (rank, t) in report.ranked_trials().iter().take(5).enumerate() {
         println!(
-            "  {:>4}  {:>6.4}  {:>4}ms  {:>18}  {:>8}  {:>10.2}  {:>10.2}  {:>10.2}  {:>10.2}",
+            "  {:>4}  {:>6.4}  {:>4}ms  {:>18}  {:>8}  {:>10.2}  {:>10.2}",
             rank + 1,
             t.score,
             t.build_ms,
@@ -132,13 +222,9 @@ fn main() {
             t.config.routing.num_domain_groups,
             t.config.routing.low_evr_threshold,
             t.config.bridges.overlap_artifact_territorial,
-            t.config.bridges.threshold_base,
-            t.config.bridges.threshold_evr_penalty,
         );
     }
 
-    // Per-projection-kind score summary so you can see which family won
-    // overall, not just the single best trial.
     use std::collections::BTreeMap;
     let mut per_kind: BTreeMap<&str, (f64, f64, usize)> = BTreeMap::new();
     for t in &report.trials {
@@ -166,7 +252,7 @@ fn main() {
     }
 
     println!("\nWinning config component scores:");
-    for (name, weight, score) in metric.score_components(&best_pipeline) {
+    for (name, weight, score) in composite.score_components(best_pipeline) {
         let bar_len = (score * 30.0) as usize;
         let bar = "█".repeat(bar_len) + &"░".repeat(30 - bar_len);
         println!(
@@ -175,28 +261,14 @@ fn main() {
         );
     }
 
-    if !report.failures.is_empty() {
-        println!(
-            "\n{} trial(s) failed to build:",
-            report.failures.len()
-        );
-        for (_, err) in report.failures.iter().take(3) {
-            println!("  - {}", err);
-        }
-    }
-
-    // Bridge classification distribution on the tuned pipeline — the most
-    // actionable signal for whether the tuner actually moved the needle
-    // on the low-EVR pathology.
     let layer = best_pipeline.category_layer();
     let (mut genuine, mut artifact, mut weak) = (0usize, 0usize, 0usize);
     for bridges in layer.graph.bridges.values() {
         for b in bridges {
-            use sphereql::embed::BridgeClassification::*;
             match b.classification {
-                Genuine => genuine += 1,
-                OverlapArtifact => artifact += 1,
-                Weak => weak += 1,
+                BridgeClassification::Genuine => genuine += 1,
+                BridgeClassification::OverlapArtifact => artifact += 1,
+                BridgeClassification::Weak => weak += 1,
             }
         }
     }
@@ -219,6 +291,4 @@ fn main() {
             100.0 * artifact as f64 / total as f64
         );
     }
-
-    println!("\nDone.");
 }
