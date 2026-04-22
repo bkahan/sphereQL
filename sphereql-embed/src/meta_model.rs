@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::PipelineConfig;
 use crate::corpus_features::{CorpusFeatures, CORPUS_FEATURE_COUNT};
+use crate::feedback::FeedbackSummary;
 use crate::tuner::TuneReport;
 
 /// One observation for the meta-learner: "on this corpus profile, this
@@ -155,6 +156,28 @@ impl MetaTrainingRecord {
     /// an empty vec if the store doesn't exist yet.
     pub fn load_default_store() -> io::Result<Vec<Self>> {
         Self::load_list(Self::default_store_path()?)
+    }
+
+    /// Blend this record's automated `best_score` with a feedback
+    /// summary's `mean_score` into a single adjusted score.
+    ///
+    /// `alpha` ∈ `[0, 1]` controls how much weight to give feedback:
+    ///   - `0.0` returns `best_score` unchanged (ignore feedback).
+    ///   - `1.0` returns the feedback mean (trust feedback entirely).
+    ///   - `0.5` weights them equally.
+    ///
+    /// `alpha` is clamped to `[0, 1]`. When `summary` belongs to a
+    /// different corpus than `self` the function still computes the
+    /// blend — verifying corpus_id alignment is the caller's
+    /// responsibility; this keeps the API composable under custom
+    /// lookup schemes.
+    pub fn adjust_score_with_feedback(
+        &self,
+        summary: &FeedbackSummary,
+        alpha: f64,
+    ) -> f64 {
+        let a = alpha.clamp(0.0, 1.0);
+        (1.0 - a) * self.best_score + a * summary.mean_score
     }
 }
 
@@ -555,5 +578,26 @@ mod tests {
         assert!(path
             .iter()
             .any(|c| c.to_string_lossy() == ".sphereql"));
+    }
+
+    #[test]
+    fn adjust_score_with_feedback_blends_at_alpha() {
+        let r = record("r", feat(100, 5, 0.1, 0.3), ProjectionKind::Pca, 0.8);
+        let summary = FeedbackSummary {
+            corpus_id: "r".into(),
+            n_events: 10,
+            mean_score: 0.4,
+            min_score: 0.1,
+            max_score: 0.9,
+        };
+        // alpha = 0 → keep best_score
+        assert!((r.adjust_score_with_feedback(&summary, 0.0) - 0.8).abs() < 1e-12);
+        // alpha = 1 → replace with feedback
+        assert!((r.adjust_score_with_feedback(&summary, 1.0) - 0.4).abs() < 1e-12);
+        // alpha = 0.5 → midpoint 0.6
+        assert!((r.adjust_score_with_feedback(&summary, 0.5) - 0.6).abs() < 1e-12);
+        // alpha clamped: values outside [0,1] are clipped.
+        assert!((r.adjust_score_with_feedback(&summary, 2.0) - 0.4).abs() < 1e-12);
+        assert!((r.adjust_score_with_feedback(&summary, -1.0) - 0.8).abs() < 1e-12);
     }
 }
