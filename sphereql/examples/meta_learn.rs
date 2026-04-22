@@ -1,164 +1,241 @@
 #![allow(clippy::uninlined_format_args)]
-//! Demonstrates the Phase-4 meta-learning loop end-to-end:
+//! End-to-end validation of the L2 metalearning layer.
 //!
-//! 1. Tune a pipeline on the built-in corpus (auto_tune).
-//! 2. Extract a CorpusFeatures profile and build a MetaTrainingRecord.
-//! 3. Save the record list to a scratch file.
-//! 4. Reload records, fit a NearestNeighborMetaModel, predict a config.
-//! 5. Build a "recalled" pipeline via SphereQLPipeline::new_from_metamodel.
-//! 6. Verify the recalled pipeline's config matches the tuner's winner.
+//! Tunes on both the 775-concept built-in corpus (favors PCA) and the
+//! 300-concept stress corpus (favors Laplacian), accumulates both
+//! winning configs into a MetaTrainingRecord store, fits two meta-models
+//! (NearestNeighbor + DistanceWeighted) on those records, and verifies
+//! that querying the store with a "built-in-like" feature profile
+//! predicts PCA while a "stress-like" profile predicts Laplacian.
 //!
-//! This example writes to `./target/meta_records.json`, NOT the default
-//! `~/.sphereql/` store — keeping example runs scoped to the workspace.
-//! Production callers should use MetaTrainingRecord::append_to_default_store
-//! to accumulate records across sessions.
+//! This exercises:
+//!   - auto_tune across two genuinely different corpus regimes
+//!   - MetaTrainingRecord::from_tune_result
+//!   - MetaTrainingRecord::save_list / load_list (local scratch path)
+//!   - NearestNeighborMetaModel::fit/predict
+//!   - DistanceWeightedMetaModel::fit/predict
+//!   - CorpusFeatures::extract and to_vec
+//!
+//! Writes to `./target/meta_records.json` (not the user's default
+//! `~/.sphereql/` store) so running the example is self-contained.
 //!
 //! Run with:
 //!   cargo run --example meta_learn --features embed --release
 
 use sphereql::embed::{
-    auto_tune, CompositeMetric, CorpusFeatures, MetaModel, MetaTrainingRecord,
-    NearestNeighborMetaModel, PipelineConfig, PipelineInput, QualityMetric, SearchSpace,
-    SearchStrategy, SphereQLPipeline,
+    auto_tune, CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, MetaModel,
+    MetaTrainingRecord, NearestNeighborMetaModel, PipelineConfig, PipelineInput, ProjectionKind,
+    QualityMetric, SearchSpace, SearchStrategy,
 };
-use sphereql_corpus::{build_corpus, embed};
+use sphereql_corpus::{
+    build_corpus, build_stress_corpus, embed, embed_with_noise, Concept, STRESS_NOISE_AMPLITUDE,
+};
 
 const BUDGET: usize = 12;
-const SEED: u64 = 0xA17C_ABE_CAFE;
+const BASE_SEED: u64 = 0xA17C_ABE_CAFE;
 
 fn main() {
     println!("================================================================");
-    println!("  SphereQL meta-learning: tune → record → save → recall");
+    println!("  SphereQL meta-learning — cross-corpus populate + verify");
     println!("================================================================\n");
 
-    let corpus = build_corpus();
-    let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
-    let embeddings: Vec<Vec<f64>> = corpus
-        .iter()
-        .enumerate()
-        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
-        .collect();
-
-    println!("Corpus: {} concepts\n", embeddings.len());
-
-    // ── 1. Tune ────────────────────────────────────────────────────────
-    let space = SearchSpace::default();
     let metric = CompositeMetric::default_composite();
+    let space = SearchSpace::default();
 
-    println!("Step 1: tuning ({} trials)...", BUDGET);
-    let (tuned_pipeline, report) = auto_tune(
+    // ── 1. Tune on BOTH corpora, emit one training record each ─────────
+    let (built_in_record, built_in_features) = tune_and_record(
+        "built_in_775",
+        build_corpus(),
+        false,
+        &space,
+        &metric,
+    );
+    let (stress_record, stress_features) =
+        tune_and_record("stress_300", build_stress_corpus(), true, &space, &metric);
+
+    println!("\nTraining store: 2 records");
+    println!(
+        "  {:<16}  projection={:<20}  score={:.4}",
+        built_in_record.corpus_id,
+        built_in_record.best_config.projection_kind.name(),
+        built_in_record.best_score,
+    );
+    println!(
+        "  {:<16}  projection={:<20}  score={:.4}",
+        stress_record.corpus_id,
+        stress_record.best_config.projection_kind.name(),
+        stress_record.best_score,
+    );
+
+    // ── 2. Save to scratch, reload ────────────────────────────────────
+    let store = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("target")
+        .join("meta_records.json");
+    MetaTrainingRecord::save_list(&[built_in_record.clone(), stress_record.clone()], &store)
+        .expect("save failed");
+    let loaded = MetaTrainingRecord::load_list(&store).expect("load failed");
+    assert_eq!(loaded.len(), 2);
+    println!("\nStore round-tripped to {}", store.display());
+
+    // ── 3. Fit both meta-models ───────────────────────────────────────
+    let mut nn = NearestNeighborMetaModel::new();
+    nn.fit(&loaded);
+    let mut dw = DistanceWeightedMetaModel::new();
+    dw.fit(&loaded);
+    println!("\nFitted models: {} + {}", nn.name(), dw.name());
+
+    // ── 4. Verify: feed each corpus's actual features back through ────
+    println!("\n────────────────────────────────────────────────────────────────");
+    println!("  Verification: do the models predict the right kind?");
+    println!("────────────────────────────────────────────────────────────────");
+    verify(&nn, &dw, "built_in_775 profile", &built_in_features, built_in_record.best_config.projection_kind);
+    verify(&nn, &dw, "stress_300 profile", &stress_features, stress_record.best_config.projection_kind);
+
+    // ── 5. Verify: perturbed profiles still route correctly ───────────
+    // A profile halfway between the two regimes: should still lean
+    // toward whichever it's closer to. Test both directions.
+    let near_built_in = interp(&built_in_features, &stress_features, 0.2);
+    let near_stress = interp(&built_in_features, &stress_features, 0.8);
+    verify(&nn, &dw, "built-in-like (20% toward stress)", &near_built_in, ProjectionKind::Pca);
+    verify(
+        &nn,
+        &dw,
+        "stress-like (80% toward stress)",
+        &near_stress,
+        ProjectionKind::LaplacianEigenmap,
+    );
+
+    println!();
+}
+
+fn tune_and_record(
+    corpus_id: &str,
+    corpus: Vec<Concept>,
+    stress: bool,
+    space: &SearchSpace,
+    metric: &impl QualityMetric,
+) -> (MetaTrainingRecord, CorpusFeatures) {
+    let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
+    let embeddings: Vec<Vec<f64>> = if stress {
+        corpus
+            .iter()
+            .enumerate()
+            .map(|(i, c)| embed_with_noise(&c.features, 9000 + i as u64, STRESS_NOISE_AMPLITUDE))
+            .collect()
+    } else {
+        corpus
+            .iter()
+            .enumerate()
+            .map(|(i, c)| embed(&c.features, 1000 + i as u64))
+            .collect()
+    };
+
+    println!(
+        "\n[{}] tuning {} concepts / {} categories...",
+        corpus_id,
+        embeddings.len(),
+        categories
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    );
+
+    let start = std::time::Instant::now();
+    let (_pipeline, report) = auto_tune(
         PipelineInput {
             categories: categories.clone(),
             embeddings: embeddings.clone(),
         },
-        &space,
-        &metric,
+        space,
+        metric,
         SearchStrategy::Random {
             budget: BUDGET,
-            seed: SEED,
+            seed: BASE_SEED.wrapping_add(corpus_id.len() as u64),
         },
         &PipelineConfig::default(),
     )
     .expect("auto_tune failed");
+    let elapsed = start.elapsed();
 
-    println!(
-        "  best {} score = {:.4}  ({})",
-        report.metric_name,
-        report.best_score,
-        tuned_pipeline.projection_kind().name()
-    );
-
-    // ── 2. Extract features + build training record ───────────────────
-    println!("\nStep 2: extracting corpus features...");
     let features = CorpusFeatures::extract(&categories, &embeddings);
-    print_features(&features);
-
     let record = MetaTrainingRecord::from_tune_result(
-        "built_in_775",
-        features,
+        corpus_id,
+        features.clone(),
         &report,
-        format!("random{{budget={},seed={:#X}}}", BUDGET, SEED),
+        format!("random{{budget={}}}", BUDGET),
     );
-
-    // ── 3. Save to a local scratch file ────────────────────────────────
-    let scratch = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("target")
-        .join("meta_records.json");
-    println!("\nStep 3: saving record to {}", scratch.display());
-
-    // Accumulate: load whatever exists, append, save back.
-    let mut records = MetaTrainingRecord::load_list(&scratch).expect("load failed");
-    records.push(record.clone());
-    MetaTrainingRecord::save_list(&records, &scratch).expect("save failed");
-    println!("  store now holds {} record(s)", records.len());
-
-    // ── 4. Reload + fit meta-model ────────────────────────────────────
-    println!("\nStep 4: fitting NearestNeighborMetaModel on the store...");
-    let loaded = MetaTrainingRecord::load_list(&scratch).expect("load failed");
-    let mut model = NearestNeighborMetaModel::new();
-    model.fit(&loaded);
-    println!("  model fitted on {} record(s)", loaded.len());
-
-    // ── 5. Recall: build a pipeline via the model ─────────────────────
-    println!("\nStep 5: building a pipeline via new_from_metamodel...");
-    let (recalled_pipeline, _f, predicted_config) = SphereQLPipeline::new_from_metamodel(
-        PipelineInput {
-            categories: categories.clone(),
-            embeddings: embeddings.clone(),
-        },
-        &model,
-    )
-    .expect("metamodel recall failed");
 
     println!(
-        "  predicted projection: {}",
-        predicted_config.projection_kind.name()
+        "  {} → best {:.4} under {} in {:.2}s (projection {})",
+        corpus_id,
+        report.best_score,
+        report.metric_name,
+        elapsed.as_secs_f64(),
+        record.best_config.projection_kind.name(),
     );
-    println!(
-        "  recalled pipeline projection_kind: {}",
-        recalled_pipeline.projection_kind().name()
-    );
 
-    // ── 6. Verify ─────────────────────────────────────────────────────
-    let recall_score = metric.score(&recalled_pipeline);
-    println!("\nStep 6: scoring both pipelines under {}:", metric.name());
-    println!("  tuned    = {:.4}", report.best_score);
-    println!("  recalled = {:.4}", recall_score);
-
-    if (recall_score - report.best_score).abs() < 1e-6 {
-        println!("  → recall exactly matches tuner's winner (expected with 1 record)");
-    } else {
-        println!(
-            "  → recall differs from tuner ({:+.4}) — likely because the stored record's config",
-            recall_score - report.best_score
-        );
-        println!("    is applied to a newly-built pipeline with the same inputs.");
-    }
-
-    // ── Operational note: where the "real" store lives ────────────────
-    match MetaTrainingRecord::default_store_path() {
-        Ok(p) => println!(
-            "\nProduction default store would live at: {}\n(not written by this example)",
-            p.display()
-        ),
-        Err(e) => println!("\nDefault store path unavailable: {}", e),
-    }
+    (record, features)
 }
 
-fn print_features(f: &CorpusFeatures) {
-    let labels = CorpusFeatures::feature_names();
-    let values = f.to_vec();
+fn verify(
+    nn: &NearestNeighborMetaModel,
+    dw: &DistanceWeightedMetaModel,
+    label: &str,
+    features: &CorpusFeatures,
+    expected_kind: ProjectionKind,
+) {
+    let nn_pred = nn.predict(features).projection_kind;
+    let dw_pred = dw.predict(features).projection_kind;
+    let mark = |k: ProjectionKind| {
+        if k == expected_kind {
+            "OK "
+        } else {
+            "MISS"
+        }
+    };
     println!(
-        "  {:<35} {:>10}",
-        "feature", "value"
+        "  {:<42}  expected={:<20}  nn={} {}  dw={} {}",
+        label,
+        expected_kind.name(),
+        nn_pred.name(),
+        mark(nn_pred),
+        dw_pred.name(),
+        mark(dw_pred),
     );
-    println!("  {}", "─".repeat(48));
-    for (name, v) in labels.iter().zip(values.iter()) {
-        println!("  {:<35} {:>10.4}", name, v);
+}
+
+/// Interpolate between two CorpusFeatures profiles. Used to probe how
+/// the models behave on intermediate points that aren't exactly either
+/// stored record's profile.
+fn interp(a: &CorpusFeatures, b: &CorpusFeatures, t: f64) -> CorpusFeatures {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |x: f64, y: f64| (1.0 - t) * x + t * y;
+    CorpusFeatures {
+        // Discrete fields: round the mix; these usually don't move the
+        // normalized distance much compared with the scalar features.
+        n_items: mix(a.n_items as f64, b.n_items as f64).round() as usize,
+        n_categories: mix(a.n_categories as f64, b.n_categories as f64).round() as usize,
+        dim: a.dim, // dim is fixed across corpora (128 here); no need to interp
+        mean_members_per_category: mix(
+            a.mean_members_per_category,
+            b.mean_members_per_category,
+        ),
+        category_size_entropy: mix(a.category_size_entropy, b.category_size_entropy),
+        mean_sparsity: mix(a.mean_sparsity, b.mean_sparsity),
+        axis_utilization_entropy: mix(a.axis_utilization_entropy, b.axis_utilization_entropy),
+        noise_estimate: mix(a.noise_estimate, b.noise_estimate),
+        mean_intra_category_similarity: mix(
+            a.mean_intra_category_similarity,
+            b.mean_intra_category_similarity,
+        ),
+        mean_inter_category_similarity: mix(
+            a.mean_inter_category_similarity,
+            b.mean_inter_category_similarity,
+        ),
+        category_separation_ratio: mix(
+            a.category_separation_ratio,
+            b.category_separation_ratio,
+        ),
     }
-    println!(
-        "  {:<35} {:>10.4}",
-        "category_separation_ratio (derived)", f.category_separation_ratio
-    );
 }
