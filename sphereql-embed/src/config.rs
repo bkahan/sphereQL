@@ -15,7 +15,7 @@
 ///
 /// Every field is a sub-config grouped by area. [`Self::default`] returns
 /// the values the crate shipped with before the config surface existed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PipelineConfig {
     /// Outer-sphere projection family.
     pub projection_kind: ProjectionKind,
@@ -52,7 +52,7 @@ impl Default for PipelineConfig {
 /// This is a first-class tunable axis: the auto-tuner can sweep over it
 /// once the pipeline is generalized beyond PCA, and meta-learning can
 /// map corpus profiles onto the kind that works best.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ProjectionKind {
     /// Linear PCA — fast, variance-maximizing. Good default for dense,
     /// low-noise embeddings.
@@ -97,7 +97,7 @@ impl ProjectionKind {
 // ── Inner-sphere ───────────────────────────────────────────────────────
 
 /// Thresholds governing when a category gets its own inner projection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct InnerSphereConfig {
     /// Minimum member count for a category to be considered.
     pub min_size: usize,
@@ -124,7 +124,7 @@ impl Default for InnerSphereConfig {
 // ── Bridges ────────────────────────────────────────────────────────────
 
 /// Parameters controlling bridge detection and classification.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BridgeConfig {
     /// Constant term in the EVR-adaptive bridge threshold
     /// `threshold = threshold_base + (1 − evr)² · threshold_evr_penalty`.
@@ -160,7 +160,7 @@ impl BridgeConfig {
 // ── Hierarchical routing ───────────────────────────────────────────────
 
 /// Parameters for hierarchical domain-group routing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RoutingConfig {
     /// Number of domain groups detected at build time by
     /// [`detect_domain_groups`](crate::domain_groups::detect_domain_groups).
@@ -182,7 +182,7 @@ impl Default for RoutingConfig {
 // ── Laplacian eigenmap ─────────────────────────────────────────────────
 
 /// Graph-construction parameters for [`LaplacianEigenmapProjection`](crate::laplacian::LaplacianEigenmapProjection).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LaplacianConfig {
     /// k in the k-NN graph sparsification step.
     pub k_neighbors: usize,
@@ -204,7 +204,7 @@ impl Default for LaplacianConfig {
 /// Monte Carlo sample counts for [`SpatialQuality::compute`](crate::spatial_quality::SpatialQuality::compute).
 ///
 /// These run once at build time. Higher = more precise but slower.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SpatialConfig {
     pub coverage_samples: usize,
     pub exclusivity_samples: usize,
