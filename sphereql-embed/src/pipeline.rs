@@ -227,8 +227,9 @@ impl SphereQLPipeline {
         let projected_positions: Vec<SphericalPoint> =
             embeddings.iter().map(|e| pca.project(e)).collect();
 
+        let evr = pca.explained_variance_ratio();
         let category_layer =
-            CategoryLayer::build(&categories, &embeddings, &projected_positions, &pca);
+            CategoryLayer::build(&categories, &embeddings, &projected_positions, &pca, evr);
 
         Ok(Self {
             pca,

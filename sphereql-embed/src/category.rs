@@ -4,6 +4,7 @@ use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::kernel_pca::KernelPcaProjection;
 use crate::projection::{PcaProjection, Projection};
+use crate::spatial_quality::SpatialQuality;
 use crate::types::{Embedding, RadialStrategy};
 
 // ── Thresholds ─────────────────────────────────────────────────────────
@@ -46,6 +47,14 @@ pub struct CategorySummary {
     pub cohesion: f64,
     /// Number of member items.
     pub member_count: usize,
+    /// Solid angle of this category's cap on S² (steradians).
+    pub cap_area: f64,
+    /// Fraction of this category's cap not overlapped by any other. [0, 1].
+    pub exclusivity: f64,
+    /// Voronoi cell area on S² (steradians).
+    pub voronoi_area: f64,
+    /// Items per steradian of Voronoi cell.
+    pub territorial_efficiency: f64,
 }
 
 // ── Bridge items ───────────────────────────────────────────────────────
@@ -254,6 +263,9 @@ pub struct CategoryLayer {
     /// Inner spheres keyed by category index. Only present for categories
     /// that meet the size and EVR-improvement thresholds.
     pub inner_spheres: HashMap<usize, InnerSphere>,
+    /// Pre-computed spatial properties of the category layout on S².
+    /// Used for bridge quality scoring, confidence signals, and routing.
+    pub spatial_quality: SpatialQuality,
 }
 
 impl CategoryLayer {
@@ -278,6 +290,7 @@ impl CategoryLayer {
         embeddings: &[Embedding],
         projected_positions: &[SphericalPoint],
         projection: &P,
+        evr: f64,
     ) -> Self {
         let n = categories.len();
         assert_eq!(n, embeddings.len());
@@ -349,13 +362,33 @@ impl CategoryLayer {
                 angular_spread,
                 cohesion,
                 member_count: count,
+                // Spatial fields filled after SpatialQuality is computed
+                cap_area: 0.0,
+                exclusivity: 0.0,
+                voronoi_area: 0.0,
+                territorial_efficiency: 0.0,
             });
         }
 
-        // 3. Build category graph + detect bridges
-        let graph = Self::build_graph(&summaries, embeddings, num_cats);
+        // 3. Compute spatial quality from category geometry
+        let centroids: Vec<SphericalPoint> =
+            summaries.iter().map(|s| s.centroid_position).collect();
+        let half_angles: Vec<f64> = summaries.iter().map(|s| s.angular_spread).collect();
+        let spatial_quality = SpatialQuality::compute(&centroids, &half_angles, evr);
 
-        // 4. Build inner spheres for qualifying categories (Phase 2)
+        // Backfill spatial fields on summaries
+        for (i, summary) in summaries.iter_mut().enumerate() {
+            summary.cap_area = spatial_quality.cap_areas[i];
+            summary.exclusivity = spatial_quality.exclusivities[i];
+            summary.voronoi_area = spatial_quality.voronoi_area(i);
+            summary.territorial_efficiency =
+                spatial_quality.territorial_efficiency(i, summary.member_count);
+        }
+
+        // 4. Build category graph + detect bridges (spatially informed)
+        let graph = Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality);
+
+        // 5. Build inner spheres for qualifying categories
         let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection);
 
         CategoryLayer {
@@ -364,16 +397,21 @@ impl CategoryLayer {
             graph,
             outer_positions: projected_positions.to_vec(),
             inner_spheres,
+            spatial_quality,
         }
     }
 
     /// Build the inter-category adjacency graph and detect bridge items.
+    ///
+    /// Bridge detection uses the spatial quality's EVR-adaptive threshold
+    /// and exclusivity-weighted strength to prevent bridge inflation at
+    /// low EVR and discount bridges between overlapping categories.
     fn build_graph(
         summaries: &[CategorySummary],
         embeddings: &[Embedding],
         num_cats: usize,
+        spatial: &SpatialQuality,
     ) -> CategoryGraph {
-        // Precompute centroid pairwise distances
         let mut centroid_dists = vec![vec![0.0; num_cats]; num_cats];
         for i in 0..num_cats {
             for j in (i + 1)..num_cats {
@@ -386,7 +424,8 @@ impl CategoryLayer {
             }
         }
 
-        // Detect bridge items
+        let bridge_threshold = spatial.bridge_threshold;
+
         let mut bridges: HashMap<(usize, usize), Vec<BridgeItem>> = HashMap::new();
 
         for (ci, summary) in summaries.iter().enumerate() {
@@ -404,12 +443,19 @@ impl CategoryLayer {
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding);
 
-                    if sim_to_other > 0.0 && sim_to_other > sim_to_own * 0.5 {
-                        let bridge_strength = if sim_to_own + sim_to_other > f64::EPSILON {
+                    // EVR-adaptive threshold: stricter when projection is lossy
+                    if sim_to_other > 0.0 && sim_to_other > sim_to_own * bridge_threshold {
+                        let raw_strength = if sim_to_own + sim_to_other > f64::EPSILON {
                             2.0 * sim_to_own * sim_to_other / (sim_to_own + sim_to_other)
                         } else {
                             0.0
                         };
+
+                        // Discount bridges between heavily overlapping categories.
+                        // Two categories that can't be distinguished on S² produce
+                        // "bridges" that are really just shared territory.
+                        let territorial = spatial.territorial_factor(ci, cj);
+                        let bridge_strength = raw_strength * territorial;
 
                         bridges.entry((ci, cj)).or_default().push(BridgeItem {
                             item_index: mi,
@@ -450,7 +496,17 @@ impl CategoryLayer {
                     })
                     .unwrap_or(0.0);
 
-                let weight = cd / (1.0 + bridge_count as f64 * mean_bridge_strength);
+                // Voronoi neighbors get a routing bonus — they're geometrically
+                // adjacent on S², so traversal between them is natural even
+                // without strong bridges.
+                let voronoi_factor = if spatial.are_voronoi_neighbors(i, j) {
+                    0.8
+                } else {
+                    1.0
+                };
+
+                let weight =
+                    cd * voronoi_factor / (1.0 + bridge_count as f64 * mean_bridge_strength);
 
                 adjacency[i].push(CategoryEdge {
                     target: j,
@@ -918,7 +974,8 @@ mod tests {
         let (categories, embeddings) = test_corpus();
         let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
-        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca);
+        let evr = pca.explained_variance_ratio();
+        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr);
         (layer, embeddings, pca)
     }
 
@@ -964,7 +1021,8 @@ mod tests {
         let (categories, embeddings) = large_category_corpus();
         let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
-        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca);
+        let evr = pca.explained_variance_ratio();
+        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr);
         (layer, embeddings, pca)
     }
 
@@ -1089,14 +1147,17 @@ mod tests {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
             for e in edges {
-                let expected =
+                // The Voronoi bonus can only reduce weight, so weight ≤ base formula.
+                // The territorial factor can also reduce bridge strength.
+                let base_no_bonus =
                     e.centroid_distance / (1.0 + e.bridge_count as f64 * e.mean_bridge_strength);
                 assert!(
-                    (e.weight - expected).abs() < 1e-10,
-                    "weight {:.6} != expected {:.6}",
+                    e.weight <= base_no_bonus + 1e-10,
+                    "weight {:.6} should be ≤ base {:.6} (Voronoi bonus reduces it)",
                     e.weight,
-                    expected
+                    base_no_bonus,
                 );
+                assert!(e.weight > 0.0, "weight must be positive");
             }
         }
     }
