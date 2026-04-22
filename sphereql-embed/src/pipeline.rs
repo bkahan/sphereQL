@@ -4,6 +4,7 @@ use sphereql_index::SpatialItem;
 use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
+use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
 use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
@@ -47,6 +48,9 @@ pub struct NearestResult {
     pub certainty: f64,
     /// Semantic intensity (pre-normalization magnitude of original embedding).
     pub intensity: f64,
+    /// Combined quality signal: EVR × certainty × gap_confidence.
+    /// `None` if quality config is not set on the pipeline.
+    pub quality: Option<QualitySignal>,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +166,10 @@ pub struct SphereQLPipeline {
     _embeddings: Vec<Embedding>,
     /// Category enrichment layer: summaries, graph, bridges, inner spheres.
     category_layer: CategoryLayer,
+    /// Quality configuration for filtering and warnings.
+    quality_config: QualityConfig,
+    /// Projection quality warnings (empty if EVR is above threshold).
+    projection_warnings: Vec<ProjectionWarning>,
 }
 
 impl SphereQLPipeline {
@@ -231,6 +239,11 @@ impl SphereQLPipeline {
         let category_layer =
             CategoryLayer::build(&categories, &embeddings, &projected_positions, &pca, evr);
 
+        let quality_config = QualityConfig::default();
+        let projection_warnings = ProjectionWarning::from_evr(evr, quality_config.warn_below_evr)
+            .into_iter()
+            .collect();
+
         Ok(Self {
             pca,
             index,
@@ -239,6 +252,8 @@ impl SphereQLPipeline {
             ids,
             _embeddings: embeddings,
             category_layer,
+            quality_config,
+            projection_warnings,
         })
     }
 
@@ -248,22 +263,34 @@ impl SphereQLPipeline {
 
         match q {
             SphereQLQuery::Nearest { k } => {
+                let evr = self.pca.explained_variance_ratio();
                 let results = self.index.search_nearest(&emb, k);
                 SphereQLOutput::Nearest(
                     results
                         .iter()
-                        .map(|r| NearestResult {
-                            id: r.item.id.clone(),
-                            category: self.cat_for(&r.item.id),
-                            distance: r.distance,
-                            certainty: r.item.certainty(),
-                            intensity: r.item.intensity(),
+                        .map(|r| {
+                            let certainty = r.item.certainty();
+                            let quality = QualitySignal::from_certainty(evr, certainty);
+                            NearestResult {
+                                id: r.item.id.clone(),
+                                category: self.cat_for(&r.item.id),
+                                distance: r.distance,
+                                certainty,
+                                intensity: r.item.intensity(),
+                                quality: Some(quality),
+                            }
+                        })
+                        .filter(|r| {
+                            r.certainty >= self.quality_config.min_certainty
+                                && r.quality
+                                    .map_or(true, |q| q.passes_threshold(self.quality_config.min_combined))
                         })
                         .collect(),
                 )
             }
 
             SphereQLQuery::SimilarAbove { min_cosine } => {
+                let evr = self.pca.explained_variance_ratio();
                 let results = self.index.search_similar(&emb, min_cosine);
                 let sp_q = self.pca.project(&emb);
                 SphereQLOutput::KNearest(
@@ -272,13 +299,21 @@ impl SphereQLPipeline {
                         .iter()
                         .map(|item| {
                             let d = angular_distance(&sp_q, item.position());
+                            let certainty = item.certainty();
+                            let quality = QualitySignal::from_certainty(evr, certainty);
                             NearestResult {
                                 id: item.id.clone(),
                                 category: self.cat_for(&item.id),
                                 distance: d,
-                                certainty: item.certainty(),
+                                certainty,
                                 intensity: item.intensity(),
+                                quality: Some(quality),
                             }
+                        })
+                        .filter(|r| {
+                            r.certainty >= self.quality_config.min_certainty
+                                && r.quality
+                                    .map_or(true, |q| q.passes_threshold(self.quality_config.min_combined))
                         })
                         .collect(),
                 )
@@ -506,6 +541,21 @@ impl SphereQLPipeline {
     /// Shortcut: inner sphere statistics for all categories.
     pub fn inner_sphere_stats(&self) -> Vec<InnerSphereReport> {
         self.category_layer.inner_sphere_stats()
+    }
+
+    /// Projection quality warnings. Empty if EVR is above threshold.
+    pub fn projection_warnings(&self) -> &[ProjectionWarning] {
+        &self.projection_warnings
+    }
+
+    /// Current quality configuration.
+    pub fn quality_config(&self) -> &QualityConfig {
+        &self.quality_config
+    }
+
+    /// Update the quality configuration (e.g., to enable filtering).
+    pub fn set_quality_config(&mut self, config: QualityConfig) {
+        self.quality_config = config;
     }
 
     /// Serialize all projected points as a JSON array string.
