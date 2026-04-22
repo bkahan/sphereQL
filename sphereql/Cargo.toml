@@ -82,3 +82,11 @@ required-features = ["embed"]
 [[example]]
 name = "meta_learn"
 required-features = ["embed"]
+
+[[example]]
+name = "meta_warm_start"
+required-features = ["embed"]
+
+[[example]]
+name = "meta_feedback"
+required-features = ["embed"]
