@@ -7,6 +7,7 @@
 //! detection, hierarchical concept paths).
 
 pub mod category;
+pub mod confidence;
 pub mod kernel_pca;
 pub mod mapper;
 pub mod navigator;
@@ -17,6 +18,7 @@ pub mod spatial_quality;
 pub mod types;
 
 pub use category::*;
+pub use confidence::*;
 pub use kernel_pca::*;
 pub use mapper::*;
 pub use navigator::*;
