@@ -8,6 +8,7 @@
 
 pub mod category;
 pub mod config;
+pub mod configured_projection;
 pub mod confidence;
 pub mod domain_groups;
 pub mod kernel_pca;
@@ -24,6 +25,7 @@ pub mod types;
 
 pub use category::*;
 pub use config::*;
+pub use configured_projection::*;
 pub use confidence::*;
 pub use domain_groups::*;
 pub use kernel_pca::*;

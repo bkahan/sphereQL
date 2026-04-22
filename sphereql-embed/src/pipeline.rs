@@ -4,9 +4,12 @@ use sphereql_index::SpatialItem;
 use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
-use crate::config::PipelineConfig;
+use crate::config::{PipelineConfig, ProjectionKind};
+use crate::configured_projection::ConfiguredProjection;
 use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
 use crate::domain_groups::{detect_domain_groups, DomainGroup};
+use crate::kernel_pca::KernelPcaProjection;
+use crate::laplacian::LaplacianEigenmapProjection;
 use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
@@ -159,8 +162,8 @@ pub struct ExportedPoint {
 // ── Pipeline ──────────────────────────────────────────────────────────────
 
 pub struct SphereQLPipeline {
-    pca: PcaProjection,
-    index: EmbeddingIndex<PcaProjection>,
+    projection: ConfiguredProjection,
+    index: EmbeddingIndex<ConfiguredProjection>,
     categories: Vec<String>,
     cart_points: Vec<[f64; 3]>,
     ids: Vec<String>,
@@ -190,8 +193,9 @@ impl SphereQLPipeline {
         Self::new_with_config(input, PipelineConfig::default())
     }
 
-    /// Build a pipeline with an explicit configuration. Fits a new PCA
-    /// internally using the supplied config.
+    /// Build a pipeline with an explicit configuration. Fits the projection
+    /// internally using [`PipelineConfig::projection_kind`] and any relevant
+    /// sub-config (e.g. [`LaplacianConfig`](crate::config::LaplacianConfig)).
     pub fn new_with_config(
         input: PipelineInput,
         config: PipelineConfig,
@@ -202,25 +206,56 @@ impl SphereQLPipeline {
             .map(|v| Embedding::new(v.clone()))
             .collect();
 
-        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).with_volumetric(true);
-        Self::with_projection_and_config(input.categories, embeddings, pca, config)
+        let projection = fit_projection_for_config(&embeddings, &config);
+        Self::with_configured_projection_and_config(
+            input.categories,
+            embeddings,
+            projection,
+            config,
+        )
     }
 
     /// Build a pipeline from pre-computed embeddings and an existing PCA
     /// projection, with [`PipelineConfig::default`].
+    ///
+    /// This is the legacy entry point — use
+    /// [`Self::with_configured_projection_and_config`] directly when you
+    /// have a non-PCA [`ConfiguredProjection`].
     pub fn with_projection(
         categories: Vec<String>,
         embeddings: Vec<Embedding>,
         pca: PcaProjection,
     ) -> Result<Self, PipelineError> {
-        Self::with_projection_and_config(categories, embeddings, pca, PipelineConfig::default())
+        Self::with_configured_projection_and_config(
+            categories,
+            embeddings,
+            ConfiguredProjection::Pca(pca),
+            PipelineConfig::default(),
+        )
     }
 
-    /// Configurable variant of [`Self::with_projection`].
+    /// Legacy configurable PCA entry point. Prefer
+    /// [`Self::with_configured_projection_and_config`] for new code.
     pub fn with_projection_and_config(
         categories: Vec<String>,
         embeddings: Vec<Embedding>,
         pca: PcaProjection,
+        config: PipelineConfig,
+    ) -> Result<Self, PipelineError> {
+        Self::with_configured_projection_and_config(
+            categories,
+            embeddings,
+            ConfiguredProjection::Pca(pca),
+            config,
+        )
+    }
+
+    /// Core pipeline constructor: accepts any [`ConfiguredProjection`] and
+    /// a [`PipelineConfig`].
+    pub fn with_configured_projection_and_config(
+        categories: Vec<String>,
+        embeddings: Vec<Embedding>,
+        projection: ConfiguredProjection,
         config: PipelineConfig,
     ) -> Result<Self, PipelineError> {
         let n = embeddings.len();
@@ -234,7 +269,7 @@ impl SphereQLPipeline {
             return Err(PipelineError::TooFewEmbeddings(n));
         }
 
-        let mut index = EmbeddingIndex::builder(pca.clone())
+        let mut index = EmbeddingIndex::builder(projection.clone())
             .uniform_shells(10, 1.0)
             .theta_divisions(12)
             .phi_divisions(6)
@@ -250,7 +285,7 @@ impl SphereQLPipeline {
         let cart_points: Vec<[f64; 3]> = embeddings
             .iter()
             .map(|e| {
-                let sp = pca.project(e);
+                let sp = projection.project(e);
                 let c = spherical_to_cartesian(&sp);
                 [c.x, c.y, c.z]
             })
@@ -258,14 +293,14 @@ impl SphereQLPipeline {
 
         // Build the category enrichment layer (Phase 1+2)
         let projected_positions: Vec<SphericalPoint> =
-            embeddings.iter().map(|e| pca.project(e)).collect();
+            embeddings.iter().map(|e| projection.project(e)).collect();
 
-        let evr = pca.explained_variance_ratio();
+        let evr = projection.explained_variance_ratio();
         let category_layer = CategoryLayer::build_with_config(
             &categories,
             &embeddings,
             &projected_positions,
-            &pca,
+            &projection,
             evr,
             &config,
         );
@@ -279,7 +314,7 @@ impl SphereQLPipeline {
             detect_domain_groups(&category_layer, config.routing.num_domain_groups);
 
         Ok(Self {
-            pca,
+            projection,
             index,
             categories,
             cart_points,
@@ -299,7 +334,7 @@ impl SphereQLPipeline {
 
         match q {
             SphereQLQuery::Nearest { k } => {
-                let evr = self.pca.explained_variance_ratio();
+                let evr = self.projection.explained_variance_ratio();
                 let results = self.index.search_nearest(&emb, k);
                 SphereQLOutput::Nearest(
                     results
@@ -326,9 +361,9 @@ impl SphereQLPipeline {
             }
 
             SphereQLQuery::SimilarAbove { min_cosine } => {
-                let evr = self.pca.explained_variance_ratio();
+                let evr = self.projection.explained_variance_ratio();
                 let results = self.index.search_similar(&emb, min_cosine);
-                let sp_q = self.pca.project(&emb);
+                let sp_q = self.projection.project(&emb);
                 SphereQLOutput::KNearest(
                     results
                         .items
@@ -408,7 +443,7 @@ impl SphereQLPipeline {
             }
 
             SphereQLQuery::LocalManifold { neighborhood_k } => {
-                let sp = self.pca.project(&emb);
+                let sp = self.projection.project(&emb);
                 let c = spherical_to_cartesian(&sp);
                 let qpt = [c.x, c.y, c.z];
                 let m = SlicingManifold::fit_local(&qpt, &self.cart_points, neighborhood_k);
@@ -438,7 +473,7 @@ impl SphereQLPipeline {
             SphereQLQuery::DrillDown { category, k } => {
                 let results = self
                     .category_layer
-                    .drill_down_with_projection(category, &emb, &self.pca, k);
+                    .drill_down_with_projection(category, &emb, &self.projection, k);
                 SphereQLOutput::DrillDown(results)
             }
 
@@ -484,9 +519,25 @@ impl SphereQLPipeline {
             .collect()
     }
 
-    /// Access the fitted PCA projection.
+    /// Borrow the fitted PCA projection.
+    ///
+    /// Panics if the pipeline was configured with a non-PCA projection
+    /// kind. Prefer [`Self::projection`] in code that may run under any
+    /// [`ProjectionKind`](crate::config::ProjectionKind).
     pub fn pca(&self) -> &PcaProjection {
-        &self.pca
+        self.projection.as_pca().expect(
+            "pipeline is not configured with PcaProjection; call .projection() instead",
+        )
+    }
+
+    /// Borrow the fitted projection regardless of kind.
+    pub fn projection(&self) -> &ConfiguredProjection {
+        &self.projection
+    }
+
+    /// Active outer-sphere projection kind.
+    pub fn projection_kind(&self) -> ProjectionKind {
+        self.projection.kind()
     }
 
     /// Export all projected points with their Cartesian and spherical coordinates.
@@ -530,7 +581,7 @@ impl SphereQLPipeline {
 
     /// The PCA projection's explained variance ratio (0.0–1.0).
     pub fn explained_variance_ratio(&self) -> f64 {
-        self.pca.explained_variance_ratio()
+        self.projection.explained_variance_ratio()
     }
 
     /// Number of unique categories in the corpus.
@@ -597,7 +648,7 @@ impl SphereQLPipeline {
         if self.domain_groups.is_empty() {
             return None;
         }
-        let pos = self.pca.project(embedding);
+        let pos = self.projection.project(embedding);
         self.domain_groups.iter().min_by(|a, b| {
             let da = angular_distance(&pos, &a.centroid);
             let db = angular_distance(&pos, &b.centroid);
@@ -617,7 +668,7 @@ impl SphereQLPipeline {
     ///      (or the outer sphere if none exists).
     ///   3. Merge the per-category results, sort by distance, truncate to `k`.
     pub fn hierarchical_nearest(&self, embedding: &Embedding, k: usize) -> Vec<NearestResult> {
-        let evr = self.pca.explained_variance_ratio();
+        let evr = self.projection.explained_variance_ratio();
 
         if evr >= self.config.routing.low_evr_threshold {
             return self.nearest_filtered(embedding, k, evr);
@@ -634,7 +685,7 @@ impl SphereQLPipeline {
             let cat_name = &self.category_layer.summaries[ci].name;
             for r in self
                 .category_layer
-                .drill_down_with_projection(cat_name, embedding, &self.pca, k)
+                .drill_down_with_projection(cat_name, embedding, &self.projection, k)
             {
                 candidates.push(self.drill_result_to_nearest(&r, evr));
             }
@@ -743,6 +794,38 @@ impl SphereQLPipeline {
             ));
         }
         out
+    }
+}
+
+/// Fit the projection family specified by `config.projection_kind` on the
+/// given corpus. Called by [`SphereQLPipeline::new_with_config`] and the
+/// auto-tuner prefit step. Default radial strategy mirrors
+/// [`SphereQLPipeline::new`]'s legacy behavior (magnitude + volumetric).
+pub fn fit_projection_for_config(
+    embeddings: &[Embedding],
+    config: &PipelineConfig,
+) -> ConfiguredProjection {
+    match config.projection_kind {
+        ProjectionKind::Pca => {
+            ConfiguredProjection::Pca(
+                PcaProjection::fit(embeddings, RadialStrategy::Magnitude).with_volumetric(true),
+            )
+        }
+        ProjectionKind::KernelPca => {
+            ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
+                embeddings,
+                RadialStrategy::Magnitude,
+            ))
+        }
+        ProjectionKind::LaplacianEigenmap => {
+            let lc = &config.laplacian;
+            ConfiguredProjection::Laplacian(LaplacianEigenmapProjection::fit_with_params(
+                embeddings,
+                lc.k_neighbors,
+                lc.active_threshold,
+                RadialStrategy::Magnitude,
+            ))
+        }
     }
 }
 
