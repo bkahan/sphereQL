@@ -20,10 +20,14 @@ use crate::types::{Embedding, RadialStrategy};
 
 // ── Errors ─────────────────────────────────────────────────────────────────
 
+/// Reasons a pipeline build can fail.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineError {
+    /// `categories` and `embeddings` had different lengths — they must
+    /// match one-to-one.
     #[error("categories length ({cat}) must equal embeddings length ({emb})")]
     LengthMismatch { cat: usize, emb: usize },
+    /// Fewer than 3 embeddings — not enough to fit a 3D projection.
     #[error("need at least 3 embeddings, got {0}")]
     TooFewEmbeddings(usize),
 }
@@ -48,26 +52,41 @@ pub struct PipelineQuery {
 
 // ── Output types ────────────────────────────────────────────────────────────
 
+/// One item returned from a nearest-neighbor or similarity query.
+///
+/// All fields use the pipeline's configured projection to derive
+/// distances and quality signals; callers should treat results as
+/// comparable within a single pipeline but not across pipelines with
+/// different projection kinds.
 #[derive(Debug, Clone)]
 pub struct NearestResult {
+    /// Item id as supplied to [`SphereQLPipeline::new`].
     pub id: String,
+    /// Category label from the input.
     pub category: String,
+    /// Angular distance on S² between the query and this item's
+    /// projected position, in radians.
     pub distance: f64,
     /// Certainty of this point's projection (0–1). Higher = more faithfully represented.
     pub certainty: f64,
     /// Semantic intensity (pre-normalization magnitude of original embedding).
     pub intensity: f64,
     /// Combined quality signal: EVR × certainty × gap_confidence.
-    /// `None` if quality config is not set on the pipeline.
+    /// Always `Some(...)` for results the pipeline produces today; the
+    /// `Option` is kept so callers that construct `NearestResult`
+    /// outside the pipeline (e.g. mocks, tests) can omit it.
     pub quality: Option<QualitySignal>,
 }
 
+/// Concept-path result: ordered steps between two indexed items, with
+/// cumulative angular distance along the path.
 #[derive(Debug, Clone)]
 pub struct PathResult {
     pub steps: Vec<PipelinePathStep>,
     pub total_distance: f64,
 }
 
+/// One step along a [`PathResult`].
 #[derive(Debug, Clone)]
 pub struct PipelinePathStep {
     pub id: String,
@@ -79,6 +98,7 @@ pub struct PipelinePathStep {
     pub bridge_strength: Option<f64>,
 }
 
+/// Summary of one cluster detected by `DetectGlobs`.
 #[derive(Debug, Clone)]
 pub struct GlobSummary {
     pub id: usize,
@@ -88,6 +108,7 @@ pub struct GlobSummary {
     pub top_categories: Vec<(String, usize)>,
 }
 
+/// Local 3-D manifold fitted around the query point.
 #[derive(Debug, Clone)]
 pub struct ManifoldResult {
     pub centroid: [f64; 3],
@@ -165,6 +186,13 @@ pub struct ExportedPoint {
 
 // ── Pipeline ──────────────────────────────────────────────────────────────
 
+/// The main SphereQL pipeline: fitted projection + spatial index +
+/// category enrichment layer + optional tunable config.
+///
+/// Build one with [`Self::new`] for defaults,
+/// [`Self::new_with_config`] for an explicit [`PipelineConfig`], or
+/// [`Self::new_from_metamodel`] / [`Self::new_from_metamodel_tuned`]
+/// to consult a trained meta-model on past tuner runs.
 pub struct SphereQLPipeline {
     projection: ConfiguredProjection,
     index: EmbeddingIndex<ConfiguredProjection>,
@@ -229,7 +257,7 @@ impl SphereQLPipeline {
     ///
     /// This is the "tune-or-recall" entry point: once you've accumulated
     /// a handful of training records, call this instead of
-    /// [`auto_tune`](crate::tuner::auto_tune) when you want to skip
+    /// [`crate::tuner::auto_tune`] when you want to skip
     /// search entirely. For a warm-start hybrid that does some tuning
     /// on top of the prediction, use [`Self::new_from_metamodel_tuned`].
     pub fn new_from_metamodel<M: MetaModel>(
@@ -557,10 +585,12 @@ impl SphereQLPipeline {
         "unknown".into()
     }
 
+    /// Total number of indexed items.
     pub fn num_items(&self) -> usize {
         self.ids.len()
     }
 
+    /// Slice of per-item category labels (index-aligned with insertion order).
     pub fn categories(&self) -> &[String] {
         &self.categories
     }
@@ -585,7 +615,7 @@ impl SphereQLPipeline {
     ///
     /// Panics if the pipeline was configured with a non-PCA projection
     /// kind. Prefer [`Self::projection`] in code that may run under any
-    /// [`ProjectionKind`](crate::config::ProjectionKind).
+    /// [`ProjectionKind`].
     pub fn pca(&self) -> &PcaProjection {
         self.projection
             .as_pca()
@@ -641,7 +671,12 @@ impl SphereQLPipeline {
             .collect()
     }
 
-    /// The PCA projection's explained variance ratio (0.0–1.0).
+    /// The active projection's explained-variance-ratio-equivalent
+    /// quality score, in `[0, 1]`. PCA returns the classical EVR;
+    /// kernel PCA returns its kernel-space EVR; Laplacian eigenmap
+    /// returns a compatible connectivity ratio (see
+    /// [`LaplacianEigenmapProjection::connectivity_ratio`](crate::laplacian::LaplacianEigenmapProjection::connectivity_ratio)).
+    /// All three feed the EVR-adaptive thresholds downstream.
     pub fn explained_variance_ratio(&self) -> f64 {
         self.projection.explained_variance_ratio()
     }

@@ -162,11 +162,16 @@ pub struct CategoryPath {
 /// improvement over the global projection.
 #[derive(Clone)]
 pub enum InnerProjection {
-    /// Standard linear PCA — used for categories with 20–79 members,
-    /// or when kernel PCA doesn't improve over linear.
+    /// Standard linear PCA — chosen for categories meeting
+    /// [`InnerSphereConfig::min_size`](crate::config::InnerSphereConfig::min_size)
+    /// but below
+    /// [`kernel_pca_min_size`](crate::config::InnerSphereConfig::kernel_pca_min_size),
+    /// or when kernel PCA fails to improve over linear by
+    /// [`min_kernel_improvement`](crate::config::InnerSphereConfig::min_kernel_improvement).
     LinearPca(PcaProjection),
-    /// Gaussian kernel PCA — used for categories with ≥80 members
-    /// where kernel PCA measurably outperforms linear PCA.
+    /// Gaussian kernel PCA — chosen for categories meeting
+    /// [`kernel_pca_min_size`](crate::config::InnerSphereConfig::kernel_pca_min_size)
+    /// where it measurably outperforms linear PCA.
     KernelPca(KernelPcaProjection),
 }
 
@@ -879,7 +884,7 @@ impl CategoryLayer {
 
     /// Certainty-weighted category routing.
     ///
-    /// Like [`categories_near_embedding`] but penalizes routes through
+    /// Like [`Self::categories_near_embedding`] but penalizes routes through
     /// low-certainty projection regions. The effective distance is scaled
     /// by `1 / sqrt(certainty)`, so poorly-projected queries don't get
     /// routed to whatever random centroid happens to be angularly close

@@ -112,7 +112,7 @@ pub struct FeedbackSummary {
 /// thousands of events per corpus).
 ///
 /// `#[serde(transparent)]` keeps the derive-based serializer
-/// ([`serde_json::to_string(&agg)`]) and the hand-rolled
+/// (`serde_json::to_string(&agg)`) and the hand-rolled
 /// [`Self::save`] / [`Self::load`] path on the same JSON shape — a flat
 /// array of events. Without it, the derive would emit `{"events": [...]}`
 /// which `load` rejects.

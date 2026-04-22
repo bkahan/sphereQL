@@ -36,9 +36,12 @@ pub struct PipelineConfig {
 
 /// Which projection family the pipeline uses for the outer sphere.
 ///
-/// This is a first-class tunable axis: the auto-tuner can sweep over it
-/// once the pipeline is generalized beyond PCA, and meta-learning can
-/// map corpus profiles onto the kind that works best.
+/// A first-class tunable axis:
+/// [`SearchSpace::projection_kinds`](crate::tuner::SearchSpace::projection_kinds)
+/// enumerates the families the auto-tuner sweeps, and
+/// [`CorpusFeatures`](crate::corpus_features::CorpusFeatures) →
+/// [`PipelineConfig`] meta-models can map corpus profiles onto the
+/// kind that works best.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
 )]

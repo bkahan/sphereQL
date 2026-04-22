@@ -51,10 +51,17 @@ pub struct SpatialQuality {
     pub bridge_quality_matrix: Vec<Vec<f64>>,
 }
 
+/// Cap intersection area between two categories on S².
+///
+/// Stored in [`SpatialQuality::pairwise_intersections`]; only pairs with
+/// measurable overlap (> 1e-15 sr) are kept to keep the list sparse.
 #[derive(Debug, Clone, Copy)]
 pub struct PairIntersection {
+    /// Lower of the two category indices (`min(i, j)`).
     pub cat_a: usize,
+    /// Higher of the two category indices (`max(i, j)`).
     pub cat_b: usize,
+    /// Overlap area of the two caps, in steradians.
     pub area: f64,
 }
 
