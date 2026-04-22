@@ -44,6 +44,8 @@ fn main() {
     let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
     println!("Search space (discrete):");
     println!("  projection_kinds .............. {:?}", kinds_str);
+    println!("  laplacian_k_neighbors ......... {:?}", space.laplacian_k_neighbors);
+    println!("  laplacian_active_threshold .... {:?}", space.laplacian_active_threshold);
     println!("  num_domain_groups ............. {:?}", space.num_domain_groups);
     println!("  low_evr_threshold ............. {:?}", space.low_evr_threshold);
     println!("  overlap_artifact_territorial .. {:?}", space.overlap_artifact_territorial);
@@ -97,9 +99,22 @@ fn main() {
     );
 
     println!(
-        "Winning projection kind: {}",
+        "Winning projection: {}",
         best_pipeline.projection_kind().name()
     );
+    if best_pipeline.projection_kind()
+        == sphereql::embed::ProjectionKind::LaplacianEigenmap
+    {
+        let lc = &best_pipeline.config().laplacian;
+        println!(
+            "  laplacian_k_neighbors ....... {}",
+            lc.k_neighbors
+        );
+        println!(
+            "  laplacian_active_threshold .. {:.3}",
+            lc.active_threshold
+        );
+    }
 
     println!("\nTop 5 trials (by score):");
     println!(

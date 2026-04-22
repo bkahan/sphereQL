@@ -16,7 +16,9 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::config::{BridgeConfig, InnerSphereConfig, PipelineConfig, ProjectionKind, RoutingConfig};
+use crate::config::{
+    BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind, RoutingConfig,
+};
 use crate::configured_projection::ConfiguredProjection;
 use crate::pipeline::{fit_projection_for_config, PipelineError, PipelineInput, SphereQLPipeline};
 use crate::projection::SplitMix64;
@@ -36,9 +38,26 @@ use crate::types::Embedding;
 /// unreasonable.
 #[derive(Debug, Clone)]
 pub struct SearchSpace {
-    /// Candidate projection families for the outer sphere. Each kind gets
-    /// prefit once per [`auto_tune`] run; trials pick a prefit by kind.
+    /// Candidate projection families for the outer sphere. Each kind is
+    /// prefit once per distinct fit-affecting hyperparameter tuple in
+    /// [`auto_tune`]; trials pick the prefit matching their config.
     pub projection_kinds: Vec<ProjectionKind>,
+
+    // ── Projection-kind-specific knobs ────────────────────────────────
+    // These only take effect when the trial's projection_kind matches.
+    // PCA trials ignore them (no waste — grid enumeration is
+    // kind-conditional, so PCA trials don't multiply against these
+    // dimensions).
+    /// Candidate values for [`LaplacianConfig::k_neighbors`]. Only
+    /// explored when [`ProjectionKind::LaplacianEigenmap`] is in
+    /// `projection_kinds`.
+    pub laplacian_k_neighbors: Vec<usize>,
+    /// Candidate values for [`LaplacianConfig::active_threshold`]. Only
+    /// explored when [`ProjectionKind::LaplacianEigenmap`] is in
+    /// `projection_kinds`.
+    pub laplacian_active_threshold: Vec<f64>,
+
+    // ── Kind-agnostic knobs ───────────────────────────────────────────
     /// Candidate values for [`RoutingConfig::num_domain_groups`].
     pub num_domain_groups: Vec<usize>,
     /// Candidate values for [`RoutingConfig::low_evr_threshold`].
@@ -60,6 +79,11 @@ impl Default for SearchSpace {
             // sweep — callers who want it can add ProjectionKind::KernelPca
             // explicitly, accepting the longer fit cost.
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
+            // Laplacian hyperparameters bracket the default values
+            // (k=15, threshold=0.05) widely enough that the tuner can
+            // actually move the projection's geometry.
+            laplacian_k_neighbors: vec![10, 15, 25],
+            laplacian_active_threshold: vec![0.03, 0.05, 0.10],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
             overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
@@ -71,11 +95,11 @@ impl Default for SearchSpace {
 }
 
 impl SearchSpace {
-    /// Cardinality of the Cartesian product of all knob value sets.
-    /// `grid` search visits exactly this many configurations.
-    pub fn grid_cardinality(&self) -> usize {
-        self.projection_kinds.len()
-            * self.num_domain_groups.len()
+    /// Number of kind-agnostic knob combinations. Every projection kind's
+    /// grid slice is at least this large; Laplacian multiplies by its
+    /// specific knob counts on top.
+    fn common_cardinality(&self) -> usize {
+        self.num_domain_groups.len()
             * self.low_evr_threshold.len()
             * self.overlap_artifact_territorial.len()
             * self.threshold_base.len()
@@ -83,20 +107,59 @@ impl SearchSpace {
             * self.min_evr_improvement.len()
     }
 
-    /// Build a [`PipelineConfig`] from one grid index by treating the index
-    /// as a mixed-radix number over the knobs. Returns `None` if `index`
-    /// exceeds the grid cardinality.
-    pub fn config_at_index(&self, index: usize, base: &PipelineConfig) -> Option<PipelineConfig> {
-        if index >= self.grid_cardinality() {
-            return None;
+    /// Per-kind grid cardinality — common knobs × any kind-specific
+    /// knobs this kind opts into.
+    fn kind_cardinality(&self, kind: ProjectionKind) -> usize {
+        let common = self.common_cardinality();
+        match kind {
+            ProjectionKind::LaplacianEigenmap => {
+                common * self.laplacian_k_neighbors.len() * self.laplacian_active_threshold.len()
+            }
+            ProjectionKind::Pca | ProjectionKind::KernelPca => common,
         }
-        let mut idx = index;
+    }
+
+    /// Cardinality of the kind-conditional grid: the sum of each projection
+    /// kind's own slice. `grid` search visits exactly this many configurations.
+    pub fn grid_cardinality(&self) -> usize {
+        self.projection_kinds
+            .iter()
+            .map(|&k| self.kind_cardinality(k))
+            .sum()
+    }
+
+    /// Build a [`PipelineConfig`] from one grid index.
+    ///
+    /// The grid is laid out as disjoint per-kind slices concatenated in
+    /// the order of [`Self::projection_kinds`]: indices 0..c₀ enumerate
+    /// the first kind's subspace, c₀..c₀+c₁ the second kind's, etc. This
+    /// keeps kind-specific knobs (e.g. Laplacian's k, threshold) from
+    /// multiplying against trials of other kinds that wouldn't use them.
+    pub fn config_at_index(&self, index: usize, base: &PipelineConfig) -> Option<PipelineConfig> {
+        let mut offset = 0usize;
+        for &kind in &self.projection_kinds {
+            let slice = self.kind_cardinality(kind);
+            if index < offset + slice {
+                return Some(self.config_at_kind_index(kind, index - offset, base));
+            }
+            offset += slice;
+        }
+        None
+    }
+
+    /// Decode an index within a single kind's slice.
+    fn config_at_kind_index(
+        &self,
+        kind: ProjectionKind,
+        mut idx: usize,
+        base: &PipelineConfig,
+    ) -> PipelineConfig {
         let take = |idx: &mut usize, len: usize| -> usize {
             let v = *idx % len;
             *idx /= len;
             v
         };
-        let i_pk = take(&mut idx, self.projection_kinds.len());
+
         let i_ndg = take(&mut idx, self.num_domain_groups.len());
         let i_let = take(&mut idx, self.low_evr_threshold.len());
         let i_oat = take(&mut idx, self.overlap_artifact_territorial.len());
@@ -105,7 +168,7 @@ impl SearchSpace {
         let i_mei = take(&mut idx, self.min_evr_improvement.len());
 
         let mut cfg = base.clone();
-        cfg.projection_kind = self.projection_kinds[i_pk];
+        cfg.projection_kind = kind;
         cfg.routing = RoutingConfig {
             num_domain_groups: self.num_domain_groups[i_ndg],
             low_evr_threshold: self.low_evr_threshold[i_let],
@@ -119,12 +182,23 @@ impl SearchSpace {
             min_evr_improvement: self.min_evr_improvement[i_mei],
             ..base.inner_sphere.clone()
         };
-        Some(cfg)
+
+        if matches!(kind, ProjectionKind::LaplacianEigenmap) {
+            let i_k = take(&mut idx, self.laplacian_k_neighbors.len());
+            let i_thr = take(&mut idx, self.laplacian_active_threshold.len());
+            cfg.laplacian = LaplacianConfig {
+                k_neighbors: self.laplacian_k_neighbors[i_k],
+                active_threshold: self.laplacian_active_threshold[i_thr],
+            };
+        }
+
+        cfg
     }
 
     /// Sample one random [`PipelineConfig`] from this space. Every knob's
-    /// value set is sampled uniformly and independently. Internal to the
-    /// tuner — external callers go through [`auto_tune`] with a
+    /// value set is sampled uniformly and independently; kind-specific
+    /// knobs are only sampled when the sampled kind uses them. Internal
+    /// to the tuner — external callers go through [`auto_tune`] with a
     /// [`SearchStrategy::Random`] strategy.
     pub(crate) fn sample(&self, rng: &mut SplitMix64, base: &PipelineConfig) -> PipelineConfig {
         let pick_usize =
@@ -150,7 +224,44 @@ impl SearchSpace {
             min_evr_improvement: pick_f64(rng, &self.min_evr_improvement),
             ..base.inner_sphere.clone()
         };
+
+        if matches!(cfg.projection_kind, ProjectionKind::LaplacianEigenmap) {
+            cfg.laplacian = LaplacianConfig {
+                k_neighbors: pick_usize(rng, &self.laplacian_k_neighbors),
+                active_threshold: pick_f64(rng, &self.laplacian_active_threshold),
+            };
+        }
+
         cfg
+    }
+}
+
+// ── Prefit cache key ──────────────────────────────────────────────────
+
+/// Identifies a single fittable projection configuration.
+///
+/// Two [`PipelineConfig`]s that produce the same `ProjectionFitKey` share
+/// a prefit projection; two that differ need distinct fits. PCA and
+/// Kernel PCA have no fit-affecting hyperparameters in the current
+/// search space so they share a key per kind; Laplacian's fit depends on
+/// (k_neighbors, active_threshold).
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum ProjectionFitKey {
+    Pca,
+    KernelPca,
+    Laplacian { k: usize, threshold_bits: u64 },
+}
+
+impl ProjectionFitKey {
+    fn from_config(cfg: &PipelineConfig) -> Self {
+        match cfg.projection_kind {
+            ProjectionKind::Pca => Self::Pca,
+            ProjectionKind::KernelPca => Self::KernelPca,
+            ProjectionKind::LaplacianEigenmap => Self::Laplacian {
+                k: cfg.laplacian.k_neighbors,
+                threshold_bits: cfg.laplacian.active_threshold.to_bits(),
+            },
+        }
     }
 }
 
@@ -237,20 +348,8 @@ pub fn auto_tune<M: QualityMetric>(
         .collect();
     let categories = input.categories;
 
-    // Prefit one projection per kind the tuner will touch. Kinds in
-    // `space.projection_kinds` that don't differ from `base_config` still
-    // get their own fit — each kind's hyperparameters live in their own
-    // sub-config, so cross-kind fits never collide.
-    let mut prefit: HashMap<ProjectionKind, ConfiguredProjection> = HashMap::new();
-    for &kind in &space.projection_kinds {
-        if prefit.contains_key(&kind) {
-            continue;
-        }
-        let mut fit_cfg = base_config.clone();
-        fit_cfg.projection_kind = kind;
-        prefit.insert(kind, fit_projection_for_config(&embeddings, &fit_cfg));
-    }
-
+    // Enumerate every config we'll need up front so we can prefit one
+    // projection per distinct fit-affecting hyperparameter tuple.
     let configs: Vec<PipelineConfig> = match &strategy {
         SearchStrategy::Grid => (0..space.grid_cardinality())
             .filter_map(|i| space.config_at_index(i, base_config))
@@ -263,15 +362,21 @@ pub fn auto_tune<M: QualityMetric>(
         }
     };
 
+    let mut prefit: HashMap<ProjectionFitKey, ConfiguredProjection> = HashMap::new();
+    for cfg in &configs {
+        let key = ProjectionFitKey::from_config(cfg);
+        if prefit.contains_key(&key) {
+            continue;
+        }
+        prefit.insert(key, fit_projection_for_config(&embeddings, cfg));
+    }
+
     let mut trials: Vec<TrialRecord> = Vec::with_capacity(configs.len());
     let mut failures: Vec<(PipelineConfig, String)> = Vec::new();
 
     for cfg in configs {
-        // Kinds that weren't prefit (e.g. config arrived via grid index
-        // enumeration but space.projection_kinds didn't include it —
-        // shouldn't normally happen, but we guard anyway) fall back to a
-        // fresh fit.
-        let projection = match prefit.get(&cfg.projection_kind) {
+        let key = ProjectionFitKey::from_config(&cfg);
+        let projection = match prefit.get(&key) {
             Some(p) => p.clone(),
             None => fit_projection_for_config(&embeddings, &cfg),
         };
@@ -317,8 +422,9 @@ pub fn auto_tune<M: QualityMetric>(
     let best_score = trials[best_idx].score;
 
     // Build the winning pipeline fresh so the caller gets it owned.
+    let best_key = ProjectionFitKey::from_config(&best_config);
     let best_projection = prefit
-        .get(&best_config.projection_kind)
+        .get(&best_key)
         .cloned()
         .unwrap_or_else(|| fit_projection_for_config(&embeddings, &best_config));
     let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
@@ -374,15 +480,18 @@ mod tests {
     }
 
     #[test]
-    fn search_space_grid_cardinality_matches_product() {
+    fn search_space_grid_cardinality_sums_per_kind() {
         let s = SearchSpace::default();
-        let expected = s.projection_kinds.len()
-            * s.num_domain_groups.len()
+        let common = s.num_domain_groups.len()
             * s.low_evr_threshold.len()
             * s.overlap_artifact_territorial.len()
             * s.threshold_base.len()
             * s.threshold_evr_penalty.len()
             * s.min_evr_improvement.len();
+        // Default kinds = {PCA, Laplacian}; PCA adds `common`, Laplacian
+        // adds `common × k_neighbors × active_threshold`.
+        let expected = common
+            + common * s.laplacian_k_neighbors.len() * s.laplacian_active_threshold.len();
         assert_eq!(s.grid_cardinality(), expected);
     }
 
@@ -401,6 +510,8 @@ mod tests {
     fn grid_index_enumerates_full_space() {
         let s = SearchSpace {
             projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.3, 0.4],
             overlap_artifact_territorial: vec![0.3],
@@ -427,6 +538,8 @@ mod tests {
     fn grid_index_enumerates_across_projection_kinds() {
         let s = SearchSpace {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -448,6 +561,8 @@ mod tests {
         let input = make_input(24, 8);
         let space = SearchSpace {
             projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -584,6 +699,8 @@ mod tests {
         let input = make_input(24, 8);
         let space = SearchSpace {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
+            laplacian_k_neighbors: vec![10, 20],
+            laplacian_active_threshold: vec![0.05],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -600,11 +717,52 @@ mod tests {
             &PipelineConfig::default(),
         )
         .unwrap();
-        assert_eq!(report.trials.len(), 2);
+        // PCA contributes 1 trial; Laplacian contributes 2 × 1 = 2 trials
+        // (two k_neighbors values × one threshold value). Total = 3.
+        assert_eq!(report.trials.len(), 3);
         let kinds_in_trials: std::collections::HashSet<ProjectionKind> =
             report.trials.iter().map(|t| t.config.projection_kind).collect();
         assert!(kinds_in_trials.contains(&ProjectionKind::Pca));
         assert!(kinds_in_trials.contains(&ProjectionKind::LaplacianEigenmap));
+        // Verify the two Laplacian trials actually use different k values.
+        let lap_ks: std::collections::HashSet<usize> = report
+            .trials
+            .iter()
+            .filter(|t| t.config.projection_kind == ProjectionKind::LaplacianEigenmap)
+            .map(|t| t.config.laplacian.k_neighbors)
+            .collect();
+        assert_eq!(lap_ks.len(), 2);
+    }
+
+    #[test]
+    fn laplacian_knobs_produce_distinct_configs() {
+        // Sanity check that when Laplacian is the only kind, varying its
+        // hyperparameters produces configs whose LaplacianConfig actually
+        // differs (and doesn't accidentally alias on same-(k, threshold) pairs).
+        let s = SearchSpace {
+            projection_kinds: vec![ProjectionKind::LaplacianEigenmap],
+            laplacian_k_neighbors: vec![10, 20],
+            laplacian_active_threshold: vec![0.03, 0.08],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let base = PipelineConfig::default();
+        let configs: Vec<(usize, u64)> = (0..s.grid_cardinality())
+            .map(|i| {
+                let cfg = s.config_at_index(i, &base).unwrap();
+                (
+                    cfg.laplacian.k_neighbors,
+                    cfg.laplacian.active_threshold.to_bits(),
+                )
+            })
+            .collect();
+        let unique: std::collections::HashSet<(usize, u64)> =
+            configs.iter().copied().collect();
+        assert_eq!(unique.len(), 4, "expected 4 distinct (k, threshold) pairs");
     }
 
     #[test]
