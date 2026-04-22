@@ -125,6 +125,9 @@ pub struct CategoryPathStep {
     pub cumulative_distance: f64,
     /// Bridge items connecting this step to the next (empty for the last step).
     pub bridges_to_next: Vec<BridgeItem>,
+    /// Spatial confidence of this hop: bridge_strength × territorial_factor.
+    /// Higher = more trustworthy transition. 0.0 for the last step.
+    pub hop_confidence: f64,
 }
 
 /// Result of a category-level concept path query.
@@ -134,6 +137,9 @@ pub struct CategoryPath {
     pub steps: Vec<CategoryPathStep>,
     /// Total path distance.
     pub total_distance: f64,
+    /// Product of all hop confidences along the path.
+    /// Low values indicate the path routes through shaky connections.
+    pub path_confidence: f64,
 }
 
 // ── Inner sphere (Phase 2) ─────────────────────────────────────────────
@@ -654,8 +660,10 @@ impl CategoryLayer {
                     category_name: self.summaries[si].name.clone(),
                     cumulative_distance: 0.0,
                     bridges_to_next: Vec::new(),
+                    hop_confidence: 0.0,
                 }],
                 total_distance: 0.0,
+                path_confidence: 1.0,
             });
         }
 
@@ -718,17 +726,41 @@ impl CategoryLayer {
                 Vec::new()
             };
 
+            let hop_confidence = if step_idx + 1 < path_indices.len() {
+                let next_ci = path_indices[step_idx + 1];
+                let edge_strength = self.graph.adjacency[ci]
+                    .iter()
+                    .find(|e| e.target == next_ci)
+                    .map_or(0.0, |e| e.max_bridge_strength);
+                let territorial = self.spatial_quality.territorial_factor(ci, next_ci);
+                let voronoi_bonus = if self.spatial_quality.are_voronoi_neighbors(ci, next_ci) {
+                    1.2
+                } else {
+                    1.0
+                };
+                (edge_strength * territorial * voronoi_bonus).min(1.0)
+            } else {
+                0.0
+            };
+
             steps.push(CategoryPathStep {
                 category_index: ci,
                 category_name: self.summaries[ci].name.clone(),
                 cumulative_distance: dist[ci],
                 bridges_to_next,
+                hop_confidence,
             });
         }
+
+        let path_confidence = steps.iter()
+            .take(steps.len().saturating_sub(1))
+            .map(|s| s.hop_confidence)
+            .fold(1.0, |acc, c| acc * c.max(0.01));
 
         Some(CategoryPath {
             total_distance: dist[ti],
             steps,
+            path_confidence,
         })
     }
 
@@ -749,6 +781,41 @@ impl CategoryLayer {
             .filter(|&(_, d)| d <= max_angle)
             .collect();
         results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        results
+    }
+
+    /// Certainty-weighted category routing.
+    ///
+    /// Like [`categories_near_embedding`] but penalizes routes through
+    /// low-certainty projection regions. The effective distance is scaled
+    /// by `1 / sqrt(certainty)`, so poorly-projected queries don't get
+    /// routed to whatever random centroid happens to be angularly close
+    /// in the distorted projection.
+    ///
+    /// Returns `(category_index, raw_angular_distance, effective_distance, certainty)`.
+    pub fn categories_near_embedding_weighted<P: Projection>(
+        &self,
+        embedding: &Embedding,
+        projection: &P,
+        max_angle: f64,
+    ) -> Vec<(usize, f64, f64, f64)> {
+        let rich = projection.project_rich(embedding);
+        let pos = rich.position;
+        let certainty = rich.certainty.max(0.001);
+
+        let mut results: Vec<(usize, f64, f64, f64)> = self
+            .summaries
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let raw_dist = angular_distance(&pos, &s.centroid_position);
+                // Low certainty inflates distance → avoids noisy routing
+                let effective = raw_dist / certainty.sqrt();
+                (i, raw_dist, effective, certainty)
+            })
+            .filter(|&(_, raw, _, _)| raw <= max_angle)
+            .collect();
+        results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
 
