@@ -74,3 +74,7 @@ required-features = ["embed"]
 [[example]]
 name = "spatial_analysis"
 required-features = ["embed"]
+
+[[example]]
+name = "auto_tune"
+required-features = ["embed"]

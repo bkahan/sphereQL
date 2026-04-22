@@ -19,6 +19,7 @@ pub mod projection;
 pub mod quality_metric;
 pub mod query;
 pub mod spatial_quality;
+pub mod tuner;
 pub mod types;
 
 pub use category::*;
@@ -34,4 +35,5 @@ pub use projection::*;
 pub use quality_metric::*;
 pub use query::*;
 pub use spatial_quality::*;
+pub use tuner::*;
 pub use types::*;
