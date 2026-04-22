@@ -125,19 +125,19 @@ impl ProjectionWarning {
         }
         let (message, severity) = if evr < 0.15 {
             (format!(
-                "EVR={:.1}% — projection captures very little variance. \
+                "EVR={:.1}% \u2014 projection captures very little variance. \
                  Category routing and bridges are unreliable. Use inner spheres.",
                 evr * 100.0
             ), WarningSeverity::Critical)
         } else if evr < 0.25 {
             (format!(
-                "EVR={:.1}% — projection is lossy. Bridge counts may be inflated. \
+                "EVR={:.1}% \u2014 projection is lossy. Bridge counts may be inflated. \
                  Certainty-weighted results recommended.",
                 evr * 100.0
             ), WarningSeverity::Warning)
         } else {
             (format!(
-                "EVR={:.1}% — below recommended {:.0}%. Results usable with caution.",
+                "EVR={:.1}% \u2014 below recommended {:.0}%. Results usable with caution.",
                 evr * 100.0, threshold * 100.0
             ), WarningSeverity::Info)
         };
