@@ -41,7 +41,9 @@ fn main() {
     println!("Budget: {} random trials (seed = 0x{:X})\n", RANDOM_BUDGET, RANDOM_SEED);
 
     let space = SearchSpace::default();
+    let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
     println!("Search space (discrete):");
+    println!("  projection_kinds .............. {:?}", kinds_str);
     println!("  num_domain_groups ............. {:?}", space.num_domain_groups);
     println!("  low_evr_threshold ............. {:?}", space.low_evr_threshold);
     println!("  overlap_artifact_territorial .. {:?}", space.overlap_artifact_territorial);
@@ -94,23 +96,57 @@ fn main() {
         100.0 * lift / default_score.max(1e-12)
     );
 
-    println!("Top 5 trials (by score):");
     println!(
-        "  {:>4}  {:>6}  {:>6}  {:>8}  {:>10}  {:>10}  {:>10}  {:>10}",
-        "rank", "score", "build", "groups", "low_evr", "overlap", "base", "evr_pen"
+        "Winning projection kind: {}",
+        best_pipeline.projection_kind().name()
     );
-    println!("  {}", "─".repeat(84));
+
+    println!("\nTop 5 trials (by score):");
+    println!(
+        "  {:>4}  {:>6}  {:>6}  {:>18}  {:>8}  {:>10}  {:>10}  {:>10}  {:>10}",
+        "rank", "score", "build", "projection", "groups", "low_evr", "overlap", "base", "evr_pen"
+    );
+    println!("  {}", "─".repeat(102));
     for (rank, t) in report.ranked_trials().iter().take(5).enumerate() {
         println!(
-            "  {:>4}  {:>6.4}  {:>4}ms  {:>8}  {:>10.2}  {:>10.2}  {:>10.2}  {:>10.2}",
+            "  {:>4}  {:>6.4}  {:>4}ms  {:>18}  {:>8}  {:>10.2}  {:>10.2}  {:>10.2}  {:>10.2}",
             rank + 1,
             t.score,
             t.build_ms,
+            t.config.projection_kind.name(),
             t.config.routing.num_domain_groups,
             t.config.routing.low_evr_threshold,
             t.config.bridges.overlap_artifact_territorial,
             t.config.bridges.threshold_base,
             t.config.bridges.threshold_evr_penalty,
+        );
+    }
+
+    // Per-projection-kind score summary so you can see which family won
+    // overall, not just the single best trial.
+    use std::collections::BTreeMap;
+    let mut per_kind: BTreeMap<&str, (f64, f64, usize)> = BTreeMap::new();
+    for t in &report.trials {
+        let entry = per_kind
+            .entry(t.config.projection_kind.name())
+            .or_insert((f64::NEG_INFINITY, 0.0, 0));
+        entry.0 = entry.0.max(t.score);
+        entry.1 += t.score;
+        entry.2 += 1;
+    }
+    println!("\nPer-projection summary:");
+    println!(
+        "  {:<20} {:>8} {:>10} {:>10}",
+        "kind", "trials", "best", "mean"
+    );
+    println!("  {}", "─".repeat(52));
+    for (kind, (best, sum, count)) in per_kind {
+        println!(
+            "  {:<20} {:>8} {:>10.4} {:>10.4}",
+            kind,
+            count,
+            best,
+            sum / count as f64
         );
     }
 

@@ -7,17 +7,21 @@
 //! sweep that establishes a baseline for higher-order tuners (Bayesian
 //! optimization, CMA-ES, meta-learning) to beat.
 //!
-//! The PCA projection is fit once from the input corpus and reused across
-//! every trial — only the downstream config knobs (bridge thresholds,
-//! inner-sphere gates, domain-group counts, etc.) vary per trial.
+//! Projections are fit **once per kind** from the input corpus (PCA,
+//! Kernel PCA, and/or Laplacian eigenmap as dictated by the
+//! [`SearchSpace`]) and reused across every trial — only the downstream
+//! config knobs (bridge thresholds, inner-sphere gates, domain-group
+//! counts, etc.) vary per trial.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::config::{BridgeConfig, InnerSphereConfig, PipelineConfig, RoutingConfig};
-use crate::pipeline::{PipelineError, PipelineInput, SphereQLPipeline};
-use crate::projection::{PcaProjection, SplitMix64};
+use crate::config::{BridgeConfig, InnerSphereConfig, PipelineConfig, ProjectionKind, RoutingConfig};
+use crate::configured_projection::ConfiguredProjection;
+use crate::pipeline::{fit_projection_for_config, PipelineError, PipelineInput, SphereQLPipeline};
+use crate::projection::SplitMix64;
 use crate::quality_metric::QualityMetric;
-use crate::types::{Embedding, RadialStrategy};
+use crate::types::Embedding;
 
 // ── Search space ───────────────────────────────────────────────────────
 
@@ -32,6 +36,9 @@ use crate::types::{Embedding, RadialStrategy};
 /// unreasonable.
 #[derive(Debug, Clone)]
 pub struct SearchSpace {
+    /// Candidate projection families for the outer sphere. Each kind gets
+    /// prefit once per [`auto_tune`] run; trials pick a prefit by kind.
+    pub projection_kinds: Vec<ProjectionKind>,
     /// Candidate values for [`RoutingConfig::num_domain_groups`].
     pub num_domain_groups: Vec<usize>,
     /// Candidate values for [`RoutingConfig::low_evr_threshold`].
@@ -49,6 +56,10 @@ pub struct SearchSpace {
 impl Default for SearchSpace {
     fn default() -> Self {
         Self {
+            // Kernel PCA has O(n²·d) fit and is excluded from the default
+            // sweep — callers who want it can add ProjectionKind::KernelPca
+            // explicitly, accepting the longer fit cost.
+            projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
             overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
@@ -63,7 +74,8 @@ impl SearchSpace {
     /// Cardinality of the Cartesian product of all knob value sets.
     /// `grid` search visits exactly this many configurations.
     pub fn grid_cardinality(&self) -> usize {
-        self.num_domain_groups.len()
+        self.projection_kinds.len()
+            * self.num_domain_groups.len()
             * self.low_evr_threshold.len()
             * self.overlap_artifact_territorial.len()
             * self.threshold_base.len()
@@ -84,6 +96,7 @@ impl SearchSpace {
             *idx /= len;
             v
         };
+        let i_pk = take(&mut idx, self.projection_kinds.len());
         let i_ndg = take(&mut idx, self.num_domain_groups.len());
         let i_let = take(&mut idx, self.low_evr_threshold.len());
         let i_oat = take(&mut idx, self.overlap_artifact_territorial.len());
@@ -92,6 +105,7 @@ impl SearchSpace {
         let i_mei = take(&mut idx, self.min_evr_improvement.len());
 
         let mut cfg = base.clone();
+        cfg.projection_kind = self.projection_kinds[i_pk];
         cfg.routing = RoutingConfig {
             num_domain_groups: self.num_domain_groups[i_ndg],
             low_evr_threshold: self.low_evr_threshold[i_let],
@@ -117,8 +131,12 @@ impl SearchSpace {
             |rng: &mut SplitMix64, vals: &[usize]| vals[rng.next_u64() as usize % vals.len()];
         let pick_f64 =
             |rng: &mut SplitMix64, vals: &[f64]| vals[rng.next_u64() as usize % vals.len()];
+        let pick_kind = |rng: &mut SplitMix64, vals: &[ProjectionKind]| {
+            vals[rng.next_u64() as usize % vals.len()]
+        };
 
         let mut cfg = base.clone();
+        cfg.projection_kind = pick_kind(rng, &self.projection_kinds);
         cfg.routing = RoutingConfig {
             num_domain_groups: pick_usize(rng, &self.num_domain_groups),
             low_evr_threshold: pick_f64(rng, &self.low_evr_threshold),
@@ -198,10 +216,13 @@ impl TuneReport {
 
 /// Run the auto-tuner and return the best pipeline plus a report.
 ///
-/// The PCA projection is fit **once** from `input.embeddings`, then reused
-/// across every trial. Only the downstream [`PipelineConfig`] knobs vary
-/// per trial — this keeps per-trial cost dominated by spatial quality
-/// sampling and graph construction rather than eigendecomposition.
+/// Fits one projection per [`ProjectionKind`] listed in
+/// `space.projection_kinds` (honoring Laplacian hyperparameters from
+/// `base_config.laplacian`), then reuses those prefit projections across
+/// every trial. Only the downstream [`PipelineConfig`] knobs (bridge
+/// thresholds, inner-sphere gates, domain-group counts, etc.) vary per
+/// trial — this keeps per-trial cost dominated by spatial quality
+/// sampling and graph construction rather than projection fitting.
 pub fn auto_tune<M: QualityMetric>(
     input: PipelineInput,
     space: &SearchSpace,
@@ -216,8 +237,19 @@ pub fn auto_tune<M: QualityMetric>(
         .collect();
     let categories = input.categories;
 
-    // Fit the PCA projection once — invariant across trials.
-    let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).with_volumetric(true);
+    // Prefit one projection per kind the tuner will touch. Kinds in
+    // `space.projection_kinds` that don't differ from `base_config` still
+    // get their own fit — each kind's hyperparameters live in their own
+    // sub-config, so cross-kind fits never collide.
+    let mut prefit: HashMap<ProjectionKind, ConfiguredProjection> = HashMap::new();
+    for &kind in &space.projection_kinds {
+        if prefit.contains_key(&kind) {
+            continue;
+        }
+        let mut fit_cfg = base_config.clone();
+        fit_cfg.projection_kind = kind;
+        prefit.insert(kind, fit_projection_for_config(&embeddings, &fit_cfg));
+    }
 
     let configs: Vec<PipelineConfig> = match &strategy {
         SearchStrategy::Grid => (0..space.grid_cardinality())
@@ -235,11 +267,20 @@ pub fn auto_tune<M: QualityMetric>(
     let mut failures: Vec<(PipelineConfig, String)> = Vec::new();
 
     for cfg in configs {
+        // Kinds that weren't prefit (e.g. config arrived via grid index
+        // enumeration but space.projection_kinds didn't include it —
+        // shouldn't normally happen, but we guard anyway) fall back to a
+        // fresh fit.
+        let projection = match prefit.get(&cfg.projection_kind) {
+            Some(p) => p.clone(),
+            None => fit_projection_for_config(&embeddings, &cfg),
+        };
+
         let start = Instant::now();
-        match SphereQLPipeline::with_projection_and_config(
+        match SphereQLPipeline::with_configured_projection_and_config(
             categories.clone(),
             embeddings.clone(),
-            pca.clone(),
+            projection,
             cfg.clone(),
         ) {
             Ok(pipeline) => {
@@ -276,10 +317,14 @@ pub fn auto_tune<M: QualityMetric>(
     let best_score = trials[best_idx].score;
 
     // Build the winning pipeline fresh so the caller gets it owned.
-    let best_pipeline = SphereQLPipeline::with_projection_and_config(
+    let best_projection = prefit
+        .get(&best_config.projection_kind)
+        .cloned()
+        .unwrap_or_else(|| fit_projection_for_config(&embeddings, &best_config));
+    let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
         categories,
         embeddings,
-        pca,
+        best_projection,
         best_config.clone(),
     )?;
 
@@ -299,9 +344,7 @@ pub fn auto_tune<M: QualityMetric>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::quality_metric::{
-        BridgeCoherence, CompositeMetric, QualityMetric, TerritorialHealth,
-    };
+    use crate::quality_metric::{BridgeCoherence, CompositeMetric, TerritorialHealth};
 
     fn make_input(n: usize, dim: usize) -> PipelineInput {
         let mut embeddings = Vec::new();
@@ -333,7 +376,8 @@ mod tests {
     #[test]
     fn search_space_grid_cardinality_matches_product() {
         let s = SearchSpace::default();
-        let expected = s.num_domain_groups.len()
+        let expected = s.projection_kinds.len()
+            * s.num_domain_groups.len()
             * s.low_evr_threshold.len()
             * s.overlap_artifact_territorial.len()
             * s.threshold_base.len()
@@ -343,8 +387,20 @@ mod tests {
     }
 
     #[test]
+    fn default_search_space_includes_pca_and_laplacian() {
+        let s = SearchSpace::default();
+        assert!(s.projection_kinds.contains(&ProjectionKind::Pca));
+        assert!(s
+            .projection_kinds
+            .contains(&ProjectionKind::LaplacianEigenmap));
+        // Kernel PCA excluded by default (expensive fit).
+        assert!(!s.projection_kinds.contains(&ProjectionKind::KernelPca));
+    }
+
+    #[test]
     fn grid_index_enumerates_full_space() {
         let s = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.3, 0.4],
             overlap_artifact_territorial: vec![0.3],
@@ -368,9 +424,30 @@ mod tests {
     }
 
     #[test]
+    fn grid_index_enumerates_across_projection_kinds() {
+        let s = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let base = PipelineConfig::default();
+        let kinds: std::collections::HashSet<ProjectionKind> = (0..s.grid_cardinality())
+            .map(|i| s.config_at_index(i, &base).unwrap().projection_kind)
+            .collect();
+        assert_eq!(kinds.len(), 2);
+        assert!(kinds.contains(&ProjectionKind::Pca));
+        assert!(kinds.contains(&ProjectionKind::LaplacianEigenmap));
+    }
+
+    #[test]
     fn grid_search_runs_and_picks_best() {
         let input = make_input(24, 8);
         let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -503,6 +580,34 @@ mod tests {
     }
 
     #[test]
+    fn grid_search_across_projection_kinds_yields_both() {
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(report.trials.len(), 2);
+        let kinds_in_trials: std::collections::HashSet<ProjectionKind> =
+            report.trials.iter().map(|t| t.config.projection_kind).collect();
+        assert!(kinds_in_trials.contains(&ProjectionKind::Pca));
+        assert!(kinds_in_trials.contains(&ProjectionKind::LaplacianEigenmap));
+    }
+
+    #[test]
     fn returned_pipeline_uses_best_config() {
         let input = make_input(24, 8);
         let metric = TerritorialHealth;
@@ -521,5 +626,6 @@ mod tests {
             pipeline.config().routing.num_domain_groups,
             report.best_config.routing.num_domain_groups
         );
+        assert_eq!(pipeline.projection_kind(), report.best_config.projection_kind);
     }
 }
