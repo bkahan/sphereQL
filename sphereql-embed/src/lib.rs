@@ -8,6 +8,7 @@
 
 pub mod category;
 pub mod confidence;
+pub mod domain_groups;
 pub mod kernel_pca;
 pub mod mapper;
 pub mod navigator;
@@ -19,6 +20,7 @@ pub mod types;
 
 pub use category::*;
 pub use confidence::*;
+pub use domain_groups::*;
 pub use kernel_pca::*;
 pub use mapper::*;
 pub use navigator::*;

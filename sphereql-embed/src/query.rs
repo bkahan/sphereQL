@@ -926,7 +926,7 @@ fn normalize3(v: &[f64; 3]) -> [f64; 3] {
 /// - `Genuine`:         `angular_dist / (strength + 0.1)`
 /// - `Weak`:            `angular_dist / (strength + 0.01)`  (harsher penalty)
 /// - `OverlapArtifact`: `angular_dist * 2.0`  (actively discouraged — the
-///    two categories share territory, so the "bridge" isn't real)
+///   two categories share territory, so the "bridge" isn't real)
 ///
 /// Unknown cross-category pairs (no entry in `bridge_strengths`) are treated
 /// as `Weak` with strength 0.

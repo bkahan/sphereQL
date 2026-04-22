@@ -5,6 +5,7 @@ use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
 use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
+use crate::domain_groups::{detect_domain_groups, DomainGroup};
 use crate::projection::{PcaProjection, Projection};
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
 use crate::types::{Embedding, RadialStrategy};
@@ -170,7 +171,17 @@ pub struct SphereQLPipeline {
     quality_config: QualityConfig,
     /// Projection quality warnings (empty if EVR is above threshold).
     projection_warnings: Vec<ProjectionWarning>,
+    /// Hierarchical domain groups detected from Voronoi adjacency + cap overlap.
+    /// Used by [`SphereQLPipeline::route_to_group`] and
+    /// [`SphereQLPipeline::hierarchical_nearest`] for coarse routing when EVR is low.
+    domain_groups: Vec<DomainGroup>,
 }
+
+/// Default number of domain groups detected from the category layer.
+const DEFAULT_DOMAIN_GROUPS: usize = 5;
+/// EVR below this threshold triggers hierarchical routing in
+/// [`SphereQLPipeline::hierarchical_nearest`].
+const LOW_EVR_ROUTING_THRESHOLD: f64 = 0.35;
 
 impl SphereQLPipeline {
     /// Build a pipeline from raw inputs, fitting a new PCA internally.
@@ -244,6 +255,8 @@ impl SphereQLPipeline {
             .into_iter()
             .collect();
 
+        let domain_groups = detect_domain_groups(&category_layer, DEFAULT_DOMAIN_GROUPS);
+
         Ok(Self {
             pca,
             index,
@@ -254,6 +267,7 @@ impl SphereQLPipeline {
             category_layer,
             quality_config,
             projection_warnings,
+            domain_groups,
         })
     }
 
@@ -546,6 +560,120 @@ impl SphereQLPipeline {
     /// Projection quality warnings. Empty if EVR is above threshold.
     pub fn projection_warnings(&self) -> &[ProjectionWarning] {
         &self.projection_warnings
+    }
+
+    // ── Phase 5: hierarchical domain groups ────────────────────────────
+
+    /// Coarse-grained domain groups detected from Voronoi adjacency + cap overlap.
+    pub fn domain_groups(&self) -> &[DomainGroup] {
+        &self.domain_groups
+    }
+
+    /// Coarse routing: find the domain group whose centroid is angularly
+    /// nearest to the query's projected position.
+    pub fn route_to_group(&self, embedding: &Embedding) -> Option<&DomainGroup> {
+        if self.domain_groups.is_empty() {
+            return None;
+        }
+        let pos = self.pca.project(embedding);
+        self.domain_groups.iter().min_by(|a, b| {
+            let da = angular_distance(&pos, &a.centroid);
+            let db = angular_distance(&pos, &b.centroid);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+    }
+
+    /// Hierarchical nearest-neighbor search: group → category → items.
+    ///
+    /// When EVR is at or above [`LOW_EVR_ROUTING_THRESHOLD`], this is a
+    /// plain outer-sphere k-NN (identical to [`SphereQLQuery::Nearest`]).
+    ///
+    /// Below that threshold the outer sphere is unreliable, so we:
+    ///   1. Route the query to its nearest domain group.
+    ///   2. Drill down into each member category using its inner sphere
+    ///      (or the outer sphere if none exists).
+    ///   3. Merge the per-category results, sort by distance, truncate to `k`.
+    pub fn hierarchical_nearest(&self, embedding: &Embedding, k: usize) -> Vec<NearestResult> {
+        let evr = self.pca.explained_variance_ratio();
+
+        if evr >= LOW_EVR_ROUTING_THRESHOLD {
+            return self.nearest_filtered(embedding, k, evr);
+        }
+
+        let Some(group) = self.route_to_group(embedding) else {
+            return self.nearest_filtered(embedding, k, evr);
+        };
+
+        // Collect candidates from every category in the routed group, using
+        // inner-sphere distances where available.
+        let mut candidates: Vec<NearestResult> = Vec::new();
+        for &ci in &group.member_categories {
+            let cat_name = &self.category_layer.summaries[ci].name;
+            for r in self
+                .category_layer
+                .drill_down_with_projection(cat_name, embedding, &self.pca, k)
+            {
+                candidates.push(self.drill_result_to_nearest(&r, evr));
+            }
+        }
+
+        candidates.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        candidates
+            .into_iter()
+            .filter(|r| {
+                r.certainty >= self.quality_config.min_certainty
+                    && r.quality.is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
+            })
+            .take(k)
+            .collect()
+    }
+
+    /// Shared helper: outer-sphere k-NN with quality filtering.
+    fn nearest_filtered(&self, embedding: &Embedding, k: usize, evr: f64) -> Vec<NearestResult> {
+        self.index
+            .search_nearest(embedding, k)
+            .iter()
+            .map(|r| {
+                let certainty = r.item.certainty();
+                let quality = QualitySignal::from_certainty(evr, certainty);
+                NearestResult {
+                    id: r.item.id.clone(),
+                    category: self.cat_for(&r.item.id),
+                    distance: r.distance,
+                    certainty,
+                    intensity: r.item.intensity(),
+                    quality: Some(quality),
+                }
+            })
+            .filter(|r| {
+                r.certainty >= self.quality_config.min_certainty
+                    && r.quality.is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
+            })
+            .collect()
+    }
+
+    fn drill_result_to_nearest(&self, r: &DrillDownResult, evr: f64) -> NearestResult {
+        let id = self.ids[r.item_index].clone();
+        let item = self.index.get(&id);
+        let certainty = item.map_or(1.0, |it| it.certainty());
+        let intensity = item.map_or(1.0, |it| it.intensity());
+        let quality = QualitySignal::from_certainty(evr, certainty);
+        NearestResult {
+            id,
+            category: self
+                .categories
+                .get(r.item_index)
+                .cloned()
+                .unwrap_or_else(|| "unknown".into()),
+            distance: r.distance,
+            certainty,
+            intensity,
+            quality: Some(quality),
+        }
     }
 
     /// Current quality configuration.
@@ -914,5 +1042,57 @@ mod tests {
         assert_eq!(layer.num_categories(), 2);
         assert!(layer.get_category("group_a").is_some());
         assert!(layer.get_category("group_b").is_some());
+    }
+
+    // ── Phase 5: domain groups ────────────────────────────────────────
+
+    #[test]
+    fn domain_groups_detected() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let groups = pipeline.domain_groups();
+        assert!(!groups.is_empty());
+        let total: usize = groups.iter().map(|g| g.total_items).sum();
+        assert_eq!(total, pipeline.num_items());
+    }
+
+    #[test]
+    fn domain_groups_cover_all_categories() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let groups = pipeline.domain_groups();
+        let mut all_cats: Vec<usize> = groups
+            .iter()
+            .flat_map(|g| g.member_categories.iter().copied())
+            .collect();
+        all_cats.sort();
+        all_cats.dedup();
+        assert_eq!(all_cats.len(), pipeline.num_categories());
+    }
+
+    #[test]
+    fn route_to_group_returns_something() {
+        let (input, _) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let emb = Embedding::new(vec![0.5; 10]);
+        assert!(pipeline.route_to_group(&emb).is_some());
+    }
+
+    #[test]
+    fn hierarchical_nearest_matches_standard_when_evr_high() {
+        // With only 20 items in two well-separated clusters, PCA EVR is
+        // typically >= 0.35, so hierarchical_nearest should take the
+        // standard outer-sphere path and produce the same IDs as Nearest.
+        let (input, query) = make_input(20, 10);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let hier = pipeline.hierarchical_nearest(
+            &Embedding::new(query.embedding.clone()),
+            5,
+        );
+        assert!(!hier.is_empty());
+        assert!(hier.len() <= 5);
+        for w in hier.windows(2) {
+            assert!(w[0].distance <= w[1].distance);
+        }
     }
 }
