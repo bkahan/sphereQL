@@ -13,7 +13,9 @@ use crate::kernel_pca::KernelPcaProjection;
 use crate::laplacian::LaplacianEigenmapProjection;
 use crate::meta_model::MetaModel;
 use crate::projection::{PcaProjection, Projection};
+use crate::quality_metric::QualityMetric;
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
+use crate::tuner::{auto_tune, SearchSpace, SearchStrategy, TuneReport};
 use crate::types::{Embedding, RadialStrategy};
 
 // ── Errors ─────────────────────────────────────────────────────────────────
@@ -228,8 +230,8 @@ impl SphereQLPipeline {
     /// This is the "tune-or-recall" entry point: once you've accumulated
     /// a handful of training records, call this instead of
     /// [`auto_tune`](crate::tuner::auto_tune) when you want to skip
-    /// search entirely. For a warm-start hybrid, use the predicted
-    /// config as `base_config` in a small-budget tuner run.
+    /// search entirely. For a warm-start hybrid that does some tuning
+    /// on top of the prediction, use [`Self::new_from_metamodel_tuned`].
     pub fn new_from_metamodel<M: MetaModel>(
         input: PipelineInput,
         model: &M,
@@ -238,6 +240,37 @@ impl SphereQLPipeline {
         let predicted = model.predict(&features);
         let pipeline = Self::new_with_config(input, predicted.clone())?;
         Ok((pipeline, features, predicted))
+    }
+
+    /// Warm-started hybrid: predict a config with `model`, then run a
+    /// small-budget tuner pass using that prediction as `base_config`.
+    ///
+    /// Non-tuned knobs stay at the model's predicted values; the
+    /// searched knobs explore the given [`SearchSpace`] from there.
+    /// When the meta-model has seen a similar corpus before the
+    /// prediction is usually close to optimal and the tuner only needs
+    /// a handful of trials to confirm or refine it — meaningfully
+    /// cheaper than cold-starting at [`PipelineConfig::default`].
+    ///
+    /// Returns the winning pipeline, the extracted corpus features, and
+    /// the full [`TuneReport`]. Callers can feed the report back into
+    /// [`MetaTrainingRecord::from_tune_result`](crate::meta_model::MetaTrainingRecord::from_tune_result)
+    /// to accumulate more training data for the next recall.
+    pub fn new_from_metamodel_tuned<M, Q>(
+        input: PipelineInput,
+        model: &M,
+        space: &SearchSpace,
+        metric: &Q,
+        strategy: SearchStrategy,
+    ) -> Result<(Self, CorpusFeatures, TuneReport), PipelineError>
+    where
+        M: MetaModel,
+        Q: QualityMetric,
+    {
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let predicted = model.predict(&features);
+        let (pipeline, report) = auto_tune(input, space, metric, strategy, &predicted)?;
+        Ok((pipeline, features, report))
     }
 
     /// Build a pipeline from pre-computed embeddings and an existing PCA
@@ -1265,5 +1298,70 @@ mod tests {
             pipeline.projection_kind(),
             ProjectionKind::LaplacianEigenmap
         );
+    }
+
+    #[test]
+    fn new_from_metamodel_tuned_runs_and_carries_prediction() {
+        use crate::corpus_features::CorpusFeatures;
+        use crate::meta_model::{MetaTrainingRecord, NearestNeighborMetaModel};
+        use crate::quality_metric::TerritorialHealth;
+        use crate::tuner::{SearchSpace, SearchStrategy};
+
+        // Predict a config that sets an unusual `overlap_artifact_territorial`
+        // value NOT in the default search space; then run the tuner with
+        // `num_domain_groups` as the only varying axis. The returned
+        // pipeline should keep the predicted overlap value (base_config is
+        // the prediction) while the tuner picks best num_domain_groups.
+        let (input, _) = make_input(20, 10);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+
+        let mut predicted_cfg = PipelineConfig::default();
+        predicted_cfg.bridges.overlap_artifact_territorial = 0.123; // unusual
+
+        let record = MetaTrainingRecord {
+            corpus_id: "seed".into(),
+            features: features.clone(),
+            best_config: predicted_cfg.clone(),
+            best_score: 0.5,
+            metric_name: "test".into(),
+            strategy: "manual".into(),
+            timestamp: "0".into(),
+        };
+        let mut model = NearestNeighborMetaModel::new();
+        model.fit(&[record]);
+
+        // Constrain the space so only num_domain_groups varies.
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            num_domain_groups: vec![3, 5],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3], // NOT the predicted 0.123
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+
+        let metric = TerritorialHealth;
+        let (pipeline, _feats, report) = SphereQLPipeline::new_from_metamodel_tuned(
+            input,
+            &model,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+        )
+        .unwrap();
+
+        // Grid visits 2 trials (num_domain_groups × 2). Overlap-artifact
+        // in every trial's config should be the SPACE's 0.3, not the
+        // predicted 0.123 — the search space always overrides. That's
+        // the intended contract: warm-start only helps when a knob is
+        // NOT in the space.
+        assert_eq!(report.trials.len(), 2);
+        for t in &report.trials {
+            assert!((t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-9);
+        }
+        assert_eq!(pipeline.projection_kind(), ProjectionKind::Pca);
     }
 }
