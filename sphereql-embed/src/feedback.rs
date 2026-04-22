@@ -58,11 +58,7 @@ pub struct FeedbackEvent {
 
 impl FeedbackEvent {
     /// Construct with a default timestamp (epoch seconds).
-    pub fn now(
-        corpus_id: impl Into<String>,
-        query_id: impl Into<String>,
-        score: f64,
-    ) -> Self {
+    pub fn now(corpus_id: impl Into<String>, query_id: impl Into<String>, score: f64) -> Self {
         Self {
             corpus_id: corpus_id.into(),
             query_id: query_id.into(),
@@ -194,9 +190,12 @@ impl FeedbackAggregator {
         let mut per_corpus: HashMap<String, (usize, f64, f64, f64)> = HashMap::new();
         for e in &self.events {
             let s = e.score.clamp(0.0, 1.0);
-            let entry = per_corpus
-                .entry(e.corpus_id.clone())
-                .or_insert((0, 0.0, f64::INFINITY, f64::NEG_INFINITY));
+            let entry = per_corpus.entry(e.corpus_id.clone()).or_insert((
+                0,
+                0.0,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+            ));
             entry.0 += 1;
             entry.1 += s;
             if s < entry.2 {
@@ -224,10 +223,10 @@ impl FeedbackAggregator {
     /// directories as needed.
     pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(&self.events)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -352,10 +351,7 @@ mod tests {
 
     #[test]
     fn save_and_load_roundtrip() {
-        let dir = std::env::temp_dir().join(format!(
-            "sphereql_fb_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sphereql_fb_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let path = dir.join("nested").join("events.json");
 

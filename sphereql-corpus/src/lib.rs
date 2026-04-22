@@ -14,7 +14,7 @@ pub mod stress_corpus;
 pub use axes::*;
 pub use concept::Concept;
 pub use corpus::build_corpus;
-pub use embed::{embed, embed_with_noise, DEFAULT_NOISE_AMPLITUDE, DIM};
+pub use embed::{DEFAULT_NOISE_AMPLITUDE, DIM, embed, embed_with_noise};
 pub use stress_corpus::{
-    build_stress_corpus, STRESS_CATEGORIES, STRESS_CONCEPTS_PER_CATEGORY, STRESS_NOISE_AMPLITUDE,
+    STRESS_CATEGORIES, STRESS_CONCEPTS_PER_CATEGORY, STRESS_NOISE_AMPLITUDE, build_stress_corpus,
 };

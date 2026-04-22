@@ -4,11 +4,11 @@
 //! and the category enrichment layer. Computed once at pipeline build time,
 //! then fed into bridge detection, edge weighting, and confidence scoring.
 
-use sphereql_core::spatial::{
-    cap_exclusivity, cap_intersection_area, cap_solid_angle, estimate_coverage, spherical_voronoi,
-    CoverageReport, VoronoiCell,
-};
 use sphereql_core::SphericalPoint;
+use sphereql_core::spatial::{
+    CoverageReport, VoronoiCell, cap_exclusivity, cap_intersection_area, cap_solid_angle,
+    estimate_coverage, spherical_voronoi,
+};
 
 use crate::category::CategoryGraph;
 use crate::config::PipelineConfig;
@@ -93,8 +93,12 @@ impl SpatialQuality {
         let mut pairwise_intersections = Vec::with_capacity(n * (n - 1) / 2);
         for i in 0..n {
             for j in (i + 1)..n {
-                let area =
-                    cap_intersection_area(&centroids[i], half_angles[i], &centroids[j], half_angles[j]);
+                let area = cap_intersection_area(
+                    &centroids[i],
+                    half_angles[i],
+                    &centroids[j],
+                    half_angles[j],
+                );
                 if area > 1e-15 {
                     pairwise_intersections.push(PairIntersection {
                         cat_a: i,
@@ -153,14 +157,12 @@ impl SpatialQuality {
     pub fn are_voronoi_neighbors(&self, cat_a: usize, cat_b: usize) -> bool {
         self.voronoi_cells
             .get(cat_a)
-            .map_or(false, |cell| cell.neighbor_indices.contains(&cat_b))
+            .is_some_and(|cell| cell.neighbor_indices.contains(&cat_b))
     }
 
     /// Voronoi cell area for a category.
     pub fn voronoi_area(&self, cat: usize) -> f64 {
-        self.voronoi_cells
-            .get(cat)
-            .map_or(0.0, |cell| cell.area)
+        self.voronoi_cells.get(cat).map_or(0.0, |cell| cell.area)
     }
 
     /// Territorial efficiency: items per steradian of Voronoi cell.
@@ -236,7 +238,10 @@ mod tests {
         let sq = SpatialQuality::compute(&centroids, &half_angles, 0.5);
 
         let tf = sq.territorial_factor(0, 1);
-        assert!(tf > 0.0 && tf <= 1.0, "territorial factor out of range: {tf}");
+        assert!(
+            tf > 0.0 && tf <= 1.0,
+            "territorial factor out of range: {tf}"
+        );
     }
 
     #[test]
@@ -257,15 +262,12 @@ mod tests {
 
     #[test]
     fn exclusivities_bounded() {
-        let centroids = vec![
-            unit(0.0, FRAC_PI_2),
-            unit(PI, FRAC_PI_2),
-        ];
+        let centroids = vec![unit(0.0, FRAC_PI_2), unit(PI, FRAC_PI_2)];
         let half_angles = vec![0.3, 0.3];
         let sq = SpatialQuality::compute(&centroids, &half_angles, 0.5);
 
         for &e in &sq.exclusivities {
-            assert!(e >= 0.0 && e <= 1.0, "exclusivity out of range: {e}");
+            assert!((0.0..=1.0).contains(&e), "exclusivity out of range: {e}");
         }
     }
 }

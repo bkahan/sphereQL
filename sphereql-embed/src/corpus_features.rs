@@ -138,11 +138,7 @@ impl CorpusFeatures {
                 .values()
                 .map(|&c| {
                     let p = c as f64 / n as f64;
-                    if p > 0.0 {
-                        -p * p.ln()
-                    } else {
-                        0.0
-                    }
+                    if p > 0.0 { -p * p.ln() } else { 0.0 }
                 })
                 .sum();
             // Normalize by ln(n_categories), the maximum for n_categories bins.
@@ -186,11 +182,7 @@ impl CorpusFeatures {
                     .iter()
                     .map(|&c| {
                         let p = c as f64 / total;
-                        if p > 0.0 {
-                            -p * p.ln()
-                        } else {
-                            0.0
-                        }
+                        if p > 0.0 { -p * p.ln() } else { 0.0 }
                     })
                     .sum();
                 h / (dim as f64).ln().max(f64::EPSILON)
@@ -261,11 +253,7 @@ fn pairwise_similarity(
             count += 1;
         }
     }
-    if count == 0 {
-        0.0
-    } else {
-        sum / count as f64
-    }
+    if count == 0 { 0.0 } else { sum / count as f64 }
 }
 
 fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
@@ -383,8 +371,7 @@ mod tests {
         assert_eq!(cf.n_items, back.n_items);
         assert_eq!(cf.n_categories, back.n_categories);
         assert!(
-            (cf.mean_intra_category_similarity - back.mean_intra_category_similarity).abs()
-                < 1e-12
+            (cf.mean_intra_category_similarity - back.mean_intra_category_similarity).abs() < 1e-12
         );
     }
 

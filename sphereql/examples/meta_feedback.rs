@@ -63,7 +63,11 @@ fn main() {
             timestamp: i.to_string(),
         });
     }
-    println!("\nRecorded {} feedback events (raw scores {:?})", agg.len(), scores);
+    println!(
+        "\nRecorded {} feedback events (raw scores {:?})",
+        agg.len(),
+        scores
+    );
 
     // ── 3. Save + reload from disk to exercise persistence ───────────
     let store = std::env::current_dir()
@@ -76,9 +80,7 @@ fn main() {
     println!("Round-tripped event log to {}", store.display());
     println!(
         "  (production: FeedbackEvent::append_to_default_store() writes to {})",
-        FeedbackAggregator::default_store_path()
-            .unwrap()
-            .display()
+        FeedbackAggregator::default_store_path().unwrap().display()
     );
 
     // ── 4. Summarize + blend at three alphas ─────────────────────────
@@ -92,7 +94,10 @@ fn main() {
         summary.max_score,
     );
 
-    println!("\nBlending adjusted score (best_score=0.720, feedback mean={:.3}):", summary.mean_score);
+    println!(
+        "\nBlending adjusted score (best_score=0.720, feedback mean={:.3}):",
+        summary.mean_score
+    );
     println!("  {:<8} {:<10} {}", "alpha", "adjusted", "interpretation");
     println!("  {}", "-".repeat(60));
     for alpha in [0.0, 0.25, 0.5, 0.75, 1.0] {

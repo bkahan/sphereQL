@@ -680,7 +680,10 @@ fn main() {
     println!("  max_bridge_strength(i,j) × territorial_factor(i,j) on S².");
     println!("════════════════════════════════════════════════════════════════\n");
 
-    let matrix = &pipeline.category_layer().spatial_quality.bridge_quality_matrix;
+    let matrix = &pipeline
+        .category_layer()
+        .spatial_quality
+        .bridge_quality_matrix;
     let cat_names: Vec<&str> = layer.summaries.iter().map(|s| s.name.as_str()).collect();
     let nc = cat_names.len();
 
@@ -719,7 +722,11 @@ fn main() {
         for i in 0..nc {
             let row_label = {
                 let n = cat_names[i];
-                if n.len() > 14 { format!("{}..", &n[..12]) } else { n.to_string() }
+                if n.len() > 14 {
+                    format!("{}..", &n[..12])
+                } else {
+                    n.to_string()
+                }
             };
             print!("  {:<14} {:>1}", row_label, i);
             for j in 0..nc {
@@ -782,14 +789,15 @@ fn main() {
         }
     }
     let total_bridges = genuine + artifact + weak;
-    println!("\n  Bridge classification (across {} bridges):", total_bridges);
+    println!(
+        "\n  Bridge classification (across {} bridges):",
+        total_bridges
+    );
     println!("    Genuine         : {:>5}", genuine);
     println!("    OverlapArtifact : {:>5}", artifact);
     println!("    Weak            : {:>5}", weak);
 
-    println!(
-        "\n  Insight: Bridge quality fuses raw affinity with S² territorial separation —"
-    );
+    println!("\n  Insight: Bridge quality fuses raw affinity with S² territorial separation —");
     println!("  pairs that 'share cap' produce apparent bridges that aren't real connectors.");
     println!("  This matrix surfaces which cross-domain hops are trustworthy.");
 
@@ -838,9 +846,7 @@ fn main() {
         qs
     };
 
-    println!(
-        "\n  [Navigator] Side-by-side: hierarchical_nearest vs. standard Nearest.\n"
-    );
+    println!("\n  [Navigator] Side-by-side: hierarchical_nearest vs. standard Nearest.\n");
     println!(
         "  EVR = {:.3} (hierarchical path activates below 0.35).",
         evr
@@ -896,8 +902,16 @@ fn main() {
                 .get(r)
                 .map(|n| (n.id.as_str(), n.category.as_str(), n.distance))
                 .unwrap_or(("—", "—", f64::NAN));
-            let hdist_str = if hdist.is_nan() { "—".into() } else { format!("{:.3}", hdist) };
-            let sdist_str = if sdist.is_nan() { "—".into() } else { format!("{:.3}", sdist) };
+            let hdist_str = if hdist.is_nan() {
+                "—".into()
+            } else {
+                format!("{:.3}", hdist)
+            };
+            let sdist_str = if sdist.is_nan() {
+                "—".into()
+            } else {
+                format!("{:.3}", sdist)
+            };
             let hcat_t = if hcat.len() > 12 { &hcat[..12] } else { hcat };
             let scat_t = if scat.len() > 12 { &scat[..12] } else { scat };
             println!(
@@ -916,9 +930,7 @@ fn main() {
         );
     }
 
-    println!(
-        "\n  Insight: When EVR < 0.35, fine-grained category routing on the outer"
-    );
+    println!("\n  Insight: When EVR < 0.35, fine-grained category routing on the outer");
     println!("  sphere is noise-dominated. Hierarchical routing drops the routing");
     println!("  problem's cardinality from N categories to ~5 groups, then uses each");
     println!("  category's inner sphere (where available) for drill-down.");

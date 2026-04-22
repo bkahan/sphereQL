@@ -39,7 +39,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::config::PipelineConfig;
-use crate::corpus_features::{CorpusFeatures, CORPUS_FEATURE_COUNT};
+use crate::corpus_features::{CORPUS_FEATURE_COUNT, CorpusFeatures};
 use crate::feedback::FeedbackSummary;
 use crate::tuner::TuneReport;
 use crate::util::{default_timestamp, sphereql_home_dir};
@@ -104,10 +104,10 @@ impl MetaTrainingRecord {
     /// directories as needed.
     pub fn save_list(records: &[Self], path: impl AsRef<Path>) -> io::Result<()> {
         let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(records)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -160,16 +160,11 @@ impl MetaTrainingRecord {
     /// blend — verifying corpus_id alignment is the caller's
     /// responsibility; this keeps the API composable under custom
     /// lookup schemes.
-    pub fn adjust_score_with_feedback(
-        &self,
-        summary: &FeedbackSummary,
-        alpha: f64,
-    ) -> f64 {
+    pub fn adjust_score_with_feedback(&self, summary: &FeedbackSummary, alpha: f64) -> f64 {
         let a = alpha.clamp(0.0, 1.0);
         (1.0 - a) * self.best_score + a * summary.mean_score
     }
 }
-
 
 // ── Trait ──────────────────────────────────────────────────────────────
 
@@ -406,9 +401,7 @@ impl DistanceWeightedMetaModel {
                 (i, weighted, d)
             })
             .collect();
-        out.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         out
     }
 }
@@ -464,12 +457,7 @@ mod tests {
     use super::*;
     use crate::config::ProjectionKind;
 
-    fn feat(
-        n: usize,
-        c: usize,
-        sparsity: f64,
-        intra: f64,
-    ) -> CorpusFeatures {
+    fn feat(n: usize, c: usize, sparsity: f64, intra: f64) -> CorpusFeatures {
         CorpusFeatures {
             n_items: n,
             n_categories: c,
@@ -486,12 +474,13 @@ mod tests {
     }
 
     fn record(id: &str, f: CorpusFeatures, kind: ProjectionKind, score: f64) -> MetaTrainingRecord {
-        let mut cfg = PipelineConfig::default();
-        cfg.projection_kind = kind;
         MetaTrainingRecord {
             corpus_id: id.to_string(),
             features: f,
-            best_config: cfg,
+            best_config: PipelineConfig {
+                projection_kind: kind,
+                ..Default::default()
+            },
             best_score: score,
             metric_name: "test_metric".to_string(),
             strategy: "test_strategy".to_string(),
@@ -518,7 +507,7 @@ mod tests {
             0.7,
         );
         let mut m = NearestNeighborMetaModel::new();
-        m.fit(&[r.clone()]);
+        m.fit(std::slice::from_ref(&r));
         let predicted = m.predict(&feat(1000, 30, 0.05, 0.3));
         assert_eq!(predicted.projection_kind, ProjectionKind::LaplacianEigenmap);
     }
@@ -533,12 +522,7 @@ mod tests {
             ProjectionKind::LaplacianEigenmap,
             0.7,
         );
-        let r_b = record(
-            "dense",
-            feat(500, 5, 0.50, 0.2),
-            ProjectionKind::Pca,
-            0.6,
-        );
+        let r_b = record("dense", feat(500, 5, 0.50, 0.2), ProjectionKind::Pca, 0.6);
         let mut m = NearestNeighborMetaModel::new();
         m.fit(&[r_a.clone(), r_b.clone()]);
 
@@ -631,8 +615,10 @@ mod tests {
 
     #[test]
     fn from_tune_result_copies_fields() {
-        let mut cfg = PipelineConfig::default();
-        cfg.projection_kind = ProjectionKind::LaplacianEigenmap;
+        let cfg = PipelineConfig {
+            projection_kind: ProjectionKind::LaplacianEigenmap,
+            ..Default::default()
+        };
         let report = TuneReport {
             metric_name: "connectivity_composite".to_string(),
             best_score: 0.42,
@@ -649,7 +635,10 @@ mod tests {
         assert_eq!(r.corpus_id, "test_corpus");
         assert_eq!(r.metric_name, "connectivity_composite");
         assert!((r.best_score - 0.42).abs() < 1e-12);
-        assert_eq!(r.best_config.projection_kind, ProjectionKind::LaplacianEigenmap);
+        assert_eq!(
+            r.best_config.projection_kind,
+            ProjectionKind::LaplacianEigenmap
+        );
         assert_eq!(r.strategy, "random{budget=24,seed=42}");
         // Timestamp should be epoch-seconds-ish — a non-empty numeric string.
         assert!(!r.timestamp.is_empty());
@@ -665,22 +654,14 @@ mod tests {
             trials: Vec::new(),
             failures: Vec::new(),
         };
-        let r = MetaTrainingRecord::from_tune_result(
-            "c",
-            feat(10, 2, 0.1, 0.3),
-            &report,
-            "s",
-        )
-        .with_timestamp("2026-04-22T12:00:00Z");
+        let r = MetaTrainingRecord::from_tune_result("c", feat(10, 2, 0.1, 0.3), &report, "s")
+            .with_timestamp("2026-04-22T12:00:00Z");
         assert_eq!(r.timestamp, "2026-04-22T12:00:00Z");
     }
 
     #[test]
     fn save_list_creates_parent_dirs() {
-        let dir = std::env::temp_dir().join(format!(
-            "sphereql_create_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sphereql_create_test_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let path = dir.join("nested").join("records.json");
 
@@ -698,9 +679,7 @@ mod tests {
         // just that it resolves and ends with the expected filename.
         let path = MetaTrainingRecord::default_store_path().unwrap();
         assert!(path.ends_with("meta_records.json"));
-        assert!(path
-            .iter()
-            .any(|c| c.to_string_lossy() == ".sphereql"));
+        assert!(path.iter().any(|c| c.to_string_lossy() == ".sphereql"));
     }
 
     #[test]
@@ -713,7 +692,7 @@ mod tests {
             0.7,
         );
         let mut m = DistanceWeightedMetaModel::new();
-        m.fit(&[r.clone()]);
+        m.fit(std::slice::from_ref(&r));
         let predicted = m.predict(&feat(1000, 30, 0.05, 0.3));
         assert_eq!(predicted.projection_kind, ProjectionKind::LaplacianEigenmap);
     }
@@ -779,14 +758,22 @@ mod tests {
     fn dw_is_deterministic() {
         let records = vec![
             record("a", feat(500, 5, 0.05, 0.8), ProjectionKind::Pca, 0.7),
-            record("b", feat(500, 5, 0.50, 0.2), ProjectionKind::LaplacianEigenmap, 0.6),
+            record(
+                "b",
+                feat(500, 5, 0.50, 0.2),
+                ProjectionKind::LaplacianEigenmap,
+                0.6,
+            ),
         ];
         let mut m1 = DistanceWeightedMetaModel::new();
         m1.fit(&records);
         let mut m2 = DistanceWeightedMetaModel::new();
         m2.fit(&records);
         let q = feat(500, 5, 0.10, 0.7);
-        assert_eq!(m1.predict(&q).projection_kind, m2.predict(&q).projection_kind);
+        assert_eq!(
+            m1.predict(&q).projection_kind,
+            m2.predict(&q).projection_kind
+        );
     }
 
     #[test]
@@ -797,7 +784,7 @@ mod tests {
         // with a non-positive epsilon we'd otherwise divide by zero.
         let r = record("r", feat(100, 5, 0.1, 0.3), ProjectionKind::Pca, 0.5);
         let mut m = m;
-        m.fit(&[r.clone()]);
+        m.fit(std::slice::from_ref(&r));
         let ranked = m.score_candidates(&r.features);
         assert!(ranked[0].1.is_finite());
     }

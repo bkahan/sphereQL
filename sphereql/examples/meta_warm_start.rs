@@ -106,7 +106,11 @@ fn main() {
         },
     )
     .expect("warm-start tune failed");
-    println!("  {} trials in {:.2}s", report.trials.len(), start.elapsed().as_secs_f64());
+    println!(
+        "  {} trials in {:.2}s",
+        report.trials.len(),
+        start.elapsed().as_secs_f64()
+    );
     println!("  best score: {:.4}", report.best_score);
 
     // ── 3. Verify pinned knobs survived ───────────────────────────────
@@ -130,11 +134,7 @@ fn main() {
     );
 }
 
-fn mock_report(
-    cfg: PipelineConfig,
-    score: f64,
-    metric_name: &str,
-) -> sphereql::embed::TuneReport {
+fn mock_report(cfg: PipelineConfig, score: f64, metric_name: &str) -> sphereql::embed::TuneReport {
     sphereql::embed::TuneReport {
         metric_name: metric_name.to_string(),
         best_score: score,

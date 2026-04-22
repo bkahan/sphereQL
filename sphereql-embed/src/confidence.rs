@@ -43,7 +43,14 @@ impl QualitySignal {
         let gap_confidence = 1.0 / (1.0 + (sharpness * void_dist).exp());
         let combined = evr * certainty * gap_confidence;
         let level = classify(combined);
-        Self { evr, certainty, void_distance: void_dist, gap_confidence, combined, level }
+        Self {
+            evr,
+            certainty,
+            void_distance: void_dist,
+            gap_confidence,
+            combined,
+            level,
+        }
     }
 
     /// Simplified: no void distance available (e.g., raw k-NN results).
@@ -51,7 +58,14 @@ impl QualitySignal {
         let gap_confidence = certainty.sqrt().max(0.01);
         let combined = evr * certainty * gap_confidence;
         let level = classify(combined);
-        Self { evr, certainty, void_distance: 0.0, gap_confidence, combined, level }
+        Self {
+            evr,
+            certainty,
+            void_distance: 0.0,
+            gap_confidence,
+            combined,
+            level,
+        }
     }
 
     pub fn passes_threshold(&self, min_combined: f64) -> bool {
@@ -99,7 +113,12 @@ pub struct QualityConfig {
 
 impl Default for QualityConfig {
     fn default() -> Self {
-        Self { min_certainty: 0.0, min_combined: 0.0, gap_sharpness: 5.0, warn_below_evr: 0.35 }
+        Self {
+            min_certainty: 0.0,
+            min_combined: 0.0,
+            gap_sharpness: 5.0,
+            warn_below_evr: 0.35,
+        }
     }
 }
 
@@ -124,24 +143,38 @@ impl ProjectionWarning {
             return None;
         }
         let (message, severity) = if evr < 0.15 {
-            (format!(
-                "EVR={:.1}% \u{2014} projection captures very little variance. \
+            (
+                format!(
+                    "EVR={:.1}% \u{2014} projection captures very little variance. \
                  Category routing and bridges are unreliable. Use inner spheres.",
-                evr * 100.0
-            ), WarningSeverity::Critical)
+                    evr * 100.0
+                ),
+                WarningSeverity::Critical,
+            )
         } else if evr < 0.25 {
-            (format!(
-                "EVR={:.1}% \u{2014} projection is lossy. Bridge counts may be inflated. \
+            (
+                format!(
+                    "EVR={:.1}% \u{2014} projection is lossy. Bridge counts may be inflated. \
                  Certainty-weighted results recommended.",
-                evr * 100.0
-            ), WarningSeverity::Warning)
+                    evr * 100.0
+                ),
+                WarningSeverity::Warning,
+            )
         } else {
-            (format!(
-                "EVR={:.1}% \u{2014} below recommended {:.0}%. Results usable with caution.",
-                evr * 100.0, threshold * 100.0
-            ), WarningSeverity::Info)
+            (
+                format!(
+                    "EVR={:.1}% \u{2014} below recommended {:.0}%. Results usable with caution.",
+                    evr * 100.0,
+                    threshold * 100.0
+                ),
+                WarningSeverity::Info,
+            )
         };
-        Some(Self { message, evr, severity })
+        Some(Self {
+            message,
+            evr,
+            severity,
+        })
     }
 }
 

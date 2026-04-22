@@ -4,18 +4,18 @@ use sphereql_index::SpatialItem;
 use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
+use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
 use crate::config::{PipelineConfig, ProjectionKind};
 use crate::configured_projection::ConfiguredProjection;
-use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
 use crate::corpus_features::CorpusFeatures;
-use crate::domain_groups::{detect_domain_groups, DomainGroup};
+use crate::domain_groups::{DomainGroup, detect_domain_groups};
 use crate::kernel_pca::KernelPcaProjection;
 use crate::laplacian::LaplacianEigenmapProjection;
 use crate::meta_model::MetaModel;
 use crate::projection::{PcaProjection, Projection};
 use crate::quality_metric::QualityMetric;
 use crate::query::{EmbeddingIndex, GlobResult, SlicingManifold};
-use crate::tuner::{auto_tune, SearchSpace, SearchStrategy, TuneReport};
+use crate::tuner::{SearchSpace, SearchStrategy, TuneReport, auto_tune};
 use crate::types::{Embedding, RadialStrategy};
 
 // ── Errors ─────────────────────────────────────────────────────────────────
@@ -368,8 +368,7 @@ impl SphereQLPipeline {
             .into_iter()
             .collect();
 
-        let domain_groups =
-            detect_domain_groups(&category_layer, config.routing.num_domain_groups);
+        let domain_groups = detect_domain_groups(&category_layer, config.routing.num_domain_groups);
 
         Ok(Self {
             projection,
@@ -411,8 +410,9 @@ impl SphereQLPipeline {
                         })
                         .filter(|r| {
                             r.certainty >= self.quality_config.min_certainty
-                                && r.quality
-                                    .map_or(true, |q| q.passes_threshold(self.quality_config.min_combined))
+                                && r.quality.is_none_or(|q| {
+                                    q.passes_threshold(self.quality_config.min_combined)
+                                })
                         })
                         .collect(),
                 )
@@ -441,8 +441,9 @@ impl SphereQLPipeline {
                         })
                         .filter(|r| {
                             r.certainty >= self.quality_config.min_certainty
-                                && r.quality
-                                    .map_or(true, |q| q.passes_threshold(self.quality_config.min_combined))
+                                && r.quality.is_none_or(|q| {
+                                    q.passes_threshold(self.quality_config.min_combined)
+                                })
                         })
                         .collect(),
                 )
@@ -529,9 +530,12 @@ impl SphereQLPipeline {
             }
 
             SphereQLQuery::DrillDown { category, k } => {
-                let results = self
-                    .category_layer
-                    .drill_down_with_projection(category, &emb, &self.projection, k);
+                let results = self.category_layer.drill_down_with_projection(
+                    category,
+                    &emb,
+                    &self.projection,
+                    k,
+                );
                 SphereQLOutput::DrillDown(results)
             }
 
@@ -583,9 +587,9 @@ impl SphereQLPipeline {
     /// kind. Prefer [`Self::projection`] in code that may run under any
     /// [`ProjectionKind`](crate::config::ProjectionKind).
     pub fn pca(&self) -> &PcaProjection {
-        self.projection.as_pca().expect(
-            "pipeline is not configured with PcaProjection; call .projection() instead",
-        )
+        self.projection
+            .as_pca()
+            .expect("pipeline is not configured with PcaProjection; call .projection() instead")
     }
 
     /// Borrow the fitted projection regardless of kind.
@@ -741,10 +745,12 @@ impl SphereQLPipeline {
         let mut candidates: Vec<NearestResult> = Vec::new();
         for &ci in &group.member_categories {
             let cat_name = &self.category_layer.summaries[ci].name;
-            for r in self
-                .category_layer
-                .drill_down_with_projection(cat_name, embedding, &self.projection, k)
-            {
+            for r in self.category_layer.drill_down_with_projection(
+                cat_name,
+                embedding,
+                &self.projection,
+                k,
+            ) {
                 candidates.push(self.drill_result_to_nearest(&r, evr));
             }
         }
@@ -758,7 +764,8 @@ impl SphereQLPipeline {
             .into_iter()
             .filter(|r| {
                 r.certainty >= self.quality_config.min_certainty
-                    && r.quality.is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
+                    && r.quality
+                        .is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
             })
             .take(k)
             .collect()
@@ -783,7 +790,8 @@ impl SphereQLPipeline {
             })
             .filter(|r| {
                 r.certainty >= self.quality_config.min_certainty
-                    && r.quality.is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
+                    && r.quality
+                        .is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
             })
             .collect()
     }
@@ -864,17 +872,13 @@ pub fn fit_projection_for_config(
     config: &PipelineConfig,
 ) -> ConfiguredProjection {
     match config.projection_kind {
-        ProjectionKind::Pca => {
-            ConfiguredProjection::Pca(
-                PcaProjection::fit(embeddings, RadialStrategy::Magnitude).with_volumetric(true),
-            )
-        }
-        ProjectionKind::KernelPca => {
-            ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
-                embeddings,
-                RadialStrategy::Magnitude,
-            ))
-        }
+        ProjectionKind::Pca => ConfiguredProjection::Pca(
+            PcaProjection::fit(embeddings, RadialStrategy::Magnitude).with_volumetric(true),
+        ),
+        ProjectionKind::KernelPca => ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
+            embeddings,
+            RadialStrategy::Magnitude,
+        )),
         ProjectionKind::LaplacianEigenmap => {
             let lc = &config.laplacian;
             ConfiguredProjection::Laplacian(LaplacianEigenmapProjection::fit_with_params(
@@ -1254,10 +1258,7 @@ mod tests {
         // standard outer-sphere path and produce the same IDs as Nearest.
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let hier = pipeline.hierarchical_nearest(
-            &Embedding::new(query.embedding.clone()),
-            5,
-        );
+        let hier = pipeline.hierarchical_nearest(&Embedding::new(query.embedding.clone()), 5);
         assert!(!hier.is_empty());
         assert!(hier.len() <= 5);
         for w in hier.windows(2) {
@@ -1276,8 +1277,10 @@ mod tests {
         // Hand-built training record: "on a corpus shaped like this, a
         // LaplacianEigenmap config wins". The NN model has only one
         // point so it always returns this config.
-        let mut target_config = PipelineConfig::default();
-        target_config.projection_kind = ProjectionKind::LaplacianEigenmap;
+        let target_config = PipelineConfig {
+            projection_kind: ProjectionKind::LaplacianEigenmap,
+            ..Default::default()
+        };
         let record = MetaTrainingRecord {
             corpus_id: "seed".into(),
             features: features.clone(),

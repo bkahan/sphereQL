@@ -15,7 +15,7 @@
 ///
 /// Every field is a sub-config grouped by area. [`Self::default`] returns
 /// the values the crate shipped with before the config surface existed.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct PipelineConfig {
     /// Outer-sphere projection family.
     pub projection_kind: ProjectionKind,
@@ -32,19 +32,6 @@ pub struct PipelineConfig {
     pub spatial: SpatialConfig,
 }
 
-impl Default for PipelineConfig {
-    fn default() -> Self {
-        Self {
-            projection_kind: ProjectionKind::default(),
-            inner_sphere: InnerSphereConfig::default(),
-            bridges: BridgeConfig::default(),
-            routing: RoutingConfig::default(),
-            laplacian: LaplacianConfig::default(),
-            spatial: SpatialConfig::default(),
-        }
-    }
-}
-
 // ── Projection kind ────────────────────────────────────────────────────
 
 /// Which projection family the pipeline uses for the outer sphere.
@@ -52,10 +39,13 @@ impl Default for PipelineConfig {
 /// This is a first-class tunable axis: the auto-tuner can sweep over it
 /// once the pipeline is generalized beyond PCA, and meta-learning can
 /// map corpus profiles onto the kind that works best.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
 pub enum ProjectionKind {
     /// Linear PCA — fast, variance-maximizing. Good default for dense,
     /// low-noise embeddings.
+    #[default]
     Pca,
     /// Kernel PCA with a Gaussian (RBF) kernel. Captures nonlinear
     /// manifold structure at O(n²) fit cost.
@@ -66,12 +56,6 @@ pub enum ProjectionKind {
     /// coordinate variance (the typical failure mode of PCA on 128-dim
     /// noise-heavy corpora).
     LaplacianEigenmap,
-}
-
-impl Default for ProjectionKind {
-    fn default() -> Self {
-        Self::Pca
-    }
 }
 
 impl ProjectionKind {
@@ -278,7 +262,10 @@ mod tests {
     fn projection_kind_name_and_all_stable() {
         assert_eq!(ProjectionKind::Pca.name(), "pca");
         assert_eq!(ProjectionKind::KernelPca.name(), "kernel_pca");
-        assert_eq!(ProjectionKind::LaplacianEigenmap.name(), "laplacian_eigenmap");
+        assert_eq!(
+            ProjectionKind::LaplacianEigenmap.name(),
+            "laplacian_eigenmap"
+        );
         assert_eq!(ProjectionKind::all().len(), 3);
     }
 }

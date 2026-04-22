@@ -431,8 +431,7 @@ impl CategoryLayer {
         }
 
         // 4. Build category graph + detect bridges (spatially informed)
-        let graph =
-            Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality, config);
+        let graph = Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality, config);
 
         // Backfill bridge_quality on summaries using the just-built graph.
         // bridge_quality = mean of (edge.mean_bridge_strength × territorial_factor)
@@ -456,8 +455,7 @@ impl CategoryLayer {
         spatial_quality.set_bridge_quality_matrix(&graph);
 
         // 5. Build inner spheres for qualifying categories
-        let inner_spheres =
-            Self::build_inner_spheres(&summaries, embeddings, projection, config);
+        let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection, config);
 
         CategoryLayer {
             summaries,
@@ -846,7 +844,8 @@ impl CategoryLayer {
             });
         }
 
-        let path_confidence = steps.iter()
+        let path_confidence = steps
+            .iter()
             .take(steps.len().saturating_sub(1))
             .map(|s| s.hop_confidence)
             .fold(1.0, |acc, c| acc * c.max(0.01));
@@ -1379,7 +1378,11 @@ mod tests {
     fn bridge_quality_nonnegative() {
         let (layer, _, _) = build_test_layer();
         for s in &layer.summaries {
-            assert!(s.bridge_quality >= 0.0, "{} has negative bridge_quality", s.name);
+            assert!(
+                s.bridge_quality >= 0.0,
+                "{} has negative bridge_quality",
+                s.name
+            );
         }
     }
 

@@ -6,7 +6,7 @@
 //! (derived from Voronoi adjacency + cap overlap) reduces the routing
 //! problem's dimensionality and restores usable coarse structure.
 
-use sphereql_core::{angular_distance, cartesian_to_spherical, CartesianPoint, SphericalPoint};
+use sphereql_core::{CartesianPoint, SphericalPoint, angular_distance, cartesian_to_spherical};
 
 use crate::category::CategoryLayer;
 
@@ -43,6 +43,7 @@ pub fn detect_domain_groups(layer: &CategoryLayer, target_groups: usize) -> Vec<
 
     // 1. Similarity matrix from Voronoi adjacency + normalized cap overlap.
     let mut similarity = vec![vec![0.0f64; n]; n];
+    #[allow(clippy::needless_range_loop)] // symmetric 2D fill needs both indices
     for i in 0..n {
         for j in (i + 1)..n {
             let mut s = 0.0;
@@ -217,7 +218,11 @@ mod tests {
         all.sort();
         let before_dedup = all.len();
         all.dedup();
-        assert_eq!(before_dedup, all.len(), "category assigned to multiple groups");
+        assert_eq!(
+            before_dedup,
+            all.len(),
+            "category assigned to multiple groups"
+        );
         assert_eq!(all.len(), layer.num_categories());
     }
 

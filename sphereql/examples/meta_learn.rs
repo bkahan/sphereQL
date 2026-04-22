@@ -23,12 +23,12 @@
 //!   cargo run --example meta_learn --features embed --release
 
 use sphereql::embed::{
-    auto_tune, CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, MetaModel,
-    MetaTrainingRecord, NearestNeighborMetaModel, PipelineConfig, PipelineInput, ProjectionKind,
-    QualityMetric, SearchSpace, SearchStrategy,
+    CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord,
+    NearestNeighborMetaModel, PipelineConfig, PipelineInput, ProjectionKind, QualityMetric,
+    SearchSpace, SearchStrategy, auto_tune,
 };
 use sphereql_corpus::{
-    build_corpus, build_stress_corpus, embed, embed_with_noise, Concept, STRESS_NOISE_AMPLITUDE,
+    Concept, STRESS_NOISE_AMPLITUDE, build_corpus, build_stress_corpus, embed, embed_with_noise,
 };
 
 const BUDGET: usize = 12;
@@ -43,13 +43,8 @@ fn main() {
     let space = SearchSpace::default();
 
     // ── 1. Tune on BOTH corpora, emit one training record each ─────────
-    let (built_in_record, built_in_features) = tune_and_record(
-        "built_in_775",
-        build_corpus(),
-        false,
-        &space,
-        &metric,
-    );
+    let (built_in_record, built_in_features) =
+        tune_and_record("built_in_775", build_corpus(), false, &space, &metric);
     let (stress_record, stress_features) =
         tune_and_record("stress_300", build_stress_corpus(), true, &space, &metric);
 
@@ -89,15 +84,33 @@ fn main() {
     println!("\n────────────────────────────────────────────────────────────────");
     println!("  Verification: do the models predict the right kind?");
     println!("────────────────────────────────────────────────────────────────");
-    verify(&nn, &dw, "built_in_775 profile", &built_in_features, built_in_record.best_config.projection_kind);
-    verify(&nn, &dw, "stress_300 profile", &stress_features, stress_record.best_config.projection_kind);
+    verify(
+        &nn,
+        &dw,
+        "built_in_775 profile",
+        &built_in_features,
+        built_in_record.best_config.projection_kind,
+    );
+    verify(
+        &nn,
+        &dw,
+        "stress_300 profile",
+        &stress_features,
+        stress_record.best_config.projection_kind,
+    );
 
     // ── 5. Verify: perturbed profiles still route correctly ───────────
     // A profile halfway between the two regimes: should still lean
     // toward whichever it's closer to. Test both directions.
     let near_built_in = interp(&built_in_features, &stress_features, 0.2);
     let near_stress = interp(&built_in_features, &stress_features, 0.8);
-    verify(&nn, &dw, "built-in-like (20% toward stress)", &near_built_in, ProjectionKind::Pca);
+    verify(
+        &nn,
+        &dw,
+        "built-in-like (20% toward stress)",
+        &near_built_in,
+        ProjectionKind::Pca,
+    );
     verify(
         &nn,
         &dw,
@@ -188,11 +201,7 @@ fn verify(
     let nn_pred = nn.predict(features).projection_kind;
     let dw_pred = dw.predict(features).projection_kind;
     let mark = |k: ProjectionKind| {
-        if k == expected_kind {
-            "OK "
-        } else {
-            "MISS"
-        }
+        if k == expected_kind { "OK " } else { "MISS" }
     };
     println!(
         "  {:<42}  expected={:<20}  nn={} {}  dw={} {}",
@@ -217,10 +226,7 @@ fn interp(a: &CorpusFeatures, b: &CorpusFeatures, t: f64) -> CorpusFeatures {
         n_items: mix(a.n_items as f64, b.n_items as f64).round() as usize,
         n_categories: mix(a.n_categories as f64, b.n_categories as f64).round() as usize,
         dim: a.dim, // dim is fixed across corpora (128 here); no need to interp
-        mean_members_per_category: mix(
-            a.mean_members_per_category,
-            b.mean_members_per_category,
-        ),
+        mean_members_per_category: mix(a.mean_members_per_category, b.mean_members_per_category),
         category_size_entropy: mix(a.category_size_entropy, b.category_size_entropy),
         mean_sparsity: mix(a.mean_sparsity, b.mean_sparsity),
         axis_utilization_entropy: mix(a.axis_utilization_entropy, b.axis_utilization_entropy),
@@ -233,9 +239,6 @@ fn interp(a: &CorpusFeatures, b: &CorpusFeatures, t: f64) -> CorpusFeatures {
             a.mean_inter_category_similarity,
             b.mean_inter_category_similarity,
         ),
-        category_separation_ratio: mix(
-            a.category_separation_ratio,
-            b.category_separation_ratio,
-        ),
+        category_separation_ratio: mix(a.category_separation_ratio, b.category_separation_ratio),
     }
 }

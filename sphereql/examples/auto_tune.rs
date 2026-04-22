@@ -21,11 +21,11 @@
 //!   (anything else or unset → 775-concept built-in corpus)
 
 use sphereql::embed::{
-    auto_tune, BridgeClassification, CompositeMetric, PipelineConfig, PipelineInput,
-    ProjectionKind, QualityMetric, SearchSpace, SearchStrategy, SphereQLPipeline, TuneReport,
+    BridgeClassification, CompositeMetric, PipelineConfig, PipelineInput, ProjectionKind,
+    QualityMetric, SearchSpace, SearchStrategy, SphereQLPipeline, TuneReport, auto_tune,
 };
 use sphereql_corpus::{
-    build_corpus, build_stress_corpus, embed, embed_with_noise, Concept, STRESS_NOISE_AMPLITUDE,
+    Concept, STRESS_NOISE_AMPLITUDE, build_corpus, build_stress_corpus, embed, embed_with_noise,
 };
 
 const RANDOM_BUDGET: usize = 24;
@@ -73,7 +73,10 @@ fn main() {
         n,
         unique_cats.len()
     );
-    println!("Budget: {} random trials (seed = 0x{:X})\n", RANDOM_BUDGET, RANDOM_SEED);
+    println!(
+        "Budget: {} random trials (seed = 0x{:X})\n",
+        RANDOM_BUDGET, RANDOM_SEED
+    );
     let _ = corpus; // keep for future per-concept reporting; not used past this point
 
     let space = SearchSpace::default();
@@ -86,15 +89,42 @@ fn main() {
     let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
     println!("Search space (discrete):");
     println!("  projection_kinds .............. {:?}", kinds_str);
-    println!("  laplacian_k_neighbors ......... {:?}", space.laplacian_k_neighbors);
-    println!("  laplacian_active_threshold .... {:?}", space.laplacian_active_threshold);
-    println!("  num_domain_groups ............. {:?}", space.num_domain_groups);
-    println!("  low_evr_threshold ............. {:?}", space.low_evr_threshold);
-    println!("  overlap_artifact_territorial .. {:?}", space.overlap_artifact_territorial);
-    println!("  threshold_base ................ {:?}", space.threshold_base);
-    println!("  threshold_evr_penalty ......... {:?}", space.threshold_evr_penalty);
-    println!("  min_evr_improvement ........... {:?}", space.min_evr_improvement);
-    println!("  grid cardinality .............. {}\n", space.grid_cardinality());
+    println!(
+        "  laplacian_k_neighbors ......... {:?}",
+        space.laplacian_k_neighbors
+    );
+    println!(
+        "  laplacian_active_threshold .... {:?}",
+        space.laplacian_active_threshold
+    );
+    println!(
+        "  num_domain_groups ............. {:?}",
+        space.num_domain_groups
+    );
+    println!(
+        "  low_evr_threshold ............. {:?}",
+        space.low_evr_threshold
+    );
+    println!(
+        "  overlap_artifact_territorial .. {:?}",
+        space.overlap_artifact_territorial
+    );
+    println!(
+        "  threshold_base ................ {:?}",
+        space.threshold_base
+    );
+    println!(
+        "  threshold_evr_penalty ......... {:?}",
+        space.threshold_evr_penalty
+    );
+    println!(
+        "  min_evr_improvement ........... {:?}",
+        space.min_evr_improvement
+    );
+    println!(
+        "  grid cardinality .............. {}\n",
+        space.grid_cardinality()
+    );
 
     // Baseline: the default-config pipeline, built once and scored under
     // each metric below for the "lift over default" comparison.
@@ -138,7 +168,10 @@ fn main() {
     // Strategy comparison: at a small budget, does Bayesian beat Random
     // under the default composite? This tests the sample-efficiency claim.
     println!("\n================================================================");
-    println!("  Strategy comparison: Random vs Bayesian (budget = {})", small_budget);
+    println!(
+        "  Strategy comparison: Random vs Bayesian (budget = {})",
+        small_budget
+    );
     println!("================================================================\n");
 
     let (random_best, random_trials_to_best) = run_strategy(
@@ -216,8 +249,7 @@ fn main() {
         conn_report.best_score,
     );
 
-    let metric_flips_winner =
-        default_pipeline.projection_kind() != conn_pipeline.projection_kind();
+    let metric_flips_winner = default_pipeline.projection_kind() != conn_pipeline.projection_kind();
     println!();
     if metric_flips_winner {
         println!(
@@ -303,10 +335,7 @@ fn print_report(
     composite: &CompositeMetric,
     baseline_score: f64,
 ) {
-    println!(
-        "\nScore summary (under {}):",
-        report.metric_name
-    );
+    println!("\nScore summary (under {}):", report.metric_name);
     println!("  default config ......... {:.4}", baseline_score);
     println!("  mean across trials ..... {:.4}", report.mean_score());
     println!("  best (found) ........... {:.4}", report.best_score);
@@ -324,10 +353,7 @@ fn print_report(
     if best_pipeline.projection_kind() == ProjectionKind::LaplacianEigenmap {
         let lc = &best_pipeline.config().laplacian;
         println!("  laplacian_k_neighbors ....... {}", lc.k_neighbors);
-        println!(
-            "  laplacian_active_threshold .. {:.3}",
-            lc.active_threshold
-        );
+        println!("  laplacian_active_threshold .. {:.3}", lc.active_threshold);
     }
 
     println!("\nTop 5 trials (by score):");
@@ -352,9 +378,10 @@ fn print_report(
     use std::collections::BTreeMap;
     let mut per_kind: BTreeMap<&str, (f64, f64, usize)> = BTreeMap::new();
     for t in &report.trials {
-        let entry = per_kind
-            .entry(t.config.projection_kind.name())
-            .or_insert((f64::NEG_INFINITY, 0.0, 0));
+        let entry =
+            per_kind
+                .entry(t.config.projection_kind.name())
+                .or_insert((f64::NEG_INFINITY, 0.0, 0));
         entry.0 = entry.0.max(t.score);
         entry.1 += t.score;
         entry.2 += 1;
@@ -397,7 +424,10 @@ fn print_report(
         }
     }
     let total = genuine + artifact + weak;
-    println!("\nBridge classification on winning pipeline ({} bridges):", total);
+    println!(
+        "\nBridge classification on winning pipeline ({} bridges):",
+        total
+    );
     if total > 0 {
         println!(
             "  Genuine         : {:>5}  ({:>5.1}%)",

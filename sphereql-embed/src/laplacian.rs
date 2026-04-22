@@ -31,9 +31,7 @@
 
 use sphereql_core::SphericalPoint;
 
-use crate::projection::{
-    Projection, SplitMix64, dot, normalize_vec, project_xyz_to_spherical,
-};
+use crate::projection::{Projection, SplitMix64, dot, normalize_vec, project_xyz_to_spherical};
 use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -53,7 +51,7 @@ pub const DEGREE_REGULARIZATION: f64 = 1e-6;
 
 const MAX_POWER_ITERS: usize = 400;
 const POWER_ITER_TOL: f64 = 1e-10;
-const RNG_SEED: u64 = 0xC0FFEE_CAFE;
+const RNG_SEED: u64 = 0xC0FF_EECA_FE00;
 
 // ── Projection ─────────────────────────────────────────────────────────
 
@@ -165,9 +163,7 @@ impl LaplacianEigenmapProjection {
                     neighbors.push((j, sim[i * n + j]));
                 }
             }
-            neighbors.sort_by(|a, b| {
-                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            neighbors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             for &(j, _) in neighbors.iter().take(k) {
                 keep[i * n + j] = true;
                 keep[j * n + i] = true;
@@ -177,7 +173,7 @@ impl LaplacianEigenmapProjection {
         // 4. Sparsified affinity W + degrees.
         let mut w = vec![0.0f64; n * n];
         let mut degrees = vec![0.0f64; n];
-        for i in 0..n {
+        for (i, d_slot) in degrees.iter_mut().enumerate() {
             let row = i * n;
             let mut d = 0.0;
             for j in 0..n {
@@ -186,7 +182,7 @@ impl LaplacianEigenmapProjection {
                     d += sim[row + j];
                 }
             }
-            degrees[i] = d;
+            *d_slot = d;
         }
 
         // Regularize isolated/near-isolated nodes so D^(-1/2) stays finite.
@@ -218,11 +214,7 @@ impl LaplacianEigenmapProjection {
         let (eigenvectors_vec, eigenvalues_vec) =
             top_k_symmetric_excluding(&w_norm, n, 3, &[trivial_ev]);
 
-        let eigenvalues: [f64; 3] = [
-            eigenvalues_vec[0],
-            eigenvalues_vec[1],
-            eigenvalues_vec[2],
-        ];
+        let eigenvalues: [f64; 3] = [eigenvalues_vec[0], eigenvalues_vec[1], eigenvalues_vec[2]];
         let eigenvectors: [Vec<f64>; 3] = [
             eigenvectors_vec[0].clone(),
             eigenvectors_vec[1].clone(),
@@ -298,7 +290,12 @@ impl LaplacianEigenmapProjection {
         // Nyström extension: u_k(y) = (1/μ_k) Σ_j w_norm(y, j) · u_k(j).
         // w_norm(y, j) = sims[j] / (sqrt(d_y) · sqrt(d_j)).
         let mut coords = [0.0f64; 3];
-        for (k, (ev, &mu)) in self.eigenvectors.iter().zip(self.eigenvalues.iter()).enumerate() {
+        for (k, (ev, &mu)) in self
+            .eigenvectors
+            .iter()
+            .zip(self.eigenvalues.iter())
+            .enumerate()
+        {
             if mu.abs() < 1e-10 {
                 continue;
             }
@@ -567,7 +564,7 @@ mod tests {
         let corpus = three_cluster_corpus();
         let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
         let r = lap.connectivity_ratio();
-        assert!(r >= 0.0 && r <= 1.0, "connectivity_ratio = {r}");
+        assert!((0.0..=1.0).contains(&r), "connectivity_ratio = {r}");
         assert_eq!(r, lap.explained_variance_ratio());
     }
 

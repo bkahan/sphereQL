@@ -13,7 +13,7 @@
 
 use std::collections::HashSet;
 
-use sphereql_core::{angular_distance, SphericalPoint};
+use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::category::BridgeClassification;
 use crate::pipeline::SphereQLPipeline;
@@ -141,8 +141,7 @@ impl QualityMetric for ClusterSilhouette {
             vec![Vec::new(); n_cats];
         for ep in &exported {
             if let Some(ci) = layer.name_to_index.get(&ep.category).copied() {
-                let sp =
-                    sphereql_core::SphericalPoint::new_unchecked(ep.r, ep.theta, ep.phi);
+                let sp = sphereql_core::SphericalPoint::new_unchecked(ep.r, ep.theta, ep.phi);
                 positions_by_cat[ci].push(sp);
             }
         }
@@ -289,9 +288,7 @@ impl QualityMetric for GraphModularity {
                 .filter(|&j| j != i)
                 .map(|j| (j, angular_distance(&positions[i], &positions[j])))
                 .collect();
-            dists.sort_by(|a, b| {
-                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
             for &(j, _) in dists.iter().take(k) {
                 let e = if i < j { (i, j) } else { (j, i) };
                 edges.insert(e);
@@ -319,10 +316,10 @@ impl QualityMetric for GraphModularity {
             }
         }
         for &(a, b) in &edges {
-            if let (Some(ca), Some(cb)) = (item_cats[a], item_cats[b]) {
-                if ca == cb {
-                    intra_edges[ca] += 1.0;
-                }
+            if let (Some(ca), Some(cb)) = (item_cats[a], item_cats[b])
+                && ca == cb
+            {
+                intra_edges[ca] += 1.0;
             }
         }
 
@@ -353,10 +350,7 @@ impl CompositeMetric {
     /// Build a composite from (metric, weight) pairs. Weights with
     /// non-positive values are dropped; remaining weights are renormalized
     /// to sum to 1.
-    pub fn new(
-        label: impl Into<String>,
-        components: Vec<(Box<dyn QualityMetric>, f64)>,
-    ) -> Self {
+    pub fn new(label: impl Into<String>, components: Vec<(Box<dyn QualityMetric>, f64)>) -> Self {
         let filtered: Vec<(Box<dyn QualityMetric>, f64)> =
             components.into_iter().filter(|(_, w)| *w > 0.0).collect();
         let sum: f64 = filtered.iter().map(|(_, w)| *w).sum();
@@ -396,7 +390,10 @@ impl CompositeMetric {
         Self::new(
             "connectivity_composite",
             vec![
-                (Box::new(GraphModularity::default()) as Box<dyn QualityMetric>, 0.50),
+                (
+                    Box::new(GraphModularity::default()) as Box<dyn QualityMetric>,
+                    0.50,
+                ),
                 (Box::new(BridgeCoherence) as Box<dyn QualityMetric>, 0.30),
                 (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.20),
             ],
@@ -468,21 +465,21 @@ mod tests {
     fn territorial_health_in_range() {
         let p = make_pipeline();
         let s = TerritorialHealth.score(&p);
-        assert!(s >= 0.0 && s <= 1.0, "got {s}");
+        assert!((0.0..=1.0).contains(&s), "got {s}");
     }
 
     #[test]
     fn bridge_coherence_in_range() {
         let p = make_pipeline();
         let s = BridgeCoherence.score(&p);
-        assert!(s >= 0.0 && s <= 1.0, "got {s}");
+        assert!((0.0..=1.0).contains(&s), "got {s}");
     }
 
     #[test]
     fn cluster_silhouette_in_range() {
         let p = make_pipeline();
         let s = ClusterSilhouette.score(&p);
-        assert!(s >= 0.0 && s <= 1.0, "got {s}");
+        assert!((0.0..=1.0).contains(&s), "got {s}");
     }
 
     #[test]
@@ -490,7 +487,7 @@ mod tests {
         let p = make_pipeline();
         let m = CompositeMetric::default_composite();
         let s = m.score(&p);
-        assert!(s >= 0.0 && s <= 1.0);
+        assert!((0.0..=1.0).contains(&s));
     }
 
     #[test]
@@ -563,7 +560,7 @@ mod tests {
     fn graph_modularity_in_range() {
         let p = make_pipeline();
         let s = GraphModularity::default().score(&p);
-        assert!(s >= 0.0 && s <= 1.0, "got {s}");
+        assert!((0.0..=1.0).contains(&s), "got {s}");
     }
 
     #[test]
@@ -599,8 +596,8 @@ mod tests {
         let s_large = GraphModularity::new(15).score(&p);
         // Both should be valid scores; the exact relationship between k
         // and the score is corpus-dependent, so we only check validity.
-        assert!(s_small >= 0.0 && s_small <= 1.0);
-        assert!(s_large >= 0.0 && s_large <= 1.0);
+        assert!((0.0..=1.0).contains(&s_small));
+        assert!((0.0..=1.0).contains(&s_large));
     }
 
     #[test]

@@ -7,9 +7,9 @@
 //! detection, hierarchical concept paths).
 
 pub mod category;
+pub mod confidence;
 pub mod config;
 pub mod configured_projection;
-pub mod confidence;
 pub mod corpus_features;
 pub mod domain_groups;
 pub mod feedback;
@@ -28,9 +28,9 @@ pub mod types;
 pub mod util;
 
 pub use category::*;
+pub use confidence::*;
 pub use config::*;
 pub use configured_projection::*;
-pub use confidence::*;
 pub use corpus_features::*;
 pub use domain_groups::*;
 pub use feedback::*;

@@ -203,7 +203,7 @@ mod tests {
             LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).into();
         for cp in &[pca, kpca, lap] {
             let r = cp.explained_variance_ratio();
-            assert!(r >= 0.0 && r <= 1.0, "{:?}: {r}", cp);
+            assert!((0.0..=1.0).contains(&r), "{:?}: {r}", cp);
         }
     }
 

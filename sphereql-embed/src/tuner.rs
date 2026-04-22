@@ -20,7 +20,7 @@ use crate::config::{
     BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind, RoutingConfig,
 };
 use crate::configured_projection::ConfiguredProjection;
-use crate::pipeline::{fit_projection_for_config, PipelineError, PipelineInput, SphereQLPipeline};
+use crate::pipeline::{PipelineError, PipelineInput, SphereQLPipeline, fit_projection_for_config};
 use crate::projection::SplitMix64;
 use crate::quality_metric::QualityMetric;
 use crate::types::Embedding;
@@ -524,18 +524,14 @@ fn tpe_propose(
     let n_good = ((sorted.len() as f64) * gamma).ceil() as usize;
     let n_good = n_good.max(1).min(sorted.len().saturating_sub(1).max(1));
     let good: Vec<&TrialRecord> = sorted.iter().take(n_good).copied().collect();
-    let bad: Vec<&TrialRecord> =
-        sorted.iter().skip(n_good).copied().collect();
+    let bad: Vec<&TrialRecord> = sorted.iter().skip(n_good).copied().collect();
 
     // Fall back to uniform sampling if we somehow don't have both sides.
     if good.is_empty() || bad.is_empty() {
         return space.sample(rng, base);
     }
 
-    let pick_idx = |rng: &mut SplitMix64,
-                    good_counts: &[f64],
-                    bad_counts: &[f64]|
-     -> usize {
+    let pick_idx = |rng: &mut SplitMix64, good_counts: &[f64], bad_counts: &[f64]| -> usize {
         let n_g = good_counts.iter().sum::<f64>() + good_counts.len() as f64;
         let n_b = bad_counts.iter().sum::<f64>() + bad_counts.len() as f64;
         let weights: Vec<f64> = good_counts
@@ -552,10 +548,18 @@ fn tpe_propose(
     let kind = space.projection_kinds[pick_idx(rng, &pk_g, &pk_b)];
 
     // Kind-agnostic knobs.
-    let ndg_g = hist_usize(&good, &space.num_domain_groups, |c| c.routing.num_domain_groups);
-    let ndg_b = hist_usize(&bad, &space.num_domain_groups, |c| c.routing.num_domain_groups);
-    let let_g = hist_f64(&good, &space.low_evr_threshold, |c| c.routing.low_evr_threshold);
-    let let_b = hist_f64(&bad, &space.low_evr_threshold, |c| c.routing.low_evr_threshold);
+    let ndg_g = hist_usize(&good, &space.num_domain_groups, |c| {
+        c.routing.num_domain_groups
+    });
+    let ndg_b = hist_usize(&bad, &space.num_domain_groups, |c| {
+        c.routing.num_domain_groups
+    });
+    let let_g = hist_f64(&good, &space.low_evr_threshold, |c| {
+        c.routing.low_evr_threshold
+    });
+    let let_b = hist_f64(&bad, &space.low_evr_threshold, |c| {
+        c.routing.low_evr_threshold
+    });
     let oat_g = hist_f64(&good, &space.overlap_artifact_territorial, |c| {
         c.bridges.overlap_artifact_territorial
     });
@@ -564,8 +568,12 @@ fn tpe_propose(
     });
     let tb_g = hist_f64(&good, &space.threshold_base, |c| c.bridges.threshold_base);
     let tb_b = hist_f64(&bad, &space.threshold_base, |c| c.bridges.threshold_base);
-    let tep_g = hist_f64(&good, &space.threshold_evr_penalty, |c| c.bridges.threshold_evr_penalty);
-    let tep_b = hist_f64(&bad, &space.threshold_evr_penalty, |c| c.bridges.threshold_evr_penalty);
+    let tep_g = hist_f64(&good, &space.threshold_evr_penalty, |c| {
+        c.bridges.threshold_evr_penalty
+    });
+    let tep_b = hist_f64(&bad, &space.threshold_evr_penalty, |c| {
+        c.bridges.threshold_evr_penalty
+    });
     let mei_g = hist_f64(&good, &space.min_evr_improvement, |c| {
         c.inner_sphere.min_evr_improvement
     });
@@ -611,8 +619,12 @@ fn tpe_propose(
                     [(rng.next_u64() as usize) % space.laplacian_active_threshold.len()],
             };
         } else {
-            let k_g = hist_usize(&good_l, &space.laplacian_k_neighbors, |c| c.laplacian.k_neighbors);
-            let k_b = hist_usize(&bad_l, &space.laplacian_k_neighbors, |c| c.laplacian.k_neighbors);
+            let k_g = hist_usize(&good_l, &space.laplacian_k_neighbors, |c| {
+                c.laplacian.k_neighbors
+            });
+            let k_b = hist_usize(&bad_l, &space.laplacian_k_neighbors, |c| {
+                c.laplacian.k_neighbors
+            });
             let at_g = hist_f64(&good_l, &space.laplacian_active_threshold, |c| {
                 c.laplacian.active_threshold
             });
@@ -666,16 +678,12 @@ fn hist_f64(
     let mut counts = vec![0.0f64; values.len()];
     for t in trials {
         let v = extract(&t.config);
-        if let Some((i, _)) = values
-            .iter()
-            .enumerate()
-            .min_by(|a, b| {
-                (a.1 - v)
-                    .abs()
-                    .partial_cmp(&(b.1 - v).abs())
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-        {
+        if let Some((i, _)) = values.iter().enumerate().min_by(|a, b| {
+            (a.1 - v)
+                .abs()
+                .partial_cmp(&(b.1 - v).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
             counts[i] += 1.0;
         }
     }
@@ -743,8 +751,8 @@ mod tests {
             * s.min_evr_improvement.len();
         // Default kinds = {PCA, Laplacian}; PCA adds `common`, Laplacian
         // adds `common × k_neighbors × active_threshold`.
-        let expected = common
-            + common * s.laplacian_k_neighbors.len() * s.laplacian_active_threshold.len();
+        let expected =
+            common + common * s.laplacian_k_neighbors.len() * s.laplacian_active_threshold.len();
         assert_eq!(s.grid_cardinality(), expected);
     }
 
@@ -752,9 +760,10 @@ mod tests {
     fn default_search_space_includes_pca_and_laplacian() {
         let s = SearchSpace::default();
         assert!(s.projection_kinds.contains(&ProjectionKind::Pca));
-        assert!(s
-            .projection_kinds
-            .contains(&ProjectionKind::LaplacianEigenmap));
+        assert!(
+            s.projection_kinds
+                .contains(&ProjectionKind::LaplacianEigenmap)
+        );
         // Kernel PCA excluded by default (expensive fit).
         assert!(!s.projection_kinds.contains(&ProjectionKind::KernelPca));
     }
@@ -929,10 +938,7 @@ mod tests {
             input,
             &SearchSpace::default(),
             &metric,
-            SearchStrategy::Random {
-                budget: 4,
-                seed: 1,
-            },
+            SearchStrategy::Random { budget: 4, seed: 1 },
             &PipelineConfig::default(),
         )
         .unwrap();
@@ -973,8 +979,11 @@ mod tests {
         // PCA contributes 1 trial; Laplacian contributes 2 × 1 = 2 trials
         // (two k_neighbors values × one threshold value). Total = 3.
         assert_eq!(report.trials.len(), 3);
-        let kinds_in_trials: std::collections::HashSet<ProjectionKind> =
-            report.trials.iter().map(|t| t.config.projection_kind).collect();
+        let kinds_in_trials: std::collections::HashSet<ProjectionKind> = report
+            .trials
+            .iter()
+            .map(|t| t.config.projection_kind)
+            .collect();
         assert!(kinds_in_trials.contains(&ProjectionKind::Pca));
         assert!(kinds_in_trials.contains(&ProjectionKind::LaplacianEigenmap));
         // Verify the two Laplacian trials actually use different k values.
@@ -1013,8 +1022,7 @@ mod tests {
                 )
             })
             .collect();
-        let unique: std::collections::HashSet<(usize, u64)> =
-            configs.iter().copied().collect();
+        let unique: std::collections::HashSet<(usize, u64)> = configs.iter().copied().collect();
         assert_eq!(unique.len(), 4, "expected 4 distinct (k, threshold) pairs");
     }
 
@@ -1062,10 +1070,7 @@ mod tests {
         let b = run(7);
         assert_eq!(a.trials.len(), b.trials.len());
         for (ta, tb) in a.trials.iter().zip(b.trials.iter()) {
-            assert_eq!(
-                ta.config.projection_kind,
-                tb.config.projection_kind
-            );
+            assert_eq!(ta.config.projection_kind, tb.config.projection_kind);
             assert!((ta.score - tb.score).abs() < 1e-12);
         }
     }
@@ -1085,7 +1090,7 @@ mod tests {
                 budget: 12,
                 warmup: 4,
                 gamma: 0.25,
-                seed: 0xC0FF_EE,
+                seed: 0xC0FFEE,
             },
             &PipelineConfig::default(),
         )
@@ -1134,6 +1139,9 @@ mod tests {
             pipeline.config().routing.num_domain_groups,
             report.best_config.routing.num_domain_groups
         );
-        assert_eq!(pipeline.projection_kind(), report.best_config.projection_kind);
+        assert_eq!(
+            pipeline.projection_kind(),
+            report.best_config.projection_kind
+        );
     }
 }

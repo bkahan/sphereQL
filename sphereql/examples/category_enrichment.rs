@@ -471,9 +471,7 @@ fn main() {
 
     println!();
     if overlap_pairs.is_empty() {
-        println!(
-            "  (no OverlapArtifact pairs in this corpus — every pair has enough"
-        );
+        println!("  (no OverlapArtifact pairs in this corpus — every pair has enough");
         println!("   territorial separation for bridges to count as real connectors)");
     } else {
         println!("  OverlapArtifact pairs (shared territory, not real connectors):");
@@ -483,15 +481,9 @@ fn main() {
     }
 
     println!();
-    println!(
-        "  Insight: a high-strength bridge between two cap-overlapping categories"
-    );
-    println!(
-        "  is just shared territory, not a genuine cross-domain connector. The"
-    );
-    println!(
-        "  classification lifts this signal out of the raw strength number."
-    );
+    println!("  Insight: a high-strength bridge between two cap-overlapping categories");
+    println!("  is just shared territory, not a genuine cross-domain connector. The");
+    println!("  classification lifts this signal out of the raw strength number.");
 
     // ── 9. Per-category bridge_quality ranking ─────────────────────────
 
@@ -518,18 +510,10 @@ fn main() {
     }
 
     println!();
-    println!(
-        "  Insight: high bridge_quality marks a hub category — it connects into"
-    );
-    println!(
-        "  the broader graph through strong, territorially clean edges. Low"
-    );
-    println!(
-        "  bridge_quality means either isolation (few bridges) or overlap-"
-    );
-    println!(
-        "  dominated neighbors (strength discounted by the territorial factor)."
-    );
+    println!("  Insight: high bridge_quality marks a hub category — it connects into");
+    println!("  the broader graph through strong, territorially clean edges. Low");
+    println!("  bridge_quality means either isolation (few bridges) or overlap-");
+    println!("  dominated neighbors (strength discounted by the territorial factor).");
 
     println!("\n✓ Category Enrichment Layer example complete.");
 }
