@@ -317,6 +317,146 @@ impl MetaModel for NearestNeighborMetaModel {
     }
 }
 
+// ── Distance-weighted ─────────────────────────────────────────────────
+
+/// Picks the training record that maximizes `best_score × w(distance)`,
+/// where `w(d) = 1 / (d + epsilon)` over z-score-normalized Euclidean
+/// distance.
+///
+/// The distinction from [`NearestNeighborMetaModel`]: NN picks the
+/// closest record regardless of how well that record performed, so a
+/// single poorly-tuned outlier can pull predictions off. Distance-weighted
+/// folds the record's score into the selection — a record is "good" if
+/// it's both similar to the query AND had a high score. At N = 1 this
+/// degenerates to NN (same record either way). At N ≥ 3 the two models
+/// start diverging in predictable, useful ways.
+///
+/// `epsilon` is a smoothing floor on the distance term; at `d ≈ 0` it
+/// prevents the weight from exploding and over-committing to a single
+/// near-duplicate record. Default `0.1`.
+#[derive(Debug, Clone)]
+pub struct DistanceWeightedMetaModel {
+    records: Vec<MetaTrainingRecord>,
+    feature_means: [f64; CORPUS_FEATURE_COUNT],
+    feature_stds: [f64; CORPUS_FEATURE_COUNT],
+    epsilon: f64,
+}
+
+impl Default for DistanceWeightedMetaModel {
+    fn default() -> Self {
+        Self {
+            records: Vec::new(),
+            feature_means: [0.0; CORPUS_FEATURE_COUNT],
+            feature_stds: [1.0; CORPUS_FEATURE_COUNT],
+            epsilon: 0.1,
+        }
+    }
+}
+
+impl DistanceWeightedMetaModel {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Override the smoothing constant added to distance before
+    /// inversion. Larger `epsilon` makes predictions smoother; smaller
+    /// sharpens the preference for near-duplicate records. Must be
+    /// strictly positive (silently clamped to `1e-12` if a zero or
+    /// negative value is passed).
+    pub fn with_epsilon(mut self, epsilon: f64) -> Self {
+        self.epsilon = epsilon.max(1e-12);
+        self
+    }
+
+    pub fn records(&self) -> &[MetaTrainingRecord] {
+        &self.records
+    }
+
+    fn normalized(&self, raw: &[f64; CORPUS_FEATURE_COUNT]) -> [f64; CORPUS_FEATURE_COUNT] {
+        let mut out = [0.0; CORPUS_FEATURE_COUNT];
+        for i in 0..CORPUS_FEATURE_COUNT {
+            let sd = self.feature_stds[i];
+            out[i] = if sd > f64::EPSILON {
+                (raw[i] - self.feature_means[i]) / sd
+            } else {
+                0.0
+            };
+        }
+        out
+    }
+
+    /// Per-record (weighted_score, distance) pairs for the given query
+    /// features, sorted by descending weighted score. Useful for
+    /// introspecting why a particular prediction was made.
+    pub fn score_candidates(&self, features: &CorpusFeatures) -> Vec<(usize, f64, f64)> {
+        let q = self.normalized(&features.to_vec());
+        let mut out: Vec<(usize, f64, f64)> = self
+            .records
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                let v = self.normalized(&r.features.to_vec());
+                let d = q
+                    .iter()
+                    .zip(v.iter())
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum::<f64>()
+                    .sqrt();
+                let weighted = r.best_score / (d + self.epsilon);
+                (i, weighted, d)
+            })
+            .collect();
+        out.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        out
+    }
+}
+
+impl MetaModel for DistanceWeightedMetaModel {
+    fn fit(&mut self, records: &[MetaTrainingRecord]) {
+        self.records = records.to_vec();
+        let n = self.records.len();
+        if n == 0 {
+            self.feature_means = [0.0; CORPUS_FEATURE_COUNT];
+            self.feature_stds = [1.0; CORPUS_FEATURE_COUNT];
+            return;
+        }
+        for i in 0..CORPUS_FEATURE_COUNT {
+            let mean: f64 = self
+                .records
+                .iter()
+                .map(|r| r.features.to_vec()[i])
+                .sum::<f64>()
+                / n as f64;
+            self.feature_means[i] = mean;
+            let var: f64 = self
+                .records
+                .iter()
+                .map(|r| (r.features.to_vec()[i] - mean).powi(2))
+                .sum::<f64>()
+                / n as f64;
+            let sd = var.sqrt();
+            self.feature_stds[i] = if sd > f64::EPSILON { sd } else { 0.0 };
+        }
+    }
+
+    fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
+        assert!(
+            !self.records.is_empty(),
+            "DistanceWeightedMetaModel::predict called before fit(); \
+             call .fit(records) with at least one record first"
+        );
+        let ranked = self.score_candidates(features);
+        let best_idx = ranked[0].0;
+        self.records[best_idx].best_config.clone()
+    }
+
+    fn name(&self) -> &str {
+        "distance_weighted"
+    }
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -561,6 +701,118 @@ mod tests {
         assert!(path
             .iter()
             .any(|c| c.to_string_lossy() == ".sphereql"));
+    }
+
+    #[test]
+    fn dw_predict_single_record_returns_its_config() {
+        // At N=1 distance-weighted must agree with NN.
+        let r = record(
+            "only",
+            feat(500, 20, 0.1, 0.4),
+            ProjectionKind::LaplacianEigenmap,
+            0.7,
+        );
+        let mut m = DistanceWeightedMetaModel::new();
+        m.fit(&[r.clone()]);
+        let predicted = m.predict(&feat(1000, 30, 0.05, 0.3));
+        assert_eq!(predicted.projection_kind, ProjectionKind::LaplacianEigenmap);
+    }
+
+    #[test]
+    fn dw_prefers_higher_score_when_equidistant() {
+        // Two records at identical features but different best_scores
+        // — the high-score one should be picked.
+        let shared_feat = feat(500, 5, 0.1, 0.5);
+        let lo = record(
+            "low",
+            shared_feat.clone(),
+            ProjectionKind::LaplacianEigenmap,
+            0.2,
+        );
+        let hi = record("high", shared_feat.clone(), ProjectionKind::Pca, 0.9);
+
+        let mut m = DistanceWeightedMetaModel::new();
+        m.fit(&[lo, hi]);
+        let predicted = m.predict(&shared_feat);
+        // Note: at perfectly identical features, distance is 0 and both
+        // weights are 1/epsilon; the higher-score record wins.
+        assert_eq!(predicted.projection_kind, ProjectionKind::Pca);
+    }
+
+    #[test]
+    fn dw_prefers_closer_when_similar_score() {
+        // Two records with similar best_scores but very different
+        // features — the closer one to the query should win.
+        let close = record(
+            "close",
+            feat(500, 5, 0.06, 0.82),
+            ProjectionKind::LaplacianEigenmap,
+            0.70,
+        );
+        let far = record(
+            "far",
+            feat(500, 5, 0.55, 0.15),
+            ProjectionKind::Pca,
+            0.72, // only slightly better
+        );
+        let mut m = DistanceWeightedMetaModel::new();
+        m.fit(&[close, far]);
+        let q = feat(500, 5, 0.05, 0.80); // very close to "close"'s features
+        assert_eq!(
+            m.predict(&q).projection_kind,
+            ProjectionKind::LaplacianEigenmap,
+        );
+    }
+
+    #[test]
+    fn dw_score_candidates_sorted_descending() {
+        let ra = record("a", feat(500, 5, 0.05, 0.8), ProjectionKind::Pca, 0.6);
+        let rb = record("b", feat(500, 5, 0.50, 0.2), ProjectionKind::Pca, 0.9);
+        let mut m = DistanceWeightedMetaModel::new();
+        m.fit(&[ra, rb]);
+        let ranked = m.score_candidates(&feat(500, 5, 0.07, 0.78));
+        assert_eq!(ranked.len(), 2);
+        assert!(ranked[0].1 >= ranked[1].1);
+    }
+
+    #[test]
+    fn dw_is_deterministic() {
+        let records = vec![
+            record("a", feat(500, 5, 0.05, 0.8), ProjectionKind::Pca, 0.7),
+            record("b", feat(500, 5, 0.50, 0.2), ProjectionKind::LaplacianEigenmap, 0.6),
+        ];
+        let mut m1 = DistanceWeightedMetaModel::new();
+        m1.fit(&records);
+        let mut m2 = DistanceWeightedMetaModel::new();
+        m2.fit(&records);
+        let q = feat(500, 5, 0.10, 0.7);
+        assert_eq!(m1.predict(&q).projection_kind, m2.predict(&q).projection_kind);
+    }
+
+    #[test]
+    fn dw_epsilon_clamps_non_positive() {
+        let m = DistanceWeightedMetaModel::new().with_epsilon(-1.0);
+        // Internal epsilon shouldn't be negative; we can probe via
+        // score_candidates: at d=0 the weight is r.best_score/epsilon;
+        // with a non-positive epsilon we'd otherwise divide by zero.
+        let r = record("r", feat(100, 5, 0.1, 0.3), ProjectionKind::Pca, 0.5);
+        let mut m = m;
+        m.fit(&[r.clone()]);
+        let ranked = m.score_candidates(&r.features);
+        assert!(ranked[0].1.is_finite());
+    }
+
+    #[test]
+    #[should_panic(expected = "called before fit")]
+    fn dw_predict_before_fit_panics() {
+        let m = DistanceWeightedMetaModel::new();
+        let _ = m.predict(&feat(100, 5, 0.1, 0.3));
+    }
+
+    #[test]
+    fn dw_name_stable() {
+        let m = DistanceWeightedMetaModel::new();
+        assert_eq!(m.name(), "distance_weighted");
     }
 
     #[test]
