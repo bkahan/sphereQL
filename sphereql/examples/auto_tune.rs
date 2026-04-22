@@ -15,34 +15,66 @@
 //!
 //! Run with:
 //!   cargo run --example auto_tune --features embed --release
+//!
+//! Switch corpora via the `SPHEREQL_CORPUS` env var:
+//!   SPHEREQL_CORPUS=stress  → 300-concept extreme-sparsity stress corpus
+//!   (anything else or unset → 775-concept built-in corpus)
 
 use sphereql::embed::{
     auto_tune, BridgeClassification, CompositeMetric, PipelineConfig, PipelineInput,
     ProjectionKind, QualityMetric, SearchSpace, SearchStrategy, SphereQLPipeline, TuneReport,
 };
-use sphereql_corpus::{build_corpus, embed};
+use sphereql_corpus::{
+    build_corpus, build_stress_corpus, embed, embed_with_noise, Concept, STRESS_NOISE_AMPLITUDE,
+};
 
 const RANDOM_BUDGET: usize = 24;
 const RANDOM_SEED: u64 = 0xA17C_ABE_CAFE;
+
+fn load_corpus_from_env() -> (Vec<Concept>, Vec<String>, Vec<Vec<f64>>, &'static str) {
+    let use_stress = std::env::var("SPHEREQL_CORPUS")
+        .map(|v| v == "stress")
+        .unwrap_or(false);
+
+    if use_stress {
+        let corpus = build_stress_corpus();
+        let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
+        let embeddings: Vec<Vec<f64>> = corpus
+            .iter()
+            .enumerate()
+            .map(|(i, c)| embed_with_noise(&c.features, 9000 + i as u64, STRESS_NOISE_AMPLITUDE))
+            .collect();
+        (corpus, categories, embeddings, "stress")
+    } else {
+        let corpus = build_corpus();
+        let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
+        let embeddings: Vec<Vec<f64>> = corpus
+            .iter()
+            .enumerate()
+            .map(|(i, c)| embed(&c.features, 1000 + i as u64))
+            .collect();
+        (corpus, categories, embeddings, "built_in")
+    }
+}
 
 fn main() {
     println!("================================================================");
     println!("  SphereQL AutoTuner: metric-choice comparison");
     println!("================================================================\n");
 
-    let corpus = build_corpus();
+    let (corpus, categories, embeddings, corpus_label) = load_corpus_from_env();
     let n = corpus.len();
-    let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
-    let embeddings: Vec<Vec<f64>> = corpus
-        .iter()
-        .enumerate()
-        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
-        .collect();
     let unique_cats: std::collections::HashSet<&str> =
         categories.iter().map(|s| s.as_str()).collect();
 
-    println!("Corpus: {} concepts across {} categories", n, unique_cats.len());
+    println!(
+        "Corpus: {} — {} concepts across {} categories",
+        corpus_label,
+        n,
+        unique_cats.len()
+    );
     println!("Budget: {} random trials (seed = 0x{:X})\n", RANDOM_BUDGET, RANDOM_SEED);
+    let _ = corpus; // keep for future per-concept reporting; not used past this point
 
     let space = SearchSpace::default();
     // Small budget chosen deliberately so Bayesian's sample-efficiency

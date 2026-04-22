@@ -9,8 +9,12 @@ pub mod axes;
 pub mod concept;
 pub mod corpus;
 pub mod embed;
+pub mod stress_corpus;
 
 pub use axes::*;
 pub use concept::Concept;
 pub use corpus::build_corpus;
-pub use embed::{DIM, embed};
+pub use embed::{embed, embed_with_noise, DEFAULT_NOISE_AMPLITUDE, DIM};
+pub use stress_corpus::{
+    build_stress_corpus, STRESS_CATEGORIES, STRESS_CONCEPTS_PER_CATEGORY, STRESS_NOISE_AMPLITUDE,
+};
