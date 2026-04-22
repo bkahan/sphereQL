@@ -4,6 +4,7 @@ use sphereql_index::SpatialItem;
 use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
+use crate::config::PipelineConfig;
 use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
 use crate::domain_groups::{detect_domain_groups, DomainGroup};
 use crate::projection::{PcaProjection, Projection};
@@ -175,21 +176,26 @@ pub struct SphereQLPipeline {
     /// Used by [`SphereQLPipeline::route_to_group`] and
     /// [`SphereQLPipeline::hierarchical_nearest`] for coarse routing when EVR is low.
     domain_groups: Vec<DomainGroup>,
+    /// Full tunable configuration used at build time.
+    config: PipelineConfig,
 }
 
-/// Default number of domain groups detected from the category layer.
-const DEFAULT_DOMAIN_GROUPS: usize = 5;
-/// EVR below this threshold triggers hierarchical routing in
-/// [`SphereQLPipeline::hierarchical_nearest`].
-const LOW_EVR_ROUTING_THRESHOLD: f64 = 0.35;
-
 impl SphereQLPipeline {
-    /// Build a pipeline from raw inputs, fitting a new PCA internally.
+    /// Build a pipeline from raw inputs with [`PipelineConfig::default`].
     ///
     /// - `input.categories[i]` is the category for sentence `i`
     /// - `input.embeddings[i]` is the embedding vector for sentence `i`
     /// - All embedding vectors must have the same dimensionality (>= 3).
     pub fn new(input: PipelineInput) -> Result<Self, PipelineError> {
+        Self::new_with_config(input, PipelineConfig::default())
+    }
+
+    /// Build a pipeline with an explicit configuration. Fits a new PCA
+    /// internally using the supplied config.
+    pub fn new_with_config(
+        input: PipelineInput,
+        config: PipelineConfig,
+    ) -> Result<Self, PipelineError> {
         let embeddings: Vec<Embedding> = input
             .embeddings
             .iter()
@@ -197,17 +203,25 @@ impl SphereQLPipeline {
             .collect();
 
         let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).with_volumetric(true);
-        Self::with_projection(input.categories, embeddings, pca)
+        Self::with_projection_and_config(input.categories, embeddings, pca, config)
     }
 
-    /// Build a pipeline from pre-computed embeddings and an existing PCA projection.
-    ///
-    /// Use this when the projection has already been fitted externally (e.g.,
-    /// by `VectorStoreBridge`) to avoid fitting a second PCA on the same data.
+    /// Build a pipeline from pre-computed embeddings and an existing PCA
+    /// projection, with [`PipelineConfig::default`].
     pub fn with_projection(
         categories: Vec<String>,
         embeddings: Vec<Embedding>,
         pca: PcaProjection,
+    ) -> Result<Self, PipelineError> {
+        Self::with_projection_and_config(categories, embeddings, pca, PipelineConfig::default())
+    }
+
+    /// Configurable variant of [`Self::with_projection`].
+    pub fn with_projection_and_config(
+        categories: Vec<String>,
+        embeddings: Vec<Embedding>,
+        pca: PcaProjection,
+        config: PipelineConfig,
     ) -> Result<Self, PipelineError> {
         let n = embeddings.len();
         if n != categories.len() {
@@ -247,15 +261,22 @@ impl SphereQLPipeline {
             embeddings.iter().map(|e| pca.project(e)).collect();
 
         let evr = pca.explained_variance_ratio();
-        let category_layer =
-            CategoryLayer::build(&categories, &embeddings, &projected_positions, &pca, evr);
+        let category_layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected_positions,
+            &pca,
+            evr,
+            &config,
+        );
 
         let quality_config = QualityConfig::default();
         let projection_warnings = ProjectionWarning::from_evr(evr, quality_config.warn_below_evr)
             .into_iter()
             .collect();
 
-        let domain_groups = detect_domain_groups(&category_layer, DEFAULT_DOMAIN_GROUPS);
+        let domain_groups =
+            detect_domain_groups(&category_layer, config.routing.num_domain_groups);
 
         Ok(Self {
             pca,
@@ -268,6 +289,7 @@ impl SphereQLPipeline {
             quality_config,
             projection_warnings,
             domain_groups,
+            config,
         })
     }
 
@@ -585,8 +607,9 @@ impl SphereQLPipeline {
 
     /// Hierarchical nearest-neighbor search: group → category → items.
     ///
-    /// When EVR is at or above [`LOW_EVR_ROUTING_THRESHOLD`], this is a
-    /// plain outer-sphere k-NN (identical to [`SphereQLQuery::Nearest`]).
+    /// When EVR is at or above
+    /// [`RoutingConfig::low_evr_threshold`](crate::config::RoutingConfig::low_evr_threshold),
+    /// this is a plain outer-sphere k-NN (identical to [`SphereQLQuery::Nearest`]).
     ///
     /// Below that threshold the outer sphere is unreliable, so we:
     ///   1. Route the query to its nearest domain group.
@@ -596,7 +619,7 @@ impl SphereQLPipeline {
     pub fn hierarchical_nearest(&self, embedding: &Embedding, k: usize) -> Vec<NearestResult> {
         let evr = self.pca.explained_variance_ratio();
 
-        if evr >= LOW_EVR_ROUTING_THRESHOLD {
+        if evr >= self.config.routing.low_evr_threshold {
             return self.nearest_filtered(embedding, k, evr);
         }
 
@@ -684,6 +707,11 @@ impl SphereQLPipeline {
     /// Update the quality configuration (e.g., to enable filtering).
     pub fn set_quality_config(&mut self, config: QualityConfig) {
         self.quality_config = config;
+    }
+
+    /// Full tunable configuration this pipeline was built with.
+    pub fn config(&self) -> &PipelineConfig {
+        &self.config
     }
 
     /// Serialize all projected points as a JSON array string.

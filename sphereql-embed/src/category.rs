@@ -2,24 +2,11 @@ use std::collections::HashMap;
 
 use sphereql_core::{SphericalPoint, angular_distance};
 
+use crate::config::PipelineConfig;
 use crate::kernel_pca::KernelPcaProjection;
 use crate::projection::{PcaProjection, Projection};
 use crate::spatial_quality::SpatialQuality;
 use crate::types::{Embedding, RadialStrategy};
-
-// ── Thresholds ─────────────────────────────────────────────────────────
-
-/// Minimum category size to consider fitting an inner sphere.
-const MIN_INNER_SPHERE_SIZE: usize = 20;
-
-/// Minimum EVR improvement (inner − global_subset) to justify an inner sphere.
-const MIN_EVR_IMPROVEMENT: f64 = 0.10;
-
-/// Minimum category size to consider kernel PCA for the inner sphere.
-const KERNEL_PCA_MIN_SIZE: usize = 80;
-
-/// Minimum EVR improvement of kernel PCA over linear PCA to choose it.
-const MIN_KERNEL_IMPROVEMENT: f64 = 0.05;
 
 // ── Category summary ───────────────────────────────────────────────────
 
@@ -80,10 +67,6 @@ pub enum BridgeClassification {
     /// connection but not a strong one.
     Weak,
 }
-
-/// Territorial factor below which a bridge is classified as an overlap
-/// artifact rather than a genuine or weak connector.
-const OVERLAP_ARTIFACT_TERRITORIAL_THRESHOLD: f64 = 0.3;
 
 /// An item that semantically spans two categories.
 ///
@@ -220,8 +203,9 @@ impl Projection for InnerProjection {
 /// A category-specific inner sphere with its own optimized projection.
 ///
 /// Only created for categories that meet all of:
-/// 1. At least `MIN_INNER_SPHERE_SIZE` members
-/// 2. Inner EVR improves over global subset EVR by ≥ `MIN_EVR_IMPROVEMENT`
+/// 1. At least [`InnerSphereConfig::min_size`](crate::config::InnerSphereConfig::min_size) members
+/// 2. Inner EVR improves over global subset EVR by ≥
+///    [`InnerSphereConfig::min_evr_improvement`](crate::config::InnerSphereConfig::min_evr_improvement)
 ///
 /// The inner sphere gives higher-resolution angular discrimination
 /// within the category than the global outer projection can provide.
@@ -319,12 +303,36 @@ impl CategoryLayer {
     /// select it if it improves EVR by ≥ 0.05 over linear PCA.
     ///
     /// O(N·C + C²) for the base layer, plus O(n_c²·d) per inner sphere.
+    ///
+    /// Uses [`PipelineConfig::default`] for all tunables. Call
+    /// [`Self::build_with_config`] to override.
     pub fn build<P: Projection>(
         categories: &[String],
         embeddings: &[Embedding],
         projected_positions: &[SphericalPoint],
         projection: &P,
         evr: f64,
+    ) -> Self {
+        Self::build_with_config(
+            categories,
+            embeddings,
+            projected_positions,
+            projection,
+            evr,
+            &PipelineConfig::default(),
+        )
+    }
+
+    /// Configurable variant of [`Self::build`]. Threads a [`PipelineConfig`]
+    /// through spatial quality, bridge classification, and inner-sphere
+    /// gating.
+    pub fn build_with_config<P: Projection>(
+        categories: &[String],
+        embeddings: &[Embedding],
+        projected_positions: &[SphericalPoint],
+        projection: &P,
+        evr: f64,
+        config: &PipelineConfig,
     ) -> Self {
         let n = categories.len();
         assert_eq!(n, embeddings.len());
@@ -410,7 +418,8 @@ impl CategoryLayer {
         let centroids: Vec<SphericalPoint> =
             summaries.iter().map(|s| s.centroid_position).collect();
         let half_angles: Vec<f64> = summaries.iter().map(|s| s.angular_spread).collect();
-        let mut spatial_quality = SpatialQuality::compute(&centroids, &half_angles, evr);
+        let mut spatial_quality =
+            SpatialQuality::compute_with_config(&centroids, &half_angles, evr, config);
 
         // Backfill spatial fields on summaries
         for (i, summary) in summaries.iter_mut().enumerate() {
@@ -422,7 +431,8 @@ impl CategoryLayer {
         }
 
         // 4. Build category graph + detect bridges (spatially informed)
-        let graph = Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality);
+        let graph =
+            Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality, config);
 
         // Backfill bridge_quality on summaries using the just-built graph.
         // bridge_quality = mean of (edge.mean_bridge_strength × territorial_factor)
@@ -446,7 +456,8 @@ impl CategoryLayer {
         spatial_quality.set_bridge_quality_matrix(&graph);
 
         // 5. Build inner spheres for qualifying categories
-        let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection);
+        let inner_spheres =
+            Self::build_inner_spheres(&summaries, embeddings, projection, config);
 
         CategoryLayer {
             summaries,
@@ -468,6 +479,7 @@ impl CategoryLayer {
         embeddings: &[Embedding],
         num_cats: usize,
         spatial: &SpatialQuality,
+        config: &PipelineConfig,
     ) -> CategoryGraph {
         let mut centroid_dists = vec![vec![0.0; num_cats]; num_cats];
         for i in 0..num_cats {
@@ -542,10 +554,11 @@ impl CategoryLayer {
             all_strengths[all_strengths.len() / 2]
         };
 
+        let overlap_threshold = config.bridges.overlap_artifact_territorial;
         for list in bridges.values_mut() {
             for b in list.iter_mut() {
                 let tf = spatial.territorial_factor(b.source_category, b.target_category);
-                b.classification = if tf < OVERLAP_ARTIFACT_TERRITORIAL_THRESHOLD {
+                b.classification = if tf < overlap_threshold {
                     BridgeClassification::OverlapArtifact
                 } else if b.bridge_strength >= median_strength {
                     BridgeClassification::Genuine
@@ -617,11 +630,13 @@ impl CategoryLayer {
         summaries: &[CategorySummary],
         embeddings: &[Embedding],
         projection: &P,
+        config: &PipelineConfig,
     ) -> HashMap<usize, InnerSphere> {
         let mut result = HashMap::new();
+        let cfg = &config.inner_sphere;
 
         for (ci, summary) in summaries.iter().enumerate() {
-            if summary.member_count < MIN_INNER_SPHERE_SIZE {
+            if summary.member_count < cfg.min_size {
                 continue;
             }
 
@@ -642,15 +657,15 @@ impl CategoryLayer {
             let inner_pca = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
             let inner_linear_evr = inner_pca.explained_variance_ratio();
 
-            if inner_linear_evr - global_subset_evr < MIN_EVR_IMPROVEMENT {
+            if inner_linear_evr - global_subset_evr < cfg.min_evr_improvement {
                 continue;
             }
 
-            let (inner_proj, inner_evr) = if summary.member_count >= KERNEL_PCA_MIN_SIZE {
+            let (inner_proj, inner_evr) = if summary.member_count >= cfg.kernel_pca_min_size {
                 let inner_kpca = KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
                 let kernel_evr = inner_kpca.explained_variance_ratio();
 
-                if kernel_evr > inner_linear_evr + MIN_KERNEL_IMPROVEMENT {
+                if kernel_evr > inner_linear_evr + cfg.min_kernel_improvement {
                     (InnerProjection::KernelPca(inner_kpca), kernel_evr)
                 } else {
                     (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
@@ -1522,8 +1537,9 @@ mod tests {
     #[test]
     fn inner_sphere_evr_improvement_positive() {
         let (layer, _, _) = build_large_test_layer();
+        let min_improvement = PipelineConfig::default().inner_sphere.min_evr_improvement;
         for inner in layer.inner_spheres.values() {
-            assert!(inner.evr_improvement >= MIN_EVR_IMPROVEMENT);
+            assert!(inner.evr_improvement >= min_improvement);
         }
     }
 

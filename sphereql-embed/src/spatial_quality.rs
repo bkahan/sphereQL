@@ -11,6 +11,7 @@ use sphereql_core::spatial::{
 use sphereql_core::SphericalPoint;
 
 use crate::category::CategoryGraph;
+use crate::config::PipelineConfig;
 
 /// Pre-computed spatial properties of the category layout on S².
 ///
@@ -57,31 +58,37 @@ pub struct PairIntersection {
     pub area: f64,
 }
 
-/// Monte Carlo sample counts for spatial quality computation.
-/// These run once at build time, not per query.
-const COVERAGE_SAMPLES: usize = 100_000;
-const EXCLUSIVITY_SAMPLES: usize = 30_000;
-const VORONOI_SAMPLES: usize = 100_000;
-
 impl SpatialQuality {
-    /// Compute spatial quality from category centroids and angular spreads.
+    /// Compute spatial quality from category centroids and angular spreads,
+    /// using the legacy default Monte Carlo sample counts.
     ///
-    /// Cost: ~100-200ms for 31 categories at the default sample counts.
-    /// This is a one-time build cost, not per-query.
-    pub fn compute(
+    /// Prefer [`Self::compute_with_config`] when you need to tune sample
+    /// counts or the EVR-adaptive bridge threshold formula.
+    pub fn compute(centroids: &[SphericalPoint], half_angles: &[f64], evr: f64) -> Self {
+        Self::compute_with_config(centroids, half_angles, evr, &PipelineConfig::default())
+    }
+
+    /// Compute spatial quality using configurable sample counts and bridge
+    /// threshold parameters.
+    ///
+    /// Cost at default sample counts: ~100-200ms for 31 categories. This is
+    /// a one-time build cost, not per-query.
+    pub fn compute_with_config(
         centroids: &[SphericalPoint],
         half_angles: &[f64],
         evr: f64,
+        config: &PipelineConfig,
     ) -> Self {
         let n = centroids.len();
+        let sc = &config.spatial;
 
         let cap_areas: Vec<f64> = half_angles.iter().map(|&a| cap_solid_angle(a)).collect();
 
         let exclusivities: Vec<f64> = (0..n)
-            .map(|i| cap_exclusivity(i, centroids, half_angles, EXCLUSIVITY_SAMPLES))
+            .map(|i| cap_exclusivity(i, centroids, half_angles, sc.exclusivity_samples))
             .collect();
 
-        let voronoi_cells = spherical_voronoi(centroids, VORONOI_SAMPLES);
+        let voronoi_cells = spherical_voronoi(centroids, sc.voronoi_samples);
 
         let mut pairwise_intersections = Vec::with_capacity(n * (n - 1) / 2);
         for i in 0..n {
@@ -98,13 +105,10 @@ impl SpatialQuality {
             }
         }
 
-        let coverage = estimate_coverage(centroids, half_angles, COVERAGE_SAMPLES);
+        let coverage = estimate_coverage(centroids, half_angles, sc.coverage_samples);
 
         // Higher EVR → looser threshold (more of the geometry is trustworthy).
-        // At EVR=0.19: 0.5 + 0.81² × 0.4 = 0.76 (strict — prevents bridge inflation)
-        // At EVR=0.60: 0.5 + 0.16 × 0.4 = 0.56 (mild tightening)
-        // At EVR=0.90: 0.5 + 0.01 × 0.4 = 0.50 (essentially unchanged)
-        let bridge_threshold = 0.5 + (1.0 - evr).powi(2) * 0.4;
+        let bridge_threshold = config.bridges.evr_adaptive_threshold(evr);
 
         Self {
             evr,

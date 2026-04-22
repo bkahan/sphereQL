@@ -7,6 +7,7 @@
 //! detection, hierarchical concept paths).
 
 pub mod category;
+pub mod config;
 pub mod confidence;
 pub mod domain_groups;
 pub mod kernel_pca;
@@ -15,11 +16,13 @@ pub mod mapper;
 pub mod navigator;
 pub mod pipeline;
 pub mod projection;
+pub mod quality_metric;
 pub mod query;
 pub mod spatial_quality;
 pub mod types;
 
 pub use category::*;
+pub use config::*;
 pub use confidence::*;
 pub use domain_groups::*;
 pub use kernel_pca::*;
@@ -28,6 +31,7 @@ pub use mapper::*;
 pub use navigator::*;
 pub use pipeline::*;
 pub use projection::*;
+pub use quality_metric::*;
 pub use query::*;
 pub use spatial_quality::*;
 pub use types::*;
