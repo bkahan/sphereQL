@@ -45,6 +45,12 @@ fn main() {
     println!("Budget: {} random trials (seed = 0x{:X})\n", RANDOM_BUDGET, RANDOM_SEED);
 
     let space = SearchSpace::default();
+    // Small budget chosen deliberately so Bayesian's sample-efficiency
+    // edge over Random has a chance to show up. At 24 random trials both
+    // strategies tend to hit the same ceiling.
+    let small_budget = 12;
+    let warmup = 4;
+
     let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
     println!("Search space (discrete):");
     println!("  projection_kinds .............. {:?}", kinds_str);
@@ -97,6 +103,65 @@ fn main() {
         conn_baseline_score,
     );
 
+    // Strategy comparison: at a small budget, does Bayesian beat Random
+    // under the default composite? This tests the sample-efficiency claim.
+    println!("\n================================================================");
+    println!("  Strategy comparison: Random vs Bayesian (budget = {})", small_budget);
+    println!("================================================================\n");
+
+    let (random_best, random_trials_to_best) = run_strategy(
+        &categories,
+        &embeddings,
+        &space,
+        &default_metric,
+        SearchStrategy::Random {
+            budget: small_budget,
+            seed: RANDOM_SEED,
+        },
+    );
+    let (bayes_best, bayes_trials_to_best) = run_strategy(
+        &categories,
+        &embeddings,
+        &space,
+        &default_metric,
+        SearchStrategy::Bayesian {
+            budget: small_budget,
+            warmup,
+            gamma: 0.25,
+            seed: RANDOM_SEED,
+        },
+    );
+
+    println!(
+        "  {:<12}  {:<10}  {:<22}",
+        "strategy", "best", "trials to best"
+    );
+    println!("  {}", "─".repeat(48));
+    println!(
+        "  {:<12}  {:<10.4}  {:<22}",
+        "random", random_best, random_trials_to_best
+    );
+    println!(
+        "  {:<12}  {:<10.4}  {:<22}",
+        "bayesian", bayes_best, bayes_trials_to_best
+    );
+    if bayes_best > random_best {
+        println!(
+            "\n  → bayesian beat random by {:+.4} ({:+.1}%) at budget {}",
+            bayes_best - random_best,
+            100.0 * (bayes_best - random_best) / random_best.max(1e-12),
+            small_budget
+        );
+    } else if (bayes_best - random_best).abs() < 1e-9 {
+        println!("\n  → bayesian tied with random at this budget");
+    } else {
+        println!(
+            "\n  → random beat bayesian by {:+.4} at budget {} (warmup may be too low)",
+            random_best - bayes_best,
+            small_budget
+        );
+    }
+
     // Side-by-side verdict.
     println!("\n================================================================");
     println!("  Head-to-head verdict");
@@ -141,6 +206,33 @@ fn main() {
     }
 
     println!();
+}
+
+/// Run the tuner under a given strategy and return (best_score, trial
+/// index at which that best was first seen). 1-based index: "reached in
+/// 5 trials" means the best-seen score first appeared on trial #5.
+fn run_strategy(
+    categories: &[String],
+    embeddings: &[Vec<f64>],
+    space: &SearchSpace,
+    metric: &impl QualityMetric,
+    strategy: SearchStrategy,
+) -> (f64, usize) {
+    let input = PipelineInput {
+        categories: categories.to_vec(),
+        embeddings: embeddings.to_vec(),
+    };
+    let (_p, report) = auto_tune(input, space, metric, strategy, &PipelineConfig::default())
+        .expect("auto_tune failed");
+    let mut best = f64::NEG_INFINITY;
+    let mut best_trial = 0usize;
+    for (i, t) in report.trials.iter().enumerate() {
+        if t.score > best {
+            best = t.score;
+            best_trial = i + 1;
+        }
+    }
+    (best, best_trial)
 }
 
 fn run_tune(
