@@ -11,7 +11,8 @@
 //!   cargo run --example category_enrichment --features embed
 
 use sphereql::embed::{
-    PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
+    BridgeClassification, BridgeItem, CategorySummary, PipelineInput, PipelineQuery,
+    SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
 
 // ---------------------------------------------------------------------------
@@ -367,6 +368,168 @@ fn main() {
             inner_sphere_reports.len()
         );
     }
+
+    // ── 8. Bridge classification breakdown ─────────────────────────────
+
+    println!("\n━━━ Bridge Classification Breakdown ━━━\n");
+
+    let mut all_bridges: Vec<&BridgeItem> = Vec::new();
+    for items in layer.graph.bridges.values() {
+        for b in items {
+            all_bridges.push(b);
+        }
+    }
+
+    let total_bridges = all_bridges.len();
+    let n_genuine = all_bridges
+        .iter()
+        .filter(|b| b.classification == BridgeClassification::Genuine)
+        .count();
+    let n_overlap = all_bridges
+        .iter()
+        .filter(|b| b.classification == BridgeClassification::OverlapArtifact)
+        .count();
+    let n_weak = all_bridges
+        .iter()
+        .filter(|b| b.classification == BridgeClassification::Weak)
+        .count();
+
+    let pct = |n: usize| {
+        if total_bridges == 0 {
+            0.0
+        } else {
+            100.0 * n as f64 / total_bridges as f64
+        }
+    };
+
+    println!("  Total bridges: {total_bridges}");
+    println!(
+        "    Genuine         : {:>3}  ({:>5.1}%)",
+        n_genuine,
+        pct(n_genuine)
+    );
+    println!(
+        "    OverlapArtifact : {:>3}  ({:>5.1}%)",
+        n_overlap,
+        pct(n_overlap)
+    );
+    println!(
+        "    Weak            : {:>3}  ({:>5.1}%)",
+        n_weak,
+        pct(n_weak)
+    );
+
+    // Per-pair: pick strongest bridge for each (src, tgt) that has any.
+    let mut pair_rows: Vec<(usize, usize, usize, &BridgeItem)> = Vec::new();
+    for (&(src, tgt), items) in &layer.graph.bridges {
+        if let Some(strongest) = items
+            .iter()
+            .max_by(|a, b| a.bridge_strength.partial_cmp(&b.bridge_strength).unwrap())
+        {
+            pair_rows.push((src, tgt, items.len(), strongest));
+        }
+    }
+    pair_rows.sort_by(|a, b| {
+        b.3.bridge_strength
+            .partial_cmp(&a.3.bridge_strength)
+            .unwrap()
+    });
+
+    println!();
+    println!(
+        "  {:<12} {:<12} {:>6} {:>10} {:<16}",
+        "Source", "Target", "Count", "Strongest", "Classification"
+    );
+    println!("  {}", "─".repeat(60));
+    for (src, tgt, count, strongest) in &pair_rows {
+        let src_name = &layer.summaries[*src].name;
+        let tgt_name = &layer.summaries[*tgt].name;
+        let cls = match strongest.classification {
+            BridgeClassification::Genuine => "Genuine",
+            BridgeClassification::OverlapArtifact => "OverlapArtifact",
+            BridgeClassification::Weak => "Weak",
+        };
+        println!(
+            "  {:<12} {:<12} {:>6} {:>10.3} {:<16}",
+            src_name, tgt_name, count, strongest.bridge_strength, cls
+        );
+    }
+
+    // Call out overlap artifacts — these look like strong bridges by
+    // raw strength but are really shared-territory noise.
+    let overlap_pairs: Vec<(&str, &str, f64)> = pair_rows
+        .iter()
+        .filter(|(_, _, _, b)| b.classification == BridgeClassification::OverlapArtifact)
+        .map(|(s, t, _, b)| {
+            (
+                layer.summaries[*s].name.as_str(),
+                layer.summaries[*t].name.as_str(),
+                b.bridge_strength,
+            )
+        })
+        .collect();
+
+    println!();
+    if overlap_pairs.is_empty() {
+        println!(
+            "  (no OverlapArtifact pairs in this corpus — every pair has enough"
+        );
+        println!("   territorial separation for bridges to count as real connectors)");
+    } else {
+        println!("  OverlapArtifact pairs (shared territory, not real connectors):");
+        for (s, t, strength) in &overlap_pairs {
+            println!("    {} ↔ {}  (strongest={:.3})", s, t, strength);
+        }
+    }
+
+    println!();
+    println!(
+        "  Insight: a high-strength bridge between two cap-overlapping categories"
+    );
+    println!(
+        "  is just shared territory, not a genuine cross-domain connector. The"
+    );
+    println!(
+        "  classification lifts this signal out of the raw strength number."
+    );
+
+    // ── 9. Per-category bridge_quality ranking ─────────────────────────
+
+    println!("\n━━━ Category bridge_quality Ranking ━━━\n");
+
+    let mut ranked: Vec<&CategorySummary> = layer.summaries.iter().collect();
+    ranked.sort_by(|a, b| b.bridge_quality.partial_cmp(&a.bridge_quality).unwrap());
+
+    println!(
+        "  {:>4} {:<12} {:>7} {:>14} {:>12} {:>14}",
+        "Rank", "Category", "Items", "bridge_qual", "exclusivity", "territ_effic"
+    );
+    println!("  {}", "─".repeat(70));
+    for (i, s) in ranked.iter().enumerate() {
+        println!(
+            "  {:>4} {:<12} {:>7} {:>14.4} {:>12.3} {:>14.2}",
+            i + 1,
+            s.name,
+            s.member_count,
+            s.bridge_quality,
+            s.exclusivity,
+            s.territorial_efficiency,
+        );
+    }
+
+    println!();
+    println!(
+        "  Insight: high bridge_quality marks a hub category — it connects into"
+    );
+    println!(
+        "  the broader graph through strong, territorially clean edges. Low"
+    );
+    println!(
+        "  bridge_quality means either isolation (few bridges) or overlap-"
+    );
+    println!(
+        "  dominated neighbors (strength discounted by the territorial factor)."
+    );
 
     println!("\n✓ Category Enrichment Layer example complete.");
 }
