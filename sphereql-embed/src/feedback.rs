@@ -110,7 +110,14 @@ pub struct FeedbackSummary {
 /// Append is O(1) amortized; [`Self::summarize`] is O(N) per call, which
 /// is fine for the scale feedback naturally reaches (hundreds to
 /// thousands of events per corpus).
+///
+/// `#[serde(transparent)]` keeps the derive-based serializer
+/// ([`serde_json::to_string(&agg)`]) and the hand-rolled
+/// [`Self::save`] / [`Self::load`] path on the same JSON shape — a flat
+/// array of events. Without it, the derive would emit `{"events": [...]}`
+/// which `load` rejects.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct FeedbackAggregator {
     events: Vec<FeedbackEvent>,
 }
