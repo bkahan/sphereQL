@@ -42,6 +42,7 @@ use crate::config::PipelineConfig;
 use crate::corpus_features::{CorpusFeatures, CORPUS_FEATURE_COUNT};
 use crate::feedback::FeedbackSummary;
 use crate::tuner::TuneReport;
+use crate::util::{default_timestamp, sphereql_home_dir};
 
 /// One observation for the meta-learner: "on this corpus profile, this
 /// config was found to be best under this metric."
@@ -125,20 +126,8 @@ impl MetaTrainingRecord {
     }
 
     /// Default on-disk training-store path: `~/.sphereql/meta_records.json`.
-    ///
-    /// Resolves `$HOME` on Unix, falling back to `$USERPROFILE` on
-    /// Windows. Returns an error if neither is set (rare — would mean
-    /// the process is running without a user profile).
     pub fn default_store_path() -> io::Result<PathBuf> {
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "neither HOME nor USERPROFILE is set",
-                )
-            })?;
-        Ok(PathBuf::from(home).join(".sphereql").join("meta_records.json"))
+        Ok(sphereql_home_dir()?.join("meta_records.json"))
     }
 
     /// Append this record to the user's default training store.
@@ -181,12 +170,6 @@ impl MetaTrainingRecord {
     }
 }
 
-fn default_timestamp() -> String {
-    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_secs().to_string(),
-        Err(_) => "0".to_string(),
-    }
-}
 
 // ── Trait ──────────────────────────────────────────────────────────────
 

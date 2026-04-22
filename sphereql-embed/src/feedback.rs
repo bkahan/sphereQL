@@ -28,6 +28,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::util::{default_timestamp, sphereql_home_dir};
+
 /// One user-supplied satisfaction signal attached to a specific query.
 ///
 /// `score` is a normalized scalar in `[0, 1]`:
@@ -68,12 +70,22 @@ impl FeedbackEvent {
             timestamp: default_timestamp(),
         }
     }
-}
 
-fn default_timestamp() -> String {
-    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_secs().to_string(),
-        Err(_) => "0".to_string(),
+    /// Append this event to the user's default feedback store
+    /// (`~/.sphereql/feedback_events.json`). Loads the existing log,
+    /// appends, and rewrites — idempotent across sessions. Returns the
+    /// resolved store path.
+    ///
+    /// Mirrors [`MetaTrainingRecord::append_to_default_store`](crate::meta_model::MetaTrainingRecord::append_to_default_store)
+    /// — both are instance methods on the data they persist, not
+    /// statics on their aggregator, so the two APIs feel identical
+    /// in downstream code.
+    pub fn append_to_default_store(&self) -> io::Result<PathBuf> {
+        let path = FeedbackAggregator::default_store_path()?;
+        let mut agg = FeedbackAggregator::load(&path)?;
+        agg.record(self.clone());
+        agg.save(&path)?;
+        Ok(path)
     }
 }
 
@@ -239,27 +251,7 @@ impl FeedbackAggregator {
     /// Parallel convention to
     /// [`MetaTrainingRecord::default_store_path`](crate::meta_model::MetaTrainingRecord::default_store_path).
     pub fn default_store_path() -> io::Result<PathBuf> {
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "neither HOME nor USERPROFILE is set",
-                )
-            })?;
-        Ok(PathBuf::from(home)
-            .join(".sphereql")
-            .join("feedback_events.json"))
-    }
-
-    /// Append one event directly to the default on-disk store. Loads,
-    /// pushes, saves — idempotent across sessions.
-    pub fn append_to_default_store(event: FeedbackEvent) -> io::Result<PathBuf> {
-        let path = Self::default_store_path()?;
-        let mut agg = Self::load(&path)?;
-        agg.record(event);
-        agg.save(&path)?;
-        Ok(path)
+        Ok(sphereql_home_dir()?.join("feedback_events.json"))
     }
 
     /// Load the default on-disk feedback store. Empty aggregator if the

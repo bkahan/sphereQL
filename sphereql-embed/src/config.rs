@@ -206,8 +206,18 @@ impl Default for LaplacianConfig {
 /// These run once at build time. Higher = more precise but slower.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SpatialConfig {
+    /// Samples used to estimate what fraction of S² is covered by any
+    /// category's cap. Higher = tighter coverage estimate. Default
+    /// `100_000` → ~50ms at 31 categories.
     pub coverage_samples: usize,
+    /// Samples used per category to estimate its cap exclusivity (the
+    /// fraction of its cap not overlapped by any other category).
+    /// Runs `n_categories` times so cost scales linearly with C.
+    /// Default `30_000` per category.
     pub exclusivity_samples: usize,
+    /// Samples used to estimate the spherical Voronoi tessellation over
+    /// category centroids. Higher = tighter per-cell area estimates.
+    /// Default `100_000` → ~100ms at 31 centroids.
     pub voronoi_samples: usize,
 }
 

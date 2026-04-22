@@ -25,6 +25,7 @@ pub mod query;
 pub mod spatial_quality;
 pub mod tuner;
 pub mod types;
+pub mod util;
 
 pub use category::*;
 pub use config::*;
@@ -45,3 +46,4 @@ pub use query::*;
 pub use spatial_quality::*;
 pub use tuner::*;
 pub use types::*;
+pub use util::*;
