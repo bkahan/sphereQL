@@ -6,9 +6,22 @@ use crate::types::{
     Glob, Manifold, Nearest, Path, PyCategoryPath, PyCategorySummary, PyDrillDown,
     PyInnerSphereReport,
 };
+use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::pipeline::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
+
+fn extract_config(config: Option<&Bound<'_, PyAny>>) -> PyResult<Option<PipelineConfig>> {
+    match config {
+        None => Ok(None),
+        Some(obj) => {
+            let cfg: PipelineConfig = pythonize::depythonize(obj).map_err(|e| {
+                PyValueError::new_err(format!("invalid PipelineConfig dict: {e}"))
+            })?;
+            Ok(Some(cfg))
+        }
+    }
+}
 
 #[pyclass]
 pub struct Pipeline {
@@ -19,12 +32,13 @@ pub struct Pipeline {
 #[pymethods]
 impl Pipeline {
     #[new]
-    #[pyo3(signature = (categories, embeddings, *, projection=None))]
+    #[pyo3(signature = (categories, embeddings, *, projection=None, config=None))]
     fn new(
         py: Python<'_>,
         categories: Vec<String>,
         embeddings: &Bound<'_, PyAny>,
         projection: Option<&PyPcaProjection>,
+        config: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let embs = extract_embeddings_2d(embeddings)?;
 
@@ -37,13 +51,34 @@ impl Pipeline {
         }
 
         let dim = embs.first().map(|e| e.dimension()).unwrap_or(0);
+        let cfg = extract_config(config)?;
 
-        let inner = match projection {
-            Some(pca) => {
+        let inner = match (projection, cfg) {
+            (Some(pca), Some(config)) => {
+                let pca_clone = pca.inner().clone();
+                py.detach(move || {
+                    SphereQLPipeline::with_projection_and_config(
+                        categories, embs, pca_clone, config,
+                    )
+                })
+            }
+            (Some(pca), None) => {
                 let pca_clone = pca.inner().clone();
                 py.detach(move || SphereQLPipeline::with_projection(categories, embs, pca_clone))
             }
-            None => {
+            (None, Some(config)) => {
+                let raw: Vec<Vec<f64>> = embs.into_iter().map(|e| e.values.clone()).collect();
+                py.detach(move || {
+                    SphereQLPipeline::new_with_config(
+                        PipelineInput {
+                            categories,
+                            embeddings: raw,
+                        },
+                        config,
+                    )
+                })
+            }
+            (None, None) => {
                 let raw: Vec<Vec<f64>> = embs.into_iter().map(|e| e.values.clone()).collect();
                 py.detach(move || {
                     SphereQLPipeline::new(PipelineInput {
@@ -114,6 +149,19 @@ impl Pipeline {
     #[getter]
     fn categories(&self) -> Vec<String> {
         self.inner.categories().to_vec()
+    }
+
+    /// Return the [`PipelineConfig`] this pipeline was built with, as a dict.
+    fn config<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, self.inner.config())
+            .map_err(|e| PyValueError::new_err(format!("failed to serialize config: {e}")))
+    }
+
+    /// Short stable name of the projection family — "pca", "kernel_pca",
+    /// or "laplacian_eigenmap".
+    #[getter]
+    fn projection_kind(&self) -> &'static str {
+        self.inner.projection_kind().name()
     }
 
     #[pyo3(signature = (query, k=5))]
