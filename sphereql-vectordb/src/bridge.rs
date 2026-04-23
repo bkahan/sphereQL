@@ -284,7 +284,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             .collect();
 
         // Sort descending by cosine similarity (higher = more similar)
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1));
         scored.truncate(final_k);
 
         Ok(scored.into_iter().map(|(r, _)| r).collect())

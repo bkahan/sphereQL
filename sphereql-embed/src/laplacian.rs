@@ -163,7 +163,7 @@ impl LaplacianEigenmapProjection {
                     neighbors.push((j, sim[i * n + j]));
                 }
             }
-            neighbors.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            neighbors.sort_by(|a, b| b.1.total_cmp(&a.1));
             for &(j, _) in neighbors.iter().take(k) {
                 keep[i * n + j] = true;
                 keep[j * n + i] = true;
@@ -384,6 +384,17 @@ fn top_k_symmetric_excluding(
     let mut values: Vec<f64> = Vec::with_capacity(k);
     let mut rng = SplitMix64::new(RNG_SEED);
 
+    let matvec = |dst: &mut [f64], src: &[f64]| {
+        for (i, dst_i) in dst.iter_mut().enumerate() {
+            let row = i * n;
+            let mut s = 0.0;
+            for j in 0..n {
+                s += matrix[row + j] * src[j];
+            }
+            *dst_i = s;
+        }
+    };
+
     for _ in 0..k {
         let mut v: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
         // Initial orthogonalization against exclude + previously-found vectors.
@@ -396,17 +407,17 @@ fn top_k_symmetric_excluding(
         normalize_vec(&mut v);
         let mut eigenvalue = 0.0;
 
+        // Cached `matrix · v` from the previous iteration's Rayleigh
+        // step. Each iteration's `matrix · v_new = matrix · u_previous`,
+        // so we can skip one mat-vec per step after the first.
+        let mut mv_cache: Option<Vec<f64>> = None;
+
         for _ in 0..MAX_POWER_ITERS {
-            // u = matrix · v
-            let mut u = vec![0.0f64; n];
-            for (i, u_i) in u.iter_mut().enumerate() {
-                let row = i * n;
-                let mut s = 0.0;
-                for j in 0..n {
-                    s += matrix[row + j] * v[j];
-                }
-                *u_i = s;
-            }
+            let mut u = mv_cache.take().unwrap_or_else(|| {
+                let mut u = vec![0.0f64; n];
+                matvec(&mut u, &v);
+                u
+            });
             // Deflate each iteration so drift back into the excluded subspace
             // is continuously removed.
             for prev in exclude.iter().chain(vectors.iter()) {
@@ -420,22 +431,16 @@ fn top_k_symmetric_excluding(
                 break;
             }
 
-            // Rayleigh quotient: u^T · matrix · u with the already-computed
-            // matrix·u reused would save a mat-vec, but recomputing keeps the
-            // code simple and correct under the in-place orthogonalization.
-            let mut mv = vec![0.0f64; n];
-            for (i, mv_i) in mv.iter_mut().enumerate() {
-                let row = i * n;
-                let mut s = 0.0;
-                for j in 0..n {
-                    s += matrix[row + j] * u[j];
-                }
-                *mv_i = s;
-            }
-            eigenvalue = dot(&u, &mv);
+            // Rayleigh quotient: λ ≈ uᵀ · (matrix · u). Cache
+            // `matrix · u` for next iteration's start — halves the
+            // steady-state mat-vec cost.
+            let mut mv_next = vec![0.0f64; n];
+            matvec(&mut mv_next, &u);
+            eigenvalue = dot(&u, &mv_next);
 
-            let change = 1.0 - dot(&u, &v).abs();
+            let change = (1.0 - dot(&u, &v).abs()).max(0.0);
             v = u;
+            mv_cache = Some(mv_next);
             if change < POWER_ITER_TOL {
                 break;
             }

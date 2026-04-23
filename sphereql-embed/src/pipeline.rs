@@ -745,7 +745,7 @@ impl SphereQLPipeline {
         self.domain_groups.iter().min_by(|a, b| {
             let da = angular_distance(&pos, &a.centroid);
             let db = angular_distance(&pos, &b.centroid);
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            da.total_cmp(&db)
         })
     }
 

@@ -249,7 +249,7 @@ pub fn geodesic_sweep(
             if d <= epsilon { Some((i, d)) } else { None }
         })
         .collect();
-    hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| a.1.total_cmp(&b.1));
     hits
 }
 
@@ -594,7 +594,7 @@ pub fn curvature_signature(target: usize, all_points: &[SphericalPoint]) -> Vec<
             excesses.push(e);
         }
     }
-    excesses.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    excesses.sort_by(|a, b| a.total_cmp(b));
     excesses
 }
 

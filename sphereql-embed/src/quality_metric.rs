@@ -293,7 +293,7 @@ impl QualityMetric for GraphModularity {
                 .filter(|&j| j != i)
                 .map(|j| (j, angular_distance(&positions[i], &positions[j])))
                 .collect();
-            dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            dists.sort_by(|a, b| a.1.total_cmp(&b.1));
             for &(j, _) in dists.iter().take(k) {
                 let e = if i < j { (i, j) } else { (j, i) };
                 edges.insert(e);

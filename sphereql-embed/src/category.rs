@@ -553,7 +553,7 @@ impl CategoryLayer {
         let median_strength = if all_strengths.is_empty() {
             0.0
         } else {
-            all_strengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            all_strengths.sort_by(|a, b| a.total_cmp(b));
             all_strengths[all_strengths.len() / 2]
         };
 
@@ -884,7 +884,7 @@ impl CategoryLayer {
             .map(|(i, s)| (i, angular_distance(&pos, &s.centroid_position)))
             .filter(|&(_, d)| d <= max_angle)
             .collect();
-        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| a.1.total_cmp(&b.1));
         results
     }
 
@@ -919,7 +919,7 @@ impl CategoryLayer {
             })
             .filter(|&(_, raw, _, _)| raw <= max_angle)
             .collect();
-        results.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| a.2.total_cmp(&b.2));
         results
     }
 

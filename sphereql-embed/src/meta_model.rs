@@ -304,7 +304,11 @@ impl NearestNeighborMetaModel {
                 (i, normalized_euclidean(&q, &v))
             })
             .collect();
-        ranked.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        // `total_cmp` sorts NaN to the end — which is what we want
+        // under a "nearest first" policy: any record whose distance
+        // is non-finite sinks to the bottom instead of silently
+        // equating with finite candidates.
+        ranked.sort_by(|a, b| a.1.total_cmp(&b.1));
         ranked
     }
 }
@@ -401,7 +405,15 @@ impl DistanceWeightedMetaModel {
             .records
             .iter()
             .enumerate()
-            .map(|(i, r)| {
+            .filter_map(|(i, r)| {
+                // Filter non-finite `best_score` at score time. NaN would
+                // otherwise propagate into `weighted`, hit the `total_cmp`
+                // below as "greatest" (NaN sorts to the end of a total
+                // order, but the *top* under a "descending" sort would
+                // put NaN first), and silently become the prediction.
+                if !r.best_score.is_finite() {
+                    return None;
+                }
                 let v = normalize_features(
                     &r.features.to_vec(),
                     &self.feature_means,
@@ -409,10 +421,15 @@ impl DistanceWeightedMetaModel {
                 );
                 let d = normalized_euclidean(&q, &v);
                 let weighted = r.best_score / (d + self.epsilon);
-                (i, weighted, d)
+                if !weighted.is_finite() {
+                    return None;
+                }
+                Some((i, weighted, d))
             })
             .collect();
-        out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // `total_cmp` is NaN-safe; non-finite scores were already
+        // dropped above, so the ordering is total.
+        out.sort_by(|a, b| b.1.total_cmp(&a.1));
         out
     }
 }
@@ -436,7 +453,10 @@ impl MetaModel for DistanceWeightedMetaModel {
              call .fit(records) with at least one record first"
         );
         let ranked = self.score_candidates(features);
-        let best_idx = ranked[0].0;
+        // Fall back to record 0 if every record was filtered as
+        // non-finite — the records are non-empty (asserted) but none
+        // produced a comparable score.
+        let best_idx = ranked.first().map_or(0, |&(idx, _, _)| idx);
         self.records[best_idx].best_config.clone()
     }
 

@@ -374,7 +374,9 @@ fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> (Vec<Vec<f64>>
             // The eigenvalue is vᵀ(XᵀX)v / N = mag / N (before normalization)
             eigenvalue = mag / n;
 
-            let change = 1.0 - dot(&u, &v).abs();
+            // `.max(0.0)` clamps the FP noise that can briefly push
+            // `1 - |⟨u,v⟩|` slightly negative near convergence.
+            let change = (1.0 - dot(&u, &v).abs()).max(0.0);
             v = u;
 
             if change < tol {

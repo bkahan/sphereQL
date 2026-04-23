@@ -201,10 +201,17 @@ impl KernelPcaProjection {
         // 5. Centre the kernel matrix (Schölkopf eq. 4):
         //    K̃_{ij} = K_{ij} − col_means[i] − col_means[j] + grand_mean
         //
-        //    We overwrite kernel_flat in place to save memory.
+        //    We overwrite kernel_flat in place to save memory. K̃ is
+        //    symmetric in closed form, but `col_means[i] + col_means[j]
+        //    - grand_mean` accumulates FP rounding such that K̃[i,j] can
+        //    drift from K̃[j,i] by ~1e-15. Across 300 power-iteration
+        //    steps on n ≈ 1000 that drift compounds into eigenvector
+        //    error; symmetrize once here to eliminate the source.
         for i in 0..n {
-            for j in 0..n {
-                kernel_flat[i * n + j] -= col_means[i] + col_means[j] - grand_mean;
+            for j in i..n {
+                let v = kernel_flat[i * n + j] - col_means[i] - col_means[j] + grand_mean;
+                kernel_flat[i * n + j] = v;
+                kernel_flat[j * n + i] = v;
             }
         }
 
@@ -404,8 +411,14 @@ fn auto_sigma(data: &[Vec<f64>]) -> f64 {
         }
     }
 
-    distances.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = distances[distances.len() / 2];
+    // Median via `select_nth_unstable_by` is O(n) vs the O(n log n)
+    // full sort — for the 5000-pair sampled branch above that's the
+    // difference between ~65k and ~5k comparisons. `total_cmp` is
+    // NaN-safe (previously `.partial_cmp().unwrap()` panicked on
+    // degenerate zero-distance input).
+    let mid = distances.len() / 2;
+    let (_, median_ref, _) = distances.select_nth_unstable_by(mid, |a, b| a.total_cmp(b));
+    let median = *median_ref;
 
     (median * std::f64::consts::FRAC_1_SQRT_2).max(1e-8)
 }
@@ -434,25 +447,40 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
     let mut values: Vec<f64> = Vec::with_capacity(k);
     let mut rng = SplitMix64::new(0xBEEF_CAFE);
 
+    // Closure: write `matrix · src` into `dst`. Extracted because the
+    // inner loop needs this twice — once for the iterate and once for
+    // the Rayleigh quotient — and we cache the second call's result
+    // into the next iteration's iterate.
+    let matvec = |dst: &mut [f64], src: &[f64]| {
+        for (i, dst_i) in dst.iter_mut().enumerate() {
+            let row_start = i * n;
+            let mut s = 0.0;
+            for j in 0..n {
+                s += matrix[row_start + j] * src[j];
+            }
+            *dst_i = s;
+        }
+    };
+
     for _ in 0..k {
         let mut v: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
         normalize_vec(&mut v);
         let mut eigenvalue = 0.0;
 
+        // Cached `matrix · v` from the previous iteration's Rayleigh
+        // step. `None` on first pass; populated afterward. Saves one
+        // full mat-vec per iteration.
+        //
+        // Note: a `.skip(1)` bug in earlier versions left `u[0] = 0`;
+        // see the `first_coordinate_is_nonzero` regression test.
+        let mut mv_cache: Option<Vec<f64>> = None;
+
         for _ in 0..max_iters {
-            // Full mat-vec `u = matrix · v`. Earlier versions had a
-            // `.skip(1)` here that silently zeroed `u[0]` — every kernel
-            // PCA eigenvector ended up with a spurious zero in its first
-            // coordinate. See the `first_coordinate_is_nonzero` test.
-            let mut u = vec![0.0; n];
-            for (i, u_i) in u.iter_mut().enumerate() {
-                let row_start = i * n;
-                let mut s = 0.0;
-                for j in 0..n {
-                    s += matrix[row_start + j] * v[j];
-                }
-                *u_i = s;
-            }
+            let mut u = mv_cache.take().unwrap_or_else(|| {
+                let mut u = vec![0.0; n];
+                matvec(&mut u, &v);
+                u
+            });
 
             for prev in &vectors {
                 let proj = dot(&u, prev);
@@ -466,22 +494,19 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
                 break;
             }
 
-            // Rayleigh quotient for eigenvalue estimate
-            eigenvalue = {
-                let mut s = 0.0;
-                for i in 0..n {
-                    let row_start = i * n;
-                    let mut mv_i = 0.0;
-                    for j in 0..n {
-                        mv_i += matrix[row_start + j] * u[j];
-                    }
-                    s += u[i] * mv_i;
-                }
-                s
-            };
+            // Rayleigh quotient: λ ≈ uᵀ · (matrix · u). Save the
+            // `matrix · u` vector — next iteration starts with
+            // `u_next = matrix · v_next = matrix · u_current`.
+            let mut mv_next = vec![0.0; n];
+            matvec(&mut mv_next, &u);
+            eigenvalue = u.iter().zip(mv_next.iter()).map(|(a, b)| a * b).sum();
 
-            let change = 1.0 - dot(&u, &v).abs();
+            // Convergence: |⟨u, v⟩| → 1 as u aligns with v.
+            // `.max(0.0)` clamps the FP noise that briefly pushes the
+            // value below zero near convergence.
+            let change = (1.0 - dot(&u, &v).abs()).max(0.0);
             v = u;
+            mv_cache = Some(mv_next);
 
             if change < tol {
                 break;
