@@ -209,8 +209,6 @@ pub struct SphereQLPipeline {
     categories: Vec<String>,
     cart_points: Vec<[f64; 3]>,
     ids: Vec<String>,
-    /// Stored embeddings for category layer queries (drill-down, etc.).
-    _embeddings: Vec<Embedding>,
     /// Category enrichment layer: summaries, graph, bridges, inner spheres.
     category_layer: CategoryLayer,
     /// Quality configuration for filtering and warnings.
@@ -414,7 +412,6 @@ impl SphereQLPipeline {
             categories,
             cart_points,
             ids,
-            _embeddings: embeddings,
             category_layer,
             quality_config,
             projection_warnings,
@@ -621,18 +618,14 @@ impl SphereQLPipeline {
             .collect()
     }
 
-    /// Borrow the fitted PCA projection.
-    ///
-    /// Panics if the pipeline was configured with a non-PCA projection
-    /// kind. Prefer [`Self::projection`] in code that may run under any
-    /// [`ProjectionKind`].
-    pub fn pca(&self) -> &PcaProjection {
-        self.projection
-            .as_pca()
-            .expect("pipeline is not configured with PcaProjection; call .projection() instead")
-    }
-
     /// Borrow the fitted projection regardless of kind.
+    ///
+    /// Returns a `&ConfiguredProjection`, which implements the
+    /// [`Projection`](crate::projection::Projection) trait — so most
+    /// callers never need to pattern-match on the enum. The old
+    /// `.pca()` accessor was removed because it panicked under any
+    /// non-PCA config and every caller already worked through this
+    /// method or its trait impl.
     pub fn projection(&self) -> &ConfiguredProjection {
         &self.projection
     }

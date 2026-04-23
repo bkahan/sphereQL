@@ -938,63 +938,6 @@ impl CategoryLayer {
         self.inner_spheres.len()
     }
 
-    /// Drill down into a category: find the k nearest members to a query
-    /// embedding, using the inner sphere's projection if available.
-    ///
-    /// Falls back to angular distance from the category centroid on the
-    /// outer sphere when no inner sphere exists.
-    pub fn drill_down(
-        &self,
-        category_name: &str,
-        embedding: &Embedding,
-        k: usize,
-    ) -> Vec<DrillDownResult> {
-        let Some(&ci) = self.name_to_index.get(category_name) else {
-            return Vec::new();
-        };
-        let summary = &self.summaries[ci];
-
-        if let Some(inner) = self.inner_spheres.get(&ci) {
-            let query_pos = inner.projection.project(embedding);
-            let mut results: Vec<DrillDownResult> = inner
-                .inner_positions
-                .iter()
-                .enumerate()
-                .map(|(local_idx, pos)| DrillDownResult {
-                    item_index: inner.member_indices[local_idx],
-                    distance: angular_distance(&query_pos, pos),
-                    used_inner_sphere: true,
-                })
-                .collect();
-            results.sort_by(|a, b| {
-                a.distance
-                    .partial_cmp(&b.distance)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            results.truncate(k);
-            results
-        } else {
-            // Fallback: rank by distance from category centroid on outer sphere
-            let centroid = &summary.centroid_position;
-            let mut results: Vec<DrillDownResult> = summary
-                .member_indices
-                .iter()
-                .map(|&mi| DrillDownResult {
-                    item_index: mi,
-                    distance: angular_distance(&self.outer_positions[mi], centroid),
-                    used_inner_sphere: false,
-                })
-                .collect();
-            results.sort_by(|a, b| {
-                a.distance
-                    .partial_cmp(&b.distance)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            results.truncate(k);
-            results
-        }
-    }
-
     /// Drill down with an explicit outer projection for the fallback case.
     ///
     /// When no inner sphere exists, the query is projected using the
@@ -1643,13 +1586,6 @@ mod tests {
         for r in layer.drill_down_with_projection("big", &emb(&[1.0; 10]), &pca, 10) {
             assert!(r.distance >= 0.0);
         }
-    }
-
-    #[test]
-    fn drill_down_without_projection_works() {
-        let (layer, _, _) = build_large_test_layer();
-        let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-        assert!(layer.drill_down("big", &q, 5).len() <= 5);
     }
 
     #[test]

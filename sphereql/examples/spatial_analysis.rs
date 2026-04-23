@@ -855,7 +855,7 @@ fn main() {
     for (label, emb) in &queries {
         println!("\n  ── Query: {} ──", label);
         if let Some(group) = pipeline.route_to_group(emb) {
-            let projected = pipeline.pca().project(emb);
+            let projected = pipeline.projection().project(emb);
             let d = angular_distance(&projected, &group.centroid);
             let gi = groups
                 .iter()
