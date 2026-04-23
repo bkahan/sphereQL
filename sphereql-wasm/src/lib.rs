@@ -6,6 +6,7 @@ use sphereql_embed::category::{
 };
 use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
 use sphereql_embed::config::PipelineConfig;
+use sphereql_embed::corpus_features::CorpusFeatures;
 use sphereql_embed::domain_groups::DomainGroup;
 use sphereql_embed::pipeline::{
     GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
@@ -729,6 +730,22 @@ impl From<&ProjectionWarning> for ProjectionWarningOut {
             severity: severity_name(w.severity),
         }
     }
+}
+
+// ── Metalearning surface ──────────────────────────────────────────────
+
+/// Extract a [`CorpusFeatures`] profile from categorized embeddings.
+///
+/// `input_json` has the same shape as [`Pipeline::new`]:
+/// `{ "categories": [...], "embeddings": [[...], ...] }`.
+///
+/// Returns the full serde JSON of `CorpusFeatures` — suitable as input
+/// to a `MetaModel` on the Rust side, or for logging/audit.
+#[wasm_bindgen(js_name = corpusFeatures)]
+pub fn corpus_features(input_json: &str) -> Result<String, JsError> {
+    let input = parse_input(input_json)?;
+    let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+    serde_json::to_string(&features).map_err(|e| JsError::new(&e.to_string()))
 }
 
 // ── Server-side cache (Node.js only, not available in browser WASM) ────
