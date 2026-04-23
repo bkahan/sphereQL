@@ -26,7 +26,7 @@ qdrant = ["vectordb", "sphereql-vectordb/qdrant"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
 [dependencies]
-pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module", "multiple-pymethods"] }
 numpy = "0.28"
 sphereql-core = { path = "../sphereql-core", optional = true }
 sphereql-index = { path = "../sphereql-index", optional = true }
