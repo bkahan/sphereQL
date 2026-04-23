@@ -1,8 +1,17 @@
 use wasm_bindgen::prelude::*;
 
 use sphereql_embed::category::{
-    BridgeItem, CategoryPath, CategoryPathStep, CategorySummary, DrillDownResult, InnerSphereReport,
+    BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
+    DrillDownResult, InnerSphereReport,
 };
+
+fn classification_name(c: BridgeClassification) -> &'static str {
+    match c {
+        BridgeClassification::Genuine => "Genuine",
+        BridgeClassification::OverlapArtifact => "OverlapArtifact",
+        BridgeClassification::Weak => "Weak",
+    }
+}
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::pipeline::{
     GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
@@ -494,6 +503,7 @@ struct CategorySummaryOut {
     centroid_phi: f64,
     angular_spread: f64,
     cohesion: f64,
+    bridge_quality: f64,
 }
 
 impl From<&CategorySummary> for CategorySummaryOut {
@@ -505,6 +515,7 @@ impl From<&CategorySummary> for CategorySummaryOut {
             centroid_phi: s.centroid_position.phi,
             angular_spread: s.angular_spread,
             cohesion: s.cohesion,
+            bridge_quality: s.bridge_quality,
         }
     }
 }
@@ -517,6 +528,7 @@ struct BridgeItemOut {
     affinity_to_source: f64,
     affinity_to_target: f64,
     bridge_strength: f64,
+    classification: &'static str,
 }
 
 impl From<&BridgeItem> for BridgeItemOut {
@@ -528,6 +540,7 @@ impl From<&BridgeItem> for BridgeItemOut {
             affinity_to_source: b.affinity_to_source,
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
+            classification: classification_name(b.classification),
         }
     }
 }
@@ -538,6 +551,7 @@ struct CategoryPathStepOut {
     category_name: String,
     cumulative_distance: f64,
     bridges_to_next: Vec<BridgeItemOut>,
+    hop_confidence: f64,
 }
 
 impl From<&CategoryPathStep> for CategoryPathStepOut {
@@ -547,6 +561,7 @@ impl From<&CategoryPathStep> for CategoryPathStepOut {
             category_name: s.category_name.clone(),
             cumulative_distance: s.cumulative_distance,
             bridges_to_next: s.bridges_to_next.iter().map(BridgeItemOut::from).collect(),
+            hop_confidence: s.hop_confidence,
         }
     }
 }
@@ -555,6 +570,7 @@ impl From<&CategoryPathStep> for CategoryPathStepOut {
 struct CategoryPathOut {
     total_distance: f64,
     steps: Vec<CategoryPathStepOut>,
+    path_confidence: f64,
 }
 
 impl From<CategoryPath> for CategoryPathOut {
@@ -562,6 +578,7 @@ impl From<CategoryPath> for CategoryPathOut {
         Self {
             total_distance: p.total_distance,
             steps: p.steps.iter().map(CategoryPathStepOut::from).collect(),
+            path_confidence: p.path_confidence,
         }
     }
 }

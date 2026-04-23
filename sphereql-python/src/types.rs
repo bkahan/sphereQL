@@ -2,8 +2,17 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use sphereql_embed::category::{
-    BridgeItem, CategoryPath, CategoryPathStep, CategorySummary, DrillDownResult, InnerSphereReport,
+    BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
+    DrillDownResult, InnerSphereReport,
 };
+
+fn classification_name(c: BridgeClassification) -> &'static str {
+    match c {
+        BridgeClassification::Genuine => "Genuine",
+        BridgeClassification::OverlapArtifact => "OverlapArtifact",
+        BridgeClassification::Weak => "Weak",
+    }
+}
 use sphereql_embed::pipeline::{GlobSummary, ManifoldResult, NearestResult, PathResult};
 
 // ── Nearest ────────────────────────────────────────────────────────────
@@ -364,14 +373,18 @@ pub struct PyCategorySummary {
     pub angular_spread: f64,
     #[pyo3(get)]
     pub cohesion: f64,
+    /// Mean territorial-adjusted bridge strength across outgoing edges.
+    /// 0.0 if this category has no bridged neighbors.
+    #[pyo3(get)]
+    pub bridge_quality: f64,
 }
 
 #[pymethods]
 impl PyCategorySummary {
     fn __repr__(&self) -> String {
         format!(
-            "CategorySummaryInfo(name={:?}, members={}, cohesion={:.4})",
-            self.name, self.member_count, self.cohesion
+            "CategorySummaryInfo(name={:?}, members={}, cohesion={:.4}, bridge_quality={:.4})",
+            self.name, self.member_count, self.cohesion, self.bridge_quality
         )
     }
 }
@@ -385,6 +398,7 @@ impl From<&CategorySummary> for PyCategorySummary {
             centroid_phi: s.centroid_position.phi,
             angular_spread: s.angular_spread,
             cohesion: s.cohesion,
+            bridge_quality: s.bridge_quality,
         }
     }
 }
@@ -406,14 +420,21 @@ pub struct PyBridgeItem {
     pub affinity_to_target: f64,
     #[pyo3(get)]
     pub bridge_strength: f64,
+    /// One of "Genuine", "OverlapArtifact", or "Weak".
+    #[pyo3(get)]
+    pub classification: String,
 }
 
 #[pymethods]
 impl PyBridgeItem {
     fn __repr__(&self) -> String {
         format!(
-            "BridgeItemInfo(item={}, src={}, tgt={}, strength={:.4})",
-            self.item_index, self.source_category, self.target_category, self.bridge_strength
+            "BridgeItemInfo(item={}, src={}, tgt={}, strength={:.4}, class={})",
+            self.item_index,
+            self.source_category,
+            self.target_category,
+            self.bridge_strength,
+            self.classification
         )
     }
 }
@@ -427,6 +448,7 @@ impl From<&BridgeItem> for PyBridgeItem {
             affinity_to_source: b.affinity_to_source,
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
+            classification: classification_name(b.classification).to_string(),
         }
     }
 }
@@ -444,16 +466,21 @@ pub struct PyCategoryPathStep {
     pub cumulative_distance: f64,
     #[pyo3(get)]
     pub bridges_to_next: Vec<PyBridgeItem>,
+    /// Spatial confidence of this hop: bridge_strength × territorial_factor.
+    /// 0.0 for the last step.
+    #[pyo3(get)]
+    pub hop_confidence: f64,
 }
 
 #[pymethods]
 impl PyCategoryPathStep {
     fn __repr__(&self) -> String {
         format!(
-            "CategoryPathStep(category={:?}, distance={:.4}, bridges={})",
+            "CategoryPathStep(category={:?}, distance={:.4}, bridges={}, hop_conf={:.4})",
             self.category_name,
             self.cumulative_distance,
-            self.bridges_to_next.len()
+            self.bridges_to_next.len(),
+            self.hop_confidence
         )
     }
 }
@@ -465,6 +492,7 @@ impl From<&CategoryPathStep> for PyCategoryPathStep {
             category_name: s.category_name.clone(),
             cumulative_distance: s.cumulative_distance,
             bridges_to_next: s.bridges_to_next.iter().map(PyBridgeItem::from).collect(),
+            hop_confidence: s.hop_confidence,
         }
     }
 }
@@ -478,15 +506,20 @@ pub struct PyCategoryPath {
     pub total_distance: f64,
     #[pyo3(get)]
     pub steps: Vec<PyCategoryPathStep>,
+    /// Product of all hop confidences along the path. Low values indicate
+    /// the path routes through shaky connections.
+    #[pyo3(get)]
+    pub path_confidence: f64,
 }
 
 #[pymethods]
 impl PyCategoryPath {
     fn __repr__(&self) -> String {
         format!(
-            "CategoryPathResult(steps={}, total_distance={:.4})",
+            "CategoryPathResult(steps={}, total_distance={:.4}, path_conf={:.4})",
             self.steps.len(),
-            self.total_distance
+            self.total_distance,
+            self.path_confidence
         )
     }
 }
@@ -496,6 +529,7 @@ impl From<&CategoryPath> for PyCategoryPath {
         Self {
             total_distance: p.total_distance,
             steps: p.steps.iter().map(PyCategoryPathStep::from).collect(),
+            path_confidence: p.path_confidence,
         }
     }
 }
