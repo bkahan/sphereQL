@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>sphereQL WASM — Browser Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+            line-height: 1.5;
+            color: #222;
+        }
+        h1 { border-bottom: 2px solid #333; padding-bottom: 0.25rem; }
+        h2 {
+            margin-top: 2rem;
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 0.25rem;
+        }
+        pre {
+            background: #f6f8fa;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+        code { font-size: 0.85rem; }
+        .hint {
+            color: #555;
+            font-style: italic;
+            margin: 0.5rem 0 1rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>sphereQL — WASM browser demo</h1>
+    <p class="hint">
+        Exercises the full Pipeline + metalearning surface (PCA / Laplacian
+        selection, <code>autoTune</code>, <code>MetaModel</code>, projection
+        warnings, feedback) in 100% client-side JavaScript. See the
+        <a href="./README.md">README</a> for build + serve instructions.
+    </p>
+
+    <h2>Pipeline construction (PCA default)</h2>
+    <pre id="out-basic">…loading…</pre>
+
+    <h2>newWithConfig: Laplacian eigenmap</h2>
+    <pre id="out-config">…</pre>
+
+    <h2>corpusFeatures + autoTune</h2>
+    <pre id="out-tune">…</pre>
+
+    <h2>hierarchicalNearest vs nearest</h2>
+    <pre id="out-hier">…</pre>
+
+    <h2>domainGroups + projectionWarnings</h2>
+    <pre id="out-routing">…</pre>
+
+    <h2>MetaModel.predict</h2>
+    <pre id="out-meta">…</pre>
+
+    <h2>FeedbackAggregator</h2>
+    <pre id="out-feedback">…</pre>
+
+    <script type="module">
+        import init, {
+            Pipeline,
+            corpusFeatures,
+            autoTune,
+            NearestNeighborMetaModel,
+            FeedbackAggregator,
+        } from "./pkg/sphereql_wasm.js";
+
+        // ── 1. A tiny, self-contained corpus. Four categories, 16-d
+        //     embeddings seeded to give each category a distinct
+        //     dominant axis with a small amount of cross-talk.
+        function buildCorpus() {
+            const categories = [];
+            const embeddings = [];
+            const DIM = 16;
+            const groups = [
+                { name: "science",   axis: 0,  crosstalk: 5 },
+                { name: "cooking",   axis: 4,  crosstalk: 5 },
+                { name: "music",     axis: 8,  crosstalk: 9 },
+                { name: "sports",    axis: 12, crosstalk: 13 },
+            ];
+            const PER = 8;
+            for (const g of groups) {
+                for (let i = 0; i < PER; i++) {
+                    const v = new Array(DIM).fill(0);
+                    v[g.axis] = 0.9 + 0.02 * i;
+                    v[g.crosstalk] = 0.2 + 0.02 * i;
+                    // light deterministic noise
+                    for (let d = 0; d < DIM; d++) {
+                        const s = Math.sin(37 * (g.axis + i + d + 1));
+                        v[d] += 0.01 * s;
+                    }
+                    categories.push(g.name);
+                    embeddings.push(v);
+                }
+            }
+            return { categories, embeddings };
+        }
+
+        function write(id, text) {
+            document.getElementById(id).textContent = text;
+        }
+
+        function fmt(obj) {
+            return JSON.stringify(obj, null, 2);
+        }
+
+        async function main() {
+            await init();
+            const { categories, embeddings } = buildCorpus();
+            const inputJson = JSON.stringify({ categories, embeddings });
+
+            // ── 1. Default pipeline ────────────────────────────────
+            const pipeline = new Pipeline(inputJson);
+            const query = embeddings[0];
+            const nearest = JSON.parse(pipeline.nearest(JSON.stringify(query), 3));
+
+            write("out-basic", [
+                `projectionKind   = ${pipeline.projectionKind()}`,
+                `items            = ${pipeline.len()}`,
+                `explainedVariance = ${pipeline.explained_variance().toFixed(4)}`,
+                ``,
+                `nearest(query, 3):`,
+                ...nearest.map((h, i) =>
+                    `  ${i + 1}. [${h.category}] d=${h.distance.toFixed(4)} id=${h.id}`
+                ),
+            ].join("\n"));
+
+            // ── 2. Laplacian via newWithConfig ─────────────────────
+            const lapConfig = JSON.stringify({
+                projection_kind: "LaplacianEigenmap",
+                routing: { low_evr_threshold: 0.1, num_domain_groups: 2 },
+            });
+            let lapReport = "(Laplacian build)";
+            try {
+                const lap = Pipeline.newWithConfig(inputJson, lapConfig);
+                const cfg = JSON.parse(lap.config());
+                lapReport = [
+                    `projectionKind   = ${lap.projectionKind()}`,
+                    `low_evr_threshold = ${cfg.routing.low_evr_threshold}`,
+                    `num_domain_groups = ${cfg.routing.num_domain_groups}`,
+                ].join("\n");
+            } catch (e) {
+                lapReport = `Laplacian build rejected: ${e.message}`;
+            }
+            write("out-config", lapReport);
+
+            // ── 3. Corpus features + auto-tune ─────────────────────
+            const features = JSON.parse(corpusFeatures(inputJson));
+            const report = JSON.parse(autoTune(inputJson, JSON.stringify({
+                metric: "default_composite",
+                strategy: "random",
+                budget: 8,
+                seed: 7,
+                search_space: {
+                    projection_kinds: ["Pca", "LaplacianEigenmap"],
+                    num_domain_groups: [2, 3],
+                    low_evr_threshold: [0.15, 0.35],
+                    laplacian_k_neighbors: [6, 10],
+                },
+            })));
+
+            write("out-tune", [
+                `CorpusFeatures:`,
+                `  n_items=${features.n_items}, n_categories=${features.n_categories}, dim=${features.dim}`,
+                `  category_separation_ratio=${features.category_separation_ratio.toFixed(4)}`,
+                ``,
+                `auto_tune report:`,
+                `  metric:         ${report.metric_name}`,
+                `  trials:         ${report.trials_count} (failures: ${report.failures_count})`,
+                `  mean_score:     ${report.mean_score.toFixed(4)}`,
+                `  best_score:     ${report.best_score.toFixed(4)}`,
+                `  best_kind:      ${report.best_config.projection_kind}`,
+                `  best_groups:    ${report.best_config.routing.num_domain_groups}`,
+            ].join("\n"));
+
+            // ── 4. hierarchicalNearest vs nearest, on the tuned config.
+            const tuned = Pipeline.newWithConfig(
+                inputJson,
+                JSON.stringify(report.best_config),
+            );
+            const flat = JSON.parse(tuned.nearest(JSON.stringify(query), 4));
+            const hier = JSON.parse(
+                tuned.hierarchicalNearest(JSON.stringify(query), 4),
+            );
+
+            const rows = ["rank | flat              | hierarchical"];
+            rows.push("-----+-------------------+-------------------");
+            for (let i = 0; i < flat.length; i++) {
+                const f = `[${flat[i].category}] d=${flat[i].distance.toFixed(3)}`;
+                const h = `[${hier[i].category}] d=${hier[i].distance.toFixed(3)}`;
+                rows.push(`  ${i + 1}  | ${f.padEnd(17)} | ${h.padEnd(17)}`);
+            }
+            write("out-hier", rows.join("\n"));
+
+            // ── 5. Routing primitives on the tuned pipeline ────────
+            const groups = JSON.parse(tuned.domainGroups());
+            const warnings = JSON.parse(tuned.projectionWarnings());
+
+            const groupLines = groups.map(
+                (g, i) => `  Group ${i}: [${g.category_names.join(", ")}] ` +
+                    `items=${g.total_items} cohesion=${g.cohesion.toFixed(3)}`,
+            );
+            const warnLines = warnings.length === 0
+                ? ["  (projection is healthy)"]
+                : warnings.map(w => `  [${w.severity}] ${w.message}`);
+
+            write("out-routing", [
+                "domainGroups:",
+                ...groupLines,
+                "",
+                "projectionWarnings:",
+                ...warnLines,
+            ].join("\n"));
+
+            // ── 6. MetaModel roundtrip ─────────────────────────────
+            // Synthesize a tiny training set from this single tuning run.
+            // Real deployments accumulate records across corpora.
+            const records = [
+                {
+                    corpus_id: "demo_corpus",
+                    features,
+                    best_config: report.best_config,
+                    best_score: report.best_score,
+                    metric_name: report.metric_name,
+                    strategy: "random(budget=8,seed=7)",
+                    timestamp: "0",
+                },
+            ];
+            const nn = new NearestNeighborMetaModel();
+            nn.fit(JSON.stringify(records));
+            const predicted = JSON.parse(
+                nn.predict(JSON.stringify(features)),
+            );
+
+            write("out-meta", [
+                `trained on ${records.length} record(s)`,
+                `model:      ${nn.name()}`,
+                `prediction: projection_kind=${predicted.projection_kind}, ` +
+                    `num_domain_groups=${predicted.routing.num_domain_groups}`,
+            ].join("\n"));
+
+            // ── 7. Feedback aggregator ─────────────────────────────
+            const agg = new FeedbackAggregator();
+            const events = [
+                { corpus_id: "demo_corpus", query_id: "q-1", score: 0.9,  timestamp: "0" },
+                { corpus_id: "demo_corpus", query_id: "q-2", score: 0.75, timestamp: "1" },
+                { corpus_id: "demo_corpus", query_id: "q-3", score: 1.0,  timestamp: "2" },
+                { corpus_id: "demo_corpus", query_id: "q-4", score: 0.3,  timestamp: "3" },
+            ];
+            for (const e of events) {
+                agg.record(JSON.stringify(e));
+            }
+            const summary = JSON.parse(agg.summarize("demo_corpus"));
+
+            write("out-feedback", [
+                `events recorded:  ${agg.len()}`,
+                `corpora tracked:  ${JSON.parse(agg.corpusIds()).join(", ")}`,
+                ``,
+                `demo_corpus summary:`,
+                `  n_events:    ${summary.n_events}`,
+                `  mean_score:  ${summary.mean_score.toFixed(4)}`,
+                `  range:       [${summary.min_score.toFixed(2)}, ${summary.max_score.toFixed(2)}]`,
+                ``,
+                `// persistence: agg.toJson() / FeedbackAggregator.fromJson()`,
+                `// store the JSON in localStorage, IndexedDB, or POST to a server.`,
+            ].join("\n"));
+        }
+
+        main().catch(err => {
+            document.body.insertAdjacentHTML(
+                "beforeend",
+                `<pre style="color:#b00">Error: ${err.message || err}</pre>`,
+            );
+            throw err;
+        });
+    </script>
+</body>
+</html>
