@@ -89,7 +89,7 @@ impl Pipeline {
     /// Returns JSON: `[{id, category, distance}, ...]`
     pub fn nearest(&self, query_json: &str, k: usize) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.pca().dimensionality();
+        let expected_dim = self.inner.projection().dimensionality();
         if emb.embedding.len() != expected_dim {
             return Err(JsError::new(&format!(
                 "query dimension mismatch: expected {expected_dim}, got {}",
@@ -110,7 +110,7 @@ impl Pipeline {
     /// Returns JSON: `[{id, category, distance}, ...]`
     pub fn similar_above(&self, query_json: &str, min_cosine: f64) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.pca().dimensionality();
+        let expected_dim = self.inner.projection().dimensionality();
         if emb.embedding.len() != expected_dim {
             return Err(JsError::new(&format!(
                 "query dimension mismatch: expected {expected_dim}, got {}",
@@ -139,7 +139,7 @@ impl Pipeline {
         query_json: &str,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.pca().dimensionality();
+        let expected_dim = self.inner.projection().dimensionality();
         if emb.embedding.len() != expected_dim {
             return Err(JsError::new(&format!(
                 "query dimension mismatch: expected {expected_dim}, got {}",
@@ -186,7 +186,7 @@ impl Pipeline {
         query_json: &str,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.pca().dimensionality();
+        let expected_dim = self.inner.projection().dimensionality();
         if emb.embedding.len() != expected_dim {
             return Err(JsError::new(&format!(
                 "query dimension mismatch: expected {expected_dim}, got {}",
@@ -214,7 +214,7 @@ impl Pipeline {
         neighborhood_k: usize,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.pca().dimensionality();
+        let expected_dim = self.inner.projection().dimensionality();
         if emb.embedding.len() != expected_dim {
             return Err(JsError::new(&format!(
                 "query dimension mismatch: expected {expected_dim}, got {}",
@@ -310,7 +310,7 @@ impl Pipeline {
         query_json: &str,
     ) -> Result<String, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.pca().dimensionality();
+        let expected_dim = self.inner.projection().dimensionality();
         if emb.embedding.len() != expected_dim {
             return Err(JsError::new(&format!(
                 "query dimension mismatch: expected {expected_dim}, got {}",
@@ -354,7 +354,7 @@ impl Pipeline {
 impl Pipeline {
     fn dummy_query(&self) -> PipelineQuery {
         PipelineQuery {
-            embedding: vec![0.0; self.inner.pca().dimensionality()],
+            embedding: vec![0.0; self.inner.projection().dimensionality()],
         }
     }
 }

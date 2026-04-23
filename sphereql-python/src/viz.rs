@@ -161,7 +161,7 @@ pub fn visualize_pipeline(
     open_browser: bool,
 ) -> PyResult<String> {
     let points = pipeline.inner.projected_points();
-    let evr = pipeline.inner.pca().explained_variance_ratio();
+    let evr = pipeline.inner.projection().explained_variance_ratio();
 
     let mut categories = Vec::with_capacity(points.len());
     let mut cart_points = Vec::with_capacity(points.len());
