@@ -8,6 +8,9 @@ use pyo3::types::PyDict;
 
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
+use sphereql_embed::meta_model::{
+    DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
+};
 use sphereql_embed::pipeline::PipelineInput;
 use sphereql_embed::quality_metric::{
     BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, TerritorialHealth,
@@ -238,4 +241,139 @@ pub fn corpus_features<'py>(
     let features = py.detach(|| CorpusFeatures::extract(&categories, &raw));
     pythonize::pythonize(py, &features)
         .map_err(|e| PyValueError::new_err(format!("failed to serialize CorpusFeatures: {e}")))
+}
+
+// ── MetaModel ────────────────────────────────────────────────────────
+
+fn depythonize_records(
+    records: &Bound<'_, PyAny>,
+) -> PyResult<Vec<MetaTrainingRecord>> {
+    pythonize::depythonize(records)
+        .map_err(|e| PyValueError::new_err(format!("invalid training records: {e}")))
+}
+
+fn depythonize_features(features: &Bound<'_, PyAny>) -> PyResult<CorpusFeatures> {
+    pythonize::depythonize(features)
+        .map_err(|e| PyValueError::new_err(format!("invalid CorpusFeatures dict: {e}")))
+}
+
+/// Nearest-neighbor meta-model: picks the training record whose corpus
+/// feature vector is closest to the query (z-score normalized Euclidean).
+#[pyclass(name = "NearestNeighborMetaModel")]
+pub struct PyNearestNeighborMetaModel {
+    inner: NearestNeighborMetaModel,
+}
+
+#[pymethods]
+impl PyNearestNeighborMetaModel {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: NearestNeighborMetaModel::new(),
+        }
+    }
+
+    /// Fit on a list of training records (dicts with `corpus_id`,
+    /// `features`, `best_config`, `best_score`, `metric_name`,
+    /// `strategy`, `timestamp`).
+    fn fit(&mut self, records: &Bound<'_, PyAny>) -> PyResult<()> {
+        let recs = depythonize_records(records)?;
+        self.inner.fit(&recs);
+        Ok(())
+    }
+
+    /// Predict the PipelineConfig for a new corpus profile. Returns a
+    /// dict ready to pass to `Pipeline(categories, embeddings, config=...)`.
+    fn predict<'py>(
+        &self,
+        py: Python<'py>,
+        features: &Bound<'_, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let feats = depythonize_features(features)?;
+        let cfg = self.inner.predict(&feats);
+        pythonize::pythonize(py, &cfg)
+            .map_err(|e| PyValueError::new_err(format!("failed to serialize config: {e}")))
+    }
+
+    #[getter]
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("NearestNeighborMetaModel(records={})", self.inner.records().len())
+    }
+}
+
+/// Distance-weighted meta-model: picks the training record that
+/// maximizes `best_score × 1/(distance + epsilon)`, balancing similarity
+/// and observed quality.
+#[pyclass(name = "DistanceWeightedMetaModel")]
+pub struct PyDistanceWeightedMetaModel {
+    inner: DistanceWeightedMetaModel,
+}
+
+#[pymethods]
+impl PyDistanceWeightedMetaModel {
+    #[new]
+    #[pyo3(signature = (*, epsilon = 0.1))]
+    fn new(epsilon: f64) -> Self {
+        Self {
+            inner: DistanceWeightedMetaModel::new().with_epsilon(epsilon),
+        }
+    }
+
+    fn fit(&mut self, records: &Bound<'_, PyAny>) -> PyResult<()> {
+        let recs = depythonize_records(records)?;
+        self.inner.fit(&recs);
+        Ok(())
+    }
+
+    fn predict<'py>(
+        &self,
+        py: Python<'py>,
+        features: &Bound<'_, PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let feats = depythonize_features(features)?;
+        let cfg = self.inner.predict(&feats);
+        pythonize::pythonize(py, &cfg)
+            .map_err(|e| PyValueError::new_err(format!("failed to serialize config: {e}")))
+    }
+
+    #[getter]
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "DistanceWeightedMetaModel(records={})",
+            self.inner.records().len()
+        )
+    }
+}
+
+// ── Record store ──────────────────────────────────────────────────────
+
+/// Load all training records from the default store at
+/// `~/.sphereql/meta_records.json`. Returns an empty list if the
+/// store does not exist yet.
+#[pyfunction]
+pub fn load_default_store<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    let records = MetaTrainingRecord::load_default_store()
+        .map_err(|e| PyValueError::new_err(format!("failed to load default store: {e}")))?;
+    pythonize::pythonize(py, &records)
+        .map_err(|e| PyValueError::new_err(format!("failed to serialize records: {e}")))
+}
+
+/// Append one training record to the default store. Returns the absolute
+/// path of the store file.
+#[pyfunction]
+pub fn append_to_default_store(record: &Bound<'_, PyAny>) -> PyResult<String> {
+    let rec: MetaTrainingRecord = pythonize::depythonize(record)
+        .map_err(|e| PyValueError::new_err(format!("invalid record dict: {e}")))?;
+    let path = rec
+        .append_to_default_store()
+        .map_err(|e| PyValueError::new_err(format!("failed to append record: {e}")))?;
+    Ok(path.to_string_lossy().to_string())
 }

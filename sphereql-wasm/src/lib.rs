@@ -13,6 +13,9 @@ use sphereql_embed::pipeline::{
     SphereQLQuery,
 };
 use sphereql_embed::projection::Projection;
+use sphereql_embed::meta_model::{
+    DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
+};
 use sphereql_embed::quality_metric::{
     BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, TerritorialHealth,
 };
@@ -911,6 +914,102 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
 
     serde_json::to_string(&TuneReportOut::from_report(&report))
         .map_err(|e| JsError::new(&e.to_string()))
+}
+
+// ── MetaModel ────────────────────────────────────────────────────────
+
+fn parse_records(records_json: &str) -> Result<Vec<MetaTrainingRecord>, JsError> {
+    serde_json::from_str(records_json)
+        .map_err(|e| JsError::new(&format!("invalid training records JSON: {e}")))
+}
+
+fn parse_features(features_json: &str) -> Result<CorpusFeatures, JsError> {
+    serde_json::from_str(features_json)
+        .map_err(|e| JsError::new(&format!("invalid CorpusFeatures JSON: {e}")))
+}
+
+fn serialize_config(cfg: &PipelineConfig) -> Result<String, JsError> {
+    serde_json::to_string(cfg).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Nearest-neighbor meta-model: picks the training record whose corpus
+/// feature vector is closest to the query.
+#[wasm_bindgen(js_name = NearestNeighborMetaModel)]
+pub struct WasmNearestNeighborMetaModel {
+    inner: NearestNeighborMetaModel,
+}
+
+#[wasm_bindgen(js_class = NearestNeighborMetaModel)]
+impl WasmNearestNeighborMetaModel {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            inner: NearestNeighborMetaModel::new(),
+        }
+    }
+
+    /// Fit on a JSON array of training records.
+    pub fn fit(&mut self, records_json: &str) -> Result<(), JsError> {
+        let records = parse_records(records_json)?;
+        self.inner.fit(&records);
+        Ok(())
+    }
+
+    /// Predict the PipelineConfig for a new corpus profile. Returns
+    /// `PipelineConfig` JSON ready to pass to [`Pipeline::newWithConfig`].
+    pub fn predict(&self, features_json: &str) -> Result<String, JsError> {
+        let features = parse_features(features_json)?;
+        serialize_config(&self.inner.predict(&features))
+    }
+
+    pub fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+}
+
+impl Default for WasmNearestNeighborMetaModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Distance-weighted meta-model: balances similarity against observed
+/// quality.
+#[wasm_bindgen(js_name = DistanceWeightedMetaModel)]
+pub struct WasmDistanceWeightedMetaModel {
+    inner: DistanceWeightedMetaModel,
+}
+
+#[wasm_bindgen(js_class = DistanceWeightedMetaModel)]
+impl WasmDistanceWeightedMetaModel {
+    #[wasm_bindgen(constructor)]
+    pub fn new(epsilon: Option<f64>) -> Self {
+        let epsilon = epsilon.unwrap_or(0.1);
+        Self {
+            inner: DistanceWeightedMetaModel::new().with_epsilon(epsilon),
+        }
+    }
+
+    pub fn fit(&mut self, records_json: &str) -> Result<(), JsError> {
+        let records = parse_records(records_json)?;
+        self.inner.fit(&records);
+        Ok(())
+    }
+
+    pub fn predict(&self, features_json: &str) -> Result<String, JsError> {
+        let features = parse_features(features_json)?;
+        serialize_config(&self.inner.predict(&features))
+    }
+
+    pub fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+}
+
+impl Default for WasmDistanceWeightedMetaModel {
+    fn default() -> Self {
+        Self::new(None)
+    }
 }
 
 // ── Server-side cache (Node.js only, not available in browser WASM) ────
