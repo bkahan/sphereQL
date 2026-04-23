@@ -772,6 +772,8 @@ struct AutoTuneOpts {
     gamma: f64,
     #[serde(default)]
     base_config: Option<PipelineConfig>,
+    #[serde(default)]
+    search_space: Option<SearchSpace>,
 }
 
 fn default_metric() -> String {
@@ -907,7 +909,7 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
         opts.warmup,
         opts.gamma,
     )?;
-    let space = SearchSpace::default();
+    let space = opts.search_space.unwrap_or_default();
     let base = opts.base_config.unwrap_or_default();
 
     let (_pipeline, report) = run_auto_tune_wasm(&opts.metric, input, &space, strategy, &base)

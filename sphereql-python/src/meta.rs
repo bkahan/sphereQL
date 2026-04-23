@@ -121,6 +121,9 @@ fn resolve_strategy(
 ///     base_config: Optional dict of PipelineConfig. Non-tuned knobs
 ///         stay at these values; tuned knobs explore the search space
 ///         starting from them. Default: PipelineConfig.default().
+///     search_space: Optional dict of SearchSpace. Any field may be
+///         omitted — missing fields fall back to SearchSpace.default().
+///         Lists override the default candidate values for that knob.
 ///
 /// Returns:
 ///     Tuple `(Pipeline, report)` where `report` is a dict with
@@ -138,6 +141,7 @@ fn resolve_strategy(
     warmup = 4,
     gamma = 0.25,
     base_config = None,
+    search_space = None,
 ))]
 #[allow(clippy::too_many_arguments)]
 pub fn auto_tune<'py>(
@@ -151,6 +155,7 @@ pub fn auto_tune<'py>(
     warmup: usize,
     gamma: f64,
     base_config: Option<&Bound<'_, PyAny>>,
+    search_space: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<(Pipeline, Bound<'py, PyAny>)> {
     let embs = extract_embeddings_2d(embeddings)?;
     if categories.len() != embs.len() {
@@ -172,7 +177,12 @@ pub fn auto_tune<'py>(
 
     validate_metric(metric)?;
     let search_strategy = resolve_strategy(strategy, budget, seed, warmup, gamma)?;
-    let space = SearchSpace::default();
+    let space = match search_space {
+        Some(obj) => pythonize::depythonize::<SearchSpace>(obj).map_err(|e| {
+            PyValueError::new_err(format!("invalid search_space dict: {e}"))
+        })?,
+        None => SearchSpace::default(),
+    };
     let metric_owned = metric.to_string();
 
     let (pipeline, report) = py

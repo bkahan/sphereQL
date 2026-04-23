@@ -36,7 +36,7 @@ use crate::types::Embedding;
 /// Defaults are chosen to bracket the historical hardcoded value on each
 /// knob, giving the tuner room to move either direction without being
 /// unreasonable.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchSpace {
     /// Candidate projection families for the outer sphere. Each kind is
     /// prefit once per distinct fit-affecting hyperparameter tuple in
