@@ -14,63 +14,33 @@ use sphereql_embed::meta_model::{
 };
 use sphereql_embed::pipeline::PipelineInput;
 use sphereql_embed::quality_metric::{
-    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, TerritorialHealth,
+    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
+    TerritorialHealth,
 };
 use sphereql_embed::tuner::{SearchSpace, SearchStrategy, auto_tune as rust_auto_tune};
 
 use crate::pipeline::Pipeline;
 use crate::projection::extract_embeddings_2d;
 
-fn run_auto_tune(
-    metric: &str,
-    input: PipelineInput,
-    space: &SearchSpace,
-    strategy: SearchStrategy,
-    base: &PipelineConfig,
-) -> Result<
-    (
-        sphereql_embed::pipeline::SphereQLPipeline,
-        sphereql_embed::tuner::TuneReport,
-    ),
-    sphereql_embed::pipeline::PipelineError,
-> {
-    match metric {
-        "territorial_health" => {
-            rust_auto_tune(input, space, &TerritorialHealth, strategy, base)
-        }
-        "bridge_coherence" => rust_auto_tune(input, space, &BridgeCoherence, strategy, base),
-        "cluster_silhouette" => {
-            rust_auto_tune(input, space, &ClusterSilhouette, strategy, base)
-        }
-        "graph_modularity" => {
-            rust_auto_tune(input, space, &GraphModularity::default(), strategy, base)
-        }
-        "default_composite" => rust_auto_tune(
-            input,
-            space,
-            &CompositeMetric::default_composite(),
-            strategy,
-            base,
-        ),
-        "connectivity_composite" => rust_auto_tune(
-            input,
-            space,
-            &CompositeMetric::connectivity_composite(),
-            strategy,
-            base,
-        ),
-        _ => unreachable!("metric name validated before dispatch"),
-    }
-}
-
-fn validate_metric(name: &str) -> PyResult<()> {
+/// Turn a user-supplied metric name into a boxed `QualityMetric`.
+///
+/// One allocation per tuner run — negligible next to the actual search.
+/// The `auto_tune<M: QualityMetric + ?Sized>` bound lets us hand a
+/// `&dyn QualityMetric` straight in, so we skip the six-arm match that
+/// used to duplicate the `rust_auto_tune(…)` call site.
+///
+/// The `Send + Sync` markers on the returned trait object are required
+/// so the box can cross a `py.detach()` closure boundary — every
+/// concrete `QualityMetric` in this codebase is thread-safe, so the
+/// bound is free.
+fn resolve_metric(name: &str) -> PyResult<Box<dyn QualityMetric + Send + Sync>> {
     match name {
-        "territorial_health"
-        | "bridge_coherence"
-        | "cluster_silhouette"
-        | "graph_modularity"
-        | "default_composite"
-        | "connectivity_composite" => Ok(()),
+        "territorial_health" => Ok(Box::new(TerritorialHealth)),
+        "bridge_coherence" => Ok(Box::new(BridgeCoherence)),
+        "cluster_silhouette" => Ok(Box::new(ClusterSilhouette)),
+        "graph_modularity" => Ok(Box::new(GraphModularity::default())),
+        "default_composite" => Ok(Box::new(CompositeMetric::default_composite())),
+        "connectivity_composite" => Ok(Box::new(CompositeMetric::connectivity_composite())),
         other => Err(PyValueError::new_err(format!(
             "unknown metric {other:?}; expected one of: \
              territorial_health, bridge_coherence, cluster_silhouette, \
@@ -175,7 +145,7 @@ pub fn auto_tune<'py>(
         None => PipelineConfig::default(),
     };
 
-    validate_metric(metric)?;
+    let metric_obj = resolve_metric(metric)?;
     let search_strategy = resolve_strategy(strategy, budget, seed, warmup, gamma)?;
     let space = match search_space {
         Some(obj) => pythonize::depythonize::<SearchSpace>(obj).map_err(|e| {
@@ -183,17 +153,16 @@ pub fn auto_tune<'py>(
         })?,
         None => SearchSpace::default(),
     };
-    let metric_owned = metric.to_string();
 
     let (pipeline, report) = py
         .detach(move || {
-            run_auto_tune(
-                &metric_owned,
+            rust_auto_tune(
                 PipelineInput {
                     categories,
                     embeddings: raw,
                 },
                 &space,
+                metric_obj.as_ref(),
                 search_strategy,
                 &base,
             )
@@ -271,6 +240,7 @@ fn depythonize_features(features: &Bound<'_, PyAny>) -> PyResult<CorpusFeatures>
 /// Nearest-neighbor meta-model: picks the training record whose corpus
 /// feature vector is closest to the query (z-score normalized Euclidean).
 #[pyclass(name = "NearestNeighborMetaModel")]
+#[derive(Default)]
 pub struct PyNearestNeighborMetaModel {
     inner: NearestNeighborMetaModel,
 }
@@ -320,6 +290,7 @@ impl PyNearestNeighborMetaModel {
 /// maximizes `best_score × 1/(distance + epsilon)`, balancing similarity
 /// and observed quality.
 #[pyclass(name = "DistanceWeightedMetaModel")]
+#[derive(Default)]
 pub struct PyDistanceWeightedMetaModel {
     inner: DistanceWeightedMetaModel,
 }
@@ -395,7 +366,7 @@ pub fn append_to_default_store(record: &Bound<'_, PyAny>) -> PyResult<String> {
 ///
 /// `score` is a scalar in `[0, 1]`; the aggregator clamps it at
 /// summarize time, so stored raw values are preserved.
-#[pyclass(name = "FeedbackEvent", from_py_object)]
+#[pyclass(name = "FeedbackEvent", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyFeedbackEvent {
     pub(crate) inner: FeedbackEvent,
@@ -463,6 +434,7 @@ impl PyFeedbackEvent {
 
 /// Accumulates [`FeedbackEvent`]s and summarizes them by `corpus_id`.
 #[pyclass(name = "FeedbackAggregator")]
+#[derive(Default)]
 pub struct PyFeedbackAggregator {
     inner: FeedbackAggregator,
 }

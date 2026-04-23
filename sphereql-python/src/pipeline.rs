@@ -36,6 +36,24 @@ impl Pipeline {
     pub(crate) fn from_inner(inner: SphereQLPipeline, dim: usize) -> Self {
         Self { inner, dim }
     }
+
+    /// Reject queries whose dimensionality doesn't match the corpus.
+    ///
+    /// Every `PcaProjection`/`KernelPcaProjection`/`LaplacianEigenmap`
+    /// `project` method calls `assert_eq!` on the input length, so a
+    /// wrong-dim query turns into a `PanicException` surfaced to
+    /// Python — terrible UX. This helper catches it at the binding
+    /// boundary and returns a clean `PyValueError` instead.
+    fn check_query_dim(&self, values: &[f64]) -> PyResult<()> {
+        if values.len() != self.dim {
+            return Err(PyValueError::new_err(format!(
+                "query dimension mismatch: expected {}, got {}",
+                self.dim,
+                values.len()
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[pymethods]
@@ -181,6 +199,7 @@ impl Pipeline {
         k: usize,
     ) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
+        self.check_query_dim(&emb.values)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
@@ -215,6 +234,7 @@ impl Pipeline {
         min_cosine: f64,
     ) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
+        self.check_query_dim(&emb.values)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
@@ -252,24 +272,32 @@ impl Pipeline {
     #[pyo3(signature = (source_id, target_id, *, graph_k=10, query=None))]
     fn concept_path(
         &self,
+        py: Python<'_>,
         source_id: &str,
         target_id: &str,
         graph_k: usize,
         query: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Option<Path>> {
         let embedding = match query {
-            Some(q) => extract_embedding(q)?.values,
+            Some(q) => {
+                let e = extract_embedding(q)?.values;
+                self.check_query_dim(&e)?;
+                e
+            }
             None => vec![0.0; self.dim],
         };
         let pq = PipelineQuery { embedding };
-        match self.inner.query(
-            SphereQLQuery::ConceptPath {
-                source_id,
-                target_id,
-                graph_k,
-            },
-            &pq,
-        ) {
+        let result = py.detach(|| {
+            self.inner.query(
+                SphereQLQuery::ConceptPath {
+                    source_id,
+                    target_id,
+                    graph_k,
+                },
+                &pq,
+            )
+        });
+        match result {
             SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
             _ => Err(PyValueError::new_err("unexpected output type")),
         }
@@ -278,12 +306,13 @@ impl Pipeline {
     #[pyo3(signature = (source_id, target_id, *, graph_k=10, query=None))]
     fn concept_path_json(
         &self,
+        py: Python<'_>,
         source_id: &str,
         target_id: &str,
         graph_k: usize,
         query: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<String> {
-        let result = self.concept_path(source_id, target_id, graph_k, query)?;
+        let result = self.concept_path(py, source_id, target_id, graph_k, query)?;
         match result {
             Some(p) => {
                 let steps: Vec<_> = p
@@ -303,26 +332,35 @@ impl Pipeline {
                 }))
                 .map_err(|e| PyValueError::new_err(e.to_string()))
             }
-            None => Ok("null".to_string()),
+            // `null` literal goes through serde to avoid a magic string if
+            // the JSON shape ever changes.
+            None => serde_json::to_string(&serde_json::Value::Null)
+                .map_err(|e| PyValueError::new_err(e.to_string())),
         }
     }
 
     #[pyo3(signature = (*, k=None, max_k=10, query=None))]
     fn detect_globs(
         &self,
+        py: Python<'_>,
         k: Option<usize>,
         max_k: usize,
         query: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Vec<Glob>> {
         let embedding = match query {
-            Some(q) => extract_embedding(q)?.values,
+            Some(q) => {
+                let e = extract_embedding(q)?.values;
+                self.check_query_dim(&e)?;
+                e
+            }
             None => vec![0.0; self.dim],
         };
         let pq = PipelineQuery { embedding };
-        match self
-            .inner
-            .query(SphereQLQuery::DetectGlobs { k, max_k }, &pq)
-        {
+        let result = py.detach(|| {
+            self.inner
+                .query(SphereQLQuery::DetectGlobs { k, max_k }, &pq)
+        });
+        match result {
             SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
         }
@@ -331,11 +369,12 @@ impl Pipeline {
     #[pyo3(signature = (*, k=None, max_k=10, query=None))]
     fn detect_globs_json(
         &self,
+        py: Python<'_>,
         k: Option<usize>,
         max_k: usize,
         query: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<String> {
-        let results = self.detect_globs(k, max_k, query)?;
+        let results = self.detect_globs(py, k, max_k, query)?;
         let out: Vec<_> = results
             .iter()
             .map(|g| {
@@ -352,17 +391,20 @@ impl Pipeline {
     #[pyo3(signature = (query, *, neighborhood_k=10))]
     fn local_manifold(
         &self,
+        py: Python<'_>,
         query: &Bound<'_, PyAny>,
         neighborhood_k: usize,
     ) -> PyResult<Manifold> {
         let emb = extract_embedding(query)?;
+        self.check_query_dim(&emb.values)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        match self
-            .inner
-            .query(SphereQLQuery::LocalManifold { neighborhood_k }, &pq)
-        {
+        let result = py.detach(|| {
+            self.inner
+                .query(SphereQLQuery::LocalManifold { neighborhood_k }, &pq)
+        });
+        match result {
             SphereQLOutput::LocalManifold(m) => Ok(Manifold::from(&m)),
             _ => Err(PyValueError::new_err("unexpected output type")),
         }
@@ -371,10 +413,11 @@ impl Pipeline {
     #[pyo3(signature = (query, *, neighborhood_k=10))]
     fn local_manifold_json(
         &self,
+        py: Python<'_>,
         query: &Bound<'_, PyAny>,
         neighborhood_k: usize,
     ) -> PyResult<String> {
-        let m = self.local_manifold(query, neighborhood_k)?;
+        let m = self.local_manifold(py, query, neighborhood_k)?;
         serde_json::to_string(&serde_json::json!({
             "centroid": m.centroid,
             "normal": m.normal,
@@ -437,19 +480,23 @@ impl Pipeline {
     #[pyo3(signature = (source_category, target_category))]
     fn category_concept_path(
         &self,
+        py: Python<'_>,
         source_category: &str,
         target_category: &str,
     ) -> PyResult<Option<PyCategoryPath>> {
         let pq = PipelineQuery {
             embedding: vec![0.0; self.dim],
         };
-        match self.inner.query(
-            SphereQLQuery::CategoryConceptPath {
-                source_category,
-                target_category,
-            },
-            &pq,
-        ) {
+        let result = py.detach(|| {
+            self.inner.query(
+                SphereQLQuery::CategoryConceptPath {
+                    source_category,
+                    target_category,
+                },
+                &pq,
+            )
+        });
+        match result {
             SphereQLOutput::CategoryConceptPath(path) => {
                 Ok(path.as_ref().map(PyCategoryPath::from))
             }
@@ -458,14 +505,20 @@ impl Pipeline {
     }
 
     #[pyo3(signature = (category, k=5))]
-    fn category_neighbors(&self, category: &str, k: usize) -> PyResult<Vec<PyCategorySummary>> {
+    fn category_neighbors(
+        &self,
+        py: Python<'_>,
+        category: &str,
+        k: usize,
+    ) -> PyResult<Vec<PyCategorySummary>> {
         let pq = PipelineQuery {
             embedding: vec![0.0; self.dim],
         };
-        match self
-            .inner
-            .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
-        {
+        let result = py.detach(|| {
+            self.inner
+                .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
+        });
+        match result {
             SphereQLOutput::CategoryNeighbors(summaries) => {
                 Ok(summaries.iter().map(PyCategorySummary::from).collect())
             }
@@ -476,18 +529,21 @@ impl Pipeline {
     #[pyo3(signature = (category, query, k=10))]
     fn drill_down(
         &self,
+        py: Python<'_>,
         category: &str,
         query: &Bound<'_, PyAny>,
         k: usize,
     ) -> PyResult<Vec<PyDrillDown>> {
         let emb = extract_embedding(query)?;
+        self.check_query_dim(&emb.values)?;
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        match self
-            .inner
-            .query(SphereQLQuery::DrillDown { category, k }, &pq)
-        {
+        let result = py.detach(|| {
+            self.inner
+                .query(SphereQLQuery::DrillDown { category, k }, &pq)
+        });
+        match result {
             SphereQLOutput::DrillDown(results) => {
                 Ok(results.iter().map(PyDrillDown::from).collect())
             }
@@ -509,6 +565,7 @@ impl Pipeline {
         k: usize,
     ) -> PyResult<Vec<Nearest>> {
         let emb = extract_embedding(query)?;
+        self.check_query_dim(&emb.values)?;
         let embedding = Embedding::new(emb.values);
         let results = py.detach(|| self.inner.hierarchical_nearest(&embedding, k));
         Ok(results.iter().map(Nearest::from).collect())
@@ -533,11 +590,15 @@ impl Pipeline {
             .collect()
     }
 
-    fn category_stats(&self) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
+    fn category_stats(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
         let pq = PipelineQuery {
             embedding: vec![0.0; self.dim],
         };
-        match self.inner.query(SphereQLQuery::CategoryStats, &pq) {
+        let result = py.detach(|| self.inner.query(SphereQLQuery::CategoryStats, &pq));
+        match result {
             SphereQLOutput::CategoryStats {
                 summaries,
                 inner_sphere_reports,

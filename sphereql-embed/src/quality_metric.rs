@@ -24,7 +24,12 @@ use crate::pipeline::SphereQLPipeline;
 /// in `[0, 1]`. Higher = better. Metrics must be deterministic given a
 /// pipeline (no internal RNG), so auto-tuners can compare scores across
 /// configurations without noise.
-pub trait QualityMetric {
+///
+/// `Send + Sync` are supertrait bounds so `Box<dyn QualityMetric>` can
+/// cross a thread boundary — the Python binding's `py.detach()` closure
+/// needs this, and every concrete metric in this crate is already
+/// thread-safe.
+pub trait QualityMetric: Send + Sync {
     /// Short identifier for logs and tuner reports.
     fn name(&self) -> &str;
     /// Evaluate the pipeline. Must return a value in `[0, 1]`.

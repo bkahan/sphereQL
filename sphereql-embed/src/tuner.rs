@@ -347,19 +347,18 @@ impl TuneReport {
 /// thresholds, inner-sphere gates, domain-group counts, etc.) vary per
 /// trial — this keeps per-trial cost dominated by spatial quality
 /// sampling and graph construction rather than projection fitting.
-pub fn auto_tune<M: QualityMetric>(
+pub fn auto_tune<M: QualityMetric + ?Sized>(
     input: PipelineInput,
     space: &SearchSpace,
     metric: &M,
     strategy: SearchStrategy,
     base_config: &PipelineConfig,
 ) -> Result<(SphereQLPipeline, TuneReport), PipelineError> {
-    let embeddings: Vec<Embedding> = input
-        .embeddings
-        .iter()
-        .map(|v| Embedding::new(v.clone()))
-        .collect();
+    // `PipelineInput` is owned — move the Vec<f64>s straight into the
+    // Embedding wrappers instead of cloning each row.
     let categories = input.categories;
+    let embeddings: Vec<Embedding> =
+        input.embeddings.into_iter().map(Embedding::new).collect();
 
     let mut prefit: HashMap<ProjectionFitKey, ConfiguredProjection> = HashMap::new();
     let mut trials: Vec<TrialRecord> = Vec::new();
@@ -444,7 +443,10 @@ pub fn auto_tune<M: QualityMetric>(
     }
 
     if trials.is_empty() {
-        return Err(PipelineError::TooFewEmbeddings(embeddings.len()));
+        // Every candidate config was rejected downstream. Surface the
+        // real failure list instead of the misleading `TooFewEmbeddings`
+        // roll-up we used to return here.
+        return Err(PipelineError::AllTrialsFailed { failures });
     }
 
     // Pick the winning trial.

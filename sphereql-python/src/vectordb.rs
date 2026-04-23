@@ -137,10 +137,13 @@ macro_rules! impl_vector_bridge_methods {
             /// pipeline using PCA with the bridge's default radial
             /// strategy and volumetric settings.
             #[pyo3(signature = (*, category_key="category"))]
-            fn build_pipeline(&mut self, category_key: &str) -> PyResult<()> {
+            fn build_pipeline(
+                &mut self,
+                py: Python<'_>,
+                category_key: &str,
+            ) -> PyResult<()> {
                 let extractor = category_extractor(category_key);
-                self.rt
-                    .block_on(self.bridge.build_pipeline(extractor))
+                py.detach(|| self.rt.block_on(self.bridge.build_pipeline(extractor)))
                     .map_err(vstore_err)?;
                 Ok(())
             }
@@ -151,25 +154,33 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (config, *, category_key="category"))]
             fn build_pipeline_with_config(
                 &mut self,
+                py: Python<'_>,
                 config: &Bound<'_, PyAny>,
                 category_key: &str,
             ) -> PyResult<()> {
                 let cfg: PipelineConfig = pythonize::depythonize(config)
                     .map_err(|e| PyValueError::new_err(format!("invalid config dict: {e}")))?;
                 let extractor = category_extractor(category_key);
-                self.rt
-                    .block_on(self.bridge.build_pipeline_with_config(extractor, cfg))
-                    .map_err(vstore_err)?;
+                py.detach(|| {
+                    self.rt
+                        .block_on(self.bridge.build_pipeline_with_config(extractor, cfg))
+                })
+                .map_err(vstore_err)?;
                 Ok(())
             }
 
             #[pyo3(signature = (embedding, *, k=5))]
-            fn query_nearest(&self, embedding: Vec<f64>, k: usize) -> PyResult<Vec<Nearest>> {
-                match self
-                    .bridge
-                    .query(SphereQLQuery::Nearest { k }, &embedding)
-                    .map_err(vstore_err)?
-                {
+            fn query_nearest(
+                &self,
+                py: Python<'_>,
+                embedding: Vec<f64>,
+                k: usize,
+            ) -> PyResult<Vec<Nearest>> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| self.bridge.query(SphereQLQuery::Nearest { k }, &embedding))
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::Nearest(items) => {
                         Ok(items.iter().map(Nearest::from).collect())
                     }
@@ -180,14 +191,18 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (embedding, *, min_cosine=0.8))]
             fn query_similar(
                 &self,
+                py: Python<'_>,
                 embedding: Vec<f64>,
                 min_cosine: f64,
             ) -> PyResult<Vec<Nearest>> {
-                match self
-                    .bridge
-                    .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
-                    .map_err(vstore_err)?
-                {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::KNearest(items) => {
                         Ok(items.iter().map(Nearest::from).collect())
                     }
@@ -198,23 +213,26 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (source_id, target_id, *, graph_k=10, embedding))]
             fn query_concept_path(
                 &self,
+                py: Python<'_>,
                 source_id: &str,
                 target_id: &str,
                 graph_k: usize,
                 embedding: Vec<f64>,
             ) -> PyResult<Option<Path>> {
-                match self
-                    .bridge
-                    .query(
-                        SphereQLQuery::ConceptPath {
-                            source_id,
-                            target_id,
-                            graph_k,
-                        },
-                        &embedding,
-                    )
-                    .map_err(vstore_err)?
-                {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge.query(
+                            SphereQLQuery::ConceptPath {
+                                source_id,
+                                target_id,
+                                graph_k,
+                            },
+                            &embedding,
+                        )
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
                     _ => Err(PyRuntimeError::new_err("unexpected output type")),
                 }
@@ -223,15 +241,19 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (embedding, *, k=None, max_k=10))]
             fn query_detect_globs(
                 &self,
+                py: Python<'_>,
                 embedding: Vec<f64>,
                 k: Option<usize>,
                 max_k: usize,
             ) -> PyResult<Vec<Glob>> {
-                match self
-                    .bridge
-                    .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
-                    .map_err(vstore_err)?
-                {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
                     _ => Err(PyRuntimeError::new_err("unexpected output type")),
                 }
@@ -242,14 +264,20 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (embedding, *, neighborhood_k=10))]
             fn query_local_manifold(
                 &self,
+                py: Python<'_>,
                 embedding: Vec<f64>,
                 neighborhood_k: usize,
             ) -> PyResult<Manifold> {
-                match self
-                    .bridge
-                    .query(SphereQLQuery::LocalManifold { neighborhood_k }, &embedding)
-                    .map_err(vstore_err)?
-                {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge.query(
+                            SphereQLQuery::LocalManifold { neighborhood_k },
+                            &embedding,
+                        )
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::LocalManifold(m) => Ok(Manifold::from(&m)),
                     _ => Err(PyRuntimeError::new_err("unexpected output type")),
                 }
@@ -261,22 +289,23 @@ macro_rules! impl_vector_bridge_methods {
             /// the category graph.
             fn category_concept_path(
                 &self,
+                py: Python<'_>,
                 source_category: &str,
                 target_category: &str,
             ) -> PyResult<Option<PyCategoryPath>> {
-                let dim = self.projection_dim();
-                let embedding = dummy_query_vec(dim);
-                match self
-                    .bridge
-                    .query(
-                        SphereQLQuery::CategoryConceptPath {
-                            source_category,
-                            target_category,
-                        },
-                        &embedding,
-                    )
-                    .map_err(vstore_err)?
-                {
+                let embedding = dummy_query_vec(self.projection_dim());
+                let result = py
+                    .detach(|| {
+                        self.bridge.query(
+                            SphereQLQuery::CategoryConceptPath {
+                                source_category,
+                                target_category,
+                            },
+                            &embedding,
+                        )
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::CategoryConceptPath(path) => {
                         Ok(path.as_ref().map(PyCategoryPath::from))
                     }
@@ -288,16 +317,18 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (category, *, k=5))]
             fn category_neighbors(
                 &self,
+                py: Python<'_>,
                 category: &str,
                 k: usize,
             ) -> PyResult<Vec<PyCategorySummary>> {
-                let dim = self.projection_dim();
-                let embedding = dummy_query_vec(dim);
-                match self
-                    .bridge
-                    .query(SphereQLQuery::CategoryNeighbors { category, k }, &embedding)
-                    .map_err(vstore_err)?
-                {
+                let embedding = dummy_query_vec(self.projection_dim());
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::CategoryNeighbors { category, k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::CategoryNeighbors(summaries) => {
                         Ok(summaries.iter().map(PyCategorySummary::from).collect())
                     }
@@ -310,15 +341,19 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (category, embedding, *, k=10))]
             fn drill_down(
                 &self,
+                py: Python<'_>,
                 category: &str,
                 embedding: Vec<f64>,
                 k: usize,
             ) -> PyResult<Vec<PyDrillDown>> {
-                match self
-                    .bridge
-                    .query(SphereQLQuery::DrillDown { category, k }, &embedding)
-                    .map_err(vstore_err)?
-                {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::DrillDown { category, k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::DrillDown(results) => {
                         Ok(results.iter().map(PyDrillDown::from).collect())
                     }
@@ -329,14 +364,16 @@ macro_rules! impl_vector_bridge_methods {
             /// Per-category summaries plus inner-sphere reports.
             fn category_stats(
                 &self,
+                py: Python<'_>,
             ) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
-                let dim = self.projection_dim();
-                let embedding = dummy_query_vec(dim);
-                match self
-                    .bridge
-                    .query(SphereQLQuery::CategoryStats, &embedding)
-                    .map_err(vstore_err)?
-                {
+                let embedding = dummy_query_vec(self.projection_dim());
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::CategoryStats, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
                     SphereQLOutput::CategoryStats {
                         summaries,
                         inner_sphere_reports,
@@ -356,19 +393,18 @@ macro_rules! impl_vector_bridge_methods {
             #[pyo3(signature = (embedding, *, k=5))]
             fn hierarchical_nearest(
                 &self,
+                py: Python<'_>,
                 embedding: Vec<f64>,
                 k: usize,
             ) -> PyResult<Vec<Nearest>> {
+                self.check_query_dim(&embedding)?;
                 let pipeline = self
                     .bridge
                     .pipeline()
                     .ok_or_else(|| PyRuntimeError::new_err("pipeline not built"))?;
                 let emb = Embedding::new(embedding);
-                Ok(pipeline
-                    .hierarchical_nearest(&emb, k)
-                    .iter()
-                    .map(Nearest::from)
-                    .collect())
+                let results = py.detach(|| pipeline.hierarchical_nearest(&emb, k));
+                Ok(results.iter().map(Nearest::from).collect())
             }
 
             /// Coarse domain groups detected from category geometry.
@@ -407,9 +443,16 @@ macro_rules! impl_vector_bridge_methods {
                 final_k: usize,
                 recall_k: usize,
             ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-                let results = self
-                    .rt
-                    .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
+                self.check_query_dim(&embedding)?;
+                // `hybrid_search` is the hot path for Qdrant/Pinecone
+                // bridges — it does ANN recall + cosine re-rank, both
+                // over the network/CPU. Detach so other Python threads
+                // aren't blocked for the whole round-trip.
+                let results = py
+                    .detach(|| {
+                        self.rt
+                            .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
+                    })
                     .map_err(vstore_err)?;
                 results
                     .iter()
@@ -417,9 +460,8 @@ macro_rules! impl_vector_bridge_methods {
                     .collect()
             }
 
-            fn sync_projections(&self) -> PyResult<usize> {
-                self.rt
-                    .block_on(self.bridge.sync_projections())
+            fn sync_projections(&self, py: Python<'_>) -> PyResult<usize> {
+                py.detach(|| self.rt.block_on(self.bridge.sync_projections()))
                     .map_err(vstore_err)
             }
 
@@ -458,6 +500,22 @@ macro_rules! impl_vector_bridge_methods {
                 self.bridge
                     .pipeline()
                     .map(|p| p.projection().dimensionality())
+            }
+
+            /// Reject query embeddings whose length doesn't match the
+            /// fitted projection's dimensionality. Only checks when the
+            /// pipeline is built; if it isn't, the downstream query
+            /// surfaces a `PipelineNotBuilt` error instead.
+            fn check_query_dim(&self, values: &[f64]) -> PyResult<()> {
+                if let Some(expected) = self.projection_dim() {
+                    if values.len() != expected {
+                        return Err(PyValueError::new_err(format!(
+                            "query dimension mismatch: expected {expected}, got {}",
+                            values.len()
+                        )));
+                    }
+                }
+                Ok(())
             }
         }
     };

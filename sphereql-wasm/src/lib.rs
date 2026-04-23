@@ -18,7 +18,8 @@ use sphereql_embed::meta_model::{
     DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
 };
 use sphereql_embed::quality_metric::{
-    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, TerritorialHealth,
+    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
+    TerritorialHealth,
 };
 use sphereql_embed::tuner::{SearchSpace, SearchStrategy, TuneReport, auto_tune as rust_auto_tune};
 
@@ -837,38 +838,24 @@ fn resolve_strategy_wasm(
     }
 }
 
-fn run_auto_tune_wasm(
-    metric: &str,
-    input: PipelineInput,
-    space: &SearchSpace,
-    strategy: SearchStrategy,
-    base: &PipelineConfig,
-) -> Result<
-    (SphereQLPipeline, TuneReport),
-    sphereql_embed::pipeline::PipelineError,
-> {
-    match metric {
-        "territorial_health" => rust_auto_tune(input, space, &TerritorialHealth, strategy, base),
-        "bridge_coherence" => rust_auto_tune(input, space, &BridgeCoherence, strategy, base),
-        "cluster_silhouette" => rust_auto_tune(input, space, &ClusterSilhouette, strategy, base),
-        "graph_modularity" => {
-            rust_auto_tune(input, space, &GraphModularity::default(), strategy, base)
-        }
-        "default_composite" => rust_auto_tune(
-            input,
-            space,
-            &CompositeMetric::default_composite(),
-            strategy,
-            base,
-        ),
-        "connectivity_composite" => rust_auto_tune(
-            input,
-            space,
-            &CompositeMetric::connectivity_composite(),
-            strategy,
-            base,
-        ),
-        _ => unreachable!("metric name validated before dispatch"),
+/// Resolve a metric name into a boxed `QualityMetric` trait object.
+///
+/// Mirrors `sphereql-python/src/meta.rs::resolve_metric` — `auto_tune`
+/// now accepts `&dyn QualityMetric` (via a `?Sized` bound), so both
+/// bindings can share a single match-then-hand-off form.
+fn resolve_metric(name: &str) -> Result<Box<dyn QualityMetric>, JsError> {
+    match name {
+        "territorial_health" => Ok(Box::new(TerritorialHealth)),
+        "bridge_coherence" => Ok(Box::new(BridgeCoherence)),
+        "cluster_silhouette" => Ok(Box::new(ClusterSilhouette)),
+        "graph_modularity" => Ok(Box::new(GraphModularity::default())),
+        "default_composite" => Ok(Box::new(CompositeMetric::default_composite())),
+        "connectivity_composite" => Ok(Box::new(CompositeMetric::connectivity_composite())),
+        other => Err(JsError::new(&format!(
+            "unknown metric {other:?}; expected one of: \
+             territorial_health, bridge_coherence, cluster_silhouette, \
+             graph_modularity, default_composite, connectivity_composite"
+        ))),
     }
 }
 
@@ -886,22 +873,7 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
     let opts: AutoTuneOpts = serde_json::from_str(opts_json)
         .map_err(|e| JsError::new(&format!("invalid options JSON: {e}")))?;
 
-    match opts.metric.as_str() {
-        "territorial_health"
-        | "bridge_coherence"
-        | "cluster_silhouette"
-        | "graph_modularity"
-        | "default_composite"
-        | "connectivity_composite" => {}
-        other => {
-            return Err(JsError::new(&format!(
-                "unknown metric {other:?}; expected one of: \
-                 territorial_health, bridge_coherence, cluster_silhouette, \
-                 graph_modularity, default_composite, connectivity_composite"
-            )));
-        }
-    }
-
+    let metric = resolve_metric(&opts.metric)?;
     let strategy = resolve_strategy_wasm(
         &opts.strategy,
         opts.budget,
@@ -912,8 +884,9 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
     let space = opts.search_space.unwrap_or_default();
     let base = opts.base_config.unwrap_or_default();
 
-    let (_pipeline, report) = run_auto_tune_wasm(&opts.metric, input, &space, strategy, &base)
-        .map_err(|e| JsError::new(&e.to_string()))?;
+    let (_pipeline, report) =
+        rust_auto_tune(input, &space, metric.as_ref(), strategy, &base)
+            .map_err(|e| JsError::new(&e.to_string()))?;
 
     serde_json::to_string(&TuneReportOut::from_report(&report))
         .map_err(|e| JsError::new(&e.to_string()))

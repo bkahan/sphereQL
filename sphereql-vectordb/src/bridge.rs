@@ -85,7 +85,16 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         &mut self,
         category_fn: impl Fn(&VectorRecord) -> String,
     ) -> Result<&SphereQLPipeline, VectorStoreError> {
-        let (store_ids, categories, embeddings, embs) = self.prepare_records(category_fn).await?;
+        let (store_ids, categories, embeddings) = self.prepare_records(category_fn).await?;
+
+        // `PcaProjection::fit` + `with_projection` take `&[Embedding]` and
+        // `Vec<Embedding>` respectively, so this path needs one
+        // `Vec<Embedding>`. `From<&[f64]>` clones the slice into the
+        // `Embedding`; this is one allocation per row.
+        let embs: Vec<Embedding> = embeddings
+            .iter()
+            .map(|v| Embedding::from(v.as_slice()))
+            .collect();
 
         let pca = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
             .with_volumetric(self.config.volumetric);
@@ -114,9 +123,14 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         category_fn: impl Fn(&VectorRecord) -> String,
         config: PipelineConfig,
     ) -> Result<&SphereQLPipeline, VectorStoreError> {
-        let (store_ids, categories, embeddings, _embs) =
-            self.prepare_records(category_fn).await?;
+        let (store_ids, categories, embeddings) = self.prepare_records(category_fn).await?;
 
+        // `SphereQLPipeline::new_with_config` takes ownership of a
+        // `PipelineInput` and re-wraps its `Vec<Vec<f64>>` into
+        // `Embedding`s via `From<Vec<f64>>` (a move). We still keep a
+        // cached copy of the embeddings for `sync_projections` to
+        // replay later, so we clone once here rather than letting the
+        // pipeline builder construct and throw away temporaries.
         let pipeline = SphereQLPipeline::new_with_config(
             PipelineInput {
                 categories,
@@ -134,13 +148,17 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         Ok(self.pipeline.as_ref().unwrap())
     }
 
-    /// Fetch, validate, and split records into the tuple the two build
-    /// paths need. Guarantees: `n >= 3`, all vectors same dim, no
-    /// near-zero magnitudes.
+    /// Fetch, validate, and split records into the tuple both build paths
+    /// need. Guarantees: `n >= 3`, all vectors same dim, no near-zero
+    /// magnitudes.
+    ///
+    /// Previously also eagerly built a `Vec<Embedding>` that
+    /// `build_pipeline_with_config` then discarded. Each build path now
+    /// constructs its own `Embedding`s only when it actually needs them.
     async fn prepare_records(
         &self,
         category_fn: impl Fn(&VectorRecord) -> String,
-    ) -> Result<(Vec<String>, Vec<String>, Vec<Vec<f64>>, Vec<Embedding>), VectorStoreError> {
+    ) -> Result<(Vec<String>, Vec<String>, Vec<Vec<f64>>), VectorStoreError> {
         let records = self.fetch_all().await?;
         let n = records.len();
 
@@ -171,12 +189,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let embeddings: Vec<Vec<f64>> = records.iter().map(|r| r.vector.clone()).collect();
         let store_ids: Vec<String> = records.iter().map(|r| r.id.clone()).collect();
 
-        let embs: Vec<Embedding> = embeddings
-            .iter()
-            .map(|v| Embedding::from(v.as_slice()))
-            .collect();
-
-        Ok((store_ids, categories, embeddings, embs))
+        Ok((store_ids, categories, embeddings))
     }
 
     /// Push sphereQL spherical coordinates back to the store as payload metadata.

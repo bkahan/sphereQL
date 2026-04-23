@@ -30,6 +30,16 @@ pub enum PipelineError {
     /// Fewer than 3 embeddings — not enough to fit a 3D projection.
     #[error("need at least 3 embeddings, got {0}")]
     TooFewEmbeddings(usize),
+    /// Every [`auto_tune`](crate::tuner::auto_tune) trial failed a
+    /// downstream validator (e.g. every candidate config was rejected
+    /// by the pipeline builder). The attached `failures` list carries
+    /// the `(config, error)` pairs the tuner observed — callers should
+    /// inspect them to find the real cause; the outer error is just a
+    /// roll-up saying "none of the trials produced a scorable pipeline".
+    #[error("auto_tune produced no successful trials ({} failures)", failures.len())]
+    AllTrialsFailed {
+        failures: Vec<(crate::config::PipelineConfig, String)>,
+    },
 }
 
 // ── Input contract ──────────────────────────────────────────────────────────
