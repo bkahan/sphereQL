@@ -69,6 +69,8 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(meta::append_to_default_store, m)?)?;
         m.add_class::<meta::PyNearestNeighborMetaModel>()?;
         m.add_class::<meta::PyDistanceWeightedMetaModel>()?;
+        m.add_class::<meta::PyFeedbackEvent>()?;
+        m.add_class::<meta::PyFeedbackAggregator>()?;
     }
 
     #[cfg(feature = "vectordb")]

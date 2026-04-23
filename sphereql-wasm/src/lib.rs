@@ -13,6 +13,7 @@ use sphereql_embed::pipeline::{
     SphereQLQuery,
 };
 use sphereql_embed::projection::Projection;
+use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent};
 use sphereql_embed::meta_model::{
     DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
 };
@@ -1009,6 +1010,89 @@ impl WasmDistanceWeightedMetaModel {
 impl Default for WasmDistanceWeightedMetaModel {
     fn default() -> Self {
         Self::new(None)
+    }
+}
+
+// ── Feedback primitives ─────────────────────────────────────────────
+
+/// Accumulates [`FeedbackEvent`]s and summarizes them by `corpus_id`.
+///
+/// Events are passed as JSON objects matching [`FeedbackEvent`]'s serde
+/// shape; summaries are returned the same way. Browser WASM has no
+/// filesystem — persistence is the caller's responsibility (e.g.
+/// localStorage, IndexedDB, or shipping JSON back to a server).
+#[wasm_bindgen(js_name = FeedbackAggregator)]
+pub struct WasmFeedbackAggregator {
+    inner: FeedbackAggregator,
+}
+
+#[wasm_bindgen(js_class = FeedbackAggregator)]
+impl WasmFeedbackAggregator {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            inner: FeedbackAggregator::new(),
+        }
+    }
+
+    /// Load from a JSON array of events. `"[]"` yields an empty aggregator.
+    #[wasm_bindgen(js_name = fromJson)]
+    pub fn from_json(events_json: &str) -> Result<WasmFeedbackAggregator, JsError> {
+        let events: Vec<FeedbackEvent> = serde_json::from_str(events_json)
+            .map_err(|e| JsError::new(&format!("invalid events JSON: {e}")))?;
+        let mut inner = FeedbackAggregator::new();
+        for e in events {
+            inner.record(e);
+        }
+        Ok(Self { inner })
+    }
+
+    /// Serialize the full event log to JSON.
+    #[wasm_bindgen(js_name = toJson)]
+    pub fn to_json(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.inner).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Record one event (JSON with `corpus_id`, `query_id`, `score`,
+    /// `timestamp`).
+    pub fn record(&mut self, event_json: &str) -> Result<(), JsError> {
+        let event: FeedbackEvent = serde_json::from_str(event_json)
+            .map_err(|e| JsError::new(&format!("invalid event JSON: {e}")))?;
+        self.inner.record(event);
+        Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[wasm_bindgen(js_name = isEmpty)]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[wasm_bindgen(js_name = corpusIds)]
+    pub fn corpus_ids(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.inner.corpus_ids()).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Summarize one corpus. Returns `null` if no events exist.
+    pub fn summarize(&self, corpus_id: &str) -> Result<String, JsError> {
+        serde_json::to_string(&self.inner.summarize(corpus_id))
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Summarize all corpora as an array of summaries.
+    #[wasm_bindgen(js_name = summarizeAll)]
+    pub fn summarize_all(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.inner.summarize_all())
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+}
+
+impl Default for WasmFeedbackAggregator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

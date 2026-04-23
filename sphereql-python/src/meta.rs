@@ -8,6 +8,7 @@ use pyo3::types::PyDict;
 
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
+use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent};
 use sphereql_embed::meta_model::{
     DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
 };
@@ -376,4 +377,159 @@ pub fn append_to_default_store(record: &Bound<'_, PyAny>) -> PyResult<String> {
         .append_to_default_store()
         .map_err(|e| PyValueError::new_err(format!("failed to append record: {e}")))?;
     Ok(path.to_string_lossy().to_string())
+}
+
+// ── Feedback primitives (L3 metalearning) ────────────────────────────
+
+/// One user-supplied satisfaction signal attached to a specific query.
+///
+/// `score` is a scalar in `[0, 1]`; the aggregator clamps it at
+/// summarize time, so stored raw values are preserved.
+#[pyclass(name = "FeedbackEvent", from_py_object)]
+#[derive(Clone)]
+pub struct PyFeedbackEvent {
+    pub(crate) inner: FeedbackEvent,
+}
+
+#[pymethods]
+impl PyFeedbackEvent {
+    #[new]
+    #[pyo3(signature = (corpus_id, query_id, score, timestamp=None))]
+    fn new(corpus_id: String, query_id: String, score: f64, timestamp: Option<String>) -> Self {
+        let event = match timestamp {
+            Some(ts) => FeedbackEvent {
+                corpus_id,
+                query_id,
+                score,
+                timestamp: ts,
+            },
+            None => FeedbackEvent::now(corpus_id, query_id, score),
+        };
+        Self { inner: event }
+    }
+
+    #[getter]
+    fn corpus_id(&self) -> &str {
+        &self.inner.corpus_id
+    }
+
+    #[getter]
+    fn query_id(&self) -> &str {
+        &self.inner.query_id
+    }
+
+    #[getter]
+    fn score(&self) -> f64 {
+        self.inner.score
+    }
+
+    #[getter]
+    fn timestamp(&self) -> &str {
+        &self.inner.timestamp
+    }
+
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        pythonize::pythonize(py, &self.inner)
+            .map_err(|e| PyValueError::new_err(format!("failed to serialize event: {e}")))
+    }
+
+    /// Append this event to `~/.sphereql/feedback_events.json`.
+    /// Returns the absolute path of the store file.
+    fn append_to_default_store(&self) -> PyResult<String> {
+        let path = self
+            .inner
+            .append_to_default_store()
+            .map_err(|e| PyValueError::new_err(format!("failed to append event: {e}")))?;
+        Ok(path.to_string_lossy().to_string())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "FeedbackEvent(corpus_id={:?}, query_id={:?}, score={:.4})",
+            self.inner.corpus_id, self.inner.query_id, self.inner.score
+        )
+    }
+}
+
+/// Accumulates [`FeedbackEvent`]s and summarizes them by `corpus_id`.
+#[pyclass(name = "FeedbackAggregator")]
+pub struct PyFeedbackAggregator {
+    inner: FeedbackAggregator,
+}
+
+#[pymethods]
+impl PyFeedbackAggregator {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: FeedbackAggregator::new(),
+        }
+    }
+
+    /// Load an aggregator from a JSON file, or return an empty one if
+    /// the file does not exist.
+    #[staticmethod]
+    fn load(path: &str) -> PyResult<Self> {
+        let inner = FeedbackAggregator::load(path)
+            .map_err(|e| PyValueError::new_err(format!("failed to load: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// Load the default store at `~/.sphereql/feedback_events.json`.
+    #[staticmethod]
+    fn load_default() -> PyResult<Self> {
+        let inner = FeedbackAggregator::load_default_store()
+            .map_err(|e| PyValueError::new_err(format!("failed to load default store: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    fn save(&self, path: &str) -> PyResult<()> {
+        self.inner
+            .save(path)
+            .map_err(|e| PyValueError::new_err(format!("failed to save: {e}")))
+    }
+
+    fn record(&mut self, event: &PyFeedbackEvent) {
+        self.inner.record(event.inner.clone());
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __bool__(&self) -> bool {
+        !self.inner.is_empty()
+    }
+
+    fn corpus_ids(&self) -> Vec<String> {
+        self.inner.corpus_ids()
+    }
+
+    /// Summarize feedback for one corpus. Returns None if no events.
+    fn summarize<'py>(
+        &self,
+        py: Python<'py>,
+        corpus_id: &str,
+    ) -> PyResult<Option<Bound<'py, PyAny>>> {
+        match self.inner.summarize(corpus_id) {
+            Some(s) => {
+                let d = pythonize::pythonize(py, &s).map_err(|e| {
+                    PyValueError::new_err(format!("failed to serialize summary: {e}"))
+                })?;
+                Ok(Some(d))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Summarize every corpus that has events.
+    fn summarize_all<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let all = self.inner.summarize_all();
+        pythonize::pythonize(py, &all)
+            .map_err(|e| PyValueError::new_err(format!("failed to serialize summaries: {e}")))
+    }
+
+    fn __repr__(&self) -> String {
+        format!("FeedbackAggregator(events={})", self.inner.len())
+    }
 }
