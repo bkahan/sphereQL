@@ -3,6 +3,7 @@ use wasm_bindgen::prelude::*;
 use sphereql_embed::category::{
     BridgeItem, CategoryPath, CategoryPathStep, CategorySummary, DrillDownResult, InnerSphereReport,
 };
+use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::pipeline::{
     GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
     SphereQLQuery,
@@ -32,57 +33,40 @@ impl Pipeline {
     /// All embedding sub-arrays must have the same length (>= 3).
     #[wasm_bindgen(constructor)]
     pub fn new(input_json: &str) -> Result<Pipeline, JsError> {
-        let parsed: serde_json::Value =
-            serde_json::from_str(input_json).map_err(|e| JsError::new(&e.to_string()))?;
-
-        let categories: Vec<String> = parsed["categories"]
-            .as_array()
-            .ok_or_else(|| JsError::new("missing 'categories' array"))?
-            .iter()
-            .enumerate()
-            .map(|(i, v)| {
-                v.as_str()
-                    .ok_or_else(|| JsError::new(&format!("category at index {i} must be a string")))
-                    .map(|s| s.to_string())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let embeddings: Vec<Vec<f64>> = parsed["embeddings"]
-            .as_array()
-            .ok_or_else(|| JsError::new("missing 'embeddings' array"))?
-            .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let arr = row.as_array().ok_or_else(|| {
-                    JsError::new(&format!("embedding at index {i} must be an array"))
-                })?;
-                arr.iter()
-                    .enumerate()
-                    .map(|(j, v)| {
-                        v.as_f64().ok_or_else(|| {
-                            JsError::new(&format!("embedding[{i}][{j}] must be a number"))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        if categories.len() != embeddings.len() {
-            return Err(JsError::new(&format!(
-                "categories.len ({}) != embeddings.len ({})",
-                categories.len(),
-                embeddings.len()
-            )));
-        }
-
-        let input = PipelineInput {
-            categories,
-            embeddings,
-        };
-
+        let input = parse_input(input_json)?;
         Ok(Pipeline {
             inner: SphereQLPipeline::new(input).map_err(|e| JsError::new(&e.to_string()))?,
         })
+    }
+
+    /// Create a new pipeline with an explicit [`PipelineConfig`].
+    ///
+    /// `config_json` is the serde JSON representation of `PipelineConfig`.
+    /// Any field may be omitted — missing keys fall back to `PipelineConfig::default`.
+    /// This is the entry point for selecting a non-PCA projection family
+    /// (e.g. `{"projection_kind": "LaplacianEigenmap"}`) or for overriding
+    /// bridge / inner-sphere / routing thresholds from the browser.
+    #[wasm_bindgen(js_name = newWithConfig)]
+    pub fn new_with_config(input_json: &str, config_json: &str) -> Result<Pipeline, JsError> {
+        let input = parse_input(input_json)?;
+        let config: PipelineConfig = serde_json::from_str(config_json)
+            .map_err(|e| JsError::new(&format!("invalid PipelineConfig JSON: {e}")))?;
+        Ok(Pipeline {
+            inner: SphereQLPipeline::new_with_config(input, config)
+                .map_err(|e| JsError::new(&e.to_string()))?,
+        })
+    }
+
+    /// Return the [`PipelineConfig`] this pipeline was built with, as a JSON string.
+    pub fn config(&self) -> Result<String, JsError> {
+        serde_json::to_string(self.inner.config()).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Short stable name of the projection family — "pca", "kernel_pca",
+    /// or "laplacian_eigenmap".
+    #[wasm_bindgen(js_name = projectionKind)]
+    pub fn projection_kind(&self) -> String {
+        self.inner.projection_kind().name().to_string()
     }
 
     /// Query: k nearest neighbors.
@@ -360,6 +344,56 @@ impl Pipeline {
 }
 
 // ── JSON helpers ────────────────────────────────────────────────────────
+
+fn parse_input(input_json: &str) -> Result<PipelineInput, JsError> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(input_json).map_err(|e| JsError::new(&e.to_string()))?;
+
+    let categories: Vec<String> = parsed["categories"]
+        .as_array()
+        .ok_or_else(|| JsError::new("missing 'categories' array"))?
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            v.as_str()
+                .ok_or_else(|| JsError::new(&format!("category at index {i} must be a string")))
+                .map(|s| s.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let embeddings: Vec<Vec<f64>> = parsed["embeddings"]
+        .as_array()
+        .ok_or_else(|| JsError::new("missing 'embeddings' array"))?
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let arr = row
+                .as_array()
+                .ok_or_else(|| JsError::new(&format!("embedding at index {i} must be an array")))?;
+            arr.iter()
+                .enumerate()
+                .map(|(j, v)| {
+                    v.as_f64().ok_or_else(|| {
+                        JsError::new(&format!("embedding[{i}][{j}] must be a number"))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if categories.len() != embeddings.len() {
+        return Err(JsError::new(&format!(
+            "categories.len ({}) != embeddings.len ({})",
+            categories.len(),
+            embeddings.len()
+        )));
+    }
+
+    Ok(PipelineInput {
+        categories,
+        embeddings,
+    })
+}
 
 fn parse_query(json: &str) -> Result<PipelineQuery, JsError> {
     let v: serde_json::Value =
