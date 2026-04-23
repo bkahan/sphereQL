@@ -4,6 +4,14 @@ use sphereql_embed::category::{
     BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
     DrillDownResult, InnerSphereReport,
 };
+use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
+use sphereql_embed::config::PipelineConfig;
+use sphereql_embed::domain_groups::DomainGroup;
+use sphereql_embed::pipeline::{
+    GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
+    SphereQLQuery,
+};
+use sphereql_embed::projection::Projection;
 
 fn classification_name(c: BridgeClassification) -> &'static str {
     match c {
@@ -12,12 +20,14 @@ fn classification_name(c: BridgeClassification) -> &'static str {
         BridgeClassification::Weak => "Weak",
     }
 }
-use sphereql_embed::config::PipelineConfig;
-use sphereql_embed::pipeline::{
-    GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
-    SphereQLQuery,
-};
-use sphereql_embed::projection::Projection;
+
+fn severity_name(s: WarningSeverity) -> &'static str {
+    match s {
+        WarningSeverity::Info => "Info",
+        WarningSeverity::Warning => "Warning",
+        WarningSeverity::Critical => "Critical",
+    }
+}
 
 /// WASM-exposed pipeline. Constructed once with corpus data, then queried
 /// repeatedly from JavaScript.
@@ -246,6 +256,54 @@ impl Pipeline {
     /// Whether the pipeline has no indexed items.
     pub fn is_empty(&self) -> bool {
         self.inner.num_items() == 0
+    }
+
+    // ── Hierarchical routing ─────────────────────────────────────────
+
+    /// Hierarchical nearest-neighbor search: group → category → items.
+    ///
+    /// Falls back to plain k-NN when EVR is above the configured
+    /// `low_evr_threshold`; otherwise routes the query through a coarse
+    /// domain group before drilling into member categories.
+    /// Returns JSON: `[{id, category, distance, certainty, intensity}, ...]`.
+    #[wasm_bindgen(js_name = hierarchicalNearest)]
+    pub fn hierarchical_nearest(&self, query_json: &str, k: usize) -> Result<String, JsError> {
+        use sphereql_embed::types::Embedding;
+        let emb = parse_query(query_json)?;
+        let expected_dim = self.inner.projection().dimensionality();
+        if emb.embedding.len() != expected_dim {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected_dim}, got {}",
+                emb.embedding.len()
+            )));
+        }
+        let embedding = Embedding::new(emb.embedding);
+        let results = self.inner.hierarchical_nearest(&embedding, k);
+        serde_json::to_string(&results.iter().map(NearestOut::from).collect::<Vec<_>>())
+            .map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Coarse domain groups detected from category geometry.
+    /// Returns JSON: `[{member_categories, category_names, centroid_theta, centroid_phi, angular_spread, cohesion, total_items}, ...]`.
+    #[wasm_bindgen(js_name = domainGroups)]
+    pub fn domain_groups(&self) -> Result<String, JsError> {
+        let groups: Vec<DomainGroupOut> =
+            self.inner.domain_groups().iter().map(Into::into).collect();
+        serde_json::to_string(&groups).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Structured projection-quality warnings. Empty array when EVR
+    /// is above `warn_below_evr`.
+    /// Returns JSON: `[{message, evr, severity}, ...]`.
+    #[wasm_bindgen(js_name = projectionWarnings)]
+    pub fn projection_warnings(&self) -> Result<String, JsError> {
+        let warnings: Vec<ProjectionWarningOut> = self
+            .inner
+            .projection_warnings()
+            .iter()
+            .map(Into::into)
+            .collect();
+        serde_json::to_string(&warnings).map_err(|e| JsError::new(&e.to_string()))
     }
 
     // ── Category Enrichment Layer ──────────────────────────────────────
@@ -629,6 +687,48 @@ impl From<&InnerSphereReport> for InnerSphereReportOut {
 struct CategoryStatsOut {
     summaries: Vec<CategorySummaryOut>,
     inner_sphere_reports: Vec<InnerSphereReportOut>,
+}
+
+#[derive(serde::Serialize)]
+struct DomainGroupOut {
+    member_categories: Vec<usize>,
+    category_names: Vec<String>,
+    centroid_theta: f64,
+    centroid_phi: f64,
+    angular_spread: f64,
+    cohesion: f64,
+    total_items: usize,
+}
+
+impl From<&DomainGroup> for DomainGroupOut {
+    fn from(g: &DomainGroup) -> Self {
+        Self {
+            member_categories: g.member_categories.clone(),
+            category_names: g.category_names.clone(),
+            centroid_theta: g.centroid.theta,
+            centroid_phi: g.centroid.phi,
+            angular_spread: g.angular_spread,
+            cohesion: g.cohesion,
+            total_items: g.total_items,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+struct ProjectionWarningOut {
+    message: String,
+    evr: f64,
+    severity: &'static str,
+}
+
+impl From<&ProjectionWarning> for ProjectionWarningOut {
+    fn from(w: &ProjectionWarning) -> Self {
+        Self {
+            message: w.message.clone(),
+            evr: w.evr,
+            severity: severity_name(w.severity),
+        }
+    }
 }
 
 // ── Server-side cache (Node.js only, not available in browser WASM) ────

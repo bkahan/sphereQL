@@ -5,6 +5,9 @@ use sphereql_embed::category::{
     BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
     DrillDownResult, InnerSphereReport,
 };
+use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
+use sphereql_embed::domain_groups::DomainGroup;
+use sphereql_embed::pipeline::{GlobSummary, ManifoldResult, NearestResult, PathResult};
 
 fn classification_name(c: BridgeClassification) -> &'static str {
     match c {
@@ -13,7 +16,14 @@ fn classification_name(c: BridgeClassification) -> &'static str {
         BridgeClassification::Weak => "Weak",
     }
 }
-use sphereql_embed::pipeline::{GlobSummary, ManifoldResult, NearestResult, PathResult};
+
+fn severity_name(s: WarningSeverity) -> &'static str {
+    match s {
+        WarningSeverity::Info => "Info",
+        WarningSeverity::Warning => "Warning",
+        WarningSeverity::Critical => "Critical",
+    }
+}
 
 // ── Nearest ────────────────────────────────────────────────────────────
 
@@ -608,6 +618,88 @@ impl From<&InnerSphereReport> for PyInnerSphereReport {
             inner_evr: r.inner_evr,
             global_subset_evr: r.global_subset_evr,
             evr_improvement: r.evr_improvement,
+        }
+    }
+}
+
+// ── DomainGroup ───────────────────────────────────────────────────────
+
+#[pyclass(name = "DomainGroupInfo", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyDomainGroup {
+    /// Indices of member categories in the category layer.
+    #[pyo3(get)]
+    pub member_categories: Vec<usize>,
+    #[pyo3(get)]
+    pub category_names: Vec<String>,
+    #[pyo3(get)]
+    pub centroid_theta: f64,
+    #[pyo3(get)]
+    pub centroid_phi: f64,
+    #[pyo3(get)]
+    pub angular_spread: f64,
+    #[pyo3(get)]
+    pub cohesion: f64,
+    #[pyo3(get)]
+    pub total_items: usize,
+}
+
+#[pymethods]
+impl PyDomainGroup {
+    fn __repr__(&self) -> String {
+        format!(
+            "DomainGroupInfo(categories={}, items={}, cohesion={:.4})",
+            self.category_names.len(),
+            self.total_items,
+            self.cohesion
+        )
+    }
+}
+
+impl From<&DomainGroup> for PyDomainGroup {
+    fn from(g: &DomainGroup) -> Self {
+        Self {
+            member_categories: g.member_categories.clone(),
+            category_names: g.category_names.clone(),
+            centroid_theta: g.centroid.theta,
+            centroid_phi: g.centroid.phi,
+            angular_spread: g.angular_spread,
+            cohesion: g.cohesion,
+            total_items: g.total_items,
+        }
+    }
+}
+
+// ── ProjectionWarning ────────────────────────────────────────────────
+
+#[pyclass(name = "ProjectionWarningInfo", frozen, from_py_object)]
+#[derive(Clone)]
+pub struct PyProjectionWarning {
+    #[pyo3(get)]
+    pub message: String,
+    #[pyo3(get)]
+    pub evr: f64,
+    /// "Info", "Warning", or "Critical".
+    #[pyo3(get)]
+    pub severity: String,
+}
+
+#[pymethods]
+impl PyProjectionWarning {
+    fn __repr__(&self) -> String {
+        format!(
+            "ProjectionWarningInfo(severity={}, evr={:.4}, msg={:?})",
+            self.severity, self.evr, self.message
+        )
+    }
+}
+
+impl From<&ProjectionWarning> for PyProjectionWarning {
+    fn from(w: &ProjectionWarning) -> Self {
+        Self {
+            message: w.message.clone(),
+            evr: w.evr,
+            severity: severity_name(w.severity).to_string(),
         }
     }
 }

@@ -49,6 +49,8 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<types::PyCategoryPath>()?;
         m.add_class::<types::PyDrillDown>()?;
         m.add_class::<types::PyInnerSphereReport>()?;
+        m.add_class::<types::PyDomainGroup>()?;
+        m.add_class::<types::PyProjectionWarning>()?;
         m.add_class::<nav::PyNavigatorConfig>()?;
         m.add_class::<nav::PyNavigatorReport>()?;
         m.add_class::<nav::PyAntipodalReport>()?;

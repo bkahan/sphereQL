@@ -3,13 +3,14 @@ use pyo3::prelude::*;
 
 use crate::projection::{PyPcaProjection, extract_embedding, extract_embeddings_2d};
 use crate::types::{
-    Glob, Manifold, Nearest, Path, PyCategoryPath, PyCategorySummary, PyDrillDown,
-    PyInnerSphereReport,
+    Glob, Manifold, Nearest, Path, PyCategoryPath, PyCategorySummary, PyDomainGroup, PyDrillDown,
+    PyInnerSphereReport, PyProjectionWarning,
 };
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::pipeline::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
+use sphereql_embed::types::Embedding;
 
 fn extract_config(config: Option<&Bound<'_, PyAny>>) -> PyResult<Option<PipelineConfig>> {
     match config {
@@ -484,6 +485,44 @@ impl Pipeline {
             }
             _ => Err(PyValueError::new_err("unexpected output type")),
         }
+    }
+
+    // ── Hierarchical routing (Phase 5) ─────────────────────────────────
+
+    /// Hierarchical nearest-neighbor search. Falls back to plain
+    /// [`nearest`](Self::nearest) when EVR is above
+    /// `config.routing.low_evr_threshold`; otherwise routes the query
+    /// to a domain group and drills into its member categories.
+    #[pyo3(signature = (query, k=5))]
+    fn hierarchical_nearest(
+        &self,
+        py: Python<'_>,
+        query: &Bound<'_, PyAny>,
+        k: usize,
+    ) -> PyResult<Vec<Nearest>> {
+        let emb = extract_embedding(query)?;
+        let embedding = Embedding::new(emb.values);
+        let results = py.detach(|| self.inner.hierarchical_nearest(&embedding, k));
+        Ok(results.iter().map(Nearest::from).collect())
+    }
+
+    /// Coarse domain groups detected from category geometry.
+    fn domain_groups(&self) -> Vec<PyDomainGroup> {
+        self.inner
+            .domain_groups()
+            .iter()
+            .map(PyDomainGroup::from)
+            .collect()
+    }
+
+    /// Structured warnings when projection quality (EVR) is below the
+    /// configured threshold. Empty when the projection is healthy.
+    fn projection_warnings(&self) -> Vec<PyProjectionWarning> {
+        self.inner
+            .projection_warnings()
+            .iter()
+            .map(PyProjectionWarning::from)
+            .collect()
     }
 
     fn category_stats(&self) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
