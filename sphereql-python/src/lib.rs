@@ -64,6 +64,7 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(viz::visualize, m)?)?;
         m.add_function(wrap_pyfunction!(viz::visualize_pipeline, m)?)?;
         m.add_function(wrap_pyfunction!(meta::corpus_features, m)?)?;
+        m.add_function(wrap_pyfunction!(meta::auto_tune, m)?)?;
     }
 
     #[cfg(feature = "vectordb")]

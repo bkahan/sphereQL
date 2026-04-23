@@ -27,7 +27,15 @@ fn extract_config(config: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Pipeline
 #[pyclass]
 pub struct Pipeline {
     pub(crate) inner: SphereQLPipeline,
-    dim: usize,
+    pub(crate) dim: usize,
+}
+
+impl Pipeline {
+    /// Construct a Pipeline wrapper around an existing SphereQLPipeline.
+    /// Used by the auto-tuner and meta-model entry points.
+    pub(crate) fn from_inner(inner: SphereQLPipeline, dim: usize) -> Self {
+        Self { inner, dim }
+    }
 }
 
 #[pymethods]

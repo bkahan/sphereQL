@@ -13,6 +13,10 @@ use sphereql_embed::pipeline::{
     SphereQLQuery,
 };
 use sphereql_embed::projection::Projection;
+use sphereql_embed::quality_metric::{
+    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, TerritorialHealth,
+};
+use sphereql_embed::tuner::{SearchSpace, SearchStrategy, TuneReport, auto_tune as rust_auto_tune};
 
 fn classification_name(c: BridgeClassification) -> &'static str {
     match c {
@@ -746,6 +750,167 @@ pub fn corpus_features(input_json: &str) -> Result<String, JsError> {
     let input = parse_input(input_json)?;
     let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
     serde_json::to_string(&features).map_err(|e| JsError::new(&e.to_string()))
+}
+
+#[derive(serde::Deserialize, Default)]
+struct AutoTuneOpts {
+    #[serde(default = "default_metric")]
+    metric: String,
+    #[serde(default = "default_strategy")]
+    strategy: String,
+    #[serde(default = "default_budget")]
+    budget: usize,
+    #[serde(default)]
+    seed: u64,
+    #[serde(default = "default_warmup")]
+    warmup: usize,
+    #[serde(default = "default_gamma")]
+    gamma: f64,
+    #[serde(default)]
+    base_config: Option<PipelineConfig>,
+}
+
+fn default_metric() -> String {
+    "default_composite".to_string()
+}
+fn default_strategy() -> String {
+    "random".to_string()
+}
+fn default_budget() -> usize {
+    24
+}
+fn default_warmup() -> usize {
+    4
+}
+fn default_gamma() -> f64 {
+    0.25
+}
+
+#[derive(serde::Serialize)]
+struct TuneReportOut {
+    metric_name: String,
+    best_score: f64,
+    best_config: PipelineConfig,
+    trials_count: usize,
+    failures_count: usize,
+    mean_score: f64,
+}
+
+impl TuneReportOut {
+    fn from_report(report: &TuneReport) -> Self {
+        Self {
+            metric_name: report.metric_name.clone(),
+            best_score: report.best_score,
+            best_config: report.best_config.clone(),
+            trials_count: report.trials.len(),
+            failures_count: report.failures.len(),
+            mean_score: report.mean_score(),
+        }
+    }
+}
+
+fn resolve_strategy_wasm(
+    kind: &str,
+    budget: usize,
+    seed: u64,
+    warmup: usize,
+    gamma: f64,
+) -> Result<SearchStrategy, JsError> {
+    match kind {
+        "grid" => Ok(SearchStrategy::Grid),
+        "random" => Ok(SearchStrategy::Random { budget, seed }),
+        "bayesian" => Ok(SearchStrategy::Bayesian {
+            budget,
+            warmup,
+            gamma,
+            seed,
+        }),
+        other => Err(JsError::new(&format!(
+            "unknown strategy {other:?}; expected grid, random, or bayesian"
+        ))),
+    }
+}
+
+fn run_auto_tune_wasm(
+    metric: &str,
+    input: PipelineInput,
+    space: &SearchSpace,
+    strategy: SearchStrategy,
+    base: &PipelineConfig,
+) -> Result<
+    (SphereQLPipeline, TuneReport),
+    sphereql_embed::pipeline::PipelineError,
+> {
+    match metric {
+        "territorial_health" => rust_auto_tune(input, space, &TerritorialHealth, strategy, base),
+        "bridge_coherence" => rust_auto_tune(input, space, &BridgeCoherence, strategy, base),
+        "cluster_silhouette" => rust_auto_tune(input, space, &ClusterSilhouette, strategy, base),
+        "graph_modularity" => {
+            rust_auto_tune(input, space, &GraphModularity::default(), strategy, base)
+        }
+        "default_composite" => rust_auto_tune(
+            input,
+            space,
+            &CompositeMetric::default_composite(),
+            strategy,
+            base,
+        ),
+        "connectivity_composite" => rust_auto_tune(
+            input,
+            space,
+            &CompositeMetric::connectivity_composite(),
+            strategy,
+            base,
+        ),
+        _ => unreachable!("metric name validated before dispatch"),
+    }
+}
+
+/// Run the auto-tuner and return a summary report.
+///
+/// `input_json` has the same shape as [`Pipeline::new`]. `opts_json`
+/// may be `"{}"` or a JSON object with any of:
+/// `metric`, `strategy`, `budget`, `seed`, `warmup`, `gamma`, `base_config`.
+///
+/// To construct the tuned pipeline, parse `best_config` from the
+/// returned report and pass it to [`Pipeline::newWithConfig`].
+#[wasm_bindgen(js_name = autoTune)]
+pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
+    let input = parse_input(input_json)?;
+    let opts: AutoTuneOpts = serde_json::from_str(opts_json)
+        .map_err(|e| JsError::new(&format!("invalid options JSON: {e}")))?;
+
+    match opts.metric.as_str() {
+        "territorial_health"
+        | "bridge_coherence"
+        | "cluster_silhouette"
+        | "graph_modularity"
+        | "default_composite"
+        | "connectivity_composite" => {}
+        other => {
+            return Err(JsError::new(&format!(
+                "unknown metric {other:?}; expected one of: \
+                 territorial_health, bridge_coherence, cluster_silhouette, \
+                 graph_modularity, default_composite, connectivity_composite"
+            )));
+        }
+    }
+
+    let strategy = resolve_strategy_wasm(
+        &opts.strategy,
+        opts.budget,
+        opts.seed,
+        opts.warmup,
+        opts.gamma,
+    )?;
+    let space = SearchSpace::default();
+    let base = opts.base_config.unwrap_or_default();
+
+    let (_pipeline, report) = run_auto_tune_wasm(&opts.metric, input, &space, strategy, &base)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+
+    serde_json::to_string(&TuneReportOut::from_report(&report))
+        .map_err(|e| JsError::new(&e.to_string()))
 }
 
 // ── Server-side cache (Node.js only, not available in browser WASM) ────
