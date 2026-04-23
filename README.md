@@ -9,11 +9,16 @@
 spatial queries, category-aware exploration, and interactive visualization.**
 
 sphereQL maps vectors from any embedding model (OpenAI, Cohere, sentence-transformers,
-etc.) onto spherical coordinates via PCA or Kernel PCA, then indexes them with
-shell/sector spatial partitioning for fast nearest-neighbor lookups. A built-in
-Category Enrichment Layer automatically computes inter-category relationships,
-detects bridge concepts, and creates inner spheres for high-resolution
-within-category search. The result: you can search, cluster, trace concept paths
+etc.) onto spherical coordinates via one of three projection families -- linear PCA,
+kernel PCA with a Gaussian (RBF) kernel, or Laplacian eigenmap over a k-NN similarity
+graph -- then indexes them with shell/sector spatial partitioning for fast
+nearest-neighbor lookups. A built-in Category Enrichment Layer automatically computes
+inter-category relationships, classifies bridges (`Genuine` / `OverlapArtifact` /
+`Weak`), and creates inner spheres for high-resolution within-category search.
+On top of that, sphereQL auto-tunes its pipeline per corpus against a scalar
+`QualityMetric` (territorial health, bridge coherence, silhouette, modularity, or
+a composite), and a meta-model recalls winning configs from past tuner runs when
+a new corpus arrives. The result: you can search, cluster, trace concept paths
 across categories, and visualize hundreds of thousands of embeddings on a 3D
 sphere -- from Rust, Python, or the browser via WASM.
 
@@ -31,6 +36,10 @@ sphere -- from Rust, Python, or the browser via WASM.
 - **Category enrichment** -- automatic inter-category graph with bridge detection,
   category-level concept paths, cohesion metrics, and hierarchical inner spheres
   for high-resolution within-category drill-down
+- **Auto-tuned projection selection** -- `auto_tune` sweeps projection family and
+  pipeline knobs against a `QualityMetric` (Grid / Random / Bayesian search);
+  `MetaTrainingRecord` + `NearestNeighborMetaModel` / `DistanceWeightedMetaModel`
+  recall the winning config on a new corpus from a feature profile
 - **Geospatial indexing** -- use the core library for pure spherical geometry:
   coordinate conversions, great-circle distances, region queries (cone, cap,
   shell, band, wedge)
@@ -65,13 +74,13 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-core` | Spherical math primitives: points (`SphericalPoint`, `CartesianPoint`, `GeoPoint`), coordinate conversions, distance metrics (angular, great-circle, chord, cosine), interpolation (slerp, nlerp), and region types (cone, cap, shell, band, wedge) |
 | `sphereql-index` | Spatial indexing with composite shell + sector partitioning, k-NN search, cone/cap/shell/band/wedge/region queries, and cached Cartesian vectors for fast angular distance proxy |
 | `sphereql-layout` | Layout engines for distributing items on S^2: Fibonacci spiral (uniform), k-means clustering, force-directed simulation, and incremental managed layouts with quality metrics |
-| `sphereql-embed` | Embedding projection via PCA, Kernel PCA (Gaussian/RBF), or random projection. Query pipeline with k-NN, similarity threshold, concept paths, glob detection, local manifold fitting, and Category Enrichment Layer (inter-category graph, bridge detection, inner spheres, drill-down) |
+| `sphereql-embed` | Embedding projection via PCA, Kernel PCA (Gaussian/RBF), Laplacian eigenmap, or random projection. Query pipeline with k-NN, similarity threshold, concept paths, glob detection, local manifold fitting, and Category Enrichment Layer (inter-category graph, bridge classification into `Genuine`/`OverlapArtifact`/`Weak`, inner spheres, drill-down, hierarchical domain-group routing). `PipelineConfig` surfaces every tunable constant; an auto-tuner (`auto_tune` with Grid/Random/Bayesian strategies) optimizes against a `QualityMetric` trait (territorial health, bridge coherence, cluster silhouette, graph modularity, composites). A meta-model layer (`MetaTrainingRecord`, `NearestNeighborMetaModel`, `DistanceWeightedMetaModel`) recalls winning configs across corpora, with optional `FeedbackEvent` aggregation for online refinement |
 | `sphereql-graphql` | async-graphql schema with cone/shell/band/wedge/region queries, k-NN search, distance calculations, and real-time subscriptions via a broadcast event bus |
 | `sphereql-vectordb` | Vector store bridge for InMemory, Qdrant (gRPC), and Pinecone backends. Handles sync, PCA fitting, projection, and hybrid search with cosine re-ranking |
 | `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline (including category enrichment), projections, vector store bridges, and interactive 3D visualization |
 | `sphereql-wasm` | WebAssembly bindings via wasm-bindgen for running the embedding pipeline (including category enrichment) in the browser |
 | `sphereql` | Umbrella crate with feature flags for selective imports |
-| `sphereql-corpus` | Shared test corpus for examples: 775 concepts across 31 academic domains with hand-crafted 128-dim embeddings. Used by the `ai_knowledge_navigator` and `spatial_analysis` examples to stress-test projection and category enrichment |
+| `sphereql-corpus` | Shared test corpora for examples: a 775-concept built-in corpus across 31 academic domains with hand-crafted 128-dim embeddings, plus a 300-concept low-SNR stress corpus (10 categories, 2-axis sparse signatures, high added noise) exposed via `build_stress_corpus` / `embed_with_noise` / `STRESS_*` constants. Used by `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, and the meta-learning examples |
 
 ## Quick Start (Rust)
 
@@ -89,7 +98,7 @@ sphereql = { version = "0.1", features = ["full"] }
 | `core` (default) | Math primitives, conversions, distances, regions | -- |
 | `index` | Spatial indexing and queries | `core` |
 | `layout` | Layout strategies and quality metrics | `core`, `index` |
-| `embed` | Embedding projection (PCA, Kernel PCA, random) and pipeline | `core`, `index`, `layout` |
+| `embed` | Embedding projection (PCA, Kernel PCA, Laplacian eigenmap, random), pipeline, auto-tuner, meta-model | `core`, `index`, `layout` |
 | `graphql` | GraphQL schema, subscriptions, event bus | `core`, `index` |
 | `vectordb` | Vector store bridge and hybrid search | `embed` |
 | `pinecone` | Pinecone backend for vectordb | `vectordb` |
@@ -270,6 +279,78 @@ let points = pipeline.exported_points();
 let evr = pipeline.explained_variance_ratio();
 ```
 
+### Auto-tuning and Metalearning
+
+Every tunable constant lives in `PipelineConfig`. Projection family is a first-class
+field (`ProjectionKind::{Pca, KernelPca, LaplacianEigenmap}`), so the tuner can
+compare families on equal footing with the rest of the knobs.
+
+```rust
+use sphereql::embed::*;
+
+// Defaults reproduce the historical hardcoded constants.
+let mut base = PipelineConfig::default();
+base.projection_kind = ProjectionKind::LaplacianEigenmap;
+base.laplacian.k_neighbors = 20;
+
+// Or build a pipeline directly with a custom config.
+let pipeline = SphereQLPipeline::new_with_config(input.clone(), base.clone()).unwrap();
+```
+
+`auto_tune` sweeps a `SearchSpace` under `SearchStrategy::{Grid, Random, Bayesian}`
+and returns the best pipeline plus a `TuneReport`. Metrics implement the
+`QualityMetric` trait; `CompositeMetric::default_composite()` and
+`connectivity_composite()` cover the common cases.
+
+```rust
+let space = SearchSpace::default();        // sweeps PCA + Laplacian by default
+let metric = CompositeMetric::default_composite();
+let strategy = SearchStrategy::Random { budget: 24, seed: 0xCAFE };
+
+let (tuned, report) = auto_tune(input.clone(), &space, &metric, strategy, &base).unwrap();
+println!(
+    "best: {} score={:.4}",
+    report.best_config.projection_kind.name(),
+    report.best_score,
+);
+```
+
+The tuner result can be persisted as a `MetaTrainingRecord`, keyed on a 10-feature
+`CorpusFeatures` profile. The default store lives at `~/.sphereql/meta_records.json`
+and accumulates across runs.
+
+```rust
+let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+let record = MetaTrainingRecord::from_tune_result(
+    "my_corpus_v1",
+    features,
+    &report,
+    "random_24",
+);
+record.append_to_default_store().unwrap();
+```
+
+On a new corpus, a `MetaModel` predicts the config without running the tuner.
+`new_from_metamodel` is recall-only; `new_from_metamodel_tuned` warm-starts a
+short tuner pass from the prediction.
+
+```rust
+let records = MetaTrainingRecord::load_default_store().unwrap();
+let mut model = NearestNeighborMetaModel::default();
+model.fit(&records);
+
+// Recall only — fast, zero tuner trials.
+let (pipeline, _features, _cfg) =
+    SphereQLPipeline::new_from_metamodel(input.clone(), &model).unwrap();
+
+// Or warm-started hybrid: recall the config, then run a few refinement trials.
+// See SphereQLPipeline::new_from_metamodel_tuned.
+```
+
+For an online-refinement loop, record `FeedbackEvent`s against the pipeline's
+`corpus_id` and blend the aggregated satisfaction score back into the stored
+record via `MetaTrainingRecord::adjust_score_with_feedback(&summary, alpha)`.
+
 ### GraphQL Integration
 
 ```rust
@@ -296,6 +377,10 @@ let result = schema.execute(r#"{
 ```
 
 ## Quick Start (Python)
+
+> **Note:** In 0.1.x the Python and WASM bindings expose PCA and Kernel PCA
+> only. The Laplacian eigenmap projection, `auto_tune`, and the `MetaModel`
+> layer are Rust-only for now; bindings will follow.
 
 ### Install
 
@@ -422,6 +507,9 @@ rp = sphereql.RandomProjection(dimension=384, radial=1.0, seed=42)
 
 ## Quick Start (WASM)
 
+As with the Python bindings, the WASM build is PCA/Kernel-PCA-only in 0.1.x --
+Laplacian projection, `auto_tune`, and the `MetaModel` layer are Rust-only for now.
+
 ```bash
 # Build the WASM package
 cd sphereql-wasm
@@ -489,11 +577,49 @@ embeddings, expect 2-5% EVR at 3 dimensions. sphereQL compensates with **hybrid
 search**: fast angular-distance candidate retrieval in projected space, followed
 by cosine similarity re-ranking in the original embedding space.
 
-**Kernel PCA** (new) captures non-linear manifold structure (curved clusters,
-rings, spirals) that linear PCA crushes flat. It uses the Gaussian kernel
+**Kernel PCA** captures non-linear manifold structure (curved clusters, rings,
+spirals) that linear PCA crushes flat. It uses the Gaussian kernel
 k(x, y) = exp(-||x-y||^2 / 2*sigma^2) with automatic sigma selection via the
 median heuristic. See the [kernel PCA source](sphereql-embed/src/kernel_pca.rs)
 for mathematical details and references.
+
+**Laplacian eigenmap** targets a different failure mode: sparse, noise-heavy
+embeddings where the signal lives in the co-activation structure of a few active
+axes rather than in coordinate variance. PCA (and to a lesser extent kernel PCA)
+get pulled toward whichever noise directions happen to have the largest variance;
+a graph-Laplacian spectral decomposition does not. The pipeline builds a k-NN
+graph whose edges are the Jaccard similarity between active-axis sets (axes
+exceeding `active_threshold`), forms the normalized graph Laplacian, and keeps
+the bottom three non-trivial eigenvectors as coordinates. Out-of-sample points
+are projected via a Nyström extension: the query's Jaccard weights against the
+training graph are blended against the training embedding, so a fitted Laplacian
+projection behaves like any other at query time. See
+[`sphereql-embed/src/laplacian.rs`](sphereql-embed/src/laplacian.rs) for
+hyperparameters (`LaplacianConfig::k_neighbors`, `active_threshold`) and the
+full construction.
+
+## Empirical: when does each projection win?
+
+The right projection is corpus-dependent. Two sanity checks, same pipeline, same
+tuner, same metrics:
+
+| Corpus | Metric | PCA score | Laplacian score | Winner |
+|---|---|---|---|---|
+| Built-in 775-concept (31 academic domains, hand-crafted 128-d) | `default_composite` | best | lower | **PCA** |
+| Built-in 775-concept | `connectivity_composite` | best | lower | **PCA** |
+| Stress 300-concept (10 categories, 2-axis signatures, high noise) | `default_composite` | 0.9606 | 1.0000 | **Laplacian** |
+| Stress 300-concept | `connectivity_composite` | 0.9265 | 0.9500 | **Laplacian** |
+
+Dense, low-noise embeddings where variance tracks meaning: PCA wins. Sparse,
+noise-heavy regimes where variance is dominated by noise and the real signal is
+in the co-activation graph: Laplacian wins. This is the whole motivation for the
+auto-tuner + meta-model layer -- no single projection is right, so the pipeline
+picks one per corpus.
+
+Reproduce with [`examples/auto_tune.rs`](sphereql/examples/auto_tune.rs) (flip
+corpora via `SPHEREQL_CORPUS=stress`) and
+[`examples/meta_learn.rs`](sphereql/examples/meta_learn.rs) (tunes both corpora
+and verifies that a `MetaModel` predicts the right family from a corpus profile).
 
 ## Performance
 
@@ -527,6 +653,8 @@ For full results see [`docs/benchmark-analysis.md`](docs/benchmark-analysis.md) 
 
 ## Examples
 
+### Basics
+
 ```bash
 # Basic spherical math
 cargo run --example basic_positioning -p sphereql --features core
@@ -541,9 +669,20 @@ cargo run --example graphql_server -p sphereql --features full
 cargo run --example word_embeddings -p sphereql --features embed
 cargo run --example semantic_search -p sphereql --features embed
 cargo run --example auto_categorize -p sphereql --features embed
+```
 
-# Category enrichment (inter-category graph, bridges, inner spheres)
+### Category enrichment & spatial analysis
+
+```bash
+# Category Enrichment Layer -- inter-category graph, bridges, inner spheres
 cargo run --example category_enrichment -p sphereql --features embed
+
+# AI Knowledge Navigator -- 13 analyses on the 775-concept corpus
+cargo run --example ai_knowledge_navigator -p sphereql --features embed
+
+# Spatial Analysis on S^2 -- every geometric primitive (antipode, Voronoi,
+# geodesic sweep, lunes, curvature) raw and navigator-wrapped
+cargo run --example spatial_analysis -p sphereql --features embed
 
 # End-to-end transformer embedding pipeline
 cargo run --example e2e_transformer -p sphereql --features embed
@@ -552,15 +691,22 @@ cargo run --example e2e_transformer -p sphereql --features embed
 cargo run --example benchmark -p sphereql --features full
 ```
 
-### Category enrichment & spatial analysis (uses sphereql-corpus)
+### Auto-tuning and metalearning
 
 ```bash
-# AI Knowledge Navigator -- 13 analyses demonstrating the Category Enrichment Layer
-cargo run --example ai_knowledge_navigator -p sphereql --features embed
+# Sweep PCA vs Laplacian on either corpus (flip with SPHEREQL_CORPUS=stress)
+cargo run --example auto_tune -p sphereql --features embed --release
 
-# Spatial Analysis on S^2 -- every geometric primitive (antipode, Voronoi,
-# geodesic sweep, lunes, curvature) raw and navigator-wrapped
-cargo run --example spatial_analysis -p sphereql --features embed
+# Tune both corpora, accumulate MetaTrainingRecords, verify the MetaModel
+# predicts the right projection family from a corpus feature profile
+cargo run --example meta_learn -p sphereql --features embed --release
+
+# Warm-started hybrid: recall a config from the meta-store, then run a few
+# refinement trials from that starting point
+cargo run --example meta_warm_start -p sphereql --features embed --release
+
+# L3 feedback loop: blend per-query FeedbackEvents into stored records
+cargo run --example meta_feedback -p sphereql --features embed --release
 ```
 
 Python examples are in [`sphereql-python/examples/`](sphereql-python/examples/) and
@@ -627,9 +773,15 @@ sphereQL is at **v0.1.0-alpha**. The core API is functional and covered by
 
 - **Search precision degrades at higher k.** The 384-d to 3-d projection is
   inherently lossy (~2-5% explained variance). Precision at k=1 is perfect;
-  at k=5 it drops to ~20%. Use hybrid search (angular recall + cosine
-  re-ranking) for production precision. See
-  [`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md).
+  at k=5 it drops to ~20%. Mitigations available today:
+  - Hybrid search (angular recall + cosine re-ranking) for production precision.
+  - `pipeline.hierarchical_nearest(embedding, k)` falls back to
+    domain-group routing when the fitted EVR is below
+    `RoutingConfig::low_evr_threshold`.
+  - `ProjectionKind::LaplacianEigenmap` via `auto_tune` often preserves more
+    neighbor structure than PCA on sparse/noisy corpora (see the empirical
+    table above).
+  See [`docs/search-precision-roadmap.md`](docs/search-precision-roadmap.md).
 - **GraphQL does not expose category enrichment.** The GraphQL crate
   operates on the raw spatial index, not the embedding pipeline. Category
   queries (concept paths, neighbors, drill-down, stats) are available in
@@ -644,6 +796,7 @@ sphereQL is at **v0.1.0-alpha**. The core API is functional and covered by
 - HNSW or VP-tree indexing for better recall without brute-force fallback
 - Streaming/incremental PCA for large-scale datasets
 - GraphQL integration for category enrichment queries
+- Python/WASM bindings for Laplacian projection, auto-tuner, and meta-model
 
 ## Contributing
 
