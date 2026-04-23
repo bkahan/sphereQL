@@ -15,18 +15,23 @@ use crate::types::{CartesianPoint, SphericalPoint};
 /// ```
 #[must_use]
 pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
-    let a_unit = SphericalPoint::new_unchecked(1.0, a.theta, a.phi);
-    let b_unit = SphericalPoint::new_unchecked(1.0, b.theta, b.phi);
-    let ac = spherical_to_cartesian(&a_unit);
-    let bc = spherical_to_cartesian(&b_unit);
+    // Call the `unit_cartesian` accessor directly instead of going
+    // through `spherical_to_cartesian(&SphericalPoint::new_unchecked(1.0, ...))`.
+    // The accessor is `#[inline]`, unit-radius by construction, and
+    // skips the `SphericalPoint::new_unchecked` + `CartesianPoint::new`
+    // temporaries this function used to build per call. This is the
+    // hottest call in the workspace — every layout, index, and spatial
+    // op routes through it.
+    let [ax, ay, az] = a.unit_cartesian();
+    let [bx, by, bz] = b.unit_cartesian();
 
     // Vincenty formula: numerically stable for all angular separations
-    let cross_x = ac.y * bc.z - ac.z * bc.y;
-    let cross_y = ac.z * bc.x - ac.x * bc.z;
-    let cross_z = ac.x * bc.y - ac.y * bc.x;
+    let cross_x = ay * bz - az * by;
+    let cross_y = az * bx - ax * bz;
+    let cross_z = ax * by - ay * bx;
     let cross_mag = (cross_x * cross_x + cross_y * cross_y + cross_z * cross_z).sqrt();
 
-    let dot = ac.x * bc.x + ac.y * bc.y + ac.z * bc.z;
+    let dot = ax * bx + ay * by + az * bz;
 
     cross_mag.atan2(dot)
 }

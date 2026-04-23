@@ -1,4 +1,5 @@
 use std::collections::{BinaryHeap, HashMap};
+use std::sync::{Arc, Mutex};
 
 use sphereql_core::*;
 use sphereql_index::*;
@@ -7,8 +8,15 @@ use crate::category::BridgeClassification;
 use crate::projection::Projection;
 use crate::types::{Embedding, ProjectedPoint};
 
-/// (neighbor_index, effective_weight, raw_angular_dist, bridge_strength_if_cross_category)
-type AdjEdge = (usize, f64, f64, Option<f64>);
+/// k-NN adjacency snapshot cached between calls to
+/// [`EmbeddingIndex::concept_path`] and its bridged variant.
+///
+/// The graph is undirected and built for a specific `k`. Different `k`
+/// invalidates; so does any `&mut self` mutation on the index.
+struct KnnCache {
+    k: usize,
+    adj: Arc<Vec<Vec<(usize, f64)>>>,
+}
 
 #[derive(Debug, Clone)]
 pub struct EmbeddingItem {
@@ -85,6 +93,7 @@ impl<P: Projection> EmbeddingIndexBuilder<P> {
         EmbeddingIndex {
             projection: self.projection,
             index: self.inner.build(),
+            knn_cache: Mutex::new(None),
         }
     }
 }
@@ -92,6 +101,11 @@ impl<P: Projection> EmbeddingIndexBuilder<P> {
 pub struct EmbeddingIndex<P> {
     projection: P,
     index: SpatialIndex<EmbeddingItem>,
+    /// k-NN adjacency cache for `concept_path` and friends. Shared
+    /// behind `Mutex<Option<_>>` so the `&self` query methods can
+    /// memoize across calls; `&mut self` mutations clear it via
+    /// `get_mut`, bypassing the lock.
+    knn_cache: Mutex<Option<KnnCache>>,
 }
 
 impl<P: Projection> EmbeddingIndex<P> {
@@ -107,6 +121,7 @@ impl<P: Projection> EmbeddingIndex<P> {
             original_magnitude: embedding.magnitude(),
             projected: Some(rich),
         });
+        self.invalidate_knn_cache();
     }
 
     /// Insert with an explicit radial value, overriding the projection's RadialStrategy.
@@ -121,6 +136,75 @@ impl<P: Projection> EmbeddingIndex<P> {
             original_magnitude: embedding.magnitude(),
             projected: Some(ProjectedPoint { position, ..rich }),
         });
+        self.invalidate_knn_cache();
+    }
+
+    /// Drop any cached k-NN adjacency. Called by every `&mut self`
+    /// mutation that could change the graph. Uses `get_mut` to skip
+    /// the lock when we already hold `&mut self`.
+    fn invalidate_knn_cache(&mut self) {
+        if let Ok(slot) = self.knn_cache.get_mut() {
+            *slot = None;
+        }
+    }
+
+    /// Return the k-NN adjacency snapshot for the given `k`, rebuilding
+    /// only on cache miss.
+    ///
+    /// The shared `Arc` is cheap to clone, so callers can drop the lock
+    /// while they run Dijkstra. Previously `concept_path` rebuilt the
+    /// entire graph on every call — O(n² · k) per query.
+    fn knn_adjacency(
+        &self,
+        items: &[&EmbeddingItem],
+        k: usize,
+    ) -> Arc<Vec<Vec<(usize, f64)>>> {
+        {
+            let cache = self.knn_cache.lock().expect("knn cache mutex poisoned");
+            if let Some(cached) = cache.as_ref()
+                && cached.k == k
+                && cached.adj.len() == items.len()
+            {
+                return Arc::clone(&cached.adj);
+            }
+        }
+
+        // Miss — build a fresh undirected adjacency. Symmetrize in one
+        // O(E) pass using a HashSet instead of the previous O(n · k²)
+        // linear scan.
+        let n = items.len();
+        let id_to_idx: HashMap<&str, usize> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item.id.as_str(), i))
+            .collect();
+        let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::with_capacity(k); n];
+        let mut seen: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::with_capacity(n * k);
+        for (i, item) in items.iter().enumerate() {
+            let nearest = self.index.nearest(item.position(), k + 1);
+            for result in &nearest {
+                let Some(&j) = id_to_idx.get(result.item.id.as_str()) else {
+                    continue;
+                };
+                if i == j {
+                    continue;
+                }
+                let key = if i < j { (i, j) } else { (j, i) };
+                if seen.insert(key) {
+                    adj[i].push((j, result.distance));
+                    adj[j].push((i, result.distance));
+                }
+            }
+        }
+
+        let adj = Arc::new(adj);
+        let mut cache = self.knn_cache.lock().expect("knn cache mutex poisoned");
+        *cache = Some(KnnCache {
+            k,
+            adj: Arc::clone(&adj),
+        });
+        adj
     }
 
     /// Find the k embeddings whose projected directions are closest to the query.
@@ -148,7 +232,11 @@ impl<P: Projection> EmbeddingIndex<P> {
     }
 
     pub fn remove(&mut self, id: &str) -> Option<EmbeddingItem> {
-        self.index.remove(&id.to_string())
+        let removed = self.index.remove(&id.to_string());
+        if removed.is_some() {
+            self.invalidate_knn_cache();
+        }
+        removed
     }
 
     pub fn get(&self, id: &str) -> Option<&EmbeddingItem> {
@@ -178,9 +266,10 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// path traces the chain of closest intermediate concepts connecting
     /// the source to the target.
     ///
-    /// **Complexity:** O(n^2 * k) — the k-NN graph is rebuilt from scratch
-    /// on every call. Not suitable for large indices (>5000 items) without
-    /// caching.
+    /// The k-NN graph is memoized per `k`: the first call at a given `k`
+    /// builds it in O(n · log n · k) (index-assisted) and every
+    /// subsequent call reuses the snapshot until the index mutates.
+    /// Dijkstra itself is O((n + E) · log n) via a binary heap.
     pub fn concept_path(&self, source_id: &str, target_id: &str, k: usize) -> Option<ConceptPath> {
         let items = self.index.all_items();
         let n = items.len();
@@ -197,27 +286,7 @@ impl<P: Projection> EmbeddingIndex<P> {
         let source_idx = *id_to_idx.get(source_id)?;
         let target_idx = *id_to_idx.get(target_id)?;
 
-        // Build k-NN adjacency list (undirected)
-        let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
-        for (i, item) in items.iter().enumerate() {
-            let nearest = self.index.nearest(item.position(), k + 1);
-            for result in &nearest {
-                if let Some(&j) = id_to_idx.get(result.item.id.as_str())
-                    && i != j
-                {
-                    adj[i].push((j, result.distance));
-                }
-            }
-        }
-        // Symmetrize
-        let snapshot: Vec<Vec<(usize, f64)>> = adj.clone();
-        for (i, edges) in snapshot.iter().enumerate() {
-            for &(j, d) in edges {
-                if !adj[j].iter().any(|&(k, _)| k == i) {
-                    adj[j].push((i, d));
-                }
-            }
-        }
+        let adj = self.knn_adjacency(&items, k);
 
         // Dijkstra (min-heap via reversed Ord)
         let mut dist = vec![f64::INFINITY; n];
@@ -324,31 +393,12 @@ impl<P: Projection> EmbeddingIndex<P> {
             .map(|item| categories.get(item.id.as_str()).copied())
             .collect();
 
-        // Build k-NN adjacency list with bridge-aware weights
-        // Store (neighbor, effective_weight, raw_angular_dist, bridge_str_if_cross)
-        let mut adj: Vec<Vec<AdjEdge>> = vec![Vec::new(); n];
-        for (i, item) in items.iter().enumerate() {
-            let nearest = self.index.nearest(item.position(), k + 1);
-            for result in &nearest {
-                if let Some(&j) = id_to_idx.get(result.item.id.as_str())
-                    && i != j
-                {
-                    let angular_dist = result.distance;
-                    let (weight, bridge_str) =
-                        cross_category_weight(angular_dist, &item_cats, i, j, bridge_strengths);
-                    adj[i].push((j, weight, angular_dist, bridge_str));
-                }
-            }
-        }
-        // Symmetrize
-        let snapshot: Vec<Vec<AdjEdge>> = adj.clone();
-        for (i, edges) in snapshot.iter().enumerate() {
-            for &(j, w, d, bs) in edges {
-                if !adj[j].iter().any(|&(k, _, _, _)| k == i) {
-                    adj[j].push((i, w, d, bs));
-                }
-            }
-        }
+        // Reuse the cached raw-angular k-NN adjacency; bridge-aware
+        // weights are derived per edge at Dijkstra time. The previous
+        // implementation materialized a second n-row Vec<Vec<...>>
+        // that duplicated the neighborhood structure — this version
+        // shares the angular graph with `concept_path`.
+        let adj = self.knn_adjacency(&items, k);
 
         // Dijkstra on effective weights
         let mut dist = vec![f64::INFINITY; n];
@@ -369,7 +419,9 @@ impl<P: Projection> EmbeddingIndex<P> {
             if u == target_idx {
                 break;
             }
-            for &(v, w, _, _) in &adj[u] {
+            for &(v, raw_d) in &adj[u] {
+                let (w, _) =
+                    cross_category_weight(raw_d, &item_cats, u, v, bridge_strengths);
                 let nd = dist[u] + w;
                 if nd < dist[v] {
                     dist[v] = nd;
@@ -390,8 +442,12 @@ impl<P: Projection> EmbeddingIndex<P> {
             let edge_info = prev[cur].and_then(|p| {
                 adj[p]
                     .iter()
-                    .find(|&&(v, _, _, _)| v == cur)
-                    .map(|&(_, _, raw_d, bs)| (raw_d, bs))
+                    .find(|&&(v, _)| v == cur)
+                    .map(|&(_, raw_d)| {
+                        let (_, bs) =
+                            cross_category_weight(raw_d, &item_cats, p, cur, bridge_strengths);
+                        (raw_d, bs)
+                    })
             });
             let hop_distance = edge_info.map_or(0.0, |(d, _)| d);
             let bridge_str = edge_info.and_then(|(_, bs)| bs);

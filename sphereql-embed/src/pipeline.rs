@@ -376,18 +376,21 @@ impl SphereQLPipeline {
             ids.push(id);
         }
 
-        let cart_points: Vec<[f64; 3]> = embeddings
+        // Project each embedding exactly once. The category layer
+        // needs the spherical positions and the glob / manifold paths
+        // need their Cartesian form; both are derived from the same
+        // `projection.project(e)` so building them together saves an
+        // N-way pass over the projection (which can be expensive for
+        // kernel PCA / Laplacian).
+        let projected_positions: Vec<SphericalPoint> =
+            embeddings.iter().map(|e| projection.project(e)).collect();
+        let cart_points: Vec<[f64; 3]> = projected_positions
             .iter()
-            .map(|e| {
-                let sp = projection.project(e);
-                let c = spherical_to_cartesian(&sp);
+            .map(|sp| {
+                let c = spherical_to_cartesian(sp);
                 [c.x, c.y, c.z]
             })
             .collect();
-
-        // Build the category enrichment layer (Phase 1+2)
-        let projected_positions: Vec<SphericalPoint> =
-            embeddings.iter().map(|e| projection.project(e)).collect();
 
         let evr = projection.explained_variance_ratio();
         let category_layer = CategoryLayer::build_with_config(
@@ -443,12 +446,7 @@ impl SphereQLPipeline {
                                 quality: Some(quality),
                             }
                         })
-                        .filter(|r| {
-                            r.certainty >= self.quality_config.min_certainty
-                                && r.quality.is_none_or(|q| {
-                                    q.passes_threshold(self.quality_config.min_combined)
-                                })
-                        })
+                        .filter(|r| self.passes_quality(r))
                         .collect(),
                 )
             }
@@ -474,12 +472,7 @@ impl SphereQLPipeline {
                                 quality: Some(quality),
                             }
                         })
-                        .filter(|r| {
-                            r.certainty >= self.quality_config.min_certainty
-                                && r.quality.is_none_or(|q| {
-                                    q.passes_threshold(self.quality_config.min_combined)
-                                })
-                        })
+                        .filter(|r| self.passes_quality(r))
                         .collect(),
                 )
             }
@@ -800,11 +793,7 @@ impl SphereQLPipeline {
         });
         let filtered: Vec<NearestResult> = candidates
             .into_iter()
-            .filter(|r| {
-                r.certainty >= self.quality_config.min_certainty
-                    && r.quality
-                        .is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
-            })
+            .filter(|r| self.passes_quality(r))
             .take(k)
             .collect();
 
@@ -819,6 +808,21 @@ impl SphereQLPipeline {
         } else {
             filtered
         }
+    }
+
+    /// Shared quality-filter predicate. A result passes when its
+    /// certainty meets [`QualityConfig::min_certainty`] and, if a
+    /// [`QualitySignal`] is attached, it clears
+    /// [`QualityConfig::min_combined`].
+    ///
+    /// Factored out because four of the query-path filter closures had
+    /// the same body verbatim; the duplication made threshold changes
+    /// a four-way edit.
+    #[inline]
+    fn passes_quality(&self, r: &NearestResult) -> bool {
+        r.certainty >= self.quality_config.min_certainty
+            && r.quality
+                .is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
     }
 
     /// Shared helper: outer-sphere k-NN with quality filtering.
@@ -838,11 +842,7 @@ impl SphereQLPipeline {
                     quality: Some(quality),
                 }
             })
-            .filter(|r| {
-                r.certainty >= self.quality_config.min_certainty
-                    && r.quality
-                        .is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
-            })
+            .filter(|r| self.passes_quality(r))
             .collect()
     }
 

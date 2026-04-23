@@ -88,11 +88,7 @@ struct KMeansResult {
     centers: Vec<CartesianPoint>,
 }
 
-fn kmeans_spherical(
-    mapped_cartesian: &[CartesianPoint],
-    mapped_spherical: &[SphericalPoint],
-    k: usize,
-) -> KMeansResult {
+fn kmeans_spherical(mapped_cartesian: &[CartesianPoint], k: usize) -> KMeansResult {
     let n = mapped_cartesian.len();
 
     let mut centers: Vec<CartesianPoint> = if n >= k {
@@ -106,17 +102,28 @@ fn kmeans_spherical(
 
     let mut assignments = vec![0usize; n];
 
+    // k-means inner loop in Cartesian. Both points and centers live on
+    // the unit sphere, so angular distance `acos(dot)` and
+    // `maximize dot` pick the same cluster for every point (acos is
+    // monotonic). The previous implementation converted every
+    // Cartesian center back to spherical and called `angular_distance`
+    // per (point, center) pair — ~50·n·k redundant trig calls per
+    // k-means run, which dominated layout cost.
+    #[inline]
+    fn dot(a: &CartesianPoint, b: &CartesianPoint) -> f64 {
+        a.x * b.x + a.y * b.y + a.z * b.z
+    }
+
     for _ in 0..MAX_KMEANS_ITERATIONS {
         let mut changed = false;
 
-        for (i, sp) in mapped_spherical.iter().enumerate() {
+        for (i, point) in mapped_cartesian.iter().enumerate() {
             let mut best = 0;
-            let mut best_dist = f64::MAX;
+            let mut best_dot = f64::MIN;
             for (j, center) in centers.iter().enumerate() {
-                let center_sp = cartesian_to_spherical(center);
-                let d = angular_distance(sp, &center_sp);
-                if d < best_dist {
-                    best_dist = d;
+                let d = dot(point, center);
+                if d > best_dot {
+                    best_dot = d;
                     best = j;
                 }
             }
@@ -137,13 +144,15 @@ fn kmeans_spherical(
 
         for (j, cp) in cluster_points.iter().enumerate() {
             if cp.is_empty() {
+                // Reseed from whichever point is farthest from its
+                // current cluster center — Cartesian dot gives the
+                // ordering (smaller dot = larger angular distance).
                 let mut farthest_idx = 0;
-                let mut farthest_dist = 0.0_f64;
-                for (i, sp) in mapped_spherical.iter().enumerate() {
-                    let center_sp = cartesian_to_spherical(&centers[assignments[i]]);
-                    let d = angular_distance(sp, &center_sp);
-                    if d > farthest_dist {
-                        farthest_dist = d;
+                let mut farthest_dot = f64::MAX;
+                for (i, point) in mapped_cartesian.iter().enumerate() {
+                    let d = dot(point, &centers[assignments[i]]);
+                    if d < farthest_dot {
+                        farthest_dot = d;
                         farthest_idx = i;
                     }
                 }
@@ -383,7 +392,7 @@ impl<T: Clone + Send + Sync> LayoutStrategy<T> for ClusteredLayout {
         let mapped_cart: Vec<CartesianPoint> = mapped.iter().map(spherical_to_cartesian).collect();
 
         let k = self.num_clusters.min(items.len()).max(1);
-        let km = kmeans_spherical(&mapped_cart, &mapped, k);
+        let km = kmeans_spherical(&mapped_cart, k);
 
         let mut cluster_items: Vec<Vec<usize>> = vec![vec![]; k];
         for (i, &a) in km.assignments.iter().enumerate() {

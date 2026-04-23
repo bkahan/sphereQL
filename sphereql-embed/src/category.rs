@@ -764,33 +764,39 @@ impl CategoryLayer {
             });
         }
 
+        // Dijkstra via binary-heap. Previously a linear scan over
+        // `dist` per pop gave O(C²) — fine for tens of categories,
+        // sloppy under the larger corpora the tuner now exercises.
+        // Match the pattern already used in query.rs::concept_path.
         let n = self.summaries.len();
         let mut dist = vec![f64::INFINITY; n];
         let mut prev: Vec<Option<usize>> = vec![None; n];
-        let mut visited = vec![false; n];
+        let mut heap = std::collections::BinaryHeap::new();
 
         dist[si] = 0.0;
+        heap.push(HeapEntry {
+            dist: 0.0,
+            node: si,
+        });
 
-        for _ in 0..n {
-            let mut u = None;
-            let mut best = f64::INFINITY;
-            for (i, (&d, &v)) in dist.iter().zip(visited.iter()).enumerate() {
-                if !v && d < best {
-                    best = d;
-                    u = Some(i);
-                }
-            }
-            let Some(u) = u else { break };
+        while let Some(HeapEntry { dist: d, node: u }) = heap.pop() {
             if u == ti {
                 break;
             }
-            visited[u] = true;
-
+            // Stale entry — we already relaxed this node to something
+            // shorter. Skip without touching neighbors.
+            if d > dist[u] {
+                continue;
+            }
             for edge in &self.graph.adjacency[u] {
-                let nd = dist[u] + edge.weight;
+                let nd = d + edge.weight;
                 if nd < dist[edge.target] {
                     dist[edge.target] = nd;
                     prev[edge.target] = Some(u);
+                    heap.push(HeapEntry {
+                        dist: nd,
+                        node: edge.target,
+                    });
                 }
             }
         }
@@ -1022,6 +1028,29 @@ impl CategoryLayer {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+/// Min-heap entry keyed on `dist` for [`CategoryLayer::category_path`]'s
+/// Dijkstra. `BinaryHeap` is a max-heap, so `Ord` is reversed.
+/// `total_cmp` is NaN-safe (NaN sorts to the end).
+#[derive(PartialEq)]
+struct HeapEntry {
+    dist: f64,
+    node: usize,
+}
+
+impl Eq for HeapEntry {}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.dist.total_cmp(&self.dist)
+    }
+}
 
 // ── Tests ──────────────────────────────────────────────────────────────
 
