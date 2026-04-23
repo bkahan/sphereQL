@@ -141,48 +141,86 @@ impl LaplacianEigenmapProjection {
             })
             .collect();
 
-        // 2. Pairwise Jaccard similarity (dense n×n, upper-triangular filled
-        //    symmetrically).
-        let mut sim = vec![0.0f64; n * n];
+        // 2–4. Sparse top-k graph construction.
+        //
+        // Previously this pass materialized four separate n×n matrices
+        // (`sim`, `keep`, `w`, then `w_norm`) totaling ~3.2 GB at
+        // n = 10 000. The only buffer the eigensolver actually reads
+        // is `w_norm`, so every intermediate above was pure RAM tax.
+        //
+        // New shape:
+        //   per-row top-k edge list  (≈ n · k entries, O(n · k) memory)
+        //     → union-symmetrize into a `HashSet<(i, j)>`
+        //     → compute degrees from the set
+        //     → scatter directly into one dense `w_norm` the
+        //       eigensolver can consume
+        //
+        // Memory: from 4 · n² · 8 ≈ 3.2 GB down to ~1 · n² · 8 + O(n·k)
+        // ≈ 800 MB + a few MB of scratch.
+        //
+        // Jaccard is computed once per unordered pair; the upper-
+        // triangular scan fills both rows' candidate lists in one step.
+
+        // Per-row top-k min-heap keyed on (sim, j) — keeps the
+        // *largest* k similarities by evicting the current minimum.
+        // Using `std::cmp::Reverse` converts the default max-heap into
+        // the min-heap we need.
+        use std::cmp::Reverse;
+        use std::collections::BinaryHeap;
+        #[derive(PartialEq)]
+        struct TopKEntry(f64, usize);
+        impl Eq for TopKEntry {}
+        impl PartialOrd for TopKEntry {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for TopKEntry {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                // Compare on sim first (total_cmp — NaN-safe), break
+                // ties on index so the order is deterministic.
+                self.0
+                    .total_cmp(&other.0)
+                    .then_with(|| self.1.cmp(&other.1))
+            }
+        }
+
+        let mut top_k_heaps: Vec<BinaryHeap<Reverse<TopKEntry>>> =
+            (0..n).map(|_| BinaryHeap::with_capacity(k + 1)).collect();
+
         for i in 0..n {
             for j in (i + 1)..n {
                 let s = jaccard_sorted(&corpus_active_sets[i], &corpus_active_sets[j]);
-                sim[i * n + j] = s;
-                sim[j * n + i] = s;
-            }
-        }
-
-        // 3. k-NN sparsify (union): keep edge (i,j) iff j is in top-k of i OR
-        //    i is in top-k of j. Self-loops never appear (sim[i][i] = 0).
-        let mut keep = vec![false; n * n];
-        let mut neighbors: Vec<(usize, f64)> = Vec::with_capacity(n);
-        for i in 0..n {
-            neighbors.clear();
-            for j in 0..n {
-                if i != j {
-                    neighbors.push((j, sim[i * n + j]));
+                if s <= 0.0 {
+                    continue;
+                }
+                for (owner, other) in [(i, j), (j, i)] {
+                    let h = &mut top_k_heaps[owner];
+                    h.push(Reverse(TopKEntry(s, other)));
+                    if h.len() > k {
+                        h.pop();
+                    }
                 }
             }
-            neighbors.sort_by(|a, b| b.1.total_cmp(&a.1));
-            for &(j, _) in neighbors.iter().take(k) {
-                keep[i * n + j] = true;
-                keep[j * n + i] = true;
+        }
+
+        // Union-symmetrize the per-row top-k candidates into a dedup
+        // edge set. Jaccard is symmetric by construction, so we can
+        // recover the edge weight from the heap entry.
+        let mut edges: std::collections::HashMap<(usize, usize), f64> =
+            std::collections::HashMap::with_capacity(n * k);
+        for (i, heap) in top_k_heaps.into_iter().enumerate() {
+            for Reverse(TopKEntry(s, j)) in heap.into_iter() {
+                let key = if i < j { (i, j) } else { (j, i) };
+                edges.insert(key, s);
             }
         }
 
-        // 4. Sparsified affinity W + degrees.
-        let mut w = vec![0.0f64; n * n];
+        // Degrees: sum of weights on each node's incident edges.
         let mut degrees = vec![0.0f64; n];
-        for (i, d_slot) in degrees.iter_mut().enumerate() {
-            let row = i * n;
-            let mut d = 0.0;
-            for j in 0..n {
-                if i != j && keep[row + j] {
-                    w[row + j] = sim[row + j];
-                    d += sim[row + j];
-                }
-            }
-            *d_slot = d;
+        for (&(a, b), &s) in edges.iter() {
+            degrees[a] += s;
+            degrees[b] += s;
         }
 
         // Regularize isolated/near-isolated nodes so D^(-1/2) stays finite.
@@ -192,13 +230,13 @@ impl LaplacianEigenmapProjection {
             .collect();
         let d_inv_sqrt: Vec<f64> = safe_degrees.iter().map(|&d| 1.0 / d.sqrt()).collect();
 
-        // 5. W_norm = D^(-1/2) W D^(-1/2) (symmetric, row-major).
+        // 5. Scatter the symmetric W_norm = D^(-1/2) · W · D^(-1/2)
+        //    directly from the edge map. Cells with no edge stay 0.
         let mut w_norm = vec![0.0f64; n * n];
-        for i in 0..n {
-            let row = i * n;
-            for j in 0..n {
-                w_norm[row + j] = w[row + j] * d_inv_sqrt[i] * d_inv_sqrt[j];
-            }
+        for (&(a, b), &s) in edges.iter() {
+            let v = s * d_inv_sqrt[a] * d_inv_sqrt[b];
+            w_norm[a * n + b] = v;
+            w_norm[b * n + a] = v;
         }
 
         // 6. Trivial eigenvector of W_norm at μ=1 is proportional to sqrt(D).
