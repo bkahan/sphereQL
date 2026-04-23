@@ -7,6 +7,7 @@
 pub mod bridge;
 pub mod error;
 pub mod memory;
+pub mod redacted;
 pub mod store;
 pub mod types;
 
@@ -18,5 +19,6 @@ pub mod qdrant;
 pub use bridge::*;
 pub use error::*;
 pub use memory::*;
+pub use redacted::Redacted;
 pub use store::*;
 pub use types::*;

@@ -440,8 +440,12 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
         let mut eigenvalue = 0.0;
 
         for _ in 0..max_iters {
+            // Full mat-vec `u = matrix · v`. Earlier versions had a
+            // `.skip(1)` here that silently zeroed `u[0]` — every kernel
+            // PCA eigenvector ended up with a spurious zero in its first
+            // coordinate. See the `first_coordinate_is_nonzero` test.
             let mut u = vec![0.0; n];
-            for (i, u_i) in u.iter_mut().enumerate().skip(1) {
+            for (i, u_i) in u.iter_mut().enumerate() {
                 let row_start = i * n;
                 let mut s = 0.0;
                 for j in 0..n {
@@ -539,6 +543,36 @@ mod tests {
             "phi must be in [0, π], got {}",
             sp.phi
         );
+    }
+
+    /// Regression test for the `.skip(1)` bug in `top_k_symmetric`:
+    /// the mat-vec loop used to start at row 1, leaving `u[0] = 0.0`
+    /// on every power-iteration step. That silently zeroed the first
+    /// coordinate of every kernel PCA eigenvector. This test fails
+    /// loudly if the skip comes back.
+    #[test]
+    fn top_k_symmetric_first_coordinate_nonzero() {
+        // Symmetric, dominant-diagonal 4×4 matrix whose top eigenvector
+        // is approximately the all-ones vector (each coordinate ≈ 0.5).
+        let n = 4;
+        #[rustfmt::skip]
+        let matrix = vec![
+            4.0, 1.0, 0.5, 0.2,
+            1.0, 4.0, 1.0, 0.5,
+            0.5, 1.0, 4.0, 1.0,
+            0.2, 0.5, 1.0, 4.0,
+        ];
+        let (vectors, values) = top_k_symmetric(&matrix, n, 2);
+        assert_eq!(vectors.len(), 2);
+        for (idx, v) in vectors.iter().enumerate() {
+            assert!(
+                v[0].abs() > 1e-6,
+                "eigenvector {idx} has a suspiciously small first \
+                 coordinate ({:.2e}) — the .skip(1) bug is back",
+                v[0]
+            );
+        }
+        assert!(values[0] > values[1], "eigenvalues must be sorted");
     }
 
     #[test]

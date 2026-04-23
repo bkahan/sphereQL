@@ -576,7 +576,12 @@ impl SlicingManifold {
             .enumerate()
             .map(|(i, p)| (i, dist3(query, p)))
             .collect();
-        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        // `total_cmp` gives a total order over all f64 including NaN
+        // (which sorts to the end). Previously `.partial_cmp().unwrap()`
+        // panicked on NaN — and NaN is reachable whenever `all_points`
+        // contains a degenerate entry from a lossy projection, making
+        // this one of the few query-path panic sites in the crate.
+        dists.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         let neighborhood: Vec<[f64; 3]> = dists
             .iter()

@@ -11,16 +11,20 @@ use qdrant_client::qdrant::{
 };
 
 use crate::error::VectorStoreError;
+use crate::redacted::Redacted;
 use crate::store::VectorStore;
 use crate::types::{
     DistanceMetric, PayloadUpdate, SPHEREQL_ID_KEY, SearchResult, VectorPage, VectorRecord,
 };
 
 /// Configuration for connecting to a Qdrant instance.
+///
+/// `api_key` is a [`Redacted`] wrapper so the struct's `Debug` impl
+/// never leaks the key into logs, panic backtraces, or test output.
 #[derive(Debug, Clone)]
 pub struct QdrantConfig {
     pub url: String,
-    pub api_key: Option<String>,
+    pub api_key: Option<Redacted>,
     pub collection: String,
     pub dimension: usize,
     pub distance: DistanceMetric,
@@ -41,7 +45,7 @@ impl QdrantConfig {
     }
 
     pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
+        self.api_key = Some(Redacted::new(key));
         self
     }
 
@@ -83,7 +87,7 @@ impl QdrantStore {
     pub async fn connect(config: QdrantConfig) -> Result<Self, VectorStoreError> {
         let mut builder = Qdrant::from_url(&config.url);
         if let Some(ref key) = config.api_key {
-            builder = builder.api_key(key.as_str());
+            builder = builder.api_key(key.expose());
         }
         let client = builder
             .build()

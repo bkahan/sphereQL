@@ -6,15 +6,19 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::error::VectorStoreError;
+use crate::redacted::Redacted;
 use crate::store::VectorStore;
 use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 
 // ── Config ──────────────────────────────────────────────────────────────
 
 /// Configuration for connecting to a Pinecone index.
+///
+/// `api_key` is a [`Redacted`] wrapper so the struct's `Debug` impl
+/// never leaks the key into logs, panic backtraces, or test output.
 #[derive(Debug, Clone)]
 pub struct PineconeConfig {
-    pub api_key: String,
+    pub api_key: Redacted,
     /// Index host, e.g. "my-index-abc123.svc.us-east1-gcp.pinecone.io"
     pub host: String,
     /// Pinecone namespace. Default "".
@@ -27,7 +31,7 @@ pub struct PineconeConfig {
 impl PineconeConfig {
     pub fn new(api_key: impl Into<String>, host: impl Into<String>, dimension: usize) -> Self {
         Self {
-            api_key: api_key.into(),
+            api_key: Redacted::new(api_key),
             host: host.into(),
             namespace: String::new(),
             dimension,
@@ -104,7 +108,7 @@ impl PineconeStore {
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.client
             .request(method, format!("{}{path}", self.base_url))
-            .header("Api-Key", &self.config.api_key)
+            .header("Api-Key", self.config.api_key.expose())
             .header("Content-Type", "application/json")
     }
 
@@ -520,9 +524,18 @@ mod tests {
     #[test]
     fn config_defaults() {
         let config = PineconeConfig::new("key", "my-host.pinecone.io", 384);
-        assert_eq!(config.api_key, "key");
+        assert_eq!(config.api_key.expose(), "key");
         assert_eq!(config.host, "my-host.pinecone.io");
         assert_eq!(config.dimension, 384);
+
+        // `{:?}` on the config must not leak the key — this is the
+        // whole reason `api_key` is wrapped in `Redacted`.
+        let rendered = format!("{config:?}");
+        assert!(
+            !rendered.contains("\"key\""),
+            "PineconeConfig Debug leaked the api_key: {rendered}"
+        );
+        assert!(rendered.contains("redacted"));
         assert!(config.namespace.is_empty());
         assert_eq!(config.top_k_limit, 10_000);
     }
