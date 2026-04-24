@@ -2383,6 +2383,7 @@ dependencies = [
  "async-graphql",
  "serde",
  "sphereql-core",
+ "sphereql-embed",
  "sphereql-index",
  "tokio",
  "tracing",
