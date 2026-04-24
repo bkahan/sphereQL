@@ -8,7 +8,7 @@ use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
 use sphereql_embed::domain_groups::DomainGroup;
-use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent};
+use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent, FeedbackSummary};
 use sphereql_embed::laplacian::{
     DEFAULT_ACTIVE_THRESHOLD, DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection,
 };
@@ -735,14 +735,45 @@ impl From<&ProjectionWarning> for ProjectionWarningOut {
 ///
 /// `input_json` has the same shape as [`Pipeline::new`]:
 /// `{ "categories": [...], "embeddings": [[...], ...] }`.
-///
-/// Returns the full serde JSON of `CorpusFeatures` — suitable as input
-/// to a `MetaModel` on the Rust side, or for logging/audit.
 #[wasm_bindgen(js_name = corpusFeatures)]
-pub fn corpus_features(input_json: &str) -> Result<String, JsError> {
+pub fn corpus_features(input_json: &str) -> Result<CorpusFeaturesOut, JsError> {
     let input = parse_input(input_json)?;
     let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
-    serde_json::to_string(&features).map_err(|e| JsError::new(&e.to_string()))
+    Ok(CorpusFeaturesOut::from(&features))
+}
+
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct CorpusFeaturesOut {
+    pub n_items: usize,
+    pub n_categories: usize,
+    pub dim: usize,
+    pub mean_members_per_category: f64,
+    pub category_size_entropy: f64,
+    pub mean_sparsity: f64,
+    pub axis_utilization_entropy: f64,
+    pub noise_estimate: f64,
+    pub mean_intra_category_similarity: f64,
+    pub mean_inter_category_similarity: f64,
+    pub category_separation_ratio: f64,
+}
+
+impl From<&CorpusFeatures> for CorpusFeaturesOut {
+    fn from(f: &CorpusFeatures) -> Self {
+        Self {
+            n_items: f.n_items,
+            n_categories: f.n_categories,
+            dim: f.dim,
+            mean_members_per_category: f.mean_members_per_category,
+            category_size_entropy: f.category_size_entropy,
+            mean_sparsity: f.mean_sparsity,
+            axis_utilization_entropy: f.axis_utilization_entropy,
+            noise_estimate: f.noise_estimate,
+            mean_intra_category_similarity: f.mean_intra_category_similarity,
+            mean_inter_category_similarity: f.mean_inter_category_similarity,
+            category_separation_ratio: f.category_separation_ratio,
+        }
+    }
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -781,14 +812,20 @@ fn default_gamma() -> f64 {
     0.25
 }
 
-#[derive(serde::Serialize)]
-struct TuneReportOut {
-    metric_name: String,
-    best_score: f64,
-    best_config: PipelineConfig,
-    trials_count: usize,
-    failures_count: usize,
-    mean_score: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct TuneReportOut {
+    pub metric_name: String,
+    pub best_score: f64,
+    // `PipelineConfig` is a foreign type (lives in `sphereql-embed`) so
+    // we can't derive Tsify on it here. Override the TS type to a
+    // structural `object` — the JSON round-trips fine and callers can
+    // pass the whole value straight back into `Pipeline.newWithConfig`.
+    #[tsify(type = "object")]
+    pub best_config: PipelineConfig,
+    pub trials_count: usize,
+    pub failures_count: usize,
+    pub mean_score: f64,
 }
 
 impl TuneReportOut {
@@ -853,10 +890,10 @@ fn resolve_metric(name: &str) -> Result<Box<dyn QualityMetric>, JsError> {
 /// may be `"{}"` or a JSON object with any of:
 /// `metric`, `strategy`, `budget`, `seed`, `warmup`, `gamma`, `base_config`.
 ///
-/// To construct the tuned pipeline, parse `best_config` from the
-/// returned report and pass it to [`Pipeline::newWithConfig`].
+/// To construct the tuned pipeline, pass the returned `best_config`
+/// object straight back into [`Pipeline::newWithConfig`].
 #[wasm_bindgen(js_name = autoTune)]
-pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
+pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<TuneReportOut, JsError> {
     let input = parse_input(input_json)?;
     let opts: AutoTuneOpts = serde_json::from_str(opts_json)
         .map_err(|e| JsError::new(&format!("invalid options JSON: {e}")))?;
@@ -875,8 +912,7 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
     let (_pipeline, report) = rust_auto_tune(input, &space, metric.as_ref(), strategy, &base)
         .map_err(|e| JsError::new(&e.to_string()))?;
 
-    serde_json::to_string(&TuneReportOut::from_report(&report))
-        .map_err(|e| JsError::new(&e.to_string()))
+    Ok(TuneReportOut::from_report(&report))
 }
 
 // ── MetaModel ────────────────────────────────────────────────────────
@@ -1034,20 +1070,47 @@ impl WasmFeedbackAggregator {
     }
 
     #[wasm_bindgen(js_name = corpusIds)]
-    pub fn corpus_ids(&self) -> Result<String, JsError> {
-        serde_json::to_string(&self.inner.corpus_ids()).map_err(|e| JsError::new(&e.to_string()))
+    pub fn corpus_ids(&self) -> Vec<String> {
+        self.inner.corpus_ids()
     }
 
-    /// Summarize one corpus. Returns `null` if no events exist.
-    pub fn summarize(&self, corpus_id: &str) -> Result<String, JsError> {
-        serde_json::to_string(&self.inner.summarize(corpus_id))
-            .map_err(|e| JsError::new(&e.to_string()))
+    /// Summarize one corpus. `None` when no events exist.
+    pub fn summarize(&self, corpus_id: &str) -> Option<FeedbackSummaryOut> {
+        self.inner
+            .summarize(corpus_id)
+            .map(FeedbackSummaryOut::from)
     }
 
-    /// Summarize all corpora as an array of summaries.
+    /// Summarize every corpus with recorded events.
     #[wasm_bindgen(js_name = summarizeAll)]
-    pub fn summarize_all(&self) -> Result<String, JsError> {
-        serde_json::to_string(&self.inner.summarize_all()).map_err(|e| JsError::new(&e.to_string()))
+    pub fn summarize_all(&self) -> Vec<FeedbackSummaryOut> {
+        self.inner
+            .summarize_all()
+            .into_iter()
+            .map(FeedbackSummaryOut::from)
+            .collect()
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct FeedbackSummaryOut {
+    pub corpus_id: String,
+    pub n_events: usize,
+    pub mean_score: f64,
+    pub min_score: f64,
+    pub max_score: f64,
+}
+
+impl From<FeedbackSummary> for FeedbackSummaryOut {
+    fn from(s: FeedbackSummary) -> Self {
+        Self {
+            corpus_id: s.corpus_id,
+            n_events: s.n_events,
+            mean_score: s.mean_score,
+            min_score: s.min_score,
+            max_score: s.max_score,
+        }
     }
 }
 
