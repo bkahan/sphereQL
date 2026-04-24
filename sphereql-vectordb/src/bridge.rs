@@ -271,12 +271,21 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         }
 
         let candidates = self.store.search(query_embedding, recall_k).await?;
+        let recalled = candidates.len();
 
-        // Re-rank by original cosine similarity \u2014 the true semantic distance.
+        // Re-rank by original cosine similarity — the true semantic
+        // distance. Candidates without a `vector` (stores can omit
+        // values on cost/bandwidth grounds) can't be re-scored, so
+        // they're dropped here. The `dropped_no_vector` counter below
+        // makes that visible to callers via the tracing event.
+        let mut dropped_no_vector = 0usize;
         let mut scored: Vec<(SearchResult, f64)> = candidates
             .into_iter()
             .filter_map(|mut result| {
-                let vec = result.vector.as_ref()?;
+                let Some(vec) = result.vector.as_ref() else {
+                    dropped_no_vector += 1;
+                    return None;
+                };
                 let cosine_sim = sphereql_core::cosine_similarity(query_embedding, vec);
                 result.score = cosine_sim;
                 Some((result, cosine_sim))
@@ -286,6 +295,31 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         // Sort descending by cosine similarity (higher = more similar)
         scored.sort_by(|a, b| b.1.total_cmp(&a.1));
         scored.truncate(final_k);
+
+        // Observability hooks. A caller that asked for `final_k` but
+        // got fewer results has two likely causes: the store returned
+        // fewer than `recall_k` candidates, or the store returned
+        // candidates without stored vectors. Both are recoverable at
+        // the caller level (retry with a larger recall, enable value
+        // storage on the backend) — surface them without failing the
+        // query.
+        if scored.len() < final_k {
+            tracing::warn!(
+                recalled,
+                dropped_no_vector,
+                final_k,
+                recall_k,
+                "hybrid_search returned fewer results than requested; \
+                 consider raising recall_k or enabling vector storage \
+                 on the backend"
+            );
+        } else if dropped_no_vector > 0 {
+            tracing::debug!(
+                dropped_no_vector,
+                "hybrid_search dropped candidates missing `vector`; \
+                 re-rank couldn't score them"
+            );
+        }
 
         Ok(scored.into_iter().map(|(r, _)| r).collect())
     }

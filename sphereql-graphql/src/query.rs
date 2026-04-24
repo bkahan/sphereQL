@@ -7,7 +7,7 @@ use sphereql_core::{
     SphericalPoint, angular_distance, chord_distance, euclidean_distance, great_circle_distance,
     spherical_to_cartesian,
 };
-use sphereql_index::{SpatialIndex, SpatialItem};
+use sphereql_index::{SpatialIndex, SpatialItem, SpatialQueryResult};
 
 use crate::types::{
     BandInput, ConeInput, DistanceMetric, NearestResultOutput, RegionInput, ShellInput,
@@ -32,6 +32,43 @@ impl SpatialItem for PointItem {
 
 pub type PointIndex = Arc<RwLock<SpatialIndex<PointItem>>>;
 
+/// Take a read lock on the index, run the supplied `query` closure, and
+/// package the result into a `SpatialQueryResultOutput` with optional
+/// per-call truncation.
+///
+/// The four `within_*` resolvers (`cone`, `shell`, `band`, `region`)
+/// differed only in which `SpatialIndex::query_*` method they called —
+/// this helper folds the shared prologue (context lookup, lock, map,
+/// truncate, wrap) so each resolver is two lines.
+async fn run_spatial_query<F>(
+    ctx: &Context<'_>,
+    limit: Option<i32>,
+    query: F,
+) -> Result<SpatialQueryResultOutput>
+where
+    F: FnOnce(&SpatialIndex<PointItem>) -> SpatialQueryResult<PointItem>,
+{
+    let index = ctx
+        .data::<PointIndex>()
+        .map_err(|_| async_graphql::Error::new("SpatialIndex not found in context"))?;
+    let idx = index.read().await;
+    let result = query(&idx);
+
+    let mut items: Vec<SphericalPointOutput> = result
+        .items
+        .iter()
+        .map(|item| SphericalPointOutput::from(item.position()))
+        .collect();
+    if let Some(n) = limit {
+        items.truncate(n.max(0) as usize);
+    }
+
+    Ok(SpatialQueryResultOutput {
+        items,
+        total_scanned: result.total_scanned as i32,
+    })
+}
+
 pub struct SphericalQueryRoot;
 
 #[Object]
@@ -43,28 +80,7 @@ impl SphericalQueryRoot {
         limit: Option<i32>,
     ) -> Result<SpatialQueryResultOutput> {
         let core_cone = cone.to_core()?;
-        let index = ctx
-            .data::<PointIndex>()
-            .map_err(|_| async_graphql::Error::new("SpatialIndex not found in context"))?;
-        let idx = index.read().await;
-        let result = idx.query_cone(&core_cone);
-
-        let items: Vec<SphericalPointOutput> = result
-            .items
-            .iter()
-            .map(|item| SphericalPointOutput::from(item.position()))
-            .collect();
-
-        let items = if let Some(n) = limit {
-            items.into_iter().take(n.max(0) as usize).collect()
-        } else {
-            items
-        };
-
-        Ok(SpatialQueryResultOutput {
-            items,
-            total_scanned: result.total_scanned as i32,
-        })
+        run_spatial_query(ctx, limit, |idx| idx.query_cone(&core_cone)).await
     }
 
     async fn within_shell(
@@ -74,28 +90,7 @@ impl SphericalQueryRoot {
         limit: Option<i32>,
     ) -> Result<SpatialQueryResultOutput> {
         let core_shell = shell.to_core()?;
-        let index = ctx
-            .data::<PointIndex>()
-            .map_err(|_| async_graphql::Error::new("SpatialIndex not found in context"))?;
-        let idx = index.read().await;
-        let result = idx.query_shell(&core_shell);
-
-        let items: Vec<SphericalPointOutput> = result
-            .items
-            .iter()
-            .map(|item| SphericalPointOutput::from(item.position()))
-            .collect();
-
-        let items = if let Some(n) = limit {
-            items.into_iter().take(n.max(0) as usize).collect()
-        } else {
-            items
-        };
-
-        Ok(SpatialQueryResultOutput {
-            items,
-            total_scanned: result.total_scanned as i32,
-        })
+        run_spatial_query(ctx, limit, |idx| idx.query_shell(&core_shell)).await
     }
 
     async fn within_band(
@@ -105,28 +100,7 @@ impl SphericalQueryRoot {
         limit: Option<i32>,
     ) -> Result<SpatialQueryResultOutput> {
         let core_band = band.to_core()?;
-        let index = ctx
-            .data::<PointIndex>()
-            .map_err(|_| async_graphql::Error::new("SpatialIndex not found in context"))?;
-        let idx = index.read().await;
-        let result = idx.query_band(&core_band);
-
-        let items: Vec<SphericalPointOutput> = result
-            .items
-            .iter()
-            .map(|item| SphericalPointOutput::from(item.position()))
-            .collect();
-
-        let items = if let Some(n) = limit {
-            items.into_iter().take(n.max(0) as usize).collect()
-        } else {
-            items
-        };
-
-        Ok(SpatialQueryResultOutput {
-            items,
-            total_scanned: result.total_scanned as i32,
-        })
+        run_spatial_query(ctx, limit, |idx| idx.query_band(&core_band)).await
     }
 
     async fn within_region(
@@ -136,28 +110,7 @@ impl SphericalQueryRoot {
         limit: Option<i32>,
     ) -> Result<SpatialQueryResultOutput> {
         let core_region = region.to_core()?;
-        let index = ctx
-            .data::<PointIndex>()
-            .map_err(|_| async_graphql::Error::new("SpatialIndex not found in context"))?;
-        let idx = index.read().await;
-        let result = idx.query_region(&core_region);
-
-        let items: Vec<SphericalPointOutput> = result
-            .items
-            .iter()
-            .map(|item| SphericalPointOutput::from(item.position()))
-            .collect();
-
-        let items = if let Some(n) = limit {
-            items.into_iter().take(n.max(0) as usize).collect()
-        } else {
-            items
-        };
-
-        Ok(SpatialQueryResultOutput {
-            items,
-            total_scanned: result.total_scanned as i32,
-        })
+        run_spatial_query(ctx, limit, |idx| idx.query_region(&core_region)).await
     }
 
     async fn nearest_to(
