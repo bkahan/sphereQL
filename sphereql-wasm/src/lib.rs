@@ -9,6 +9,9 @@ use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
 use sphereql_embed::domain_groups::DomainGroup;
 use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent};
+use sphereql_embed::laplacian::{
+    DEFAULT_ACTIVE_THRESHOLD, DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection,
+};
 use sphereql_embed::meta_model::{
     DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
 };
@@ -17,6 +20,7 @@ use sphereql_embed::pipeline::{
     SphereQLQuery,
 };
 use sphereql_embed::projection::Projection;
+use sphereql_embed::types::{Embedding, RadialStrategy};
 use sphereql_embed::quality_metric::{
     BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
     TerritorialHealth,
@@ -1083,6 +1087,159 @@ impl WasmFeedbackAggregator {
 impl Default for WasmFeedbackAggregator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ── LaplacianEigenmapProjection ────────────────────────────────────────
+//
+// Standalone projection class — mirrors the Rust `LaplacianEigenmapProjection`
+// API for callers that want to project embeddings without standing up a full
+// pipeline. Inputs arrive as JSON arrays so the binding works uniformly from
+// JS, Node and browsers without a numpy-equivalent type.
+
+fn parse_embeddings_2d(json: &str) -> Result<Vec<Embedding>, JsError> {
+    let parsed: Vec<Vec<f64>> =
+        serde_json::from_str(json).map_err(|e| JsError::new(&e.to_string()))?;
+    for (i, row) in parsed.iter().enumerate() {
+        for (j, v) in row.iter().enumerate() {
+            if !v.is_finite() {
+                return Err(JsError::new(&format!(
+                    "embedding[{i}][{j}] must be finite (no NaN or Inf)"
+                )));
+            }
+        }
+    }
+    Ok(parsed.into_iter().map(Embedding::new).collect())
+}
+
+fn parse_embedding_1d(json: &str) -> Result<Embedding, JsError> {
+    let parsed: Vec<f64> = serde_json::from_str(json).map_err(|e| JsError::new(&e.to_string()))?;
+    for (i, v) in parsed.iter().enumerate() {
+        if !v.is_finite() {
+            return Err(JsError::new(&format!(
+                "embedding[{i}] must be finite (no NaN or Inf)"
+            )));
+        }
+    }
+    Ok(Embedding::new(parsed))
+}
+
+fn parse_radial_strategy(json: Option<&str>) -> Result<RadialStrategy, JsError> {
+    let Some(raw) = json else {
+        return Ok(RadialStrategy::Magnitude);
+    };
+    if let Ok(s) = serde_json::from_str::<String>(raw) {
+        match s.as_str() {
+            "magnitude" => Ok(RadialStrategy::Magnitude),
+            other => Err(JsError::new(&format!(
+                "unknown radial strategy '{other}': expected 'magnitude' or a number"
+            ))),
+        }
+    } else if let Ok(v) = serde_json::from_str::<f64>(raw) {
+        Ok(RadialStrategy::Fixed(v))
+    } else {
+        Err(JsError::new(
+            "radial must be the string \"magnitude\" or a JSON number",
+        ))
+    }
+}
+
+#[derive(serde::Serialize)]
+struct SphericalPointOut {
+    r: f64,
+    theta: f64,
+    phi: f64,
+}
+
+/// Laplacian-eigenmap projection — connectivity-preserving embedding on S².
+///
+/// Useful when the corpus is sparse and noisy enough that variance-maximizing
+/// projections (PCA / kernel PCA) collapse into the noise axes. See the Rust
+/// `sphereql_embed::laplacian` module for algorithmic detail.
+#[wasm_bindgen(js_name = LaplacianEigenmapProjection)]
+pub struct WasmLaplacianEigenmapProjection {
+    inner: LaplacianEigenmapProjection,
+}
+
+#[wasm_bindgen(js_class = LaplacianEigenmapProjection)]
+impl WasmLaplacianEigenmapProjection {
+    /// Fit a projection from a JSON 2-D array of embeddings.
+    ///
+    /// - `embeddings_json`: `[[0.1, 0.2, ...], [0.3, 0.4, ...], ...]`, at least
+    ///   4 rows; all rows must share a dimensionality >= 1.
+    /// - `radial_json` (optional): `"\"magnitude\""` or a JSON number.
+    /// - `k_neighbors` (optional): k-NN graph density; defaults to 15.
+    /// - `active_threshold` (optional): absolute-weight cutoff; defaults to 0.05.
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        embeddings_json: &str,
+        radial_json: Option<String>,
+        k_neighbors: Option<usize>,
+        active_threshold: Option<f64>,
+    ) -> Result<WasmLaplacianEigenmapProjection, JsError> {
+        let embs = parse_embeddings_2d(embeddings_json)?;
+        let radial = parse_radial_strategy(radial_json.as_deref())?;
+        let k = k_neighbors.unwrap_or(DEFAULT_K_NEIGHBORS);
+        let thresh = active_threshold.unwrap_or(DEFAULT_ACTIVE_THRESHOLD);
+        let inner = LaplacianEigenmapProjection::fit_with_params(&embs, k, thresh, radial)
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn dimensionality(&self) -> usize {
+        self.inner.dimensionality()
+    }
+
+    /// Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
+    #[wasm_bindgen(getter, js_name = connectivityRatio)]
+    pub fn connectivity_ratio(&self) -> f64 {
+        self.inner.connectivity_ratio()
+    }
+
+    /// Same scalar as `connectivityRatio`, exposed under PCA's name for
+    /// adaptive-threshold compatibility.
+    #[wasm_bindgen(getter, js_name = explainedVarianceRatio)]
+    pub fn explained_variance_ratio(&self) -> f64 {
+        self.inner.explained_variance_ratio()
+    }
+
+    /// Returns `[μ_1, μ_2, μ_3]` as a JSON array string.
+    pub fn eigenvalues(&self) -> Result<String, JsError> {
+        let vals = self.inner.eigenvalues();
+        serde_json::to_string(&vals).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Project a single embedding (JSON array of numbers) to a spherical
+    /// point. Returns `{ r, theta, phi }` as JSON.
+    pub fn project(&self, embedding_json: &str) -> Result<String, JsError> {
+        let emb = parse_embedding_1d(embedding_json)?;
+        let p = self.inner.project(&emb);
+        let out = SphericalPointOut {
+            r: p.r,
+            theta: p.theta,
+            phi: p.phi,
+        };
+        serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Project a batch (JSON 2-D array). Returns a JSON array of
+    /// `{ r, theta, phi }`.
+    #[wasm_bindgen(js_name = projectBatch)]
+    pub fn project_batch(&self, embeddings_json: &str) -> Result<String, JsError> {
+        let embs = parse_embeddings_2d(embeddings_json)?;
+        let out: Vec<SphericalPointOut> = embs
+            .iter()
+            .map(|e| {
+                let p = self.inner.project(e);
+                SphericalPointOut {
+                    r: p.r,
+                    theta: p.theta,
+                    phi: p.phi,
+                }
+            })
+            .collect();
+        serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
     }
 }
 

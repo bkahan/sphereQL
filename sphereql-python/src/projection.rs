@@ -4,6 +4,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyType;
 
 use sphereql_embed::kernel_pca::KernelPcaProjection;
+use sphereql_embed::laplacian::{
+    DEFAULT_ACTIVE_THRESHOLD, DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection,
+};
 use sphereql_embed::projection::{PcaProjection, Projection, RandomProjection};
 use sphereql_embed::types::{Embedding, RadialStrategy};
 
@@ -383,6 +386,140 @@ impl PyKernelPcaProjection {
             self.inner.dimensionality(),
             self.inner.sigma(),
             self.inner.explained_variance_ratio()
+        )
+    }
+}
+
+// ── LaplacianEigenmapProjection ───────────────────────────────────────
+//
+// Connectivity-preserving spectral projection. On sparse / noise-heavy
+// corpora where variance-maximizing projections (PCA / kernel PCA) pull
+// toward noise axes, Laplacian eigenmaps preserve neighbor structure
+// instead and typically keep category boundaries cleaner. See
+// `sphereql_embed::laplacian` for algorithmic details.
+
+#[pyclass(name = "LaplacianEigenmap")]
+pub struct PyLaplacianEigenmapProjection {
+    inner: LaplacianEigenmapProjection,
+}
+
+#[pymethods]
+impl PyLaplacianEigenmapProjection {
+    /// Fit a Laplacian-eigenmap projection to a corpus.
+    ///
+    /// - `embeddings`: 2-D numpy array (f32/f64) or list-of-lists; needs
+    ///   at least 4 rows and any positive dimensionality.
+    /// - `radial`: `"magnitude"` (default) or a finite float to fix the
+    ///   radial coordinate.
+    /// - `k_neighbors`: density of the sparsified k-NN graph. Higher =
+    ///   smoother embedding, less noise-sensitivity, but more blurred
+    ///   category boundaries. Typical range 10–30; defaults to 15.
+    /// - `active_threshold`: absolute-weight cutoff for the active-axis
+    ///   filter. Axes with `|v| ≤ threshold` are dropped before computing
+    ///   Jaccard similarity. Defaults to 0.05.
+    #[classmethod]
+    #[pyo3(signature = (embeddings, *, radial=None, k_neighbors=None, active_threshold=None))]
+    fn fit(
+        _cls: &Bound<'_, PyType>,
+        py: Python<'_>,
+        embeddings: &Bound<'_, PyAny>,
+        radial: Option<&Bound<'_, PyAny>>,
+        k_neighbors: Option<usize>,
+        active_threshold: Option<f64>,
+    ) -> PyResult<Self> {
+        let embs = extract_embeddings_2d(embeddings)?;
+        let strategy = match radial {
+            Some(r) => parse_radial(r)?,
+            None => RadialStrategy::Magnitude,
+        };
+        let k = k_neighbors.unwrap_or(DEFAULT_K_NEIGHBORS);
+        let thresh = active_threshold.unwrap_or(DEFAULT_ACTIVE_THRESHOLD);
+        let proj = py
+            .detach(|| LaplacianEigenmapProjection::fit_with_params(&embs, k, thresh, strategy))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner: proj })
+    }
+
+    #[getter]
+    fn dimensionality(&self) -> usize {
+        self.inner.dimensionality()
+    }
+
+    /// Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
+    /// Exposed under the same name as PCA's EVR for adaptive-threshold
+    /// compatibility — but the two quantities have distinct meaning.
+    #[getter]
+    fn explained_variance_ratio(&self) -> f64 {
+        self.inner.explained_variance_ratio()
+    }
+
+    /// Same scalar as `explained_variance_ratio`, but under the
+    /// spectrally-accurate name.
+    #[getter]
+    fn connectivity_ratio(&self) -> f64 {
+        self.inner.connectivity_ratio()
+    }
+
+    /// The three retained non-trivial eigenvalues, in descending order.
+    #[getter]
+    fn eigenvalues(&self) -> (f64, f64, f64) {
+        let [a, b, c] = self.inner.eigenvalues();
+        (a, b, c)
+    }
+
+    fn project(&self, embedding: &Bound<'_, PyAny>) -> PyResult<PySphericalPoint> {
+        let emb = extract_embedding(embedding)?;
+        Ok(PySphericalPoint::from_inner(self.inner.project(&emb)))
+    }
+
+    fn project_rich(&self, embedding: &Bound<'_, PyAny>) -> PyResult<PyProjectedPoint> {
+        let emb = extract_embedding(embedding)?;
+        Ok(PyProjectedPoint::from_inner(self.inner.project_rich(&emb)))
+    }
+
+    fn project_batch<'py>(
+        &self,
+        py: Python<'py>,
+        embeddings: &Bound<'py, PyAny>,
+    ) -> PyResult<Vec<PySphericalPoint>> {
+        let embs = extract_embeddings_2d(embeddings)?;
+        let results = py.detach(|| {
+            embs.iter()
+                .map(|e| self.inner.project(e))
+                .collect::<Vec<_>>()
+        });
+        Ok(results
+            .into_iter()
+            .map(PySphericalPoint::from_inner)
+            .collect())
+    }
+
+    fn project_rich_batch<'py>(
+        &self,
+        py: Python<'py>,
+        embeddings: &Bound<'py, PyAny>,
+    ) -> PyResult<Vec<PyProjectedPoint>> {
+        let embs = extract_embeddings_2d(embeddings)?;
+        let results = py.detach(|| {
+            embs.iter()
+                .map(|e| self.inner.project_rich(e))
+                .collect::<Vec<_>>()
+        });
+        Ok(results
+            .into_iter()
+            .map(PyProjectedPoint::from_inner)
+            .collect())
+    }
+
+    fn __repr__(&self) -> String {
+        let [a, b, c] = self.inner.eigenvalues();
+        format!(
+            "LaplacianEigenmap(dim={}, connectivity={:.4}, eigenvalues=[{:.3}, {:.3}, {:.3}])",
+            self.inner.dimensionality(),
+            self.inner.connectivity_ratio(),
+            a,
+            b,
+            c
         )
     }
 }
