@@ -119,12 +119,43 @@ pub struct FeedbackSummary {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct FeedbackAggregator {
+    // Optional ring-buffer semantics. When `max_events` is set to some
+    // `N`, `record` drops the oldest event whenever the log would
+    // exceed `N`. Serialized transparently as a flat array; the cap
+    // itself is a runtime-only knob and is not persisted.
+    #[serde(skip)]
+    max_events: Option<usize>,
     events: Vec<FeedbackEvent>,
 }
 
 impl FeedbackAggregator {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Construct with a bounded event window. Once the log reaches
+    /// `max_events`, every new `record` call drops the oldest event so
+    /// memory stays capped — appropriate for long-running services
+    /// that only need recent feedback for per-corpus summaries.
+    ///
+    /// Without this cap the event log grows indefinitely; on a 1
+    /// event/sec firehose that reaches 100 MB of JSON within a week.
+    pub fn with_window(max_events: usize) -> Self {
+        Self {
+            max_events: Some(max_events),
+            events: Vec::with_capacity(max_events.min(1024)),
+        }
+    }
+
+    /// Attach (or drop) the event-count cap after construction.
+    pub fn set_max_events(&mut self, max_events: Option<usize>) {
+        self.max_events = max_events;
+        if let Some(cap) = max_events
+            && self.events.len() > cap
+        {
+            let excess = self.events.len() - cap;
+            self.events.drain(0..excess);
+        }
     }
 
     /// Total number of accumulated events (across all corpus_ids).
@@ -136,8 +167,19 @@ impl FeedbackAggregator {
         self.events.is_empty()
     }
 
-    /// Append one event.
+    /// Append one event. When a [`Self::with_window`] cap is set and
+    /// the log is already at capacity, the oldest event is evicted
+    /// first — a FIFO ring over the underlying `Vec`.
     pub fn record(&mut self, event: FeedbackEvent) {
+        if let Some(cap) = self.max_events
+            && self.events.len() >= cap
+        {
+            // `remove(0)` is O(n) but `record` on a capped aggregator
+            // is paired with O(n) event summarization anyway, and the
+            // cap is expected to be in the hundreds, not millions.
+            let excess = self.events.len() + 1 - cap;
+            self.events.drain(0..excess);
+        }
         self.events.push(event);
     }
 
@@ -250,7 +292,10 @@ impl FeedbackAggregator {
         let raw = fs::read_to_string(path)?;
         let events: Vec<FeedbackEvent> = serde_json::from_str(&raw)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Self { events })
+        Ok(Self {
+            max_events: None,
+            events,
+        })
     }
 
     /// Default on-disk feedback log: `~/.sphereql/feedback_events.json`.
@@ -280,6 +325,30 @@ mod tests {
             score,
             timestamp: "0".into(),
         }
+    }
+
+    #[test]
+    fn with_window_evicts_oldest() {
+        let mut a = FeedbackAggregator::with_window(3);
+        for i in 0..5 {
+            a.record(ev("c", &format!("q{i}"), i as f64 / 10.0));
+        }
+        // Only the last 3 events survive (q2, q3, q4).
+        assert_eq!(a.len(), 3);
+        let ids: Vec<&str> = a.events().iter().map(|e| e.query_id.as_str()).collect();
+        assert_eq!(ids, vec!["q2", "q3", "q4"]);
+    }
+
+    #[test]
+    fn set_max_events_trims_existing_log() {
+        let mut a = FeedbackAggregator::new();
+        for i in 0..10 {
+            a.record(ev("c", &format!("q{i}"), 0.5));
+        }
+        a.set_max_events(Some(4));
+        assert_eq!(a.len(), 4);
+        let ids: Vec<&str> = a.events().iter().map(|e| e.query_id.as_str()).collect();
+        assert_eq!(ids, vec!["q6", "q7", "q8", "q9"]);
     }
 
     #[test]
