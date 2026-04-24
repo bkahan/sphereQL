@@ -149,7 +149,7 @@ Full dependency graph and crate-by-crate description in
 
 ## Project status
 
-sphereQL is at **v0.1.0-alpha**. The core API is functional and covered
+sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
 by 450+ tests, but may change before 1.0. Known limitations and roadmap
 are in [project-status.md](docs/project-status.md).
 
