@@ -73,6 +73,11 @@ magnitude/confidence, while angular position preserves semantic similarity.
 This enables angular-distance queries, cluster detection, concept paths, and
 interactive 3D visualization — all in projected space.
 
+> The Rust library also provides Kernel PCA and Laplacian eigenmap projections
+> plus an auto-tuning / meta-learning framework (`PipelineConfig`, `auto_tune`,
+> `MetaModel`, `FeedbackAggregator`). The Python bindings currently expose PCA
+> only; the additional layers will follow.
+
 ## API Reference
 
 See the [type stubs](https://github.com/bkahan/sphereQL/blob/main/sphereql-python/python/sphereql/sphereql.pyi)

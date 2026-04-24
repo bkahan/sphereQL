@@ -34,6 +34,6 @@ Repository = "https://github.com/bkahan/sphereQL"
 testpaths = ["tests"]
 
 [tool.maturin]
-features = ["pyo3/extension-module", "core", "embed", "vectordb"]
+features = ["extension-module", "core", "embed", "vectordb"]
 python-source = "python"
 module-name = "sphereql"

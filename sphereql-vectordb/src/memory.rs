@@ -7,16 +7,29 @@ use crate::error::VectorStoreError;
 use crate::store::VectorStore;
 use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 
+/// Interior state of [`InMemoryStore`]. Kept behind a single `RwLock`
+/// so `records` and `order` can never drift out of sync.
+///
+/// Previously each field lived under its own `RwLock`, and every
+/// mutator took them in the same order (records → order). That invited
+/// a deadlock the moment some future method reversed the pair; it also
+/// delivered no real reader benefit because every path that mutates
+/// the map also mutates the order list.
+#[derive(Default)]
+struct InMemoryState {
+    records: HashMap<String, VectorRecord>,
+    /// Insertion-order index for deterministic scroll pagination.
+    order: Vec<String>,
+}
+
 /// In-memory vector store for testing and small datasets.
 ///
-/// Uses brute-force cosine similarity for search \u2014 O(n) per query.
+/// Uses brute-force cosine similarity for search — O(n) per query.
 /// Thread-safe via `tokio::sync::RwLock`.
 pub struct InMemoryStore {
     collection: String,
     dimension: usize,
-    records: RwLock<HashMap<String, VectorRecord>>,
-    /// Insertion-order index for deterministic scroll pagination.
-    order: RwLock<Vec<String>>,
+    state: RwLock<InMemoryState>,
 }
 
 impl InMemoryStore {
@@ -24,8 +37,7 @@ impl InMemoryStore {
         Self {
             collection: collection.into(),
             dimension,
-            records: RwLock::new(HashMap::new()),
-            order: RwLock::new(Vec::new()),
+            state: RwLock::new(InMemoryState::default()),
         }
     }
 }
@@ -33,9 +45,7 @@ impl InMemoryStore {
 #[async_trait]
 impl VectorStore for InMemoryStore {
     async fn upsert(&self, records: &[VectorRecord]) -> Result<(), VectorStoreError> {
-        let mut store = self.records.write().await;
-        let mut order = self.order.write().await;
-
+        let mut state = self.state.write().await;
         for record in records {
             if record.vector.len() != self.dimension {
                 return Err(VectorStoreError::DimensionMismatch {
@@ -43,26 +53,27 @@ impl VectorStore for InMemoryStore {
                     got: record.vector.len(),
                 });
             }
-            if !store.contains_key(&record.id) {
-                order.push(record.id.clone());
+            if !state.records.contains_key(&record.id) {
+                state.order.push(record.id.clone());
             }
-            store.insert(record.id.clone(), record.clone());
+            state.records.insert(record.id.clone(), record.clone());
         }
         Ok(())
     }
 
     async fn get(&self, ids: &[String]) -> Result<Vec<VectorRecord>, VectorStoreError> {
-        let store = self.records.read().await;
-        Ok(ids.iter().filter_map(|id| store.get(id).cloned()).collect())
+        let state = self.state.read().await;
+        Ok(ids
+            .iter()
+            .filter_map(|id| state.records.get(id).cloned())
+            .collect())
     }
 
     async fn delete(&self, ids: &[String]) -> Result<(), VectorStoreError> {
-        let mut store = self.records.write().await;
-        let mut order = self.order.write().await;
-
+        let mut state = self.state.write().await;
         for id in ids {
-            store.remove(id);
-            order.retain(|o| o != id);
+            state.records.remove(id);
+            state.order.retain(|o| o != id);
         }
         Ok(())
     }
@@ -79,10 +90,11 @@ impl VectorStore for InMemoryStore {
             });
         }
 
-        let store = self.records.read().await;
+        let state = self.state.read().await;
         let query_mag = magnitude(vector);
 
-        let mut scored: Vec<SearchResult> = store
+        let mut scored: Vec<SearchResult> = state
+            .records
             .values()
             .map(|record| {
                 let score = cosine_similarity(vector, &record.vector, query_mag);
@@ -95,11 +107,7 @@ impl VectorStore for InMemoryStore {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.score.total_cmp(&a.score));
         scored.truncate(k);
         Ok(scored)
     }
@@ -109,23 +117,23 @@ impl VectorStore for InMemoryStore {
         limit: usize,
         offset: Option<&str>,
     ) -> Result<VectorPage, VectorStoreError> {
-        let store = self.records.read().await;
-        let order = self.order.read().await;
+        let state = self.state.read().await;
 
         let start = match offset {
             Some(off) => off.parse::<usize>().unwrap_or(0),
             None => 0,
         };
 
-        let records: Vec<VectorRecord> = order
+        let records: Vec<VectorRecord> = state
+            .order
             .iter()
             .skip(start)
             .take(limit)
-            .filter_map(|id| store.get(id).cloned())
+            .filter_map(|id| state.records.get(id).cloned())
             .collect();
 
         let next_start = start + records.len();
-        let next_offset = if next_start < order.len() {
+        let next_offset = if next_start < state.order.len() {
             Some(next_start.to_string())
         } else {
             None
@@ -138,14 +146,13 @@ impl VectorStore for InMemoryStore {
     }
 
     async fn count(&self) -> Result<usize, VectorStoreError> {
-        Ok(self.records.read().await.len())
+        Ok(self.state.read().await.records.len())
     }
 
     async fn set_payload(&self, updates: &[PayloadUpdate]) -> Result<(), VectorStoreError> {
-        let mut store = self.records.write().await;
-
+        let mut state = self.state.write().await;
         for update in updates {
-            if let Some(record) = store.get_mut(&update.id) {
+            if let Some(record) = state.records.get_mut(&update.id) {
                 for (key, value) in &update.metadata {
                     record.metadata.insert(key.clone(), value.clone());
                 }

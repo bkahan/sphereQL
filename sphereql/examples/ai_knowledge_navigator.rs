@@ -547,14 +547,16 @@ fn main() {
         println!("\n  {}", desc);
         println!("  {} -> {}\n", src_id, tgt_id);
 
-        let result = pipeline.query(
-            SphereQLQuery::ConceptPath {
-                source_id: &src_id,
-                target_id: &tgt_id,
-                graph_k: 8,
-            },
-            &dummy_q,
-        );
+        let result = pipeline
+            .query(
+                SphereQLQuery::ConceptPath {
+                    source_id: &src_id,
+                    target_id: &tgt_id,
+                    graph_k: 8,
+                },
+                &dummy_q,
+            )
+            .expect("concept_path query");
 
         if let SphereQLOutput::ConceptPath(Some(path)) = result {
             for (i, step) in path.steps.iter().enumerate() {
@@ -595,7 +597,9 @@ fn main() {
     println!("     Where is knowledge concentrated? Where are the gaps?");
     println!("────────────────────────────────────────────────────────────────\n");
 
-    let glob_result = pipeline.query(SphereQLQuery::DetectGlobs { k: None, max_k: 10 }, &dummy_q);
+    let glob_result = pipeline
+        .query(SphereQLQuery::DetectGlobs { k: None, max_k: 10 }, &dummy_q)
+        .expect("detect_globs query");
 
     if let SphereQLOutput::Globs(globs) = glob_result {
         println!(
@@ -717,7 +721,8 @@ fn main() {
     for (query_desc, features) in &test_queries {
         let qvec = embed(features, 42 + query_desc.len() as u64);
         let emb = sphereql::embed::Embedding::new(qvec.clone());
-        let nearby = layer.categories_near_embedding(&emb, pipeline.pca(), std::f64::consts::PI);
+        let nearby =
+            layer.categories_near_embedding(&emb, pipeline.projection(), std::f64::consts::PI);
 
         println!("  Query: \"{}\"", query_desc);
         print!("    Top categories: ");
@@ -772,7 +777,7 @@ fn main() {
 
     // Show distances to relevant category centroids
     let emb = sphereql::embed::Embedding::new(quantum_computing.clone());
-    let nearby = layer.categories_near_embedding(&emb, pipeline.pca(), std::f64::consts::PI);
+    let nearby = layer.categories_near_embedding(&emb, pipeline.projection(), std::f64::consts::PI);
     println!("  Nearest domain centroids:");
     for (ci, dist) in nearby.iter().take(6) {
         let has_inner = if layer.inner_spheres.contains_key(ci) {
@@ -793,14 +798,18 @@ fn main() {
     let drill_targets = ["physics", "computer_science", "mathematics", "philosophy"];
     for &cat in &drill_targets {
         println!("\n  Drill-down into {} (top 5):", cat.to_uppercase());
-        let result = pipeline.query(
-            SphereQLQuery::DrillDown {
-                category: cat,
-                k: 5,
-            },
-            &qc_query,
-        );
-        if let SphereQLOutput::DrillDown(results) = result {
+        // A drill-down for a category not in the pipeline returns
+        // UnknownCategory — we handle that case below with ok().
+        let result = pipeline
+            .query(
+                SphereQLQuery::DrillDown {
+                    category: cat,
+                    k: 5,
+                },
+                &qc_query,
+            )
+            .ok();
+        if let Some(SphereQLOutput::DrillDown(results)) = result {
             if results.is_empty() {
                 println!("    (category not found or empty)");
                 continue;
@@ -836,7 +845,9 @@ fn main() {
 
     // Run a nearest-neighbor query and show certainty/intensity
     println!("  Query: \"quantum computing\" — 10 nearest neighbors:\n");
-    let nn_result = pipeline.query(SphereQLQuery::Nearest { k: 10 }, &qc_query);
+    let nn_result = pipeline
+        .query(SphereQLQuery::Nearest { k: 10 }, &qc_query)
+        .expect("nearest query");
     if let SphereQLOutput::Nearest(results) = nn_result {
         println!(
             "  {:<4} {:<30} {:<18} {:>8} {:>9} {:>9}",
@@ -862,7 +873,9 @@ fn main() {
 
     // Also run a cosine similarity threshold query
     println!("\n  Cosine similarity threshold query (min_cosine=0.85):\n");
-    let sim_result = pipeline.query(SphereQLQuery::SimilarAbove { min_cosine: 0.85 }, &qc_query);
+    let sim_result = pipeline
+        .query(SphereQLQuery::SimilarAbove { min_cosine: 0.85 }, &qc_query)
+        .expect("similar query");
     if let SphereQLOutput::KNearest(results) = sim_result {
         println!("  Found {} concepts above threshold:", results.len());
         for r in results.iter().take(8) {
@@ -905,7 +918,8 @@ fn main() {
         7777,
     );
     let me_emb = sphereql::embed::Embedding::new(music_econ_q.clone());
-    let me_nearby = layer.categories_near_embedding(&me_emb, pipeline.pca(), std::f64::consts::PI);
+    let me_nearby =
+        layer.categories_near_embedding(&me_emb, pipeline.projection(), std::f64::consts::PI);
     for (ci, dist) in me_nearby.iter().take(5) {
         println!(
             "    {:<22} {:.2}°",
@@ -986,13 +1000,15 @@ fn main() {
         };
         for &domain in &["music", "economics"] {
             println!("    {} — top 3:", domain.to_uppercase());
-            let drill = pipeline.query(
-                SphereQLQuery::DrillDown {
-                    category: domain,
-                    k: 3,
-                },
-                &me_query,
-            );
+            let drill = pipeline
+                .query(
+                    SphereQLQuery::DrillDown {
+                        category: domain,
+                        k: 3,
+                    },
+                    &me_query,
+                )
+                .expect("drill_down query");
             if let SphereQLOutput::DrillDown(results) = drill {
                 for (i, r) in results.iter().enumerate() {
                     println!(

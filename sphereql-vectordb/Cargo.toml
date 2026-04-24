@@ -9,8 +9,8 @@ readme = "README.md"
 
 [features]
 default = []
-pinecone = ["dep:reqwest"]
-qdrant = ["dep:qdrant-client", "dep:sha2"]
+pinecone = ["dep:reqwest", "dep:futures"]
+qdrant = ["dep:qdrant-client", "dep:sha2", "dep:futures"]
 
 [dependencies]
 sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
@@ -21,10 +21,15 @@ tokio = { version = "1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+tracing = "0.1"
 
 qdrant-client = { version = "1.12", optional = true }
 sha2 = { version = "0.10", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
+# Only used by the pinecone / qdrant features for bounded-concurrency
+# set_payload. Pulling in just the `futures-util` fragments we need
+# (StreamExt's `buffer_unordered`) keeps the default build lean.
+futures = { version = "0.3", optional = true, default-features = false, features = ["std", "async-await"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

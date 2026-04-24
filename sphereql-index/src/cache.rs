@@ -187,6 +187,15 @@ impl Default for CachedIndexBuilder {
     }
 }
 
+/// LRU-capped query-result cache wrapping a [`SpatialIndex`].
+///
+/// **LRU-touch cost.** `lru_order` is a `VecDeque<CacheKey>` with
+/// `retain` / `position + remove` / `push_back` on each hit or miss —
+/// all O(capacity). The default capacity is 128, so 128 ops per touch
+/// is negligible for any workload this cache was designed for. If you
+/// set `cache_capacity` above a few thousand, consider swapping this
+/// module's Vec-based LRU for an `indexmap::IndexMap` keyed variant
+/// (O(1) move-to-back via `shift_remove` + re-insert at tail).
 pub struct CachedIndex<T: SpatialItem> {
     inner: SpatialIndex<T>,
     cache: HashMap<CacheKey, CacheEntry<T>>,

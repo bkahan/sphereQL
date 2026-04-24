@@ -15,6 +15,8 @@
 //!   6. Curvature signatures — is the knowledge landscape flat or curved?
 //!   7. Lune classification — which side of a boundary does a bridge concept fall?
 //!   8. Region coherence — how dense is a region compared to random?
+//!   9. Bridge quality matrix — spatially-adjusted cross-domain connectivity.
+//!  10. Hierarchical domain groups — coarse routing when EVR is low.
 //!
 //! Run with:
 //!   cargo run --example spatial_analysis --features embed
@@ -24,7 +26,8 @@ use std::collections::HashMap;
 use sphereql::core::spatial::*;
 use sphereql::core::{SphericalPoint, angular_distance};
 use sphereql::embed::{
-    NavigatorConfig, PipelineInput, SphereQLPipeline, category_geodesic_sweep,
+    BridgeClassification, Embedding, NavigatorConfig, PipelineInput, PipelineQuery, Projection,
+    SphereQLOutput, SphereQLPipeline, SphereQLQuery, category_geodesic_sweep,
     category_path_deviation, gap_confidence, run_full_analysis,
 };
 use sphereql_corpus::{build_corpus, embed};
@@ -671,6 +674,269 @@ fn main() {
     println!("  of S². Values > 1 mean the category is genuinely clustered, not just");
     println!("  an artifact of cap size. This normalization requires finite total area.");
 
+    // §9: BRIDGE QUALITY MATRIX — "Which cross-domain hops are trustworthy?"
+    println!("\n════════════════════════════════════════════════════════════════");
+    println!("  §9. BRIDGE QUALITY MATRIX");
+    println!("  max_bridge_strength(i,j) × territorial_factor(i,j) on S².");
+    println!("════════════════════════════════════════════════════════════════\n");
+
+    let matrix = &pipeline
+        .category_layer()
+        .spatial_quality
+        .bridge_quality_matrix;
+    let cat_names: Vec<&str> = layer.summaries.iter().map(|s| s.name.as_str()).collect();
+    let nc = cat_names.len();
+
+    let total_cells = nc * nc.saturating_sub(1);
+    let nonzero: usize = matrix
+        .iter()
+        .flat_map(|row| row.iter())
+        .filter(|&&v| v > 0.001)
+        .count();
+
+    if nonzero == 0 {
+        println!(
+            "  [Raw] All {} off-diagonal cells are below 0.001 — the corpus",
+            total_cells
+        );
+        println!("  has no bridges strong enough to register after territorial discount.");
+    } else {
+        println!(
+            "  [Raw] {}/{} off-diagonal cells above 0.001:\n",
+            nonzero, total_cells
+        );
+
+        // Header row: 4-char truncated names as column labels, indices below for lookup.
+        let label_width = 5usize;
+        print!("  {:<16}", "row \\ col");
+        for j in 0..nc {
+            print!(" {:>width$}", j, width = label_width);
+        }
+        println!();
+        print!("  {:<16}", "");
+        for _ in 0..nc {
+            print!(" {:>width$}", "─────", width = label_width);
+        }
+        println!();
+
+        for i in 0..nc {
+            let row_label = {
+                let n = cat_names[i];
+                if n.len() > 14 {
+                    format!("{}..", &n[..12])
+                } else {
+                    n.to_string()
+                }
+            };
+            print!("  {:<14} {:>1}", row_label, i);
+            for &v in &matrix[i] {
+                if v < 0.001 {
+                    print!(" {:>width$}", "·", width = label_width);
+                } else {
+                    print!(" {:>width$.3}", v, width = label_width);
+                }
+            }
+            println!();
+        }
+
+        println!("\n  Index legend:");
+        for (i, name) in cat_names.iter().enumerate() {
+            println!("    [{:>2}] {}", i, name);
+        }
+    }
+
+    // Strongest off-diagonal cell and the bridge behind it.
+    let mut best_i = 0usize;
+    let mut best_j = 0usize;
+    let mut best_val = 0.0f64;
+    for (i, row) in matrix.iter().enumerate() {
+        for (j, &v) in row.iter().enumerate() {
+            if i != j && v > best_val {
+                best_val = v;
+                best_i = i;
+                best_j = j;
+            }
+        }
+    }
+    if best_val > 0.0 {
+        println!(
+            "\n  Strongest off-diagonal: [{}] {} → [{}] {}  =  {:.3}",
+            best_i, cat_names[best_i], best_j, cat_names[best_j], best_val
+        );
+        if let Some(bridges) = layer.graph.bridges.get(&(best_i, best_j))
+            && let Some(top) = bridges.first()
+        {
+            println!(
+                "    Top bridge item: raw strength={:.3}, affinity→src={:.3}, affinity→tgt={:.3}",
+                top.bridge_strength, top.affinity_to_source, top.affinity_to_target
+            );
+            println!("    Classification: {:?}", top.classification);
+        }
+    }
+
+    // Corpus-wide bridge classification counts.
+    let mut genuine = 0usize;
+    let mut artifact = 0usize;
+    let mut weak = 0usize;
+    for bridges in layer.graph.bridges.values() {
+        for b in bridges {
+            match b.classification {
+                BridgeClassification::Genuine => genuine += 1,
+                BridgeClassification::OverlapArtifact => artifact += 1,
+                BridgeClassification::Weak => weak += 1,
+            }
+        }
+    }
+    let total_bridges = genuine + artifact + weak;
+    println!(
+        "\n  Bridge classification (across {} bridges):",
+        total_bridges
+    );
+    println!("    Genuine         : {:>5}", genuine);
+    println!("    OverlapArtifact : {:>5}", artifact);
+    println!("    Weak            : {:>5}", weak);
+
+    println!("\n  Insight: Bridge quality fuses raw affinity with S² territorial separation —");
+    println!("  pairs that 'share cap' produce apparent bridges that aren't real connectors.");
+    println!("  This matrix surfaces which cross-domain hops are trustworthy.");
+
+    // §10: HIERARCHICAL DOMAIN GROUPS — "Coarse routing when EVR is low."
+    println!("\n════════════════════════════════════════════════════════════════");
+    println!("  §10. HIERARCHICAL DOMAIN GROUPS");
+    println!("  Super-groups of related categories + low-EVR coarse routing.");
+    println!("════════════════════════════════════════════════════════════════\n");
+
+    let groups = pipeline.domain_groups();
+    println!("  [Raw] {} domain groups detected:\n", groups.len());
+    println!(
+        "  {:<4} {:>6} {:>6} {:>10} {:>10}  members",
+        "Grp", "#cats", "items", "cohesion", "spread°"
+    );
+    println!("  {}", "─".repeat(70));
+    for (gi, g) in groups.iter().enumerate() {
+        println!(
+            "  {:<4} {:>6} {:>6} {:>10.3} {:>10.2}  {}",
+            gi,
+            g.member_categories.len(),
+            g.total_items,
+            g.cohesion,
+            g.angular_spread.to_degrees(),
+            g.category_names.join(", ")
+        );
+    }
+
+    // Pick 2-3 real queries: a physics item's embedding, a music item's embedding,
+    // and a computer_science centroid embedding.
+    let queries: Vec<(String, Embedding)> = {
+        let mut qs: Vec<(String, Embedding)> = Vec::new();
+        for cat_name in ["physics", "music", "computer_science"] {
+            if let Some(summary) = layer.summaries.iter().find(|s| s.name == cat_name) {
+                // Use an actual member item's embedding — not a synthetic average.
+                if let Some(&mi) = summary.member_indices.first() {
+                    let features = &corpus[mi].features;
+                    let vec = embed(features, 1000 + mi as u64);
+                    qs.push((
+                        format!("{} item #{} ({})", cat_name, mi, corpus[mi].label),
+                        Embedding::new(vec),
+                    ));
+                }
+            }
+        }
+        qs
+    };
+
+    println!("\n  [Navigator] Side-by-side: hierarchical_nearest vs. standard Nearest.\n");
+    println!(
+        "  EVR = {:.3} (hierarchical path activates below 0.35).",
+        evr
+    );
+
+    for (label, emb) in &queries {
+        println!("\n  ── Query: {} ──", label);
+        if let Some(group) = pipeline.route_to_group(emb) {
+            let projected = pipeline.projection().project(emb);
+            let d = angular_distance(&projected, &group.centroid);
+            let gi = groups
+                .iter()
+                .position(|g| std::ptr::eq(g, group))
+                .unwrap_or(usize::MAX);
+            println!(
+                "    Routed to group {}: [{}]  centroid_dist = {:.3} rad ({:.1}°)",
+                gi,
+                group.category_names.join(", "),
+                d,
+                d.to_degrees()
+            );
+        } else {
+            println!("    No group routing available.");
+        }
+
+        let hier = pipeline.hierarchical_nearest(emb, 5);
+        let standard = match pipeline
+            .query(
+                SphereQLQuery::Nearest { k: 5 },
+                &PipelineQuery {
+                    embedding: emb.values.clone(),
+                },
+            )
+            .expect("nearest query")
+        {
+            SphereQLOutput::Nearest(v) => v,
+            _ => Vec::new(),
+        };
+
+        println!(
+            "\n    {:<20}   {:<20}",
+            "hierarchical_nearest", "SphereQLQuery::Nearest"
+        );
+        println!(
+            "    {:<8} {:<12} {:>6}   {:<8} {:<12} {:>6}",
+            "id", "category", "dist", "id", "category", "dist"
+        );
+        println!("    {}", "─".repeat(66));
+        let rows = hier.len().max(standard.len());
+        for r in 0..rows {
+            let (hid, hcat, hdist) = hier
+                .get(r)
+                .map(|n| (n.id.as_str(), n.category.as_str(), n.distance))
+                .unwrap_or(("—", "—", f64::NAN));
+            let (sid, scat, sdist) = standard
+                .get(r)
+                .map(|n| (n.id.as_str(), n.category.as_str(), n.distance))
+                .unwrap_or(("—", "—", f64::NAN));
+            let hdist_str = if hdist.is_nan() {
+                "—".into()
+            } else {
+                format!("{:.3}", hdist)
+            };
+            let sdist_str = if sdist.is_nan() {
+                "—".into()
+            } else {
+                format!("{:.3}", sdist)
+            };
+            let hcat_t = if hcat.len() > 12 { &hcat[..12] } else { hcat };
+            let scat_t = if scat.len() > 12 { &scat[..12] } else { scat };
+            println!(
+                "    {:<8} {:<12} {:>6}   {:<8} {:<12} {:>6}",
+                hid, hcat_t, hdist_str, sid, scat_t, sdist_str
+            );
+        }
+
+        let hier_ids: Vec<&str> = hier.iter().map(|n| n.id.as_str()).collect();
+        let std_ids: Vec<&str> = standard.iter().map(|n| n.id.as_str()).collect();
+        let agree = hier_ids == std_ids;
+        println!(
+            "    → Result sets {} (EVR {} hierarchical threshold 0.35)",
+            if agree { "AGREE" } else { "DIVERGE" },
+            if evr >= 0.35 { "≥" } else { "<" }
+        );
+    }
+
+    println!("\n  Insight: When EVR < 0.35, fine-grained category routing on the outer");
+    println!("  sphere is noise-dominated. Hierarchical routing drops the routing");
+    println!("  problem's cardinality from N categories to ~5 groups, then uses each");
+    println!("  category's inner sphere (where available) for drill-down.");
+
     // SUMMARY
     println!("\n\n╔══════════════════════════════════════════════════════════════╗");
     println!("║  SUMMARY                                                    ║");
@@ -697,8 +963,16 @@ fn main() {
         "  Lunes:      {} pairs with bridge decomposition",
         report.lunes.len()
     );
+    println!(
+        "  Bridges:    {} total — {} genuine / {} overlap-artifact / {} weak",
+        total_bridges, genuine, artifact, weak
+    );
+    println!(
+        "  Groups:     {} hierarchical domain groups detected",
+        pipeline.domain_groups().len()
+    );
 
-    println!("\n  All 8 spatial analyses exploit properties unique to S²:");
+    println!("\n  All 10 spatial analyses exploit properties unique to S²:");
     println!("  finite area, antipodality, great circles, solid angles, and curvature.");
     println!("  These queries are ill-defined or degenerate in unbounded R^n.");
     println!("\n================================================================");

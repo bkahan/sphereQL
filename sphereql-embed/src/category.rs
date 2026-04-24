@@ -1,24 +1,12 @@
 use std::collections::HashMap;
 
-use sphereql_core::{SphericalPoint, angular_distance};
+use sphereql_core::{SphericalPoint, angular_distance, cosine_similarity};
 
+use crate::config::PipelineConfig;
 use crate::kernel_pca::KernelPcaProjection;
 use crate::projection::{PcaProjection, Projection};
+use crate::spatial_quality::SpatialQuality;
 use crate::types::{Embedding, RadialStrategy};
-
-// ── Thresholds ─────────────────────────────────────────────────────────
-
-/// Minimum category size to consider fitting an inner sphere.
-const MIN_INNER_SPHERE_SIZE: usize = 20;
-
-/// Minimum EVR improvement (inner − global_subset) to justify an inner sphere.
-const MIN_EVR_IMPROVEMENT: f64 = 0.10;
-
-/// Minimum category size to consider kernel PCA for the inner sphere.
-const KERNEL_PCA_MIN_SIZE: usize = 80;
-
-/// Minimum EVR improvement of kernel PCA over linear PCA to choose it.
-const MIN_KERNEL_IMPROVEMENT: f64 = 0.05;
 
 // ── Category summary ───────────────────────────────────────────────────
 
@@ -46,9 +34,39 @@ pub struct CategorySummary {
     pub cohesion: f64,
     /// Number of member items.
     pub member_count: usize,
+    /// Solid angle of this category's cap on S² (steradians).
+    pub cap_area: f64,
+    /// Fraction of this category's cap not overlapped by any other. [0, 1].
+    pub exclusivity: f64,
+    /// Voronoi cell area on S² (steradians).
+    pub voronoi_area: f64,
+    /// Items per steradian of Voronoi cell.
+    pub territorial_efficiency: f64,
+    /// Mean territorial-adjusted bridge strength across all outgoing edges.
+    /// 0.0 if this category has no neighbors. Populated after the graph
+    /// is built in [`CategoryLayer::build`].
+    pub bridge_quality: f64,
 }
 
 // ── Bridge items ───────────────────────────────────────────────────────
+
+/// Quality classification for a bridge item.
+///
+/// Assigned after all bridges are collected, comparing each bridge's
+/// strength against the corpus-wide median and the pair's territorial
+/// separation on S².
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeClassification {
+    /// Strength at or above the median and the source/target caps are
+    /// spatially distinct — a real cross-domain connector.
+    Genuine,
+    /// The two categories overlap heavily on S² (low territorial factor).
+    /// This bridge is more shared-territory noise than a genuine connector.
+    OverlapArtifact,
+    /// Strength below median in a territorially clean pair — a real
+    /// connection but not a strong one.
+    Weak,
+}
 
 /// An item that semantically spans two categories.
 ///
@@ -70,6 +88,8 @@ pub struct BridgeItem {
     /// Bridge strength: harmonic mean of the two affinities.
     /// Higher = equally strong connection to both domains.
     pub bridge_strength: f64,
+    /// Quality label assigned after the full bridge set is observed.
+    pub classification: BridgeClassification,
 }
 
 // ── Category graph ─────────────────────────────────────────────────────
@@ -116,6 +136,9 @@ pub struct CategoryPathStep {
     pub cumulative_distance: f64,
     /// Bridge items connecting this step to the next (empty for the last step).
     pub bridges_to_next: Vec<BridgeItem>,
+    /// Spatial confidence of this hop: bridge_strength × territorial_factor.
+    /// Higher = more trustworthy transition. 0.0 for the last step.
+    pub hop_confidence: f64,
 }
 
 /// Result of a category-level concept path query.
@@ -125,6 +148,9 @@ pub struct CategoryPath {
     pub steps: Vec<CategoryPathStep>,
     /// Total path distance.
     pub total_distance: f64,
+    /// Product of all hop confidences along the path.
+    /// Low values indicate the path routes through shaky connections.
+    pub path_confidence: f64,
 }
 
 // ── Inner sphere (Phase 2) ─────────────────────────────────────────────
@@ -136,11 +162,16 @@ pub struct CategoryPath {
 /// improvement over the global projection.
 #[derive(Clone)]
 pub enum InnerProjection {
-    /// Standard linear PCA — used for categories with 20–79 members,
-    /// or when kernel PCA doesn't improve over linear.
+    /// Standard linear PCA — chosen for categories meeting
+    /// [`InnerSphereConfig::min_size`](crate::config::InnerSphereConfig::min_size)
+    /// but below
+    /// [`kernel_pca_min_size`](crate::config::InnerSphereConfig::kernel_pca_min_size),
+    /// or when kernel PCA fails to improve over linear by
+    /// [`min_kernel_improvement`](crate::config::InnerSphereConfig::min_kernel_improvement).
     LinearPca(PcaProjection),
-    /// Gaussian kernel PCA — used for categories with ≥80 members
-    /// where kernel PCA measurably outperforms linear PCA.
+    /// Gaussian kernel PCA — chosen for categories meeting
+    /// [`kernel_pca_min_size`](crate::config::InnerSphereConfig::kernel_pca_min_size)
+    /// where it measurably outperforms linear PCA.
     KernelPca(KernelPcaProjection),
 }
 
@@ -177,8 +208,9 @@ impl Projection for InnerProjection {
 /// A category-specific inner sphere with its own optimized projection.
 ///
 /// Only created for categories that meet all of:
-/// 1. At least `MIN_INNER_SPHERE_SIZE` members
-/// 2. Inner EVR improves over global subset EVR by ≥ `MIN_EVR_IMPROVEMENT`
+/// 1. At least [`InnerSphereConfig::min_size`](crate::config::InnerSphereConfig::min_size) members
+/// 2. Inner EVR improves over global subset EVR by ≥
+///    [`InnerSphereConfig::min_evr_improvement`](crate::config::InnerSphereConfig::min_evr_improvement)
 ///
 /// The inner sphere gives higher-resolution angular discrimination
 /// within the category than the global outer projection can provide.
@@ -254,6 +286,9 @@ pub struct CategoryLayer {
     /// Inner spheres keyed by category index. Only present for categories
     /// that meet the size and EVR-improvement thresholds.
     pub inner_spheres: HashMap<usize, InnerSphere>,
+    /// Pre-computed spatial properties of the category layout on S².
+    /// Used for bridge quality scoring, confidence signals, and routing.
+    pub spatial_quality: SpatialQuality,
 }
 
 impl CategoryLayer {
@@ -273,11 +308,36 @@ impl CategoryLayer {
     /// select it if it improves EVR by ≥ 0.05 over linear PCA.
     ///
     /// O(N·C + C²) for the base layer, plus O(n_c²·d) per inner sphere.
+    ///
+    /// Uses [`PipelineConfig::default`] for all tunables. Call
+    /// [`Self::build_with_config`] to override.
     pub fn build<P: Projection>(
         categories: &[String],
         embeddings: &[Embedding],
         projected_positions: &[SphericalPoint],
         projection: &P,
+        evr: f64,
+    ) -> Self {
+        Self::build_with_config(
+            categories,
+            embeddings,
+            projected_positions,
+            projection,
+            evr,
+            &PipelineConfig::default(),
+        )
+    }
+
+    /// Configurable variant of [`Self::build`]. Threads a [`PipelineConfig`]
+    /// through spatial quality, bridge classification, and inner-sphere
+    /// gating.
+    pub fn build_with_config<P: Projection>(
+        categories: &[String],
+        embeddings: &[Embedding],
+        projected_positions: &[SphericalPoint],
+        projection: &P,
+        evr: f64,
+        config: &PipelineConfig,
     ) -> Self {
         let n = categories.len();
         assert_eq!(n, embeddings.len());
@@ -349,14 +409,58 @@ impl CategoryLayer {
                 angular_spread,
                 cohesion,
                 member_count: count,
+                // Spatial fields filled after SpatialQuality is computed
+                cap_area: 0.0,
+                exclusivity: 0.0,
+                voronoi_area: 0.0,
+                territorial_efficiency: 0.0,
+                // Filled after build_graph() classifies bridges
+                bridge_quality: 0.0,
             });
         }
 
-        // 3. Build category graph + detect bridges
-        let graph = Self::build_graph(&summaries, embeddings, num_cats);
+        // 3. Compute spatial quality from category geometry
+        let centroids: Vec<SphericalPoint> =
+            summaries.iter().map(|s| s.centroid_position).collect();
+        let half_angles: Vec<f64> = summaries.iter().map(|s| s.angular_spread).collect();
+        let mut spatial_quality =
+            SpatialQuality::compute_with_config(&centroids, &half_angles, evr, config);
 
-        // 4. Build inner spheres for qualifying categories (Phase 2)
-        let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection);
+        // Backfill spatial fields on summaries
+        for (i, summary) in summaries.iter_mut().enumerate() {
+            summary.cap_area = spatial_quality.cap_areas[i];
+            summary.exclusivity = spatial_quality.exclusivities[i];
+            summary.voronoi_area = spatial_quality.voronoi_area(i);
+            summary.territorial_efficiency =
+                spatial_quality.territorial_efficiency(i, summary.member_count);
+        }
+
+        // 4. Build category graph + detect bridges (spatially informed)
+        let graph = Self::build_graph(&summaries, embeddings, num_cats, &spatial_quality, config);
+
+        // Backfill bridge_quality on summaries using the just-built graph.
+        // bridge_quality = mean of (edge.mean_bridge_strength × territorial_factor)
+        // over all outgoing edges; 0 for isolated categories.
+        for (i, summary) in summaries.iter_mut().enumerate() {
+            let edges = &graph.adjacency[i];
+            if edges.is_empty() {
+                summary.bridge_quality = 0.0;
+            } else {
+                let total: f64 = edges
+                    .iter()
+                    .map(|e| {
+                        e.mean_bridge_strength * spatial_quality.territorial_factor(i, e.target)
+                    })
+                    .sum();
+                summary.bridge_quality = total / edges.len() as f64;
+            }
+        }
+
+        // Populate C×C spatial bridge quality matrix on SpatialQuality.
+        spatial_quality.set_bridge_quality_matrix(&graph);
+
+        // 5. Build inner spheres for qualifying categories
+        let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection, config);
 
         CategoryLayer {
             summaries,
@@ -364,16 +468,22 @@ impl CategoryLayer {
             graph,
             outer_positions: projected_positions.to_vec(),
             inner_spheres,
+            spatial_quality,
         }
     }
 
     /// Build the inter-category adjacency graph and detect bridge items.
+    ///
+    /// Bridge detection uses the spatial quality's EVR-adaptive threshold
+    /// and exclusivity-weighted strength to prevent bridge inflation at
+    /// low EVR and discount bridges between overlapping categories.
     fn build_graph(
         summaries: &[CategorySummary],
         embeddings: &[Embedding],
         num_cats: usize,
+        spatial: &SpatialQuality,
+        config: &PipelineConfig,
     ) -> CategoryGraph {
-        // Precompute centroid pairwise distances
         let mut centroid_dists = vec![vec![0.0; num_cats]; num_cats];
         for i in 0..num_cats {
             for j in (i + 1)..num_cats {
@@ -386,7 +496,8 @@ impl CategoryLayer {
             }
         }
 
-        // Detect bridge items
+        let bridge_threshold = spatial.bridge_threshold;
+
         let mut bridges: HashMap<(usize, usize), Vec<BridgeItem>> = HashMap::new();
 
         for (ci, summary) in summaries.iter().enumerate() {
@@ -404,12 +515,19 @@ impl CategoryLayer {
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding);
 
-                    if sim_to_other > 0.0 && sim_to_other > sim_to_own * 0.5 {
-                        let bridge_strength = if sim_to_own + sim_to_other > f64::EPSILON {
+                    // EVR-adaptive threshold: stricter when projection is lossy
+                    if sim_to_other > 0.0 && sim_to_other > sim_to_own * bridge_threshold {
+                        let raw_strength = if sim_to_own + sim_to_other > f64::EPSILON {
                             2.0 * sim_to_own * sim_to_other / (sim_to_own + sim_to_other)
                         } else {
                             0.0
                         };
+
+                        // Discount bridges between heavily overlapping categories.
+                        // Two categories that can't be distinguished on S² produce
+                        // "bridges" that are really just shared territory.
+                        let territorial = spatial.territorial_factor(ci, cj);
+                        let bridge_strength = raw_strength * territorial;
 
                         bridges.entry((ci, cj)).or_default().push(BridgeItem {
                             item_index: mi,
@@ -418,9 +536,38 @@ impl CategoryLayer {
                             affinity_to_source: sim_to_own,
                             affinity_to_target: sim_to_other,
                             bridge_strength,
+                            // Populated in the classification pass below.
+                            classification: BridgeClassification::Weak,
                         });
                     }
                 }
+            }
+        }
+
+        // Classification pass: compare each bridge against the corpus-wide
+        // median strength and the pair's territorial separation on S².
+        let mut all_strengths: Vec<f64> = bridges
+            .values()
+            .flat_map(|list| list.iter().map(|b| b.bridge_strength))
+            .collect();
+        let median_strength = if all_strengths.is_empty() {
+            0.0
+        } else {
+            all_strengths.sort_by(|a, b| a.total_cmp(b));
+            all_strengths[all_strengths.len() / 2]
+        };
+
+        let overlap_threshold = config.bridges.overlap_artifact_territorial;
+        for list in bridges.values_mut() {
+            for b in list.iter_mut() {
+                let tf = spatial.territorial_factor(b.source_category, b.target_category);
+                b.classification = if tf < overlap_threshold {
+                    BridgeClassification::OverlapArtifact
+                } else if b.bridge_strength >= median_strength {
+                    BridgeClassification::Genuine
+                } else {
+                    BridgeClassification::Weak
+                };
             }
         }
 
@@ -450,7 +597,17 @@ impl CategoryLayer {
                     })
                     .unwrap_or(0.0);
 
-                let weight = cd / (1.0 + bridge_count as f64 * mean_bridge_strength);
+                // Voronoi neighbors get a routing bonus — they're geometrically
+                // adjacent on S², so traversal between them is natural even
+                // without strong bridges.
+                let voronoi_factor = if spatial.are_voronoi_neighbors(i, j) {
+                    0.8
+                } else {
+                    1.0
+                };
+
+                let weight =
+                    cd * voronoi_factor / (1.0 + bridge_count as f64 * mean_bridge_strength);
 
                 adjacency[i].push(CategoryEdge {
                     target: j,
@@ -476,11 +633,13 @@ impl CategoryLayer {
         summaries: &[CategorySummary],
         embeddings: &[Embedding],
         projection: &P,
+        config: &PipelineConfig,
     ) -> HashMap<usize, InnerSphere> {
         let mut result = HashMap::new();
+        let cfg = &config.inner_sphere;
 
         for (ci, summary) in summaries.iter().enumerate() {
-            if summary.member_count < MIN_INNER_SPHERE_SIZE {
+            if summary.member_count < cfg.min_size {
                 continue;
             }
 
@@ -497,22 +656,31 @@ impl CategoryLayer {
                 .sum::<f64>()
                 / member_embs.len() as f64;
 
-            // Fit inner linear PCA
-            let inner_pca = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
+            // Fit inner linear PCA. On failure (too few members, dim
+            // too low, etc.) skip this category's inner sphere
+            // silently — the outer sphere still covers queries.
+            let Ok(inner_pca) = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0)) else {
+                continue;
+            };
             let inner_linear_evr = inner_pca.explained_variance_ratio();
 
-            if inner_linear_evr - global_subset_evr < MIN_EVR_IMPROVEMENT {
+            if inner_linear_evr - global_subset_evr < cfg.min_evr_improvement {
                 continue;
             }
 
-            let (inner_proj, inner_evr) = if summary.member_count >= KERNEL_PCA_MIN_SIZE {
-                let inner_kpca = KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
-                let kernel_evr = inner_kpca.explained_variance_ratio();
-
-                if kernel_evr > inner_linear_evr + MIN_KERNEL_IMPROVEMENT {
-                    (InnerProjection::KernelPca(inner_kpca), kernel_evr)
-                } else {
-                    (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+            let (inner_proj, inner_evr) = if summary.member_count >= cfg.kernel_pca_min_size {
+                // Kernel PCA can fail on degenerate subsets too; fall
+                // back to the already-successful linear fit.
+                match KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0)) {
+                    Ok(inner_kpca) => {
+                        let kernel_evr = inner_kpca.explained_variance_ratio();
+                        if kernel_evr > inner_linear_evr + cfg.min_kernel_improvement {
+                            (InnerProjection::KernelPca(inner_kpca), kernel_evr)
+                        } else {
+                            (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+                        }
+                    }
+                    Err(_) => (InnerProjection::LinearPca(inner_pca), inner_linear_evr),
                 }
             } else {
                 (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
@@ -598,38 +766,46 @@ impl CategoryLayer {
                     category_name: self.summaries[si].name.clone(),
                     cumulative_distance: 0.0,
                     bridges_to_next: Vec::new(),
+                    hop_confidence: 0.0,
                 }],
                 total_distance: 0.0,
+                path_confidence: 1.0,
             });
         }
 
+        // Dijkstra via binary-heap. Previously a linear scan over
+        // `dist` per pop gave O(C²) — fine for tens of categories,
+        // sloppy under the larger corpora the tuner now exercises.
+        // Match the pattern already used in query.rs::concept_path.
         let n = self.summaries.len();
         let mut dist = vec![f64::INFINITY; n];
         let mut prev: Vec<Option<usize>> = vec![None; n];
-        let mut visited = vec![false; n];
+        let mut heap = std::collections::BinaryHeap::new();
 
         dist[si] = 0.0;
+        heap.push(HeapEntry {
+            dist: 0.0,
+            node: si,
+        });
 
-        for _ in 0..n {
-            let mut u = None;
-            let mut best = f64::INFINITY;
-            for (i, (&d, &v)) in dist.iter().zip(visited.iter()).enumerate() {
-                if !v && d < best {
-                    best = d;
-                    u = Some(i);
-                }
-            }
-            let Some(u) = u else { break };
+        while let Some(HeapEntry { dist: d, node: u }) = heap.pop() {
             if u == ti {
                 break;
             }
-            visited[u] = true;
-
+            // Stale entry — we already relaxed this node to something
+            // shorter. Skip without touching neighbors.
+            if d > dist[u] {
+                continue;
+            }
             for edge in &self.graph.adjacency[u] {
-                let nd = dist[u] + edge.weight;
+                let nd = d + edge.weight;
                 if nd < dist[edge.target] {
                     dist[edge.target] = nd;
                     prev[edge.target] = Some(u);
+                    heap.push(HeapEntry {
+                        dist: nd,
+                        node: edge.target,
+                    });
                 }
             }
         }
@@ -662,17 +838,42 @@ impl CategoryLayer {
                 Vec::new()
             };
 
+            let hop_confidence = if step_idx + 1 < path_indices.len() {
+                let next_ci = path_indices[step_idx + 1];
+                let edge_strength = self.graph.adjacency[ci]
+                    .iter()
+                    .find(|e| e.target == next_ci)
+                    .map_or(0.0, |e| e.max_bridge_strength);
+                let territorial = self.spatial_quality.territorial_factor(ci, next_ci);
+                let voronoi_bonus = if self.spatial_quality.are_voronoi_neighbors(ci, next_ci) {
+                    1.2
+                } else {
+                    1.0
+                };
+                (edge_strength * territorial * voronoi_bonus).min(1.0)
+            } else {
+                0.0
+            };
+
             steps.push(CategoryPathStep {
                 category_index: ci,
                 category_name: self.summaries[ci].name.clone(),
                 cumulative_distance: dist[ci],
                 bridges_to_next,
+                hop_confidence,
             });
         }
+
+        let path_confidence = steps
+            .iter()
+            .take(steps.len().saturating_sub(1))
+            .map(|s| s.hop_confidence)
+            .fold(1.0, |acc, c| acc * c.max(0.01));
 
         Some(CategoryPath {
             total_distance: dist[ti],
             steps,
+            path_confidence,
         })
     }
 
@@ -692,7 +893,42 @@ impl CategoryLayer {
             .map(|(i, s)| (i, angular_distance(&pos, &s.centroid_position)))
             .filter(|&(_, d)| d <= max_angle)
             .collect();
-        results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| a.1.total_cmp(&b.1));
+        results
+    }
+
+    /// Certainty-weighted category routing.
+    ///
+    /// Like [`Self::categories_near_embedding`] but penalizes routes through
+    /// low-certainty projection regions. The effective distance is scaled
+    /// by `1 / sqrt(certainty)`, so poorly-projected queries don't get
+    /// routed to whatever random centroid happens to be angularly close
+    /// in the distorted projection.
+    ///
+    /// Returns `(category_index, raw_angular_distance, effective_distance, certainty)`.
+    pub fn categories_near_embedding_weighted<P: Projection>(
+        &self,
+        embedding: &Embedding,
+        projection: &P,
+        max_angle: f64,
+    ) -> Vec<(usize, f64, f64, f64)> {
+        let rich = projection.project_rich(embedding);
+        let pos = rich.position;
+        let certainty = rich.certainty.max(0.001);
+
+        let mut results: Vec<(usize, f64, f64, f64)> = self
+            .summaries
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let raw_dist = angular_distance(&pos, &s.centroid_position);
+                // Low certainty inflates distance → avoids noisy routing
+                let effective = raw_dist / certainty.sqrt();
+                (i, raw_dist, effective, certainty)
+            })
+            .filter(|&(_, raw, _, _)| raw <= max_angle)
+            .collect();
+        results.sort_by(|a, b| a.2.total_cmp(&b.2));
         results
     }
 
@@ -715,63 +951,6 @@ impl CategoryLayer {
     /// Number of categories that have inner spheres.
     pub fn num_inner_spheres(&self) -> usize {
         self.inner_spheres.len()
-    }
-
-    /// Drill down into a category: find the k nearest members to a query
-    /// embedding, using the inner sphere's projection if available.
-    ///
-    /// Falls back to angular distance from the category centroid on the
-    /// outer sphere when no inner sphere exists.
-    pub fn drill_down(
-        &self,
-        category_name: &str,
-        embedding: &Embedding,
-        k: usize,
-    ) -> Vec<DrillDownResult> {
-        let Some(&ci) = self.name_to_index.get(category_name) else {
-            return Vec::new();
-        };
-        let summary = &self.summaries[ci];
-
-        if let Some(inner) = self.inner_spheres.get(&ci) {
-            let query_pos = inner.projection.project(embedding);
-            let mut results: Vec<DrillDownResult> = inner
-                .inner_positions
-                .iter()
-                .enumerate()
-                .map(|(local_idx, pos)| DrillDownResult {
-                    item_index: inner.member_indices[local_idx],
-                    distance: angular_distance(&query_pos, pos),
-                    used_inner_sphere: true,
-                })
-                .collect();
-            results.sort_by(|a, b| {
-                a.distance
-                    .partial_cmp(&b.distance)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            results.truncate(k);
-            results
-        } else {
-            // Fallback: rank by distance from category centroid on outer sphere
-            let centroid = &summary.centroid_position;
-            let mut results: Vec<DrillDownResult> = summary
-                .member_indices
-                .iter()
-                .map(|&mi| DrillDownResult {
-                    item_index: mi,
-                    distance: angular_distance(&self.outer_positions[mi], centroid),
-                    used_inner_sphere: false,
-                })
-                .collect();
-            results.sort_by(|a, b| {
-                a.distance
-                    .partial_cmp(&b.distance)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-            results.truncate(k);
-            results
-        }
     }
 
     /// Drill down with an explicit outer projection for the fallback case.
@@ -859,15 +1038,27 @@ impl CategoryLayer {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
-    let mag_a = a.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let mag_b = b.iter().map(|x| x * x).sum::<f64>().sqrt();
-    let denom = mag_a * mag_b;
-    if denom < f64::EPSILON {
-        return 0.0;
+/// Min-heap entry keyed on `dist` for [`CategoryLayer::category_path`]'s
+/// Dijkstra. `BinaryHeap` is a max-heap, so `Ord` is reversed.
+/// `total_cmp` is NaN-safe (NaN sorts to the end).
+#[derive(PartialEq)]
+struct HeapEntry {
+    dist: f64,
+    node: usize,
+}
+
+impl Eq for HeapEntry {}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
-    (dot / denom).clamp(-1.0, 1.0)
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.dist.total_cmp(&self.dist)
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -916,9 +1107,10 @@ mod tests {
 
     fn build_test_layer() -> (CategoryLayer, Vec<Embedding>, PcaProjection) {
         let (categories, embeddings) = test_corpus();
-        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
-        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca);
+        let evr = pca.explained_variance_ratio();
+        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr);
         (layer, embeddings, pca)
     }
 
@@ -962,9 +1154,10 @@ mod tests {
 
     fn build_large_test_layer() -> (CategoryLayer, Vec<Embedding>, PcaProjection) {
         let (categories, embeddings) = large_category_corpus();
-        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
-        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca);
+        let evr = pca.explained_variance_ratio();
+        let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr);
         (layer, embeddings, pca)
     }
 
@@ -1089,14 +1282,17 @@ mod tests {
         let (layer, _, _) = build_test_layer();
         for edges in &layer.graph.adjacency {
             for e in edges {
-                let expected =
+                // The Voronoi bonus can only reduce weight, so weight ≤ base formula.
+                // The territorial factor can also reduce bridge strength.
+                let base_no_bonus =
                     e.centroid_distance / (1.0 + e.bridge_count as f64 * e.mean_bridge_strength);
                 assert!(
-                    (e.weight - expected).abs() < 1e-10,
-                    "weight {:.6} != expected {:.6}",
+                    e.weight <= base_no_bonus + 1e-10,
+                    "weight {:.6} should be ≤ base {:.6} (Voronoi bonus reduces it)",
                     e.weight,
-                    expected
+                    base_no_bonus,
                 );
+                assert!(e.weight > 0.0, "weight must be positive");
             }
         }
     }
@@ -1136,6 +1332,45 @@ mod tests {
     fn bridge_items_unknown_category_returns_empty() {
         let (layer, _, _) = build_test_layer();
         assert!(layer.bridge_items("science", "nonexistent", 10).is_empty());
+    }
+
+    #[test]
+    fn bridge_classification_populated() {
+        let (layer, _, _) = build_test_layer();
+        for bridges in layer.graph.bridges.values() {
+            for b in bridges {
+                // Every bridge should have one of the three classifications.
+                assert!(
+                    b.classification == BridgeClassification::Genuine
+                        || b.classification == BridgeClassification::OverlapArtifact
+                        || b.classification == BridgeClassification::Weak
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_quality_nonnegative() {
+        let (layer, _, _) = build_test_layer();
+        for s in &layer.summaries {
+            assert!(
+                s.bridge_quality >= 0.0,
+                "{} has negative bridge_quality",
+                s.name
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_quality_matrix_symmetric_ish() {
+        let (layer, _, _) = build_test_layer();
+        let m = &layer.spatial_quality.bridge_quality_matrix;
+        let n = m.len();
+        assert_eq!(n, layer.num_categories());
+        for (i, row) in m.iter().enumerate() {
+            assert_eq!(row.len(), n);
+            assert_eq!(row[i], 0.0, "diagonal should be zero");
+        }
     }
 
     #[test]
@@ -1280,8 +1515,9 @@ mod tests {
     #[test]
     fn inner_sphere_evr_improvement_positive() {
         let (layer, _, _) = build_large_test_layer();
+        let min_improvement = PipelineConfig::default().inner_sphere.min_evr_improvement;
         for inner in layer.inner_spheres.values() {
-            assert!(inner.evr_improvement >= MIN_EVR_IMPROVEMENT);
+            assert!(inner.evr_improvement >= min_improvement);
         }
     }
 
@@ -1391,18 +1627,11 @@ mod tests {
     }
 
     #[test]
-    fn drill_down_without_projection_works() {
-        let (layer, _, _) = build_large_test_layer();
-        let q = emb(&[1.0, 0.5, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-        assert!(layer.drill_down("big", &q, 5).len() <= 5);
-    }
-
-    #[test]
     fn inner_projection_enum_debug() {
         let corpus: Vec<Embedding> = (0..5)
             .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
             .collect();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(
             format!("{:?}", InnerProjection::LinearPca(pca)),
             "LinearPca"
@@ -1414,7 +1643,7 @@ mod tests {
         let corpus: Vec<Embedding> = (0..5)
             .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
             .collect();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let proj = InnerProjection::LinearPca(pca.clone());
         let e = emb(&[1.0, 0.0, 0.0, 0.0, 0.0]);
         let sp_enum = proj.project(&e);
@@ -1428,7 +1657,7 @@ mod tests {
         let corpus: Vec<Embedding> = (0..5)
             .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
             .collect();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(InnerProjection::LinearPca(pca).dimensionality(), 5);
     }
 }

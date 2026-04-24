@@ -1,6 +1,8 @@
 use sphereql_core::{CartesianPoint, SphericalPoint, cartesian_to_spherical};
 
-use crate::projection::{SplitMix64, dot, normalize_vec, project_xyz_to_spherical};
+use crate::projection::{
+    ProjectionError, SplitMix64, dot, normalize_vec, project_xyz_to_spherical,
+};
 use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
 use crate::projection::Projection;
@@ -87,21 +89,28 @@ impl KernelPcaProjection {
     /// embeddings divided by √2, so that the kernel value at the median
     /// distance is exp(−1) ≈ 0.37. This is a standard heuristic in the
     /// kernel methods literature.
-    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Self {
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
         Self::fit_impl(embeddings, None, radial)
     }
 
     /// Fit kernel PCA with an explicit kernel width σ.
     ///
     /// Use this when you have domain knowledge about the appropriate scale,
-    /// or when benchmarking different σ values.
-    pub fn fit_with_sigma(embeddings: &[Embedding], sigma: f64, radial: RadialStrategy) -> Self {
-        assert!(sigma > 0.0, "σ must be positive, got {sigma}");
+    /// or when benchmarking different σ values. Returns
+    /// [`ProjectionError::InvalidSigma`] if `sigma <= 0.0`.
+    pub fn fit_with_sigma(
+        embeddings: &[Embedding],
+        sigma: f64,
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
+        if sigma <= 0.0 {
+            return Err(ProjectionError::InvalidSigma { got: sigma });
+        }
         Self::fit_impl(embeddings, Some(sigma), radial)
     }
 
     /// Convenience: fit with default radial strategy and auto σ.
-    pub fn fit_default(embeddings: &[Embedding]) -> Self {
+    pub fn fit_default(embeddings: &[Embedding]) -> Result<Self, ProjectionError> {
         Self::fit(embeddings, RadialStrategy::default())
     }
 
@@ -145,20 +154,29 @@ impl KernelPcaProjection {
 
     // ── Implementation ─────────────────────────────────────────────────
 
-    fn fit_impl(embeddings: &[Embedding], sigma: Option<f64>, radial: RadialStrategy) -> Self {
-        assert!(
-            !embeddings.is_empty(),
-            "need at least one embedding to fit kernel PCA"
-        );
+    fn fit_impl(
+        embeddings: &[Embedding],
+        sigma: Option<f64>,
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
+        if embeddings.is_empty() {
+            return Err(ProjectionError::EmptyCorpus);
+        }
         let dim = embeddings[0].dimension();
-        assert!(dim >= 3, "embedding dimension must be >= 3");
+        if dim < 3 {
+            return Err(ProjectionError::DimensionTooLow {
+                got: dim,
+                required: 3,
+            });
+        }
         for (i, e) in embeddings.iter().enumerate() {
-            assert_eq!(
-                e.dimension(),
-                dim,
-                "embedding {i} has dimension {}, expected {dim}",
-                e.dimension()
-            );
+            if e.dimension() != dim {
+                return Err(ProjectionError::InconsistentDimension {
+                    index: i,
+                    expected: dim,
+                    got: e.dimension(),
+                });
+            }
         }
 
         // 1. Normalise to unit sphere (angular similarity only)
@@ -201,10 +219,17 @@ impl KernelPcaProjection {
         // 5. Centre the kernel matrix (Schölkopf eq. 4):
         //    K̃_{ij} = K_{ij} − col_means[i] − col_means[j] + grand_mean
         //
-        //    We overwrite kernel_flat in place to save memory.
+        //    We overwrite kernel_flat in place to save memory. K̃ is
+        //    symmetric in closed form, but `col_means[i] + col_means[j]
+        //    - grand_mean` accumulates FP rounding such that K̃[i,j] can
+        //    drift from K̃[j,i] by ~1e-15. Across 300 power-iteration
+        //    steps on n ≈ 1000 that drift compounds into eigenvector
+        //    error; symmetrize once here to eliminate the source.
         for i in 0..n {
-            for j in 0..n {
-                kernel_flat[i * n + j] -= col_means[i] + col_means[j] - grand_mean;
+            for j in i..n {
+                let v = kernel_flat[i * n + j] - col_means[i] - col_means[j] + grand_mean;
+                kernel_flat[i * n + j] = v;
+                kernel_flat[j * n + i] = v;
             }
         }
 
@@ -230,7 +255,7 @@ impl KernelPcaProjection {
             }
         }
 
-        Self {
+        Ok(Self {
             training_data: normalized,
             sigma,
             inv_two_sigma_sq,
@@ -242,7 +267,7 @@ impl KernelPcaProjection {
             dim,
             radial,
             volumetric: false,
-        }
+        })
     }
 
     /// Compute centred kernel vector and project onto top-3 components.
@@ -404,8 +429,14 @@ fn auto_sigma(data: &[Vec<f64>]) -> f64 {
         }
     }
 
-    distances.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    let median = distances[distances.len() / 2];
+    // Median via `select_nth_unstable_by` is O(n) vs the O(n log n)
+    // full sort — for the 5000-pair sampled branch above that's the
+    // difference between ~65k and ~5k comparisons. `total_cmp` is
+    // NaN-safe (previously `.partial_cmp().unwrap()` panicked on
+    // degenerate zero-distance input).
+    let mid = distances.len() / 2;
+    let (_, median_ref, _) = distances.select_nth_unstable_by(mid, |a, b| a.total_cmp(b));
+    let median = *median_ref;
 
     (median * std::f64::consts::FRAC_1_SQRT_2).max(1e-8)
 }
@@ -434,21 +465,40 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
     let mut values: Vec<f64> = Vec::with_capacity(k);
     let mut rng = SplitMix64::new(0xBEEF_CAFE);
 
+    // Closure: write `matrix · src` into `dst`. Extracted because the
+    // inner loop needs this twice — once for the iterate and once for
+    // the Rayleigh quotient — and we cache the second call's result
+    // into the next iteration's iterate.
+    let matvec = |dst: &mut [f64], src: &[f64]| {
+        for (i, dst_i) in dst.iter_mut().enumerate() {
+            let row_start = i * n;
+            let mut s = 0.0;
+            for j in 0..n {
+                s += matrix[row_start + j] * src[j];
+            }
+            *dst_i = s;
+        }
+    };
+
     for _ in 0..k {
         let mut v: Vec<f64> = (0..n).map(|_| rng.normal()).collect();
         normalize_vec(&mut v);
         let mut eigenvalue = 0.0;
 
+        // Cached `matrix · v` from the previous iteration's Rayleigh
+        // step. `None` on first pass; populated afterward. Saves one
+        // full mat-vec per iteration.
+        //
+        // Note: a `.skip(1)` bug in earlier versions left `u[0] = 0`;
+        // see the `first_coordinate_is_nonzero` regression test.
+        let mut mv_cache: Option<Vec<f64>> = None;
+
         for _ in 0..max_iters {
-            let mut u = vec![0.0; n];
-            for (i, u_i) in u.iter_mut().enumerate().skip(1) {
-                let row_start = i * n;
-                let mut s = 0.0;
-                for j in 0..n {
-                    s += matrix[row_start + j] * v[j];
-                }
-                *u_i = s;
-            }
+            let mut u = mv_cache.take().unwrap_or_else(|| {
+                let mut u = vec![0.0; n];
+                matvec(&mut u, &v);
+                u
+            });
 
             for prev in &vectors {
                 let proj = dot(&u, prev);
@@ -462,22 +512,19 @@ fn top_k_symmetric(matrix: &[f64], n: usize, k: usize) -> (Vec<Vec<f64>>, Vec<f6
                 break;
             }
 
-            // Rayleigh quotient for eigenvalue estimate
-            eigenvalue = {
-                let mut s = 0.0;
-                for i in 0..n {
-                    let row_start = i * n;
-                    let mut mv_i = 0.0;
-                    for j in 0..n {
-                        mv_i += matrix[row_start + j] * u[j];
-                    }
-                    s += u[i] * mv_i;
-                }
-                s
-            };
+            // Rayleigh quotient: λ ≈ uᵀ · (matrix · u). Save the
+            // `matrix · u` vector — next iteration starts with
+            // `u_next = matrix · v_next = matrix · u_current`.
+            let mut mv_next = vec![0.0; n];
+            matvec(&mut mv_next, &u);
+            eigenvalue = u.iter().zip(mv_next.iter()).map(|(a, b)| a * b).sum();
 
-            let change = 1.0 - dot(&u, &v).abs();
+            // Convergence: |⟨u, v⟩| → 1 as u aligns with v.
+            // `.max(0.0)` clamps the FP noise that briefly pushes the
+            // value below zero near convergence.
+            let change = (1.0 - dot(&u, &v).abs()).max(0.0);
             v = u;
+            mv_cache = Some(mv_next);
 
             if change < tol {
                 break;
@@ -541,10 +588,40 @@ mod tests {
         );
     }
 
+    /// Regression test for the `.skip(1)` bug in `top_k_symmetric`:
+    /// the mat-vec loop used to start at row 1, leaving `u[0] = 0.0`
+    /// on every power-iteration step. That silently zeroed the first
+    /// coordinate of every kernel PCA eigenvector. This test fails
+    /// loudly if the skip comes back.
+    #[test]
+    fn top_k_symmetric_first_coordinate_nonzero() {
+        // Symmetric, dominant-diagonal 4×4 matrix whose top eigenvector
+        // is approximately the all-ones vector (each coordinate ≈ 0.5).
+        let n = 4;
+        #[rustfmt::skip]
+        let matrix = vec![
+            4.0, 1.0, 0.5, 0.2,
+            1.0, 4.0, 1.0, 0.5,
+            0.5, 1.0, 4.0, 1.0,
+            0.2, 0.5, 1.0, 4.0,
+        ];
+        let (vectors, values) = top_k_symmetric(&matrix, n, 2);
+        assert_eq!(vectors.len(), 2);
+        for (idx, v) in vectors.iter().enumerate() {
+            assert!(
+                v[0].abs() > 1e-6,
+                "eigenvector {idx} has a suspiciously small first \
+                 coordinate ({:.2e}) — the .skip(1) bug is back",
+                v[0]
+            );
+        }
+        assert!(values[0] > values[1], "eigenvalues must be sorted");
+    }
+
     #[test]
     fn kernel_pca_fit_auto_sigma() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(kpca.dimensionality(), 10);
         assert!(kpca.sigma() > 0.0);
         assert_eq!(kpca.num_training_points(), 8);
@@ -553,40 +630,50 @@ mod tests {
     #[test]
     fn kernel_pca_fit_explicit_sigma() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit_with_sigma(&corpus, 0.5, RadialStrategy::Fixed(1.0));
+        let kpca =
+            KernelPcaProjection::fit_with_sigma(&corpus, 0.5, RadialStrategy::Fixed(1.0)).unwrap();
         assert!((kpca.sigma() - 0.5).abs() < 1e-12);
     }
 
     #[test]
     fn kernel_pca_fit_default() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit_default(&corpus);
+        let kpca = KernelPcaProjection::fit_default(&corpus).unwrap();
         assert_eq!(kpca.dimensionality(), 10);
     }
 
     #[test]
-    #[should_panic(expected = "need at least one embedding")]
-    fn kernel_pca_empty_corpus_panics() {
-        KernelPcaProjection::fit(&[], RadialStrategy::Fixed(1.0));
+    fn kernel_pca_empty_corpus_returns_err() {
+        assert!(matches!(
+            KernelPcaProjection::fit(&[], RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::EmptyCorpus)
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "embedding dimension must be >= 3")]
-    fn kernel_pca_too_few_dims_panics() {
-        KernelPcaProjection::fit(&[emb(&[1.0, 2.0])], RadialStrategy::Fixed(1.0));
+    fn kernel_pca_too_few_dims_returns_err() {
+        assert!(matches!(
+            KernelPcaProjection::fit(&[emb(&[1.0, 2.0])], RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::DimensionTooLow {
+                got: 2,
+                required: 3
+            })
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "σ must be positive")]
-    fn kernel_pca_zero_sigma_panics() {
+    fn kernel_pca_zero_sigma_returns_err() {
         let corpus = corpus_10d();
-        KernelPcaProjection::fit_with_sigma(&corpus, 0.0, RadialStrategy::Fixed(1.0));
+        assert!(matches!(
+            KernelPcaProjection::fit_with_sigma(&corpus, 0.0, RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::InvalidSigma { got }) if got == 0.0
+        ));
     }
 
     #[test]
     fn kernel_pca_produces_valid_spherical_points() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         for e in &corpus {
             assert_valid_spherical(&kpca.project(e));
         }
@@ -595,7 +682,7 @@ mod tests {
     #[test]
     fn kernel_pca_out_of_sample_produces_valid_points() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let novel = emb(&[0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         assert_valid_spherical(&kpca.project(&novel));
     }
@@ -603,7 +690,7 @@ mod tests {
     #[test]
     fn kernel_pca_preserves_angular_ordering() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let a = emb(&[1.0, 0.1, 0.0, 0.05, 0.02, -0.01, 0.01, 0.0, 0.02, 0.01]);
         let b = emb(&[0.9, 0.2, 0.1, 0.04, 0.03, 0.0, 0.02, -0.01, 0.01, 0.02]);
         let c = emb(&[-1.0, -0.1, 0.0, -0.04, 0.01, 0.02, 0.01, 0.02, -0.01, 0.01]);
@@ -621,7 +708,7 @@ mod tests {
     #[test]
     fn kernel_pca_fixed_radial() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(2.5));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(2.5)).unwrap();
         let sp = kpca.project(&corpus[0]);
         assert!((sp.r - 2.5).abs() < 1e-12);
     }
@@ -629,7 +716,7 @@ mod tests {
     #[test]
     fn kernel_pca_magnitude_radial() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Magnitude);
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Magnitude).unwrap();
         let short = emb(&[0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let long = emb(&[10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let ps = kpca.project(&short);
@@ -642,8 +729,9 @@ mod tests {
     #[test]
     fn kernel_pca_volumetric() {
         let corpus = corpus_10d();
-        let kpca =
-            KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).with_volumetric(true);
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0))
+            .unwrap()
+            .with_volumetric(true);
         let sp = kpca.project(&corpus[0]);
         assert!(sp.r >= 0.0);
     }
@@ -651,7 +739,7 @@ mod tests {
     #[test]
     fn kernel_pca_project_rich_has_valid_certainty() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         for e in &corpus {
             let rich = kpca.project_rich(e);
             assert!(
@@ -667,7 +755,7 @@ mod tests {
     #[test]
     fn kernel_pca_certainty_is_meaningful() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let total_certainty: f64 = corpus.iter().map(|e| kpca.project_rich(e).certainty).sum();
         let mean_certainty = total_certainty / corpus.len() as f64;
         assert!(
@@ -679,7 +767,7 @@ mod tests {
     #[test]
     fn kernel_pca_explained_variance_in_range() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let ratio = kpca.explained_variance_ratio();
         assert!(
             ratio > 0.0 && ratio <= 1.0,
@@ -690,7 +778,7 @@ mod tests {
     #[test]
     fn kernel_pca_eigenvalues_descending() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let ev = kpca.eigenvalues();
         assert!(ev[0] >= ev[1], "eigenvalues must descend: {ev:?}");
         assert!(ev[1] >= ev[2], "eigenvalues must descend: {ev:?}");
@@ -742,14 +830,14 @@ mod tests {
     #[should_panic(expected = "expected dimension 10")]
     fn kernel_pca_dimension_mismatch_panics() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let _ = kpca.project(&emb(&[1.0, 2.0, 3.0]));
     }
 
     #[test]
     fn kernel_pca_clone_produces_identical_results() {
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let kpca2 = kpca.clone();
         for e in &corpus {
             let sp1 = kpca.project(e);
@@ -763,7 +851,7 @@ mod tests {
     fn kernel_pca_works_with_embedding_index() {
         use crate::query::EmbeddingIndex;
         let corpus = corpus_10d();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(kpca)
             .theta_divisions(4)
             .phi_divisions(3)
@@ -782,8 +870,9 @@ mod tests {
     fn large_sigma_approaches_pca_ordering() {
         use crate::projection::PcaProjection;
         let corpus = corpus_10d();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
-        let kpca = KernelPcaProjection::fit_with_sigma(&corpus, 100.0, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
+        let kpca = KernelPcaProjection::fit_with_sigma(&corpus, 100.0, RadialStrategy::Fixed(1.0))
+            .unwrap();
         let query = emb(&[1.0, 0.1, 0.0, 0.05, 0.02, -0.01, 0.01, 0.0, 0.02, 0.01]);
         let pca_pt = pca.project(&query);
         let kpca_pt = kpca.project(&query);

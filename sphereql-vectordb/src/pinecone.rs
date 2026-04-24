@@ -6,15 +6,19 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::error::VectorStoreError;
+use crate::redacted::Redacted;
 use crate::store::VectorStore;
 use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 
 // ── Config ──────────────────────────────────────────────────────────────
 
 /// Configuration for connecting to a Pinecone index.
+///
+/// `api_key` is a [`Redacted`] wrapper so the struct's `Debug` impl
+/// never leaks the key into logs, panic backtraces, or test output.
 #[derive(Debug, Clone)]
 pub struct PineconeConfig {
-    pub api_key: String,
+    pub api_key: Redacted,
     /// Index host, e.g. "my-index-abc123.svc.us-east1-gcp.pinecone.io"
     pub host: String,
     /// Pinecone namespace. Default "".
@@ -22,17 +26,36 @@ pub struct PineconeConfig {
     pub dimension: usize,
     /// Pinecone caps top_k at 10,000.
     pub top_k_limit: usize,
+    /// Hard cap on a single HTTP response body, in bytes. Guards
+    /// against a buggy or malicious server returning a multi-GB blob
+    /// that would OOM the client before we could interpret the
+    /// payload.
+    ///
+    /// Default 1 GiB — deliberately permissive so large corpora (LLM
+    /// training data, million-record document indexes) don't trip the
+    /// limit on normal scroll pages. Adjust upward for pathological
+    /// metadata fields (full document text stored inline) or downward
+    /// on memory-constrained clients.
+    pub max_response_bytes: u64,
 }
 
 impl PineconeConfig {
     pub fn new(api_key: impl Into<String>, host: impl Into<String>, dimension: usize) -> Self {
         Self {
-            api_key: api_key.into(),
+            api_key: Redacted::new(api_key),
             host: host.into(),
             namespace: String::new(),
             dimension,
             top_k_limit: 10_000,
+            max_response_bytes: 1024 * 1024 * 1024, // 1 GiB
         }
+    }
+
+    /// Override the hard cap on response body size. See
+    /// [`Self::max_response_bytes`] for the trade-off.
+    pub fn with_max_response_bytes(mut self, bytes: u64) -> Self {
+        self.max_response_bytes = bytes;
+        self
     }
 
     pub fn with_namespace(mut self, ns: impl Into<String>) -> Self {
@@ -104,17 +127,47 @@ impl PineconeStore {
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.client
             .request(method, format!("{}{path}", self.base_url))
-            .header("Api-Key", &self.config.api_key)
+            .header("Api-Key", self.config.api_key.expose())
             .header("Content-Type", "application/json")
     }
 
     async fn check_response(
+        &self,
         resp: reqwest::Response,
     ) -> Result<reqwest::Response, VectorStoreError> {
+        // Reject oversized responses before consuming the body. This
+        // only fires when the server advertises a `Content-Length`
+        // above the cap — chunked responses without a declared length
+        // fall through to the normal deserialization path, where
+        // serde_json's incremental parser still bounds memory by the
+        // deserialized value size rather than the raw bytes.
+        if let Some(len) = resp.content_length()
+            && len > self.config.max_response_bytes
+        {
+            return Err(VectorStoreError::ResponseTooLarge {
+                bytes: len,
+                cap: self.config.max_response_bytes,
+            });
+        }
+
         if resp.status().is_success() {
             return Ok(resp);
         }
         let status = resp.status();
+
+        // Map 429 to RateLimited so callers can back off and retry.
+        // Pinecone returns `Retry-After` in seconds; RFC 7231 also
+        // allows an HTTP-date, but Pinecone doesn't use that form.
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(std::time::Duration::from_secs);
+            return Err(VectorStoreError::RateLimited { retry_after });
+        }
+
         let body = resp.text().await.unwrap_or_default();
         if let Ok(err) = serde_json::from_str::<PineconeError>(&body) {
             Err(VectorStoreError::Backend(format!(
@@ -126,6 +179,26 @@ impl PineconeStore {
                 "Pinecone {status}: {body}"
             )))
         }
+    }
+
+    /// Apply a single payload update. Split out so
+    /// [`VectorStore::set_payload`]'s `FuturesUnordered` pool can
+    /// pattern-borrow `&self` through the method instead of fighting
+    /// the closure's higher-ranked lifetimes in `buffer_unordered`.
+    async fn set_payload_one(&self, update: &PayloadUpdate) -> Result<(), VectorStoreError> {
+        let body = UpdateRequest {
+            id: update.id.clone(),
+            set_metadata: update.metadata.clone(),
+            namespace: ns_or_none(&self.config.namespace),
+        };
+        let resp = self
+            .request(reqwest::Method::POST, "/vectors/update")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
+        self.check_response(resp).await?;
+        Ok(())
     }
 }
 
@@ -170,7 +243,7 @@ impl VectorStore for PineconeStore {
                 .await
                 .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-            Self::check_response(resp).await?;
+            self.check_response(resp).await?;
         }
 
         Ok(())
@@ -194,7 +267,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let fetch: FetchResponse = resp
             .json()
             .await
@@ -230,7 +303,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        Self::check_response(resp).await?;
+        self.check_response(resp).await?;
         Ok(())
     }
 
@@ -262,7 +335,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let query_resp: QueryResponse = resp
             .json()
             .await
@@ -301,7 +374,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let list_resp: ListResponse = resp
             .json()
             .await
@@ -335,7 +408,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let stats: DescribeIndexStatsResponse = resp
             .json()
             .await
@@ -355,21 +428,28 @@ impl VectorStore for PineconeStore {
     }
 
     async fn set_payload(&self, updates: &[PayloadUpdate]) -> Result<(), VectorStoreError> {
-        for update in updates {
-            let body = UpdateRequest {
-                id: update.id.clone(),
-                set_metadata: update.metadata.clone(),
-                namespace: ns_or_none(&self.config.namespace),
-            };
+        // Pinecone's `/vectors/update` endpoint is per-record — there
+        // is no batch metadata update. Previous implementation posted
+        // N requests serially; at 500k records that's tens of minutes.
+        // Sliding-window `FuturesUnordered` pool (same shape as
+        // QdrantStore::set_payload) keeps up to CONCURRENCY requests
+        // in flight. 16 is a conservative default below Pinecone's
+        // typical rate-limit budget — anything higher risks tripping
+        // 429, which now maps to VectorStoreError::RateLimited.
+        use futures::stream::{FuturesUnordered, StreamExt};
 
-            let resp = self
-                .request(reqwest::Method::POST, "/vectors/update")
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
+        const CONCURRENCY: usize = 16;
+        let mut in_flight = FuturesUnordered::new();
+        let mut iter = updates.iter();
 
-            Self::check_response(resp).await?;
+        for update in iter.by_ref().take(CONCURRENCY) {
+            in_flight.push(self.set_payload_one(update));
+        }
+        while let Some(result) = in_flight.next().await {
+            result?;
+            if let Some(update) = iter.next() {
+                in_flight.push(self.set_payload_one(update));
+            }
         }
         Ok(())
     }
@@ -520,9 +600,18 @@ mod tests {
     #[test]
     fn config_defaults() {
         let config = PineconeConfig::new("key", "my-host.pinecone.io", 384);
-        assert_eq!(config.api_key, "key");
+        assert_eq!(config.api_key.expose(), "key");
         assert_eq!(config.host, "my-host.pinecone.io");
         assert_eq!(config.dimension, 384);
+
+        // `{:?}` on the config must not leak the key — this is the
+        // whole reason `api_key` is wrapped in `Redacted`.
+        let rendered = format!("{config:?}");
+        assert!(
+            !rendered.contains("\"key\""),
+            "PineconeConfig Debug leaked the api_key: {rendered}"
+        );
+        assert!(rendered.contains("redacted"));
         assert!(config.namespace.is_empty());
         assert_eq!(config.top_k_limit, 10_000);
     }

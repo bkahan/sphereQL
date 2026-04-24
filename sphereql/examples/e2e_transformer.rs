@@ -87,7 +87,9 @@ fn main() {
     // ── 2. Fit volumetric PCA projection ────────────────────────────────
     eprintln!("Fitting volumetric PCA projection ({dim}-d → 3D volume)...");
     let all_emb: Vec<Embedding> = sentences.iter().map(|s| s.embedding.clone()).collect();
-    let pca = PcaProjection::fit(&all_emb, RadialStrategy::Magnitude).with_volumetric(true);
+    let pca = PcaProjection::fit(&all_emb, RadialStrategy::Magnitude)
+        .expect("PCA fit")
+        .with_volumetric(true);
 
     let mut index = EmbeddingIndex::builder(pca.clone())
         .uniform_shells(10, 1.0)

@@ -6,14 +6,20 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use tokio::runtime::Runtime;
 
+use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::pipeline::{SphereQLOutput, SphereQLQuery};
+use sphereql_embed::projection::Projection;
+use sphereql_embed::types::Embedding;
 use sphereql_vectordb::store::VectorStore;
 use sphereql_vectordb::types::{PayloadUpdate, SearchResult, VectorPage};
 use sphereql_vectordb::{
     BridgeConfig, InMemoryStore, VectorRecord, VectorStoreBridge, VectorStoreError,
 };
 
-use crate::types::{Glob, Nearest, Path};
+use crate::types::{
+    Glob, Manifold, Nearest, Path, PyCategoryPath, PyCategorySummary, PyDomainGroup, PyDrillDown,
+    PyInnerSphereReport, PyProjectionWarning,
+};
 
 // ── SharedStore ──────────────────────────────────────────────────────────
 // Newtype so we can impl VectorStore for Arc<InMemoryStore> without
@@ -111,12 +117,398 @@ fn category_extractor(key: &str) -> impl Fn(&VectorRecord) -> String + '_ {
     }
 }
 
-fn nearest_to_py(items: &[sphereql_embed::pipeline::NearestResult]) -> Vec<Nearest> {
-    items.iter().map(Nearest::from).collect()
+fn dummy_query_vec(bridge_dim: Option<usize>) -> Vec<f64> {
+    vec![0.0; bridge_dim.unwrap_or(0)]
 }
 
-// Bridge query methods are inlined at each #[pymethods] impl because PyO3
-// proc macros cannot expand macro_rules! inside #[pymethods] blocks.
+// ── Shared bridge method macro ──────────────────────────────────────────
+// Every VectorStoreBridge wrapper (InMemory, Qdrant, Pinecone) exposes an
+// identical query surface. The macro below stamps that surface onto each
+// wrapper type so the methods stay in lock-step without 3× copy-paste.
+//
+// Requires `pyo3`'s `multiple-pymethods` feature — each wrapper keeps a
+// separate `#[pymethods]` block for its type-specific constructor.
+
+macro_rules! impl_vector_bridge_methods {
+    ($type:ident, $label:expr) => {
+        #[pymethods]
+        impl $type {
+            /// Pull all vectors from the store and build the sphereQL
+            /// pipeline using PCA with the bridge's default radial
+            /// strategy and volumetric settings.
+            #[pyo3(signature = (*, category_key="category"))]
+            fn build_pipeline(&mut self, py: Python<'_>, category_key: &str) -> PyResult<()> {
+                let extractor = category_extractor(category_key);
+                py.detach(|| self.rt.block_on(self.bridge.build_pipeline(extractor)))
+                    .map_err(vstore_err)?;
+                Ok(())
+            }
+
+            /// Pull all vectors and build the pipeline with an explicit
+            /// PipelineConfig (non-PCA projections, custom bridge /
+            /// inner-sphere / routing thresholds).
+            #[pyo3(signature = (config, *, category_key="category"))]
+            fn build_pipeline_with_config(
+                &mut self,
+                py: Python<'_>,
+                config: &Bound<'_, PyAny>,
+                category_key: &str,
+            ) -> PyResult<()> {
+                let cfg: PipelineConfig = pythonize::depythonize(config)
+                    .map_err(|e| PyValueError::new_err(format!("invalid config dict: {e}")))?;
+                let extractor = category_extractor(category_key);
+                py.detach(|| {
+                    self.rt
+                        .block_on(self.bridge.build_pipeline_with_config(extractor, cfg))
+                })
+                .map_err(vstore_err)?;
+                Ok(())
+            }
+
+            #[pyo3(signature = (embedding, *, k=5))]
+            fn query_nearest(
+                &self,
+                py: Python<'_>,
+                embedding: Vec<f64>,
+                k: usize,
+            ) -> PyResult<Vec<Nearest>> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| self.bridge.query(SphereQLQuery::Nearest { k }, &embedding))
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::Nearest(items) => Ok(items.iter().map(Nearest::from).collect()),
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            #[pyo3(signature = (embedding, *, min_cosine=0.8))]
+            fn query_similar(
+                &self,
+                py: Python<'_>,
+                embedding: Vec<f64>,
+                min_cosine: f64,
+            ) -> PyResult<Vec<Nearest>> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::KNearest(items) => {
+                        Ok(items.iter().map(Nearest::from).collect())
+                    }
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            #[pyo3(signature = (source_id, target_id, *, graph_k=10, embedding))]
+            fn query_concept_path(
+                &self,
+                py: Python<'_>,
+                source_id: &str,
+                target_id: &str,
+                graph_k: usize,
+                embedding: Vec<f64>,
+            ) -> PyResult<Option<Path>> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge.query(
+                            SphereQLQuery::ConceptPath {
+                                source_id,
+                                target_id,
+                                graph_k,
+                            },
+                            &embedding,
+                        )
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            #[pyo3(signature = (embedding, *, k=None, max_k=10))]
+            fn query_detect_globs(
+                &self,
+                py: Python<'_>,
+                embedding: Vec<f64>,
+                k: Option<usize>,
+                max_k: usize,
+            ) -> PyResult<Vec<Glob>> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            /// Fit a local manifold around the query point in the
+            /// pipeline's projected space.
+            #[pyo3(signature = (embedding, *, neighborhood_k=10))]
+            fn query_local_manifold(
+                &self,
+                py: Python<'_>,
+                embedding: Vec<f64>,
+                neighborhood_k: usize,
+            ) -> PyResult<Manifold> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::LocalManifold { neighborhood_k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::LocalManifold(m) => Ok(Manifold::from(&m)),
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            // ── Category Enrichment Layer ───────────────────────────
+
+            /// Find the shortest path between two categories through
+            /// the category graph.
+            fn category_concept_path(
+                &self,
+                py: Python<'_>,
+                source_category: &str,
+                target_category: &str,
+            ) -> PyResult<Option<PyCategoryPath>> {
+                let embedding = dummy_query_vec(self.projection_dim());
+                let result = py
+                    .detach(|| {
+                        self.bridge.query(
+                            SphereQLQuery::CategoryConceptPath {
+                                source_category,
+                                target_category,
+                            },
+                            &embedding,
+                        )
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::CategoryConceptPath(path) => {
+                        Ok(path.as_ref().map(PyCategoryPath::from))
+                    }
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            /// k-NN over category centroids starting from `category`.
+            #[pyo3(signature = (category, *, k=5))]
+            fn category_neighbors(
+                &self,
+                py: Python<'_>,
+                category: &str,
+                k: usize,
+            ) -> PyResult<Vec<PyCategorySummary>> {
+                let embedding = dummy_query_vec(self.projection_dim());
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::CategoryNeighbors { category, k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::CategoryNeighbors(summaries) => {
+                        Ok(summaries.iter().map(PyCategorySummary::from).collect())
+                    }
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            /// Drill into one category: k-NN within that category using
+            /// its inner sphere's projection when available.
+            #[pyo3(signature = (category, embedding, *, k=10))]
+            fn drill_down(
+                &self,
+                py: Python<'_>,
+                category: &str,
+                embedding: Vec<f64>,
+                k: usize,
+            ) -> PyResult<Vec<PyDrillDown>> {
+                self.check_query_dim(&embedding)?;
+                let result = py
+                    .detach(|| {
+                        self.bridge
+                            .query(SphereQLQuery::DrillDown { category, k }, &embedding)
+                    })
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::DrillDown(results) => {
+                        Ok(results.iter().map(PyDrillDown::from).collect())
+                    }
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            /// Per-category summaries plus inner-sphere reports.
+            fn category_stats(
+                &self,
+                py: Python<'_>,
+            ) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
+                let embedding = dummy_query_vec(self.projection_dim());
+                let result = py
+                    .detach(|| self.bridge.query(SphereQLQuery::CategoryStats, &embedding))
+                    .map_err(vstore_err)?;
+                match result {
+                    SphereQLOutput::CategoryStats {
+                        summaries,
+                        inner_sphere_reports,
+                    } => Ok((
+                        summaries.iter().map(PyCategorySummary::from).collect(),
+                        inner_sphere_reports
+                            .iter()
+                            .map(PyInnerSphereReport::from)
+                            .collect(),
+                    )),
+                    _ => Err(PyRuntimeError::new_err("unexpected output type")),
+                }
+            }
+
+            // ── Hierarchical routing ────────────────────────────────
+
+            #[pyo3(signature = (embedding, *, k=5))]
+            fn hierarchical_nearest(
+                &self,
+                py: Python<'_>,
+                embedding: Vec<f64>,
+                k: usize,
+            ) -> PyResult<Vec<Nearest>> {
+                self.check_query_dim(&embedding)?;
+                let pipeline = self
+                    .bridge
+                    .pipeline()
+                    .ok_or_else(|| PyRuntimeError::new_err("pipeline not built"))?;
+                let emb = Embedding::new(embedding);
+                let results = py.detach(|| pipeline.hierarchical_nearest(&emb, k));
+                Ok(results.iter().map(Nearest::from).collect())
+            }
+
+            /// Coarse domain groups detected from category geometry.
+            fn domain_groups(&self) -> PyResult<Vec<PyDomainGroup>> {
+                let pipeline = self
+                    .bridge
+                    .pipeline()
+                    .ok_or_else(|| PyRuntimeError::new_err("pipeline not built"))?;
+                Ok(pipeline
+                    .domain_groups()
+                    .iter()
+                    .map(PyDomainGroup::from)
+                    .collect())
+            }
+
+            /// Projection-quality warnings. Empty when EVR is healthy.
+            fn projection_warnings(&self) -> PyResult<Vec<PyProjectionWarning>> {
+                let pipeline = self
+                    .bridge
+                    .pipeline()
+                    .ok_or_else(|| PyRuntimeError::new_err("pipeline not built"))?;
+                Ok(pipeline
+                    .projection_warnings()
+                    .iter()
+                    .map(PyProjectionWarning::from)
+                    .collect())
+            }
+
+            // ── Hybrid / sync / introspection ────────────────────────
+
+            #[pyo3(signature = (embedding, *, final_k=5, recall_k=20))]
+            fn hybrid_search<'py>(
+                &self,
+                py: Python<'py>,
+                embedding: Vec<f64>,
+                final_k: usize,
+                recall_k: usize,
+            ) -> PyResult<Vec<Bound<'py, PyDict>>> {
+                self.check_query_dim(&embedding)?;
+                // `hybrid_search` is the hot path for Qdrant/Pinecone
+                // bridges — it does ANN recall + cosine re-rank, both
+                // over the network/CPU. Detach so other Python threads
+                // aren't blocked for the whole round-trip.
+                let results = py
+                    .detach(|| {
+                        self.rt
+                            .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
+                    })
+                    .map_err(vstore_err)?;
+                results
+                    .iter()
+                    .map(|r| search_result_to_dict(py, r))
+                    .collect()
+            }
+
+            fn sync_projections(&self, py: Python<'_>) -> PyResult<usize> {
+                py.detach(|| self.rt.block_on(self.bridge.sync_projections()))
+                    .map_err(vstore_err)
+            }
+
+            /// Short name of the projection family, or None before the
+            /// pipeline is built. One of "pca", "kernel_pca",
+            /// "laplacian_eigenmap".
+            #[getter]
+            fn projection_kind(&self) -> Option<&'static str> {
+                self.bridge.projection_kind().map(|k| k.name())
+            }
+
+            /// PipelineConfig of the built pipeline as a dict, or None.
+            fn config<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+                match self.bridge.pipeline() {
+                    Some(p) => Ok(Some(pythonize::pythonize(py, p.config()).map_err(|e| {
+                        PyValueError::new_err(format!("failed to serialize config: {e}"))
+                    })?)),
+                    None => Ok(None),
+                }
+            }
+
+            fn __len__(&self) -> usize {
+                self.bridge.len()
+            }
+
+            fn __repr__(&self) -> String {
+                format!("{}(records={})", $label, self.bridge.len())
+            }
+        }
+
+        impl $type {
+            /// Dimensionality of the fitted projection, if the pipeline
+            /// has been built. Used by category queries that don't
+            /// take a user-supplied embedding.
+            fn projection_dim(&self) -> Option<usize> {
+                self.bridge
+                    .pipeline()
+                    .map(|p| p.projection().dimensionality())
+            }
+
+            /// Reject query embeddings whose length doesn't match the
+            /// fitted projection's dimensionality. Only checks when the
+            /// pipeline is built; if it isn't, the downstream query
+            /// surfaces a `PipelineNotBuilt` error instead.
+            fn check_query_dim(&self, values: &[f64]) -> PyResult<()> {
+                if let Some(expected) = self.projection_dim() {
+                    if values.len() != expected {
+                        return Err(PyValueError::new_err(format!(
+                            "query dimension mismatch: expected {expected}, got {}",
+                            values.len()
+                        )));
+                    }
+                }
+                Ok(())
+            }
+        }
+    };
+}
 
 // ── PyInMemoryStore ──────────────────────────────────────────────────────
 
@@ -176,12 +568,13 @@ impl PyInMemoryStore {
     }
 }
 
-// ── PyVectorStoreBridge ──────────────────────────────────────────────────
+// ── PyVectorStoreBridge (InMemory) ───────────────────────────────────────
 
 /// Bridge between an InMemoryStore and the sphereQL pipeline.
 ///
-/// Pulls vectors from the store, fits a PCA projection, and exposes
-/// sphereQL queries (nearest, concept path, globs, hybrid search).
+/// Pulls vectors from the store, fits a projection, and exposes the
+/// full sphereQL query surface (nearest, concept path, globs, category
+/// enrichment, hierarchical routing, hybrid search).
 #[pyclass(name = "VectorStoreBridge")]
 pub struct PyVectorStoreBridge {
     bridge: VectorStoreBridge<SharedStore>,
@@ -215,119 +608,9 @@ impl PyVectorStoreBridge {
             rt,
         })
     }
-
-    /// Pull all vectors from the store and build the sphereQL pipeline.
-    ///
-    /// Args:
-    ///     category_key: Metadata key to extract categories from.
-    #[pyo3(signature = (*, category_key="category"))]
-    fn build_pipeline(&mut self, category_key: &str) -> PyResult<()> {
-        let extractor = category_extractor(category_key);
-        self.rt
-            .block_on(self.bridge.build_pipeline(extractor))
-            .map_err(vstore_err)?;
-        Ok(())
-    }
-
-    #[pyo3(signature = (embedding, *, k=5))]
-    fn query_nearest(&self, embedding: Vec<f64>, k: usize) -> PyResult<Vec<Nearest>> {
-        match self
-            .bridge
-            .query(SphereQLQuery::Nearest { k }, &embedding)
-            .map_err(vstore_err)?
-        {
-            SphereQLOutput::Nearest(items) => Ok(nearest_to_py(&items)),
-            _ => Err(PyRuntimeError::new_err("unexpected output type")),
-        }
-    }
-
-    #[pyo3(signature = (embedding, *, min_cosine=0.8))]
-    fn query_similar(&self, embedding: Vec<f64>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
-        match self
-            .bridge
-            .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
-            .map_err(vstore_err)?
-        {
-            SphereQLOutput::KNearest(items) => Ok(nearest_to_py(&items)),
-            _ => Err(PyRuntimeError::new_err("unexpected output type")),
-        }
-    }
-
-    #[pyo3(signature = (source_id, target_id, *, graph_k=10, embedding))]
-    fn query_concept_path(
-        &self,
-        source_id: &str,
-        target_id: &str,
-        graph_k: usize,
-        embedding: Vec<f64>,
-    ) -> PyResult<Option<Path>> {
-        match self
-            .bridge
-            .query(
-                SphereQLQuery::ConceptPath {
-                    source_id,
-                    target_id,
-                    graph_k,
-                },
-                &embedding,
-            )
-            .map_err(vstore_err)?
-        {
-            SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
-            _ => Err(PyRuntimeError::new_err("unexpected output type")),
-        }
-    }
-
-    #[pyo3(signature = (embedding, *, k=None, max_k=10))]
-    fn query_detect_globs(
-        &self,
-        embedding: Vec<f64>,
-        k: Option<usize>,
-        max_k: usize,
-    ) -> PyResult<Vec<Glob>> {
-        match self
-            .bridge
-            .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
-            .map_err(vstore_err)?
-        {
-            SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
-            _ => Err(PyRuntimeError::new_err("unexpected output type")),
-        }
-    }
-
-    #[pyo3(signature = (embedding, *, final_k=5, recall_k=20))]
-    fn hybrid_search<'py>(
-        &self,
-        py: Python<'py>,
-        embedding: Vec<f64>,
-        final_k: usize,
-        recall_k: usize,
-    ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-        let results = self
-            .rt
-            .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
-            .map_err(vstore_err)?;
-
-        results
-            .iter()
-            .map(|r| search_result_to_dict(py, r))
-            .collect()
-    }
-
-    fn sync_projections(&self) -> PyResult<usize> {
-        self.rt
-            .block_on(self.bridge.sync_projections())
-            .map_err(vstore_err)
-    }
-
-    fn __len__(&self) -> usize {
-        self.bridge.len()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("VectorStoreBridge(records={})", self.bridge.len())
-    }
 }
+
+impl_vector_bridge_methods!(PyVectorStoreBridge, "VectorStoreBridge");
 
 // ── PyQdrantBridge ───────────────────────────────────────────────────────
 
@@ -338,25 +621,17 @@ mod qdrant_bridge {
 
     /// Bridge between a Qdrant collection and the sphereQL pipeline.
     ///
-    /// Connects to a Qdrant instance, pulls vectors, fits PCA, and exposes
-    /// the full set of sphereQL queries plus hybrid search with ANN recall.
+    /// Connects to a Qdrant instance, pulls vectors, fits a projection,
+    /// and exposes the full sphereQL query surface plus hybrid search.
     #[pyclass(name = "QdrantBridge")]
     pub struct PyQdrantBridge {
-        bridge: VectorStoreBridge<QdrantStore>,
-        rt: Arc<Runtime>,
+        pub(super) bridge: VectorStoreBridge<QdrantStore>,
+        pub(super) rt: Arc<Runtime>,
     }
 
     #[pymethods]
     impl PyQdrantBridge {
         /// Connect to Qdrant and create a bridge.
-        ///
-        /// Args:
-        ///     url: Qdrant gRPC URL (e.g. "http://localhost:6334").
-        ///     collection: Name of the Qdrant collection.
-        ///     dimension: Dimensionality of vectors in the collection.
-        ///     api_key: Optional API key for authentication.
-        ///     batch_size: Records per batch for sync operations. Default 100.
-        ///     max_records: Upper bound on records to load. Default 500,000.
         #[new]
         #[pyo3(signature = (url, collection, dimension, *, api_key=None, batch_size=None, max_records=None))]
         fn new(
@@ -387,115 +662,9 @@ mod qdrant_bridge {
                 rt,
             })
         }
-
-        #[pyo3(signature = (*, category_key="category"))]
-        fn build_pipeline(&mut self, category_key: &str) -> PyResult<()> {
-            let extractor = category_extractor(category_key);
-            self.rt
-                .block_on(self.bridge.build_pipeline(extractor))
-                .map_err(vstore_err)?;
-            Ok(())
-        }
-
-        #[pyo3(signature = (embedding, *, k=5))]
-        fn query_nearest(&self, embedding: Vec<f64>, k: usize) -> PyResult<Vec<Nearest>> {
-            match self
-                .bridge
-                .query(SphereQLQuery::Nearest { k }, &embedding)
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::Nearest(items) => Ok(nearest_to_py(&items)),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (embedding, *, min_cosine=0.8))]
-        fn query_similar(&self, embedding: Vec<f64>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
-            match self
-                .bridge
-                .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::KNearest(items) => Ok(nearest_to_py(&items)),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (source_id, target_id, *, graph_k=10, embedding))]
-        fn query_concept_path(
-            &self,
-            source_id: &str,
-            target_id: &str,
-            graph_k: usize,
-            embedding: Vec<f64>,
-        ) -> PyResult<Option<Path>> {
-            match self
-                .bridge
-                .query(
-                    SphereQLQuery::ConceptPath {
-                        source_id,
-                        target_id,
-                        graph_k,
-                    },
-                    &embedding,
-                )
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (embedding, *, k=None, max_k=10))]
-        fn query_detect_globs(
-            &self,
-            embedding: Vec<f64>,
-            k: Option<usize>,
-            max_k: usize,
-        ) -> PyResult<Vec<Glob>> {
-            match self
-                .bridge
-                .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (embedding, *, final_k=5, recall_k=20))]
-        fn hybrid_search<'py>(
-            &self,
-            py: Python<'py>,
-            embedding: Vec<f64>,
-            final_k: usize,
-            recall_k: usize,
-        ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-            let results = self
-                .rt
-                .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
-                .map_err(vstore_err)?;
-
-            results
-                .iter()
-                .map(|r| search_result_to_dict(py, r))
-                .collect()
-        }
-
-        fn sync_projections(&self) -> PyResult<usize> {
-            self.rt
-                .block_on(self.bridge.sync_projections())
-                .map_err(vstore_err)
-        }
-
-        fn __len__(&self) -> usize {
-            self.bridge.len()
-        }
-
-        fn __repr__(&self) -> String {
-            format!("QdrantBridge(records={})", self.bridge.len())
-        }
     }
+
+    impl_vector_bridge_methods!(PyQdrantBridge, "QdrantBridge");
 }
 
 #[cfg(feature = "qdrant")]
@@ -510,25 +679,17 @@ mod pinecone_bridge {
 
     /// Bridge between a Pinecone index and the sphereQL pipeline.
     ///
-    /// Connects to Pinecone via REST API, pulls vectors, fits PCA, and
-    /// exposes the full set of sphereQL queries plus hybrid search.
+    /// Connects to Pinecone via REST API, pulls vectors, fits a
+    /// projection, and exposes the full sphereQL query surface.
     #[pyclass(name = "PineconeBridge")]
     pub struct PyPineconeBridge {
-        bridge: VectorStoreBridge<PineconeStore>,
-        rt: Arc<Runtime>,
+        pub(super) bridge: VectorStoreBridge<PineconeStore>,
+        pub(super) rt: Arc<Runtime>,
     }
 
     #[pymethods]
     impl PyPineconeBridge {
         /// Connect to a Pinecone index and create a bridge.
-        ///
-        /// Args:
-        ///     api_key: Pinecone API key.
-        ///     host: Index host (e.g. "my-index-abc123.svc.pinecone.io").
-        ///     dimension: Dimensionality of vectors in the index.
-        ///     namespace: Optional Pinecone namespace. Default "".
-        ///     batch_size: Records per batch for sync operations. Default 100.
-        ///     max_records: Upper bound on records to load. Default 500,000.
         #[new]
         #[pyo3(signature = (api_key, host, dimension, *, namespace=None, batch_size=None, max_records=None))]
         fn new(
@@ -557,115 +718,9 @@ mod pinecone_bridge {
                 rt,
             })
         }
-
-        #[pyo3(signature = (*, category_key="category"))]
-        fn build_pipeline(&mut self, category_key: &str) -> PyResult<()> {
-            let extractor = category_extractor(category_key);
-            self.rt
-                .block_on(self.bridge.build_pipeline(extractor))
-                .map_err(vstore_err)?;
-            Ok(())
-        }
-
-        #[pyo3(signature = (embedding, *, k=5))]
-        fn query_nearest(&self, embedding: Vec<f64>, k: usize) -> PyResult<Vec<Nearest>> {
-            match self
-                .bridge
-                .query(SphereQLQuery::Nearest { k }, &embedding)
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::Nearest(items) => Ok(nearest_to_py(&items)),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (embedding, *, min_cosine=0.8))]
-        fn query_similar(&self, embedding: Vec<f64>, min_cosine: f64) -> PyResult<Vec<Nearest>> {
-            match self
-                .bridge
-                .query(SphereQLQuery::SimilarAbove { min_cosine }, &embedding)
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::KNearest(items) => Ok(nearest_to_py(&items)),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (source_id, target_id, *, graph_k=10, embedding))]
-        fn query_concept_path(
-            &self,
-            source_id: &str,
-            target_id: &str,
-            graph_k: usize,
-            embedding: Vec<f64>,
-        ) -> PyResult<Option<Path>> {
-            match self
-                .bridge
-                .query(
-                    SphereQLQuery::ConceptPath {
-                        source_id,
-                        target_id,
-                        graph_k,
-                    },
-                    &embedding,
-                )
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (embedding, *, k=None, max_k=10))]
-        fn query_detect_globs(
-            &self,
-            embedding: Vec<f64>,
-            k: Option<usize>,
-            max_k: usize,
-        ) -> PyResult<Vec<Glob>> {
-            match self
-                .bridge
-                .query(SphereQLQuery::DetectGlobs { k, max_k }, &embedding)
-                .map_err(vstore_err)?
-            {
-                SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
-                _ => Err(PyRuntimeError::new_err("unexpected output type")),
-            }
-        }
-
-        #[pyo3(signature = (embedding, *, final_k=5, recall_k=20))]
-        fn hybrid_search<'py>(
-            &self,
-            py: Python<'py>,
-            embedding: Vec<f64>,
-            final_k: usize,
-            recall_k: usize,
-        ) -> PyResult<Vec<Bound<'py, PyDict>>> {
-            let results = self
-                .rt
-                .block_on(self.bridge.hybrid_search(&embedding, final_k, recall_k))
-                .map_err(vstore_err)?;
-
-            results
-                .iter()
-                .map(|r| search_result_to_dict(py, r))
-                .collect()
-        }
-
-        fn sync_projections(&self) -> PyResult<usize> {
-            self.rt
-                .block_on(self.bridge.sync_projections())
-                .map_err(vstore_err)
-        }
-
-        fn __len__(&self) -> usize {
-            self.bridge.len()
-        }
-
-        fn __repr__(&self) -> String {
-            format!("PineconeBridge(records={})", self.bridge.len())
-        }
     }
+
+    impl_vector_bridge_methods!(PyPineconeBridge, "PineconeBridge");
 }
 
 #[cfg(feature = "pinecone")]

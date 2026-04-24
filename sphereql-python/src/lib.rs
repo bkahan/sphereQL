@@ -3,6 +3,8 @@ use pyo3::prelude::*;
 #[cfg(feature = "core")]
 mod core_types;
 #[cfg(feature = "embed")]
+mod meta;
+#[cfg(feature = "embed")]
 mod nav;
 #[cfg(feature = "embed")]
 mod pipeline;
@@ -49,6 +51,8 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<types::PyCategoryPath>()?;
         m.add_class::<types::PyDrillDown>()?;
         m.add_class::<types::PyInnerSphereReport>()?;
+        m.add_class::<types::PyDomainGroup>()?;
+        m.add_class::<types::PyProjectionWarning>()?;
         m.add_class::<nav::PyNavigatorConfig>()?;
         m.add_class::<nav::PyNavigatorReport>()?;
         m.add_class::<nav::PyAntipodalReport>()?;
@@ -59,6 +63,14 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(nav::run_navigator, m)?)?;
         m.add_function(wrap_pyfunction!(viz::visualize, m)?)?;
         m.add_function(wrap_pyfunction!(viz::visualize_pipeline, m)?)?;
+        m.add_function(wrap_pyfunction!(meta::corpus_features, m)?)?;
+        m.add_function(wrap_pyfunction!(meta::auto_tune, m)?)?;
+        m.add_function(wrap_pyfunction!(meta::load_default_store, m)?)?;
+        m.add_function(wrap_pyfunction!(meta::append_to_default_store, m)?)?;
+        m.add_class::<meta::PyNearestNeighborMetaModel>()?;
+        m.add_class::<meta::PyDistanceWeightedMetaModel>()?;
+        m.add_class::<meta::PyFeedbackEvent>()?;
+        m.add_class::<meta::PyFeedbackAggregator>()?;
     }
 
     #[cfg(feature = "vectordb")]

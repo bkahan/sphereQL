@@ -528,7 +528,6 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
                 0.0
             };
 
-            let _bisector_normal = angular_bisector_normal(ca, cb);
             let mid = sphereql_core::slerp(ca, cb, 0.5);
 
             let mut min_dist = f64::INFINITY;

@@ -10,6 +10,7 @@ readme = "README.md"
 [dependencies]
 sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
 sphereql-index = { version = "0.1.0-alpha", path = "../sphereql-index" }
+rayon = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

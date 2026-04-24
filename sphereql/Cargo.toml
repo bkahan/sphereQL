@@ -74,3 +74,19 @@ required-features = ["embed"]
 [[example]]
 name = "spatial_analysis"
 required-features = ["embed"]
+
+[[example]]
+name = "auto_tune"
+required-features = ["embed"]
+
+[[example]]
+name = "meta_learn"
+required-features = ["embed"]
+
+[[example]]
+name = "meta_warm_start"
+required-features = ["embed"]
+
+[[example]]
+name = "meta_feedback"
+required-features = ["embed"]

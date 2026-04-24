@@ -5,6 +5,42 @@ use sphereql_core::{CartesianPoint, SphericalPoint, cartesian_to_spherical};
 
 use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
+/// Reasons a projection fit can fail.
+///
+/// Every concrete projection's `fit` used to panic via `assert!` on
+/// invalid input, which turned typos in Python / WASM bindings into
+/// `PanicException`s. These variants classify the same preconditions
+/// so callers can surface typed errors instead.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ProjectionError {
+    /// The input slice was empty. Fitting needs at least one embedding.
+    #[error("need at least one embedding to fit a projection")]
+    EmptyCorpus,
+
+    /// Embedding dimensionality below the projection's requirement.
+    /// PCA and kernel PCA need `dim >= 3`; Laplacian requires `dim > 0`.
+    #[error("embedding dimension {got} is below the minimum {required} for this projection")]
+    DimensionTooLow { got: usize, required: usize },
+
+    /// Embeddings disagreed on dimensionality. Every row must match the
+    /// first one; the mismatch is reported with the offending index.
+    #[error("embedding {index} has dimension {got}, expected {expected}")]
+    InconsistentDimension {
+        index: usize,
+        expected: usize,
+        got: usize,
+    },
+
+    /// Projection needs more embeddings than were provided. Laplacian
+    /// eigenmap's graph construction requires `n >= 4`.
+    #[error("need at least {required} embeddings, got {got}")]
+    TooFewEmbeddings { got: usize, required: usize },
+
+    /// `fit_with_sigma` was given a non-positive Gaussian bandwidth.
+    #[error("kernel bandwidth σ must be positive, got {got}")]
+    InvalidSigma { got: f64 },
+}
+
 /// Maps high-dimensional embeddings to spherical coordinates.
 ///
 /// The angular coordinates (theta, phi) encode semantic direction via
@@ -58,20 +94,33 @@ pub struct PcaProjection {
 }
 
 impl PcaProjection {
-    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Self {
-        assert!(
-            !embeddings.is_empty(),
-            "need at least one embedding to fit PCA"
-        );
+    /// Fit the top-3 principal components on `embeddings`.
+    ///
+    /// Returns [`ProjectionError::EmptyCorpus`] if the slice is empty,
+    /// [`ProjectionError::DimensionTooLow`] if `dim < 3`, and
+    /// [`ProjectionError::InconsistentDimension`] if any row's
+    /// dimensionality disagrees with the first. Previously these paths
+    /// panicked via `assert!`, which surfaced as a `PanicException` in
+    /// Python / WASM bindings.
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
+        if embeddings.is_empty() {
+            return Err(ProjectionError::EmptyCorpus);
+        }
         let dim = embeddings[0].dimension();
-        assert!(dim >= 3, "embedding dimension must be >= 3");
+        if dim < 3 {
+            return Err(ProjectionError::DimensionTooLow {
+                got: dim,
+                required: 3,
+            });
+        }
         for (i, e) in embeddings.iter().enumerate() {
-            assert_eq!(
-                e.dimension(),
-                dim,
-                "embedding {i} has dimension {}, expected {dim}",
-                e.dimension()
-            );
+            if e.dimension() != dim {
+                return Err(ProjectionError::InconsistentDimension {
+                    index: i,
+                    expected: dim,
+                    got: e.dimension(),
+                });
+            }
         }
 
         let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
@@ -106,7 +155,7 @@ impl PcaProjection {
             .sum::<f64>()
             / centered.len() as f64;
 
-        Self {
+        Ok(Self {
             components: [
                 components[0].clone(),
                 components[1].clone(),
@@ -122,10 +171,10 @@ impl PcaProjection {
                 eigenvalues.get(2).copied().unwrap_or(0.0),
             ],
             total_variance,
-        }
+        })
     }
 
-    pub fn fit_default(embeddings: &[Embedding]) -> Self {
+    pub fn fit_default(embeddings: &[Embedding]) -> Result<Self, ProjectionError> {
         Self::fit(embeddings, RadialStrategy::default())
     }
 
@@ -147,16 +196,41 @@ impl PcaProjection {
         (explained / self.total_variance).clamp(0.0, 1.0)
     }
 
-    /// Project a centered vector and return (x, y, z) plus the residual.
-    fn project_centered(&self, centered: &[f64]) -> (f64, f64, f64, f64) {
-        let x = dot(centered, &self.components[0]);
-        let y = dot(centered, &self.components[1]);
-        let z = dot(centered, &self.components[2]);
+    /// Allocation-free projection kernel: folds
+    /// `normalize(embedding) − mean` into the per-axis dot product
+    /// without materializing the intermediate `Vec<f64>`s that the
+    /// previous implementation allocated per call.
+    ///
+    /// Matches the numerics of `project_centered(&centered)` exactly:
+    /// each axis sums `(v_i/|v| − mean_i) · component_j[i]` over i,
+    /// plus a total-squared accumulator for the residual.
+    ///
+    /// Called by [`Self::project`] and [`Self::project_rich`]; callers
+    /// that want `SphericalPoint` or `ProjectedPoint` should use those.
+    fn project_xyz_residual(&self, embedding: &Embedding) -> (f64, f64, f64, f64) {
+        let values = &embedding.values;
+        debug_assert_eq!(values.len(), self.dim);
 
+        let mag = embedding.magnitude();
+        let inv_mag = if mag < f64::EPSILON { 0.0 } else { 1.0 / mag };
+
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+        let mut z = 0.0f64;
+        let mut total_sq = 0.0f64;
+        let c0 = &self.components[0];
+        let c1 = &self.components[1];
+        let c2 = &self.components[2];
+        for i in 0..self.dim {
+            let n = values[i] * inv_mag;
+            let c = n - self.mean[i];
+            x += c * c0[i];
+            y += c * c1[i];
+            z += c * c2[i];
+            total_sq += c * c;
+        }
         let projected_sq = x * x + y * y + z * z;
-        let total_sq: f64 = centered.iter().map(|v| v * v).sum();
         let residual_sq = (total_sq - projected_sq).max(0.0);
-
         (x, y, z, residual_sq)
     }
 }
@@ -171,15 +245,7 @@ impl Projection for PcaProjection {
             embedding.dimension()
         );
 
-        let normalized = embedding.normalized();
-
-        let centered: Vec<f64> = normalized
-            .iter()
-            .zip(self.mean.iter())
-            .map(|(&v, &m)| v - m)
-            .collect();
-
-        let (x, y, z, _) = self.project_centered(&centered);
+        let (x, y, z, _) = self.project_xyz_residual(embedding);
 
         if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
@@ -203,19 +269,23 @@ impl Projection for PcaProjection {
         );
 
         let intensity = embedding.magnitude();
-        let normalized = embedding.normalized();
-
-        let centered: Vec<f64> = normalized
-            .iter()
-            .zip(self.mean.iter())
-            .map(|(&v, &m)| v - m)
-            .collect();
-
-        let (x, y, z, residual_sq) = self.project_centered(&centered);
+        let (x, y, z, residual_sq) = self.project_xyz_residual(embedding);
         let projection_magnitude = (x * x + y * y + z * z).sqrt();
 
-        // Per-point certainty: fraction of this point's variance captured by the 3 components
-        let total_sq: f64 = centered.iter().map(|v| v * v).sum();
+        // Per-point certainty: fraction of this point's variance captured
+        // by the 3 components. The fold below also drops the separate
+        // centered-vec allocation the old version materialized.
+        let inv_mag = if intensity < f64::EPSILON {
+            0.0
+        } else {
+            1.0 / intensity
+        };
+        let total_sq: f64 = (0..self.dim)
+            .map(|i| {
+                let c = embedding.values[i] * inv_mag - self.mean[i];
+                c * c
+            })
+            .sum();
         let certainty = if total_sq < f64::EPSILON {
             0.0
         } else {
@@ -374,7 +444,9 @@ fn top_k_eigenvectors(data: &[Vec<f64>], k: usize, dim: usize) -> (Vec<Vec<f64>>
             // The eigenvalue is vᵀ(XᵀX)v / N = mag / N (before normalization)
             eigenvalue = mag / n;
 
-            let change = 1.0 - dot(&u, &v).abs();
+            // `.max(0.0)` clamps the FP noise that can briefly push
+            // `1 - |⟨u,v⟩|` slightly negative near convergence.
+            let change = (1.0 - dot(&u, &v).abs()).max(0.0);
             v = u;
 
             if change < tol {
@@ -476,7 +548,7 @@ mod tests {
     #[test]
     fn pca_produces_valid_spherical_points() {
         let corpus = corpus_10d();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         for e in &corpus {
             assert_valid_spherical(&pca.project(e));
         }
@@ -485,7 +557,7 @@ mod tests {
     #[test]
     fn pca_preserves_angular_ordering() {
         let corpus = corpus_10d();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
 
         // a and b are both +x-ish, c is -x: a should be closer to b than to c
         let a = emb(&[1.0, 0.1, 0.0, 0.05, 0.02, -0.01, 0.01, 0.0, 0.02, 0.01]);
@@ -508,7 +580,7 @@ mod tests {
     #[test]
     fn pca_magnitude_radial() {
         let corpus = corpus_10d();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude);
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude).unwrap();
 
         let short = emb(&[0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let long = emb(&[10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
@@ -527,7 +599,8 @@ mod tests {
         let pca = PcaProjection::fit(
             &corpus,
             RadialStrategy::MagnitudeTransform(Arc::new(|mag| mag.ln_1p())),
-        );
+        )
+        .unwrap();
 
         let e = emb(&[3.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let sp = pca.project(&e);
@@ -537,7 +610,7 @@ mod tests {
     #[test]
     fn pca_single_embedding() {
         let corpus = vec![emb(&[1.0, 0.0, 0.0, 0.0, 0.0])];
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let sp = pca.project(&corpus[0]);
         assert!((sp.r - 1.0).abs() < 1e-12);
         assert_valid_spherical(&sp);
@@ -546,27 +619,34 @@ mod tests {
     #[test]
     fn pca_dimensionality() {
         let corpus = corpus_10d();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(pca.dimensionality(), 10);
     }
 
     #[test]
-    #[should_panic(expected = "need at least one embedding")]
-    fn pca_empty_corpus_panics() {
-        PcaProjection::fit(&[], RadialStrategy::Fixed(1.0));
+    fn pca_empty_corpus_returns_err() {
+        assert!(matches!(
+            PcaProjection::fit(&[], RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::EmptyCorpus)
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "embedding dimension must be >= 3")]
-    fn pca_too_few_dimensions_panics() {
-        PcaProjection::fit(&[emb(&[1.0, 2.0])], RadialStrategy::Fixed(1.0));
+    fn pca_too_few_dimensions_returns_err() {
+        assert!(matches!(
+            PcaProjection::fit(&[emb(&[1.0, 2.0])], RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::DimensionTooLow {
+                got: 2,
+                required: 3
+            })
+        ));
     }
 
     #[test]
     #[should_panic(expected = "expected dimension 10")]
     fn pca_dimension_mismatch_panics() {
         let corpus = corpus_10d();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let _ = pca.project(&emb(&[1.0, 2.0, 3.0]));
     }
 

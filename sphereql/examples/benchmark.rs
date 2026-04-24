@@ -278,7 +278,9 @@ async fn main() {
         .map(|r| Embedding::from(r.vector.as_slice()))
         .collect();
 
-    let kpca = KernelPcaProjection::fit(&embs, RadialStrategy::Magnitude).with_volumetric(true);
+    let kpca = KernelPcaProjection::fit(&embs, RadialStrategy::Magnitude)
+        .expect("kernel PCA fit")
+        .with_volumetric(true);
     let kpca_evr = kpca.explained_variance_ratio();
 
     let mut kpca_index = EmbeddingIndex::builder(kpca)

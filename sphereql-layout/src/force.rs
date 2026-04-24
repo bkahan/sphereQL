@@ -87,21 +87,39 @@ impl ForceDirectedLayout {
         };
 
         let ideal_spacing = (4.0 * PI / n as f64).sqrt();
-        let mut min_dist = f64::MAX;
-        let mut overlap_count = 0u64;
         let total_pairs = (n * (n - 1) / 2) as u64;
 
-        for i in 0..n {
+        // Parallel pair-scan: each `i`-worker tracks its own (min, count)
+        // pair and reduces at the end. f64::min takes NaN as "the other",
+        // so we route through `.total_cmp` for predictable results.
+        use rayon::prelude::*;
+        const SERIAL_THRESHOLD: usize = 128;
+        let per_i = |i: usize| -> (f64, u64) {
+            let mut min_local = f64::MAX;
+            let mut count_local = 0u64;
             for j in (i + 1)..n {
                 let d = angular_distance(&positions[i], &positions[j]);
-                if d < min_dist {
-                    min_dist = d;
+                if d < min_local {
+                    min_local = d;
                 }
                 if d < OVERLAP_THRESHOLD {
-                    overlap_count += 1;
+                    count_local += 1;
                 }
             }
-        }
+            (min_local, count_local)
+        };
+        let (min_dist, overlap_count) = if n < SERIAL_THRESHOLD {
+            (0..n)
+                .map(per_i)
+                .fold((f64::MAX, 0u64), |(ma, ca), (mb, cb)| {
+                    (if mb < ma { mb } else { ma }, ca + cb)
+                })
+        } else {
+            (0..n).into_par_iter().map(per_i).reduce(
+                || (f64::MAX, 0u64),
+                |(ma, ca), (mb, cb)| (if mb < ma { mb } else { ma }, ca + cb),
+            )
+        };
 
         let dispersion = (min_dist / ideal_spacing).clamp(0.0, 1.0);
         let overlap = overlap_count as f64 / total_pairs as f64;

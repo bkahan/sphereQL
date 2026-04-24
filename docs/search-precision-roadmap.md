@@ -150,6 +150,39 @@ matrices, no deep learning framework needed).
 
 ---
 
+## 8. Meta-learned projection selection (shipped)
+
+**Problem:** PCA is one of several projection families, and no single choice
+wins on every corpus regime — variance-based projections degrade on sparse,
+noise-heavy embeddings where connectivity-based ones preserve the signal.
+
+**Fix (shipped):** The `sphereql-embed` crate now carries a
+`ConfiguredProjection` enum (PCA / Kernel PCA / Laplacian eigenmap), a
+`PipelineConfig` hierarchy for every tunable constant, a `QualityMetric`
+trait with four concrete metrics + composite presets, a discrete
+`SearchSpace` sweep via `auto_tune` (Grid / Random / Bayesian TPE-lite),
+a 10-feature `CorpusFeatures` profile, and a `MetaModel` layer
+(`NearestNeighborMetaModel`, `DistanceWeightedMetaModel`) with an on-disk
+store at `~/.sphereql/meta_records.json`. Workflow:
+
+1. `auto_tune` on a new corpus, emit a `MetaTrainingRecord`.
+2. Store accumulates across sessions.
+3. On the next new corpus, `SphereQLPipeline::new_from_metamodel` predicts
+   the winning config without rerunning the tuner, or
+   `new_from_metamodel_tuned` does a short warm-started tuner pass.
+4. Per-query `FeedbackEvent`s blend user satisfaction back into the
+   stored records for L3 online refinement.
+
+This is adjacent to #1–#3 rather than a substitute. It doesn't improve
+search precision at the ANN level; it addresses the "the sphere is too
+lossy for _this_ corpus" failure mode that motivates #2 and #7.
+
+See [`benchmark-analysis.md`](benchmark-analysis.md) for the empirical
+finding that motivated the framework (PCA wins the built-in corpus,
+Laplacian wins the stress corpus — same pipeline, same tuner).
+
+---
+
 ## Priority recommendation
 
 **Short term (surgical fixes):**

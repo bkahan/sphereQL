@@ -9,9 +9,8 @@
 
 use std::f64::consts::PI;
 
-use crate::conversions::cartesian_to_spherical;
 use crate::distance::angular_distance;
-use crate::types::{CartesianPoint, SphericalPoint};
+use crate::types::SphericalPoint;
 
 // ── §1  Antipodal geometry ─────────────────────────────────────────────
 
@@ -215,12 +214,17 @@ pub fn distance_to_great_circle_arc(
 
     let cp = [proj_x / proj_mag, proj_y / proj_mag, proj_z / proj_mag];
 
-    let arc_len = angular_distance(arc_start, arc_end);
-    let cp_sp = cartesian_to_spherical(&CartesianPoint::new(cp[0], cp[1], cp[2]));
-    let d_a_cp = angular_distance(arc_start, &cp_sp);
-    let d_cp_b = angular_distance(&cp_sp, arc_end);
+    // Is `cp` on the short arc between `arc_start` and `arc_end`?
+    // `cp`, `a`, and `b` are all unit vectors on the same great circle
+    // (by construction), so both `a·cp` and `b·cp` are cos(arc-hop). The
+    // arc-between-endpoints test reduces to: both dot products ≥ cos(
+    // arc_len) ≡ dot(a, b). Cheaper than converting `cp` back to
+    // spherical just to call `angular_distance` three times.
+    let ab_cos = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let acp_cos = a[0] * cp[0] + a[1] * cp[1] + a[2] * cp[2];
+    let bcp_cos = b[0] * cp[0] + b[1] * cp[1] + b[2] * cp[2];
 
-    if (d_a_cp + d_cp_b - arc_len).abs() < 1e-10 {
+    if acp_cos >= ab_cos - 1e-10 && bcp_cos >= ab_cos - 1e-10 {
         gc_dist
     } else {
         angular_distance(point, arc_start).min(angular_distance(point, arc_end))
@@ -245,7 +249,7 @@ pub fn geodesic_sweep(
             if d <= epsilon { Some((i, d)) } else { None }
         })
         .collect();
-    hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| a.1.total_cmp(&b.1));
     hits
 }
 
@@ -590,7 +594,7 @@ pub fn curvature_signature(target: usize, all_points: &[SphericalPoint]) -> Vec<
             excesses.push(e);
         }
     }
-    excesses.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    excesses.sort_by(|a, b| a.total_cmp(b));
     excesses
 }
 

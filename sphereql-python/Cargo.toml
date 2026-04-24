@@ -14,19 +14,25 @@ crate-type = ["cdylib"]
 doc = false
 
 [features]
+# `extension-module` tells pyo3 to skip linking libpython — correct for the
+# cdylib that Python loads at runtime, but it breaks `cargo test` binaries
+# (which need libpython). maturin enables it via pyo3/extension-module in
+# pyproject.toml; CI's `cargo test --all-features` leaves it off and links
+# libpython normally.
 default = ["embed"]
+extension-module = ["pyo3/extension-module"]
 core = ["dep:sphereql-core"]
 index = ["core", "dep:sphereql-index"]
 layout = ["index", "dep:sphereql-layout"]
 embed = ["layout", "dep:sphereql-embed"]
 graphql = ["index", "dep:sphereql-graphql"]
-vectordb = ["embed", "dep:sphereql-vectordb", "dep:tokio", "dep:async-trait", "dep:pythonize"]
+vectordb = ["embed", "dep:sphereql-vectordb", "dep:tokio", "dep:async-trait"]
 pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 qdrant = ["vectordb", "sphereql-vectordb/qdrant"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
 [dependencies]
-pyo3 = { version = "0.28", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["multiple-pymethods"] }
 numpy = "0.28"
 sphereql-core = { path = "../sphereql-core", optional = true }
 sphereql-index = { path = "../sphereql-index", optional = true }
@@ -36,5 +42,5 @@ sphereql-graphql = { path = "../sphereql-graphql", optional = true }
 sphereql-vectordb = { path = "../sphereql-vectordb", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 async-trait = { version = "0.1", optional = true }
-pythonize = { version = "0.28", optional = true }
+pythonize = "0.28"
 serde_json = "1"

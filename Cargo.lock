@@ -1143,6 +1143,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4f0c30c76f2f4ccee3fe55a2435f691ca00c0e4bd87abe4f4a851b1d4dac39b"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1706,6 +1715,7 @@ version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91fd8e38a3b50ed1167fb981cd6fd60147e091784c427b8f7183a7ee32c31c12"
 dependencies = [
+ "inventory",
  "libc",
  "once_cell",
  "portable-atomic",
@@ -2357,6 +2367,7 @@ name = "sphereql-embed"
 version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
+ "rayon",
  "serde",
  "serde_json",
  "sphereql-core",
@@ -2374,6 +2385,7 @@ dependencies = [
  "sphereql-core",
  "sphereql-index",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2385,6 +2397,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "sphereql-core",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -2394,6 +2407,7 @@ dependencies = [
  "approx",
  "proptest",
  "rand 0.8.5",
+ "rayon",
  "sphereql-core",
  "sphereql-index",
 ]
@@ -2422,6 +2436,7 @@ version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "async-trait",
+ "futures",
  "qdrant-client",
  "reqwest",
  "serde",
@@ -2431,6 +2446,7 @@ dependencies = [
  "sphereql-embed",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

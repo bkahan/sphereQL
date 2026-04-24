@@ -40,7 +40,7 @@ fn encode(text: &str) -> Vec<f64> {
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;
         for b in token.as_bytes() {
             h ^= *b as u64;
-            h = h.wrapping_mul(0x100_0000_01b3);
+            h = h.wrapping_mul(0x0100_0000_01b3);
         }
         let bucket = (h as usize) % DIM;
         bag[bucket] += 1.0;

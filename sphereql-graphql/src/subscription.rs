@@ -18,10 +18,32 @@ pub struct SpatialEvent {
     pub event_type: SpatialEventType,
     pub point: SphericalPointOutput,
     pub item_id: String,
+    /// Cached core [`SphericalPoint`]. Populated once when the event
+    /// is constructed so subscription filters don't reparse the point
+    /// per-event-per-subscriber. `#[graphql(skip)]` keeps it out of
+    /// the schema — callers interact with `point` (the GraphQL view).
+    #[graphql(skip)]
+    pub(crate) core_point: SphericalPoint,
 }
 
 pub struct SpatialEventBus {
     sender: broadcast::Sender<SpatialEvent>,
+}
+
+impl SpatialEvent {
+    /// Construct an event with the GraphQL-visible `point` and the
+    /// cached `core_point` for subscription filters. Prefer this
+    /// constructor over struct-literal syntax so the core point
+    /// stays in sync with the output point.
+    pub fn new(event_type: SpatialEventType, point: SphericalPointOutput, item_id: String) -> Self {
+        let core_point = SphericalPoint::new_unchecked(point.r, point.theta, point.phi);
+        Self {
+            event_type,
+            point,
+            item_id,
+            core_point,
+        }
+    }
 }
 
 impl SpatialEventBus {
@@ -31,7 +53,12 @@ impl SpatialEventBus {
     }
 
     pub fn publish(&self, event: SpatialEvent) {
-        let _ = self.sender.send(event);
+        if let Err(e) = self.sender.send(event) {
+            // No subscribers is the common case and not an error —
+            // `trace!` keeps the log pristine but makes the drop
+            // visible under tracing filters tuned for spatial events.
+            tracing::trace!(error = %e, "SpatialEventBus::publish: no subscribers");
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SpatialEvent> {
@@ -56,15 +83,10 @@ impl SphericalSubscriptionRoot {
             loop {
                 match rx.recv().await {
                     Ok(event) => {
-                        if event.event_type == SpatialEventType::Entered {
-                            let core_point = SphericalPoint::new_unchecked(
-                                event.point.r,
-                                event.point.theta,
-                                event.point.phi,
-                            );
-                            if region.contains(&core_point) {
-                                yield event;
-                            }
+                        if event.event_type == SpatialEventType::Entered
+                            && region.contains(&event.core_point)
+                        {
+                            yield event;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -89,15 +111,10 @@ impl SphericalSubscriptionRoot {
             loop {
                 match rx.recv().await {
                     Ok(event) => {
-                        if event.event_type == SpatialEventType::Left {
-                            let core_point = SphericalPoint::new_unchecked(
-                                event.point.r,
-                                event.point.theta,
-                                event.point.phi,
-                            );
-                            if region.contains(&core_point) {
-                                yield event;
-                            }
+                        if event.event_type == SpatialEventType::Left
+                            && region.contains(&event.core_point)
+                        {
+                            yield event;
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -133,17 +150,17 @@ mod tests {
     use std::f64::consts::FRAC_PI_4;
 
     fn make_event(event_type: SpatialEventType, r: f64, theta: f64, phi: f64) -> SpatialEvent {
-        SpatialEvent {
+        SpatialEvent::new(
             event_type,
-            point: SphericalPointOutput {
+            SphericalPointOutput {
                 r,
                 theta,
                 phi,
                 theta_degrees: theta.to_degrees(),
                 phi_degrees: phi.to_degrees(),
             },
-            item_id: format!("item-{r}-{theta}-{phi}"),
-        }
+            format!("item-{r}-{theta}-{phi}"),
+        )
     }
 
     #[tokio::test]

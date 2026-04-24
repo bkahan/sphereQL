@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use sphereql_embed::{
-    Embedding, PcaProjection, PipelineQuery, Projection, RadialStrategy, SphereQLOutput,
-    SphereQLPipeline, SphereQLQuery,
+    ConfiguredProjection, Embedding, PcaProjection, PipelineConfig, PipelineInput, PipelineQuery,
+    Projection, ProjectionKind, RadialStrategy, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
 
 use crate::error::VectorStoreError;
@@ -52,7 +52,7 @@ pub struct VectorStoreBridge<S: VectorStore> {
     store: S,
     config: BridgeConfig,
     pipeline: Option<SphereQLPipeline>,
-    projection: Option<PcaProjection>,
+    projection: Option<ConfiguredProjection>,
     /// Original store IDs, parallel to the pipeline's internal index order.
     store_ids: Vec<String>,
     /// Raw embeddings, kept for sync_projections.
@@ -71,14 +71,95 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         }
     }
 
-    /// Pull all vectors from the store and build the sphereQL pipeline.
+    /// Pull all vectors from the store and build the sphereQL pipeline
+    /// using a PCA projection with the bridge's `radial_strategy` and
+    /// `volumetric` settings.
     ///
     /// `category_fn` extracts a category string from each record's metadata.
     /// Categories drive glob detection and are attached to query results.
+    ///
+    /// For non-PCA projections (kernel PCA, Laplacian eigenmap) or to
+    /// override bridge / inner-sphere thresholds, use
+    /// [`build_pipeline_with_config`](Self::build_pipeline_with_config).
     pub async fn build_pipeline(
         &mut self,
         category_fn: impl Fn(&VectorRecord) -> String,
     ) -> Result<&SphereQLPipeline, VectorStoreError> {
+        let (store_ids, categories, embeddings) = self.prepare_records(category_fn).await?;
+
+        // `PcaProjection::fit` + `with_projection` take `&[Embedding]` and
+        // `Vec<Embedding>` respectively, so this path needs one
+        // `Vec<Embedding>`. `From<&[f64]>` clones the slice into the
+        // `Embedding`; this is one allocation per row.
+        let embs: Vec<Embedding> = embeddings
+            .iter()
+            .map(|v| Embedding::from(v.as_slice()))
+            .collect();
+
+        let pca = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?
+            .with_volumetric(self.config.volumetric);
+
+        let pipeline = SphereQLPipeline::with_projection(categories, embs, pca.clone())
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?;
+
+        self.pipeline = Some(pipeline);
+        self.projection = Some(ConfiguredProjection::Pca(pca));
+        self.store_ids = store_ids;
+        self.embeddings = embeddings;
+
+        Ok(self.pipeline.as_ref().unwrap())
+    }
+
+    /// Pull all vectors from the store and build the sphereQL pipeline
+    /// with an explicit [`PipelineConfig`].
+    ///
+    /// Selects the projection family from `config.projection_kind` and
+    /// uses the matching sub-config (e.g. `config.laplacian` for Laplacian
+    /// eigenmap). `BridgeConfig::radial_strategy` and
+    /// `BridgeConfig::volumetric` are ignored on this path — the configured
+    /// fitter owns those choices.
+    pub async fn build_pipeline_with_config(
+        &mut self,
+        category_fn: impl Fn(&VectorRecord) -> String,
+        config: PipelineConfig,
+    ) -> Result<&SphereQLPipeline, VectorStoreError> {
+        let (store_ids, categories, embeddings) = self.prepare_records(category_fn).await?;
+
+        // `SphereQLPipeline::new_with_config` takes ownership of a
+        // `PipelineInput` and re-wraps its `Vec<Vec<f64>>` into
+        // `Embedding`s via `From<Vec<f64>>` (a move). We still keep a
+        // cached copy of the embeddings for `sync_projections` to
+        // replay later, so we clone once here rather than letting the
+        // pipeline builder construct and throw away temporaries.
+        let pipeline = SphereQLPipeline::new_with_config(
+            PipelineInput {
+                categories,
+                embeddings: embeddings.clone(),
+            },
+            config,
+        )
+        .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?;
+
+        self.projection = Some(pipeline.projection().clone());
+        self.pipeline = Some(pipeline);
+        self.store_ids = store_ids;
+        self.embeddings = embeddings;
+
+        Ok(self.pipeline.as_ref().unwrap())
+    }
+
+    /// Fetch, validate, and split records into the tuple both build paths
+    /// need. Guarantees: `n >= 3`, all vectors same dim, no near-zero
+    /// magnitudes.
+    ///
+    /// Previously also eagerly built a `Vec<Embedding>` that
+    /// `build_pipeline_with_config` then discarded. Each build path now
+    /// constructs its own `Embedding`s only when it actually needs them.
+    async fn prepare_records(
+        &self,
+        category_fn: impl Fn(&VectorRecord) -> String,
+    ) -> Result<(Vec<String>, Vec<String>, Vec<Vec<f64>>), VectorStoreError> {
         let records = self.fetch_all().await?;
         let n = records.len();
 
@@ -109,23 +190,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let embeddings: Vec<Vec<f64>> = records.iter().map(|r| r.vector.clone()).collect();
         let store_ids: Vec<String> = records.iter().map(|r| r.id.clone()).collect();
 
-        let embs: Vec<Embedding> = embeddings
-            .iter()
-            .map(|v| Embedding::from(v.as_slice()))
-            .collect();
-
-        let projection = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
-            .with_volumetric(self.config.volumetric);
-
-        let pipeline = SphereQLPipeline::with_projection(categories, embs, projection.clone())
-            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?;
-
-        self.pipeline = Some(pipeline);
-        self.projection = Some(projection);
-        self.store_ids = store_ids;
-        self.embeddings = embeddings;
-
-        Ok(self.pipeline.as_ref().unwrap())
+        Ok((store_ids, categories, embeddings))
     }
 
     /// Push sphereQL spherical coordinates back to the store as payload metadata.
@@ -182,7 +247,9 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let pq = PipelineQuery {
             embedding: query_embedding.to_vec(),
         };
-        Ok(pipeline.query(q, &pq))
+        pipeline
+            .query(q, &pq)
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))
     }
 
     /// Hybrid search: use the vector store's ANN for initial recall,
@@ -207,12 +274,21 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         }
 
         let candidates = self.store.search(query_embedding, recall_k).await?;
+        let recalled = candidates.len();
 
-        // Re-rank by original cosine similarity \u2014 the true semantic distance.
+        // Re-rank by original cosine similarity — the true semantic
+        // distance. Candidates without a `vector` (stores can omit
+        // values on cost/bandwidth grounds) can't be re-scored, so
+        // they're dropped here. The `dropped_no_vector` counter below
+        // makes that visible to callers via the tracing event.
+        let mut dropped_no_vector = 0usize;
         let mut scored: Vec<(SearchResult, f64)> = candidates
             .into_iter()
             .filter_map(|mut result| {
-                let vec = result.vector.as_ref()?;
+                let Some(vec) = result.vector.as_ref() else {
+                    dropped_no_vector += 1;
+                    return None;
+                };
                 let cosine_sim = sphereql_core::cosine_similarity(query_embedding, vec);
                 result.score = cosine_sim;
                 Some((result, cosine_sim))
@@ -220,8 +296,33 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             .collect();
 
         // Sort descending by cosine similarity (higher = more similar)
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1));
         scored.truncate(final_k);
+
+        // Observability hooks. A caller that asked for `final_k` but
+        // got fewer results has two likely causes: the store returned
+        // fewer than `recall_k` candidates, or the store returned
+        // candidates without stored vectors. Both are recoverable at
+        // the caller level (retry with a larger recall, enable value
+        // storage on the backend) — surface them without failing the
+        // query.
+        if scored.len() < final_k {
+            tracing::warn!(
+                recalled,
+                dropped_no_vector,
+                final_k,
+                recall_k,
+                "hybrid_search returned fewer results than requested; \
+                 consider raising recall_k or enabling vector storage \
+                 on the backend"
+            );
+        } else if dropped_no_vector > 0 {
+            tracing::debug!(
+                dropped_no_vector,
+                "hybrid_search dropped candidates missing `vector`; \
+                 re-rank couldn't score them"
+            );
+        }
 
         Ok(scored.into_iter().map(|(r, _)| r).collect())
     }
@@ -236,9 +337,21 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         self.pipeline.as_ref()
     }
 
-    /// Access the fitted PCA projection (if built).
-    pub fn projection(&self) -> Option<&PcaProjection> {
+    /// Access the fitted projection (if built). The returned
+    /// [`ConfiguredProjection`] may be PCA, kernel PCA, or Laplacian
+    /// eigenmap depending on which `build_pipeline*` entry point was used.
+    pub fn projection(&self) -> Option<&ConfiguredProjection> {
         self.projection.as_ref()
+    }
+
+    /// Projection family name ("pca", "kernel_pca", "laplacian_eigenmap"),
+    /// or None if the pipeline has not been built.
+    pub fn projection_kind(&self) -> Option<ProjectionKind> {
+        self.projection.as_ref().map(|p| match p {
+            ConfiguredProjection::Pca(_) => ProjectionKind::Pca,
+            ConfiguredProjection::KernelPca(_) => ProjectionKind::KernelPca,
+            ConfiguredProjection::Laplacian(_) => ProjectionKind::LaplacianEigenmap,
+        })
     }
 
     /// Number of records loaded into the pipeline.
@@ -321,6 +434,30 @@ mod tests {
 
         assert_eq!(pipeline.num_items(), 20);
         assert_eq!(bridge.len(), 20);
+    }
+
+    #[tokio::test]
+    async fn build_pipeline_with_config_uses_configured_projection() {
+        use sphereql_embed::{PipelineConfig, ProjectionKind};
+
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        let config = PipelineConfig {
+            projection_kind: ProjectionKind::KernelPca,
+            ..Default::default()
+        };
+        bridge
+            .build_pipeline_with_config(category_extractor, config)
+            .await
+            .unwrap();
+
+        assert_eq!(bridge.projection_kind(), Some(ProjectionKind::KernelPca));
+        assert!(matches!(
+            bridge.projection(),
+            Some(ConfiguredProjection::KernelPca(_))
+        ));
     }
 
     #[tokio::test]

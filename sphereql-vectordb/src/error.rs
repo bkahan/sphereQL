@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 #[derive(Debug, thiserror::Error)]
 pub enum VectorStoreError {
     #[error("connection failed: {0}")]
@@ -26,4 +28,25 @@ pub enum VectorStoreError {
 
     #[error("insufficient data: {0}")]
     InsufficientData(String),
+
+    /// The backend rate-limited us (Pinecone 429, Qdrant
+    /// `ResourceExhausted`). `retry_after` carries the server's hint
+    /// when one was returned — callers should sleep for at least that
+    /// long before retrying. `None` means the backend declined to
+    /// specify.
+    #[error(
+        "rate limited by backend{}",
+        retry_after
+            .map(|d| format!(" (retry after {}ms)", d.as_millis()))
+            .unwrap_or_default()
+    )]
+    RateLimited { retry_after: Option<Duration> },
+
+    /// The backend's response exceeds the configured
+    /// [`BridgeConfig::max_response_bytes`] cap. Rejected without
+    /// allocation to guard against OOM from a buggy or malicious
+    /// server. Raise the cap in `BridgeConfig` if your corpus has
+    /// legitimately large payloads.
+    #[error("response size {bytes} exceeds cap of {cap} bytes")]
+    ResponseTooLarge { bytes: u64, cap: u64 },
 }

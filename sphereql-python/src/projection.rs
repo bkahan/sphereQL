@@ -119,7 +119,9 @@ impl PyPcaProjection {
             Some(r) => parse_radial(r)?,
             None => RadialStrategy::Magnitude,
         };
-        let pca = py.detach(|| PcaProjection::fit(&embs, strategy));
+        let pca = py
+            .detach(|| PcaProjection::fit(&embs, strategy))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let pca = if volumetric {
             pca.with_volumetric(true)
         } else {
@@ -297,10 +299,12 @@ impl PyKernelPcaProjection {
             Some(r) => parse_radial(r)?,
             None => RadialStrategy::Magnitude,
         };
-        let kpca = py.detach(|| match sigma {
-            Some(s) => KernelPcaProjection::fit_with_sigma(&embs, s, strategy),
-            None => KernelPcaProjection::fit(&embs, strategy),
-        });
+        let kpca = py
+            .detach(|| match sigma {
+                Some(s) => KernelPcaProjection::fit_with_sigma(&embs, s, strategy),
+                None => KernelPcaProjection::fit(&embs, strategy),
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let kpca = if volumetric {
             kpca.with_volumetric(true)
         } else {

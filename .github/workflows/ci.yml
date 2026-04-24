@@ -17,10 +17,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # sphereql-python is excluded: --all-features enables pyo3's
+      # extension-module, which tells the linker "Python provides these
+      # symbols at load time". That's correct for maturin's cdylib, but
+      # it breaks `cargo test` link. Python-side tests run in the
+      # `python` job below via maturin + pytest.
       - name: Run tests
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features --exclude sphereql-python
       - name: Run doc-tests
-        run: cargo test --doc --workspace
+        run: cargo test --doc --workspace --exclude sphereql-python
 
   clippy:
     runs-on: ubuntu-latest

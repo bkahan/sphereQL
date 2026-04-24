@@ -1,13 +1,22 @@
 use std::collections::{BinaryHeap, HashMap};
+use std::sync::{Arc, Mutex};
 
 use sphereql_core::*;
 use sphereql_index::*;
 
+use crate::category::BridgeClassification;
 use crate::projection::Projection;
 use crate::types::{Embedding, ProjectedPoint};
 
-/// (neighbor_index, effective_weight, raw_angular_dist, bridge_strength_if_cross_category)
-type AdjEdge = (usize, f64, f64, Option<f64>);
+/// k-NN adjacency snapshot cached between calls to
+/// [`EmbeddingIndex::concept_path`] and its bridged variant.
+///
+/// The graph is undirected and built for a specific `k`. Different `k`
+/// invalidates; so does any `&mut self` mutation on the index.
+struct KnnCache {
+    k: usize,
+    adj: Arc<Vec<Vec<(usize, f64)>>>,
+}
 
 #[derive(Debug, Clone)]
 pub struct EmbeddingItem {
@@ -84,6 +93,7 @@ impl<P: Projection> EmbeddingIndexBuilder<P> {
         EmbeddingIndex {
             projection: self.projection,
             index: self.inner.build(),
+            knn_cache: Mutex::new(None),
         }
     }
 }
@@ -91,6 +101,11 @@ impl<P: Projection> EmbeddingIndexBuilder<P> {
 pub struct EmbeddingIndex<P> {
     projection: P,
     index: SpatialIndex<EmbeddingItem>,
+    /// k-NN adjacency cache for `concept_path` and friends. Shared
+    /// behind `Mutex<Option<_>>` so the `&self` query methods can
+    /// memoize across calls; `&mut self` mutations clear it via
+    /// `get_mut`, bypassing the lock.
+    knn_cache: Mutex<Option<KnnCache>>,
 }
 
 impl<P: Projection> EmbeddingIndex<P> {
@@ -106,6 +121,7 @@ impl<P: Projection> EmbeddingIndex<P> {
             original_magnitude: embedding.magnitude(),
             projected: Some(rich),
         });
+        self.invalidate_knn_cache();
     }
 
     /// Insert with an explicit radial value, overriding the projection's RadialStrategy.
@@ -120,6 +136,71 @@ impl<P: Projection> EmbeddingIndex<P> {
             original_magnitude: embedding.magnitude(),
             projected: Some(ProjectedPoint { position, ..rich }),
         });
+        self.invalidate_knn_cache();
+    }
+
+    /// Drop any cached k-NN adjacency. Called by every `&mut self`
+    /// mutation that could change the graph. Uses `get_mut` to skip
+    /// the lock when we already hold `&mut self`.
+    fn invalidate_knn_cache(&mut self) {
+        if let Ok(slot) = self.knn_cache.get_mut() {
+            *slot = None;
+        }
+    }
+
+    /// Return the k-NN adjacency snapshot for the given `k`, rebuilding
+    /// only on cache miss.
+    ///
+    /// The shared `Arc` is cheap to clone, so callers can drop the lock
+    /// while they run Dijkstra. Previously `concept_path` rebuilt the
+    /// entire graph on every call — O(n² · k) per query.
+    fn knn_adjacency(&self, items: &[&EmbeddingItem], k: usize) -> Arc<Vec<Vec<(usize, f64)>>> {
+        {
+            let cache = self.knn_cache.lock().expect("knn cache mutex poisoned");
+            if let Some(cached) = cache.as_ref()
+                && cached.k == k
+                && cached.adj.len() == items.len()
+            {
+                return Arc::clone(&cached.adj);
+            }
+        }
+
+        // Miss — build a fresh undirected adjacency. Symmetrize in one
+        // O(E) pass using a HashSet instead of the previous O(n · k²)
+        // linear scan.
+        let n = items.len();
+        let id_to_idx: HashMap<&str, usize> = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item.id.as_str(), i))
+            .collect();
+        let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::with_capacity(k); n];
+        let mut seen: std::collections::HashSet<(usize, usize)> =
+            std::collections::HashSet::with_capacity(n * k);
+        for (i, item) in items.iter().enumerate() {
+            let nearest = self.index.nearest(item.position(), k + 1);
+            for result in &nearest {
+                let Some(&j) = id_to_idx.get(result.item.id.as_str()) else {
+                    continue;
+                };
+                if i == j {
+                    continue;
+                }
+                let key = if i < j { (i, j) } else { (j, i) };
+                if seen.insert(key) {
+                    adj[i].push((j, result.distance));
+                    adj[j].push((i, result.distance));
+                }
+            }
+        }
+
+        let adj = Arc::new(adj);
+        let mut cache = self.knn_cache.lock().expect("knn cache mutex poisoned");
+        *cache = Some(KnnCache {
+            k,
+            adj: Arc::clone(&adj),
+        });
+        adj
     }
 
     /// Find the k embeddings whose projected directions are closest to the query.
@@ -147,7 +228,11 @@ impl<P: Projection> EmbeddingIndex<P> {
     }
 
     pub fn remove(&mut self, id: &str) -> Option<EmbeddingItem> {
-        self.index.remove(&id.to_string())
+        let removed = self.index.remove(&id.to_string());
+        if removed.is_some() {
+            self.invalidate_knn_cache();
+        }
+        removed
     }
 
     pub fn get(&self, id: &str) -> Option<&EmbeddingItem> {
@@ -177,9 +262,10 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// path traces the chain of closest intermediate concepts connecting
     /// the source to the target.
     ///
-    /// **Complexity:** O(n^2 * k) — the k-NN graph is rebuilt from scratch
-    /// on every call. Not suitable for large indices (>5000 items) without
-    /// caching.
+    /// The k-NN graph is memoized per `k`: the first call at a given `k`
+    /// builds it in O(n · log n · k) (index-assisted) and every
+    /// subsequent call reuses the snapshot until the index mutates.
+    /// Dijkstra itself is O((n + E) · log n) via a binary heap.
     pub fn concept_path(&self, source_id: &str, target_id: &str, k: usize) -> Option<ConceptPath> {
         let items = self.index.all_items();
         let n = items.len();
@@ -196,27 +282,7 @@ impl<P: Projection> EmbeddingIndex<P> {
         let source_idx = *id_to_idx.get(source_id)?;
         let target_idx = *id_to_idx.get(target_id)?;
 
-        // Build k-NN adjacency list (undirected)
-        let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
-        for (i, item) in items.iter().enumerate() {
-            let nearest = self.index.nearest(item.position(), k + 1);
-            for result in &nearest {
-                if let Some(&j) = id_to_idx.get(result.item.id.as_str())
-                    && i != j
-                {
-                    adj[i].push((j, result.distance));
-                }
-            }
-        }
-        // Symmetrize
-        let snapshot: Vec<Vec<(usize, f64)>> = adj.clone();
-        for (i, edges) in snapshot.iter().enumerate() {
-            for &(j, d) in edges {
-                if !adj[j].iter().any(|&(k, _)| k == i) {
-                    adj[j].push((i, d));
-                }
-            }
-        }
+        let adj = self.knn_adjacency(&items, k);
 
         // Dijkstra (min-heap via reversed Ord)
         let mut dist = vec![f64::INFINITY; n];
@@ -281,17 +347,18 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// Find a semantic path that prefers hops with strong conceptual bridges.
     ///
     /// Like [`concept_path`](Self::concept_path), but when a hop crosses a
-    /// category boundary, the edge weight is penalized inversely by bridge
-    /// strength. This means the algorithm greedily routes through the
-    /// strongest available bridges rather than taking the geodesically
-    /// shortest path.
+    /// category boundary, the edge weight is penalized based on the bridge's
+    /// classification:
+    /// - [`BridgeClassification::Genuine`]: `angular_dist / (strength + 0.1)`
+    /// - [`BridgeClassification::Weak`]: `angular_dist / (strength + 0.01)`
+    /// - [`BridgeClassification::OverlapArtifact`]: `angular_dist * 2.0`
+    ///   (shared-territory bridges are actively discouraged — they aren't
+    ///   real connectors).
     ///
     /// - `categories`: maps item ID → category index.
-    /// - `bridge_strengths`: maps (cat_a, cat_b) → max bridge strength for
-    ///   that pair. Missing entries are treated as 0 (maximum penalty).
+    /// - `bridge_strengths`: maps `(cat_a, cat_b) → (max_bridge_strength, classification)`.
+    ///   Missing entries are treated as a weak no-bridge (strength 0, Weak).
     ///
-    /// Edge weight formula for cross-category hops:
-    ///   `angular_distance / (bridge_strength + epsilon)`
     /// Same-category hops use raw angular distance.
     pub fn concept_path_bridged(
         &self,
@@ -299,7 +366,7 @@ impl<P: Projection> EmbeddingIndex<P> {
         target_id: &str,
         k: usize,
         categories: &HashMap<&str, usize>,
-        bridge_strengths: &HashMap<(usize, usize), f64>,
+        bridge_strengths: &HashMap<(usize, usize), (f64, BridgeClassification)>,
     ) -> Option<ConceptPath> {
         let items = self.index.all_items();
         let n = items.len();
@@ -322,31 +389,12 @@ impl<P: Projection> EmbeddingIndex<P> {
             .map(|item| categories.get(item.id.as_str()).copied())
             .collect();
 
-        // Build k-NN adjacency list with bridge-aware weights
-        // Store (neighbor, effective_weight, raw_angular_dist, bridge_str_if_cross)
-        let mut adj: Vec<Vec<AdjEdge>> = vec![Vec::new(); n];
-        for (i, item) in items.iter().enumerate() {
-            let nearest = self.index.nearest(item.position(), k + 1);
-            for result in &nearest {
-                if let Some(&j) = id_to_idx.get(result.item.id.as_str())
-                    && i != j
-                {
-                    let angular_dist = result.distance;
-                    let (weight, bridge_str) =
-                        cross_category_weight(angular_dist, &item_cats, i, j, bridge_strengths);
-                    adj[i].push((j, weight, angular_dist, bridge_str));
-                }
-            }
-        }
-        // Symmetrize
-        let snapshot: Vec<Vec<AdjEdge>> = adj.clone();
-        for (i, edges) in snapshot.iter().enumerate() {
-            for &(j, w, d, bs) in edges {
-                if !adj[j].iter().any(|&(k, _, _, _)| k == i) {
-                    adj[j].push((i, w, d, bs));
-                }
-            }
-        }
+        // Reuse the cached raw-angular k-NN adjacency; bridge-aware
+        // weights are derived per edge at Dijkstra time. The previous
+        // implementation materialized a second n-row Vec<Vec<...>>
+        // that duplicated the neighborhood structure — this version
+        // shares the angular graph with `concept_path`.
+        let adj = self.knn_adjacency(&items, k);
 
         // Dijkstra on effective weights
         let mut dist = vec![f64::INFINITY; n];
@@ -367,7 +415,8 @@ impl<P: Projection> EmbeddingIndex<P> {
             if u == target_idx {
                 break;
             }
-            for &(v, w, _, _) in &adj[u] {
+            for &(v, raw_d) in &adj[u] {
+                let (w, _) = cross_category_weight(raw_d, &item_cats, u, v, bridge_strengths);
                 let nd = dist[u] + w;
                 if nd < dist[v] {
                     dist[v] = nd;
@@ -386,10 +435,11 @@ impl<P: Projection> EmbeddingIndex<P> {
         let mut cur = target_idx;
         loop {
             let edge_info = prev[cur].and_then(|p| {
-                adj[p]
-                    .iter()
-                    .find(|&&(v, _, _, _)| v == cur)
-                    .map(|&(_, _, raw_d, bs)| (raw_d, bs))
+                adj[p].iter().find(|&&(v, _)| v == cur).map(|&(_, raw_d)| {
+                    let (_, bs) =
+                        cross_category_weight(raw_d, &item_cats, p, cur, bridge_strengths);
+                    (raw_d, bs)
+                })
             });
             let hop_distance = edge_info.map_or(0.0, |(d, _)| d);
             let bridge_str = edge_info.and_then(|(_, bs)| bs);
@@ -574,7 +624,12 @@ impl SlicingManifold {
             .enumerate()
             .map(|(i, p)| (i, dist3(query, p)))
             .collect();
-        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        // `total_cmp` gives a total order over all f64 including NaN
+        // (which sorts to the end). Previously `.partial_cmp().unwrap()`
+        // panicked on NaN — and NaN is reachable whenever `all_points`
+        // contains a degenerate entry from a lossy projection, making
+        // this one of the few query-path panic sites in the crate.
+        dists.sort_by(|a, b| a.1.total_cmp(&b.1));
 
         let neighborhood: Vec<[f64; 3]> = dists
             .iter()
@@ -920,8 +975,14 @@ fn normalize3(v: &[f64; 3]) -> [f64; 3] {
 /// Compute the effective edge weight for a hop between two items.
 ///
 /// Same-category hops use raw angular distance. Cross-category hops are
-/// penalized inversely by the bridge strength between the two categories:
-///   `angular_dist / (bridge_strength + ε)`
+/// weighted by the bridge's quality classification:
+/// - `Genuine`:         `angular_dist / (strength + 0.1)`
+/// - `Weak`:            `angular_dist / (strength + 0.01)`  (harsher penalty)
+/// - `OverlapArtifact`: `angular_dist * 2.0`  (actively discouraged — the
+///   two categories share territory, so the "bridge" isn't real)
+///
+/// Unknown cross-category pairs (no entry in `bridge_strengths`) are treated
+/// as `Weak` with strength 0.
 ///
 /// Returns (effective_weight, Option<bridge_strength>).
 /// The bridge_strength is None for same-category hops.
@@ -930,19 +991,21 @@ fn cross_category_weight(
     item_cats: &[Option<usize>],
     i: usize,
     j: usize,
-    bridge_strengths: &HashMap<(usize, usize), f64>,
+    bridge_strengths: &HashMap<(usize, usize), (f64, BridgeClassification)>,
 ) -> (f64, Option<f64>) {
-    const EPSILON: f64 = 0.01;
-
     match (item_cats[i], item_cats[j]) {
         (Some(ci), Some(cj)) if ci != cj => {
-            let bs = bridge_strengths
+            let (strength, classification) = bridge_strengths
                 .get(&(ci, cj))
                 .or_else(|| bridge_strengths.get(&(cj, ci)))
                 .copied()
-                .unwrap_or(0.0);
-            let weight = angular_dist / (bs + EPSILON);
-            (weight, Some(bs))
+                .unwrap_or((0.0, BridgeClassification::Weak));
+            let weight = match classification {
+                BridgeClassification::Genuine => angular_dist / (strength + 0.1),
+                BridgeClassification::OverlapArtifact => angular_dist * 2.0,
+                BridgeClassification::Weak => angular_dist / (strength + 0.01),
+            };
+            (weight, Some(strength))
         }
         _ => (angular_dist, None),
     }
@@ -1068,7 +1131,7 @@ mod tests {
     #[test]
     fn search_nearest_returns_sorted() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
             .phi_divisions(3)
@@ -1133,7 +1196,7 @@ mod tests {
     #[test]
     fn magnitude_radial_with_shell_query() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude);
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .uniform_shells(5, 10.0)
             .theta_divisions(4)
@@ -1218,7 +1281,7 @@ mod tests {
     #[test]
     fn semantic_query_region_used_in_index() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let projection_clone = pca.clone();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
@@ -1243,7 +1306,7 @@ mod tests {
     #[test]
     fn concept_path_populates_hop_distance() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
             .phi_divisions(3)
@@ -1271,7 +1334,7 @@ mod tests {
     #[test]
     fn concept_path_bridged_same_category_equals_unbridged() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
             .phi_divisions(3)
@@ -1333,11 +1396,11 @@ mod tests {
 
         // Weak bridge between categories
         let mut weak_bridges = HashMap::new();
-        weak_bridges.insert((0, 1), 0.05);
+        weak_bridges.insert((0, 1), (0.05, BridgeClassification::Weak));
 
         // Strong bridge between categories
         let mut strong_bridges = HashMap::new();
-        strong_bridges.insert((0, 1), 0.95);
+        strong_bridges.insert((0, 1), (0.95, BridgeClassification::Genuine));
 
         let weak_path = idx.concept_path_bridged("a0", "b0", 3, &categories, &weak_bridges);
         let strong_path = idx.concept_path_bridged("a0", "b0", 3, &categories, &strong_bridges);
@@ -1372,7 +1435,7 @@ mod tests {
         categories.insert("c", 1);
 
         let mut bridges = HashMap::new();
-        bridges.insert((0, 1), 0.7);
+        bridges.insert((0, 1), (0.7, BridgeClassification::Genuine));
 
         if let Some(path) = idx.concept_path_bridged("a", "c", 3, &categories, &bridges) {
             // Each step should have category metadata
@@ -1404,20 +1467,42 @@ mod tests {
         let cats = vec![Some(0), Some(1)];
         let bridges = HashMap::new();
         let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
-        // 0.5 / (0.0 + 0.01) = 50.0
+        // Missing entry → treated as Weak with strength 0: 0.5 / (0 + 0.01) = 50.0
         assert!((weight - 50.0).abs() < 1e-10);
         assert_eq!(bs, Some(0.0));
     }
 
     #[test]
-    fn cross_category_weight_strong_bridge() {
+    fn cross_category_weight_genuine_bridge() {
         let cats = vec![Some(0), Some(1)];
         let mut bridges = HashMap::new();
-        bridges.insert((0, 1), 0.9);
+        bridges.insert((0, 1), (0.9, BridgeClassification::Genuine));
         let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
-        // 0.5 / (0.9 + 0.01) = ~0.5495
-        assert!(weight < 1.0);
+        // Genuine: 0.5 / (0.9 + 0.1) = 0.5
+        assert!((weight - 0.5).abs() < 1e-10);
         assert_eq!(bs, Some(0.9));
+    }
+
+    #[test]
+    fn cross_category_weight_weak_bridge() {
+        let cats = vec![Some(0), Some(1)];
+        let mut bridges = HashMap::new();
+        bridges.insert((0, 1), (0.3, BridgeClassification::Weak));
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        // Weak: 0.5 / (0.3 + 0.01) ≈ 1.6129
+        assert!((weight - 0.5 / 0.31).abs() < 1e-10);
+        assert_eq!(bs, Some(0.3));
+    }
+
+    #[test]
+    fn cross_category_weight_overlap_artifact_discouraged() {
+        let cats = vec![Some(0), Some(1)];
+        let mut bridges = HashMap::new();
+        bridges.insert((0, 1), (0.8, BridgeClassification::OverlapArtifact));
+        let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
+        // OverlapArtifact: 0.5 * 2.0 = 1.0 (penalty, not reward)
+        assert!((weight - 1.0).abs() < 1e-10);
+        assert_eq!(bs, Some(0.8));
     }
 
     #[test]
