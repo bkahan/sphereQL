@@ -20,12 +20,12 @@ use sphereql_embed::pipeline::{
     SphereQLQuery,
 };
 use sphereql_embed::projection::Projection;
-use sphereql_embed::types::{Embedding, RadialStrategy};
 use sphereql_embed::quality_metric::{
     BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
     TerritorialHealth,
 };
 use sphereql_embed::tuner::{SearchSpace, SearchStrategy, TuneReport, auto_tune as rust_auto_tune};
+use sphereql_embed::types::{Embedding, RadialStrategy};
 
 fn classification_name(c: BridgeClassification) -> &'static str {
     match c {
@@ -1298,5 +1298,109 @@ pub fn cache_write(path: &str, json: &str) -> Result<(), JsError> {
             std::fs::create_dir_all(parent).map_err(|e| JsError::new(&e.to_string()))?;
         }
         std::fs::write(&resolved, json).map_err(|e| JsError::new(&e.to_string()))
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod laplacian_tests {
+    use super::*;
+
+    fn corpus_json() -> &'static str {
+        r#"{
+            "categories": ["a","b","a","b","a","b","a","b","a","b"],
+            "embeddings": [
+                [1.0, 0.1, 0.0, 0.2],
+                [0.1, 1.0, 0.0, 0.2],
+                [0.9, 0.2, 0.1, 0.3],
+                [0.2, 0.9, 0.1, 0.3],
+                [0.8, 0.3, 0.2, 0.1],
+                [0.3, 0.8, 0.2, 0.1],
+                [0.85, 0.15, 0.05, 0.25],
+                [0.15, 0.85, 0.05, 0.25],
+                [0.95, 0.05, 0.1, 0.15],
+                [0.05, 0.95, 0.1, 0.15]
+            ]
+        }"#
+    }
+
+    #[test]
+    fn standalone_laplacian_fits_and_projects() {
+        let embeddings = r#"[
+            [1.0, 0.1, 0.0, 0.2],
+            [0.1, 1.0, 0.0, 0.2],
+            [0.9, 0.2, 0.1, 0.3],
+            [0.2, 0.9, 0.1, 0.3],
+            [0.8, 0.3, 0.2, 0.1],
+            [0.3, 0.8, 0.2, 0.1]
+        ]"#;
+        let proj = WasmLaplacianEigenmapProjection::new(embeddings, None, Some(3), None)
+            .expect("fit failed");
+        // `dimensionality` reports input dim (4 here), not the projected
+        // output dim — output is always 3 (S²) for any projection.
+        assert_eq!(proj.dimensionality(), 4);
+        let cr = proj.connectivity_ratio();
+        assert!(
+            (0.0..=1.0).contains(&cr),
+            "connectivity_ratio out of range: {cr}"
+        );
+
+        // Default radial strategy is Magnitude → r equals the input
+        // embedding's L2 norm (sqrt(0.86) ≈ 0.927 here), not 1.
+        let point_json = proj
+            .project("[0.9, 0.1, 0.0, 0.2]")
+            .expect("project failed");
+        let v: serde_json::Value = serde_json::from_str(&point_json).unwrap();
+        let r = v["r"].as_f64().unwrap();
+        let expected = (0.81f64 + 0.01 + 0.0 + 0.04).sqrt();
+        assert!(
+            (r - expected).abs() < 1e-6,
+            "got r={r}, expected ≈{expected}"
+        );
+        assert!(v["theta"].as_f64().unwrap().is_finite());
+        assert!(v["phi"].as_f64().unwrap().is_finite());
+    }
+
+    #[test]
+    fn standalone_laplacian_fixed_radial_lands_on_unit_sphere() {
+        let embeddings = r#"[
+            [1.0, 0.1, 0.0, 0.2],
+            [0.1, 1.0, 0.0, 0.2],
+            [0.9, 0.2, 0.1, 0.3],
+            [0.2, 0.9, 0.1, 0.3],
+            [0.8, 0.3, 0.2, 0.1],
+            [0.3, 0.8, 0.2, 0.1]
+        ]"#;
+        let proj =
+            WasmLaplacianEigenmapProjection::new(embeddings, Some("1.0".into()), Some(3), None)
+                .expect("fit failed");
+        let p: serde_json::Value =
+            serde_json::from_str(&proj.project("[0.9, 0.1, 0.0, 0.2]").unwrap()).unwrap();
+        assert!((p["r"].as_f64().unwrap() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn pipeline_with_laplacian_config_partial() {
+        // Just the projection_kind override — rest defaulted.
+        let cfg = r#"{"projection_kind": "LaplacianEigenmap"}"#;
+        let p = Pipeline::new_with_config(corpus_json(), cfg).expect("pipeline build failed");
+        assert_eq!(p.projection_kind(), "laplacian_eigenmap");
+    }
+
+    #[test]
+    fn pipeline_with_laplacian_config_full() {
+        let cfg = r#"{
+            "projection_kind": "LaplacianEigenmap",
+            "laplacian": { "k_neighbors": 4, "active_threshold": 0.01 }
+        }"#;
+        let p = Pipeline::new_with_config(corpus_json(), cfg).expect("pipeline build failed");
+        assert_eq!(p.projection_kind(), "laplacian_eigenmap");
+    }
+
+    #[test]
+    fn pipeline_with_default_pca_unchanged() {
+        // Regression: omitting projection_kind preserves PCA default.
+        let cfg = r#"{}"#;
+        let p = Pipeline::new_with_config(corpus_json(), cfg).expect("pipeline build failed");
+        assert_eq!(p.projection_kind(), "pca");
     }
 }

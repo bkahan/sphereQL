@@ -168,9 +168,8 @@ mod tests {
 
     #[test]
     fn fn_embedder_round_trips() {
-        let embedder = FnEmbedder::new(|text: &str| {
-            Ok(Embedding::new(vec![text.len() as f64, 0.0, 0.0]))
-        });
+        let embedder =
+            FnEmbedder::new(|text: &str| Ok(Embedding::new(vec![text.len() as f64, 0.0, 0.0])));
         let v = embedder.embed("hello world").unwrap();
         assert_eq!(v.dimension(), 3);
         assert_eq!(v.values[0], 11.0);
