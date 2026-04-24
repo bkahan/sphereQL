@@ -119,6 +119,20 @@ impl PineconeStore {
             return Ok(resp);
         }
         let status = resp.status();
+
+        // Map 429 to RateLimited so callers can back off and retry.
+        // Pinecone returns `Retry-After` in seconds; RFC 7231 also
+        // allows an HTTP-date, but Pinecone doesn't use that form.
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let retry_after = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(std::time::Duration::from_secs);
+            return Err(VectorStoreError::RateLimited { retry_after });
+        }
+
         let body = resp.text().await.unwrap_or_default();
         if let Ok(err) = serde_json::from_str::<PineconeError>(&body) {
             Err(VectorStoreError::Backend(format!(
