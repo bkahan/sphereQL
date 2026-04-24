@@ -1274,7 +1274,12 @@ impl WasmLaplacianEigenmapProjection {
 }
 
 // ── Server-side cache (Node.js only, not available in browser WASM) ────
+//
+// `validate_cache_filename` is only consumed by the `cfg(not(wasm32))`
+// arms of `cache_read` / `cache_write`. Gate the helper itself with the
+// same cfg so wasm32 builds don't trip `-D dead_code`.
 
+#[cfg(not(target_arch = "wasm32"))]
 fn validate_cache_filename(path: &str) -> Result<std::path::PathBuf, JsError> {
     let name = std::path::Path::new(path)
         .file_name()
