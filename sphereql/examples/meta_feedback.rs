@@ -33,8 +33,10 @@ fn main() {
     let corpus_id = "demo_corpus_v1";
 
     // ── 1. Mock training record (normally produced by auto_tune) ─────
-    let mut cfg = PipelineConfig::default();
-    cfg.projection_kind = ProjectionKind::Pca;
+    let cfg = PipelineConfig {
+        projection_kind: ProjectionKind::Pca,
+        ..PipelineConfig::default()
+    };
     let record = MetaTrainingRecord {
         corpus_id: corpus_id.to_string(),
         features: mock_features(),
@@ -98,7 +100,7 @@ fn main() {
         "\nBlending adjusted score (best_score=0.720, feedback mean={:.3}):",
         summary.mean_score
     );
-    println!("  {:<8} {:<10} {}", "alpha", "adjusted", "interpretation");
+    println!("  {:<8} {:<10} interpretation", "alpha", "adjusted");
     println!("  {}", "-".repeat(60));
     for alpha in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let adjusted = record.adjust_score_with_feedback(&summary, alpha);

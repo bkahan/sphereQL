@@ -102,7 +102,7 @@ fn main() {
         &metric,
         SearchStrategy::Random {
             budget: BUDGET,
-            seed: 0xC0FF_EE,
+            seed: 0x00C0_FFEE,
         },
     )
     .expect("warm-start tune failed");

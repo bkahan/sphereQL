@@ -729,8 +729,7 @@ fn main() {
                 }
             };
             print!("  {:<14} {:>1}", row_label, i);
-            for j in 0..nc {
-                let v = matrix[i][j];
+            for &v in &matrix[i] {
                 if v < 0.001 {
                     print!(" {:>width$}", "·", width = label_width);
                 } else {
@@ -750,10 +749,10 @@ fn main() {
     let mut best_i = 0usize;
     let mut best_j = 0usize;
     let mut best_val = 0.0f64;
-    for i in 0..nc {
-        for j in 0..nc {
-            if i != j && matrix[i][j] > best_val {
-                best_val = matrix[i][j];
+    for (i, row) in matrix.iter().enumerate() {
+        for (j, &v) in row.iter().enumerate() {
+            if i != j && v > best_val {
+                best_val = v;
                 best_i = i;
                 best_j = j;
             }
@@ -810,8 +809,8 @@ fn main() {
     let groups = pipeline.domain_groups();
     println!("  [Raw] {} domain groups detected:\n", groups.len());
     println!(
-        "  {:<4} {:>6} {:>6} {:>10} {:>10}  {}",
-        "Grp", "#cats", "items", "cohesion", "spread°", "members"
+        "  {:<4} {:>6} {:>6} {:>10} {:>10}  members",
+        "Grp", "#cats", "items", "cohesion", "spread°"
     );
     println!("  {}", "─".repeat(70));
     for (gi, g) in groups.iter().enumerate() {

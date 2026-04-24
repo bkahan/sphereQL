@@ -32,7 +32,7 @@ use sphereql_corpus::{
 };
 
 const BUDGET: usize = 12;
-const BASE_SEED: u64 = 0xA17C_ABE_CAFE;
+const BASE_SEED: u64 = 0x0A17_CABE_CAFE;
 
 fn main() {
     println!("================================================================");

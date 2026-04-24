@@ -29,7 +29,7 @@ use sphereql_corpus::{
 };
 
 const RANDOM_BUDGET: usize = 24;
-const RANDOM_SEED: u64 = 0xA17C_ABE_CAFE;
+const RANDOM_SEED: u64 = 0x0A17_CABE_CAFE;
 
 fn load_corpus_from_env() -> (Vec<Concept>, Vec<String>, Vec<Vec<f64>>, &'static str) {
     let use_stress = std::env::var("SPHEREQL_CORPUS")

@@ -85,8 +85,12 @@ mod tests {
     #[test]
     fn owning_struct_debug_also_redacts() {
         // The whole point: callers `#[derive(Debug)]` on their config;
-        // this is the transitive property that must hold.
+        // this is the transitive property that must hold. `dead_code`
+        // is allowed because the derived `Debug` impl is what
+        // exercises both fields — Rust's dead-code pass intentionally
+        // doesn't count derive-generated reads as uses.
         #[derive(Debug)]
+        #[allow(dead_code)]
         struct Config {
             api_key: Redacted,
             host: String,
