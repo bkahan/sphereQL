@@ -203,7 +203,9 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        let result = py.detach(|| self.inner.query(SphereQLQuery::Nearest { k }, &pq));
+        let result = py
+            .detach(|| self.inner.query(SphereQLQuery::Nearest { k }, &pq))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::Nearest(items) => Ok(items.iter().map(Nearest::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -241,7 +243,8 @@ impl Pipeline {
         let result = py.detach(|| {
             self.inner
                 .query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::KNearest(items) => Ok(items.iter().map(Nearest::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -296,7 +299,8 @@ impl Pipeline {
                 },
                 &pq,
             )
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -359,7 +363,8 @@ impl Pipeline {
         let result = py.detach(|| {
             self.inner
                 .query(SphereQLQuery::DetectGlobs { k, max_k }, &pq)
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -403,7 +408,8 @@ impl Pipeline {
         let result = py.detach(|| {
             self.inner
                 .query(SphereQLQuery::LocalManifold { neighborhood_k }, &pq)
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::LocalManifold(m) => Ok(Manifold::from(&m)),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -495,7 +501,8 @@ impl Pipeline {
                 },
                 &pq,
             )
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::CategoryConceptPath(path) => {
                 Ok(path.as_ref().map(PyCategoryPath::from))
@@ -517,7 +524,8 @@ impl Pipeline {
         let result = py.detach(|| {
             self.inner
                 .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::CategoryNeighbors(summaries) => {
                 Ok(summaries.iter().map(PyCategorySummary::from).collect())
@@ -542,7 +550,8 @@ impl Pipeline {
         let result = py.detach(|| {
             self.inner
                 .query(SphereQLQuery::DrillDown { category, k }, &pq)
-        });
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::DrillDown(results) => {
                 Ok(results.iter().map(PyDrillDown::from).collect())
@@ -597,7 +606,9 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: vec![0.0; self.dim],
         };
-        let result = py.detach(|| self.inner.query(SphereQLQuery::CategoryStats, &pq));
+        let result = py
+            .detach(|| self.inner.query(SphereQLQuery::CategoryStats, &pq))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::CategoryStats {
                 summaries,

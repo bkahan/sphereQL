@@ -873,12 +873,15 @@ fn main() {
         }
 
         let hier = pipeline.hierarchical_nearest(emb, 5);
-        let standard = match pipeline.query(
-            SphereQLQuery::Nearest { k: 5 },
-            &PipelineQuery {
-                embedding: emb.values.clone(),
-            },
-        ) {
+        let standard = match pipeline
+            .query(
+                SphereQLQuery::Nearest { k: 5 },
+                &PipelineQuery {
+                    embedding: emb.values.clone(),
+                },
+            )
+            .expect("nearest query")
+        {
             SphereQLOutput::Nearest(v) => v,
             _ => Vec::new(),
         };

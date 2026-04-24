@@ -109,7 +109,10 @@ impl Pipeline {
                 emb.embedding.len()
             )));
         }
-        let result = self.inner.query(SphereQLQuery::Nearest { k }, &emb);
+        let result = self
+            .inner
+            .query(SphereQLQuery::Nearest { k }, &emb)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::Nearest(items) => {
                 serde_json::to_string(&items.iter().map(NearestOut::from).collect::<Vec<_>>())
@@ -132,7 +135,8 @@ impl Pipeline {
         }
         let result = self
             .inner
-            .query(SphereQLQuery::SimilarAbove { min_cosine }, &emb);
+            .query(SphereQLQuery::SimilarAbove { min_cosine }, &emb)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::KNearest(items) => {
                 serde_json::to_string(&items.iter().map(NearestOut::from).collect::<Vec<_>>())
@@ -159,14 +163,17 @@ impl Pipeline {
                 emb.embedding.len()
             )));
         }
-        let result = self.inner.query(
-            SphereQLQuery::ConceptPath {
-                source_id,
-                target_id,
-                graph_k,
-            },
-            &emb,
-        );
+        let result = self
+            .inner
+            .query(
+                SphereQLQuery::ConceptPath {
+                    source_id,
+                    target_id,
+                    graph_k,
+                },
+                &emb,
+            )
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::ConceptPath(path) => serde_json::to_string(&path.map(|p| {
                 PathOut {
@@ -209,7 +216,8 @@ impl Pipeline {
         let k_opt = if k == 0 { None } else { Some(k) };
         let result = self
             .inner
-            .query(SphereQLQuery::DetectGlobs { k: k_opt, max_k }, &emb);
+            .query(SphereQLQuery::DetectGlobs { k: k_opt, max_k }, &emb)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::Globs(globs) => {
                 serde_json::to_string(&globs.iter().map(GlobOut::from).collect::<Vec<_>>())
@@ -236,7 +244,8 @@ impl Pipeline {
         }
         let result = self
             .inner
-            .query(SphereQLQuery::LocalManifold { neighborhood_k }, &emb);
+            .query(SphereQLQuery::LocalManifold { neighborhood_k }, &emb)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::LocalManifold(m) => serde_json::to_string(&ManifoldOut {
                 centroid: m.centroid,
@@ -326,13 +335,16 @@ impl Pipeline {
         target_category: &str,
     ) -> Result<String, JsError> {
         let pq = self.dummy_query();
-        let result = self.inner.query(
-            SphereQLQuery::CategoryConceptPath {
-                source_category,
-                target_category,
-            },
-            &pq,
-        );
+        let result = self
+            .inner
+            .query(
+                SphereQLQuery::CategoryConceptPath {
+                    source_category,
+                    target_category,
+                },
+                &pq,
+            )
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::CategoryConceptPath(path) => {
                 serde_json::to_string(&path.map(CategoryPathOut::from))
@@ -348,7 +360,8 @@ impl Pipeline {
         let pq = self.dummy_query();
         let result = self
             .inner
-            .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq);
+            .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::CategoryNeighbors(summaries) => serde_json::to_string(
                 &summaries
@@ -380,7 +393,8 @@ impl Pipeline {
         }
         let result = self
             .inner
-            .query(SphereQLQuery::DrillDown { category, k }, &emb);
+            .query(SphereQLQuery::DrillDown { category, k }, &emb)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::DrillDown(results) => {
                 serde_json::to_string(&results.iter().map(DrillDownOut::from).collect::<Vec<_>>())
@@ -394,7 +408,10 @@ impl Pipeline {
     /// Returns JSON: `{summaries: [...], inner_sphere_reports: [...]}`
     pub fn category_stats(&self) -> Result<String, JsError> {
         let pq = self.dummy_query();
-        let result = self.inner.query(SphereQLQuery::CategoryStats, &pq);
+        let result = self
+            .inner
+            .query(SphereQLQuery::CategoryStats, &pq)
+            .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::CategoryStats {
                 summaries,

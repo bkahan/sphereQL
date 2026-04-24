@@ -247,7 +247,9 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         let pq = PipelineQuery {
             embedding: query_embedding.to_vec(),
         };
-        Ok(pipeline.query(q, &pq))
+        pipeline
+            .query(q, &pq)
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))
     }
 
     /// Hybrid search: use the vector store's ANN for initial recall,

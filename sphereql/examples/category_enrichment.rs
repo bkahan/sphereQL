@@ -306,13 +306,15 @@ fn main() {
     let pq = PipelineQuery {
         embedding: query_emb,
     };
-    let result = pipeline.query(
-        SphereQLQuery::DrillDown {
-            category: "science",
-            k: 4,
-        },
-        &pq,
-    );
+    let result = pipeline
+        .query(
+            SphereQLQuery::DrillDown {
+                category: "science",
+                k: 4,
+            },
+            &pq,
+        )
+        .expect("drill_down query");
     if let SphereQLOutput::DrillDown(items) = result {
         for (i, r) in items.iter().enumerate() {
             let inner_tag = if r.used_inner_sphere {
@@ -360,7 +362,9 @@ fn main() {
     if let SphereQLOutput::CategoryStats {
         summaries,
         inner_sphere_reports,
-    } = pipeline.query(SphereQLQuery::CategoryStats, &dummy_q)
+    } = pipeline
+        .query(SphereQLQuery::CategoryStats, &dummy_q)
+        .expect("category_stats query")
     {
         println!(
             "  {} categories, {} inner spheres",

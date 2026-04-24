@@ -20,7 +20,7 @@ use crate::types::{Embedding, RadialStrategy};
 
 // ── Errors ─────────────────────────────────────────────────────────────────
 
-/// Reasons a pipeline build can fail.
+/// Reasons a pipeline build or query can fail.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum PipelineError {
     /// `categories` and `embeddings` had different lengths — they must
@@ -35,6 +35,16 @@ pub enum PipelineError {
     /// corpus, dim-too-low, inconsistent dim, invalid sigma, etc.
     #[error("projection fit failed: {0}")]
     Projection(#[from] crate::projection::ProjectionError),
+    /// A category-keyed query referenced a name that doesn't exist in
+    /// the pipeline. Previously these paths silently returned empty
+    /// results / `None`, which callers couldn't distinguish from
+    /// "category exists but is disconnected on the graph".
+    #[error("unknown category: {0:?}")]
+    UnknownCategory(String),
+    /// A concept-path query referenced an id that doesn't exist in the
+    /// pipeline.
+    #[error("unknown id: {0:?}")]
+    UnknownId(String),
     /// Every [`auto_tune`](crate::tuner::auto_tune) trial failed a
     /// downstream validator (e.g. every candidate config was rejected
     /// by the pipeline builder). The attached `failures` list carries
@@ -428,15 +438,39 @@ impl SphereQLPipeline {
         })
     }
 
+    /// True if `name` is a known category in this pipeline. Pair with
+    /// [`Self::query`] to disambiguate "unknown category" from
+    /// "category exists but is disconnected on the graph" without
+    /// pattern-matching on `PipelineError::UnknownCategory`.
+    pub fn has_category(&self, name: &str) -> bool {
+        self.category_layer.name_to_index.contains_key(name)
+    }
+
+    /// True if `id` is an indexed item in this pipeline.
+    pub fn has_id(&self, id: &str) -> bool {
+        self.index.get(id).is_some()
+    }
+
     /// Execute a typed query against the pipeline.
-    pub fn query(&self, q: SphereQLQuery<'_>, query_embedding: &PipelineQuery) -> SphereQLOutput {
+    ///
+    /// Returns [`PipelineError::UnknownCategory`] when a category
+    /// query references a name not in the pipeline, and
+    /// [`PipelineError::UnknownId`] when a concept-path query
+    /// references an id not in the index. Previously those paths
+    /// collapsed into empty results / `None`, which callers couldn't
+    /// distinguish from legitimate "found nothing" outcomes.
+    pub fn query(
+        &self,
+        q: SphereQLQuery<'_>,
+        query_embedding: &PipelineQuery,
+    ) -> Result<SphereQLOutput, PipelineError> {
         let emb = Embedding::new(query_embedding.embedding.clone());
 
         match q {
             SphereQLQuery::Nearest { k } => {
                 let evr = self.projection.explained_variance_ratio();
                 let results = self.index.search_nearest(&emb, k);
-                SphereQLOutput::Nearest(
+                Ok(SphereQLOutput::Nearest(
                     results
                         .iter()
                         .map(|r| {
@@ -453,14 +487,14 @@ impl SphereQLPipeline {
                         })
                         .filter(|r| self.passes_quality(r))
                         .collect(),
-                )
+                ))
             }
 
             SphereQLQuery::SimilarAbove { min_cosine } => {
                 let evr = self.projection.explained_variance_ratio();
                 let results = self.index.search_similar(&emb, min_cosine);
                 let sp_q = self.projection.project(&emb);
-                SphereQLOutput::KNearest(
+                Ok(SphereQLOutput::KNearest(
                     results
                         .items
                         .iter()
@@ -479,7 +513,7 @@ impl SphereQLPipeline {
                         })
                         .filter(|r| self.passes_quality(r))
                         .collect(),
-                )
+                ))
             }
 
             SphereQLQuery::ConceptPath {
@@ -487,8 +521,14 @@ impl SphereQLPipeline {
                 target_id,
                 graph_k,
             } => {
+                if !self.has_id(source_id) {
+                    return Err(PipelineError::UnknownId(source_id.to_string()));
+                }
+                if !self.has_id(target_id) {
+                    return Err(PipelineError::UnknownId(target_id.to_string()));
+                }
                 let path = self.index.concept_path(source_id, target_id, graph_k);
-                SphereQLOutput::ConceptPath(path.map(|p| {
+                Ok(SphereQLOutput::ConceptPath(path.map(|p| {
                     PathResult {
                         total_distance: p.total_distance,
                         steps: p
@@ -503,12 +543,12 @@ impl SphereQLPipeline {
                             })
                             .collect(),
                     }
-                }))
+                })))
             }
 
             SphereQLQuery::DetectGlobs { k, max_k } => {
                 let result = GlobResult::detect(&self.cart_points, &self.ids, k, max_k);
-                SphereQLOutput::Globs(
+                Ok(SphereQLOutput::Globs(
                     result
                         .globs
                         .iter()
@@ -531,7 +571,7 @@ impl SphereQLPipeline {
                             }
                         })
                         .collect(),
-                )
+                ))
             }
 
             SphereQLQuery::LocalManifold { neighborhood_k } => {
@@ -539,11 +579,11 @@ impl SphereQLPipeline {
                 let c = spherical_to_cartesian(&sp);
                 let qpt = [c.x, c.y, c.z];
                 let m = SlicingManifold::fit_local(&qpt, &self.cart_points, neighborhood_k);
-                SphereQLOutput::LocalManifold(ManifoldResult {
+                Ok(SphereQLOutput::LocalManifold(ManifoldResult {
                     centroid: m.centroid,
                     normal: m.normal,
                     variance_ratio: m.variance_ratio,
-                })
+                }))
             }
 
             // ── Phase 3: category-level query dispatch ─────────────────
@@ -551,31 +591,45 @@ impl SphereQLPipeline {
                 source_category,
                 target_category,
             } => {
+                if !self.has_category(source_category) {
+                    return Err(PipelineError::UnknownCategory(source_category.to_string()));
+                }
+                if !self.has_category(target_category) {
+                    return Err(PipelineError::UnknownCategory(target_category.to_string()));
+                }
                 let path = self
                     .category_layer
                     .category_path(source_category, target_category);
-                SphereQLOutput::CategoryConceptPath(path)
+                Ok(SphereQLOutput::CategoryConceptPath(path))
             }
 
             SphereQLQuery::CategoryNeighbors { category, k } => {
+                if !self.has_category(category) {
+                    return Err(PipelineError::UnknownCategory(category.to_string()));
+                }
                 let neighbors = self.category_layer.category_neighbors(category, k);
-                SphereQLOutput::CategoryNeighbors(neighbors.into_iter().cloned().collect())
+                Ok(SphereQLOutput::CategoryNeighbors(
+                    neighbors.into_iter().cloned().collect(),
+                ))
             }
 
             SphereQLQuery::DrillDown { category, k } => {
+                if !self.has_category(category) {
+                    return Err(PipelineError::UnknownCategory(category.to_string()));
+                }
                 let results = self.category_layer.drill_down_with_projection(
                     category,
                     &emb,
                     &self.projection,
                     k,
                 );
-                SphereQLOutput::DrillDown(results)
+                Ok(SphereQLOutput::DrillDown(results))
             }
 
-            SphereQLQuery::CategoryStats => SphereQLOutput::CategoryStats {
+            SphereQLQuery::CategoryStats => Ok(SphereQLOutput::CategoryStats {
                 summaries: self.category_layer.summaries.clone(),
                 inner_sphere_reports: self.category_layer.inner_sphere_stats(),
-            },
+            }),
         }
     }
 
@@ -986,7 +1040,9 @@ mod tests {
     fn pipeline_nearest() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(SphereQLQuery::Nearest { k: 5 }, &query);
+        let result = pipeline
+            .query(SphereQLQuery::Nearest { k: 5 }, &query)
+            .unwrap();
         match result {
             SphereQLOutput::Nearest(items) => {
                 assert_eq!(items.len(), 5);
@@ -1006,7 +1062,8 @@ mod tests {
                 max_k: 5,
             },
             &query,
-        );
+        )
+        .unwrap();
         match result {
             SphereQLOutput::Globs(globs) => {
                 assert_eq!(globs.len(), 2);
@@ -1028,7 +1085,8 @@ mod tests {
                 graph_k: 10,
             },
             &query,
-        );
+        )
+        .unwrap();
         match result {
             SphereQLOutput::ConceptPath(Some(path)) => {
                 assert!(path.steps.len() >= 2);
@@ -1043,7 +1101,9 @@ mod tests {
     fn pipeline_local_manifold() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(SphereQLQuery::LocalManifold { neighborhood_k: 10 }, &query);
+        let result = pipeline
+            .query(SphereQLQuery::LocalManifold { neighborhood_k: 10 }, &query)
+            .unwrap();
         match result {
             SphereQLOutput::LocalManifold(m) => {
                 assert!(m.variance_ratio > 0.0);
@@ -1157,7 +1217,8 @@ mod tests {
                 target_category: "group_b",
             },
             &query,
-        );
+        )
+        .unwrap();
         match result {
             SphereQLOutput::CategoryConceptPath(Some(path)) => {
                 assert!(path.steps.len() >= 2);
@@ -1197,7 +1258,8 @@ mod tests {
                 k: 5,
             },
             &query,
-        );
+        )
+        .unwrap();
         match result {
             SphereQLOutput::CategoryNeighbors(neighbors) => {
                 assert_eq!(neighbors.len(), 1);
@@ -1217,7 +1279,8 @@ mod tests {
                 k: 5,
             },
             &query,
-        );
+        )
+        .unwrap();
         match result {
             SphereQLOutput::DrillDown(results) => {
                 assert!(!results.is_empty());
@@ -1234,7 +1297,9 @@ mod tests {
     fn pipeline_category_stats_query() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(SphereQLQuery::CategoryStats, &query);
+        let result = pipeline
+            .query(SphereQLQuery::CategoryStats, &query)
+            .unwrap();
         match result {
             SphereQLOutput::CategoryStats {
                 summaries,
