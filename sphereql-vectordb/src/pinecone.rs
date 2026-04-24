@@ -26,6 +26,17 @@ pub struct PineconeConfig {
     pub dimension: usize,
     /// Pinecone caps top_k at 10,000.
     pub top_k_limit: usize,
+    /// Hard cap on a single HTTP response body, in bytes. Guards
+    /// against a buggy or malicious server returning a multi-GB blob
+    /// that would OOM the client before we could interpret the
+    /// payload.
+    ///
+    /// Default 1 GiB — deliberately permissive so large corpora (LLM
+    /// training data, million-record document indexes) don't trip the
+    /// limit on normal scroll pages. Adjust upward for pathological
+    /// metadata fields (full document text stored inline) or downward
+    /// on memory-constrained clients.
+    pub max_response_bytes: u64,
 }
 
 impl PineconeConfig {
@@ -36,7 +47,15 @@ impl PineconeConfig {
             namespace: String::new(),
             dimension,
             top_k_limit: 10_000,
+            max_response_bytes: 1024 * 1024 * 1024, // 1 GiB
         }
+    }
+
+    /// Override the hard cap on response body size. See
+    /// [`Self::max_response_bytes`] for the trade-off.
+    pub fn with_max_response_bytes(mut self, bytes: u64) -> Self {
+        self.max_response_bytes = bytes;
+        self
     }
 
     pub fn with_namespace(mut self, ns: impl Into<String>) -> Self {
@@ -113,8 +132,24 @@ impl PineconeStore {
     }
 
     async fn check_response(
+        &self,
         resp: reqwest::Response,
     ) -> Result<reqwest::Response, VectorStoreError> {
+        // Reject oversized responses before consuming the body. This
+        // only fires when the server advertises a `Content-Length`
+        // above the cap — chunked responses without a declared length
+        // fall through to the normal deserialization path, where
+        // serde_json's incremental parser still bounds memory by the
+        // deserialized value size rather than the raw bytes.
+        if let Some(len) = resp.content_length()
+            && len > self.config.max_response_bytes
+        {
+            return Err(VectorStoreError::ResponseTooLarge {
+                bytes: len,
+                cap: self.config.max_response_bytes,
+            });
+        }
+
         if resp.status().is_success() {
             return Ok(resp);
         }
@@ -162,7 +197,7 @@ impl PineconeStore {
             .send()
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
-        Self::check_response(resp).await?;
+        self.check_response(resp).await?;
         Ok(())
     }
 }
@@ -208,7 +243,7 @@ impl VectorStore for PineconeStore {
                 .await
                 .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-            Self::check_response(resp).await?;
+            self.check_response(resp).await?;
         }
 
         Ok(())
@@ -232,7 +267,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let fetch: FetchResponse = resp
             .json()
             .await
@@ -268,7 +303,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        Self::check_response(resp).await?;
+        self.check_response(resp).await?;
         Ok(())
     }
 
@@ -300,7 +335,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let query_resp: QueryResponse = resp
             .json()
             .await
@@ -339,7 +374,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let list_resp: ListResponse = resp
             .json()
             .await
@@ -373,7 +408,7 @@ impl VectorStore for PineconeStore {
             .await
             .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
 
-        let resp = Self::check_response(resp).await?;
+        let resp = self.check_response(resp).await?;
         let stats: DescribeIndexStatsResponse = resp
             .json()
             .await

@@ -68,20 +68,63 @@ impl FeedbackEvent {
     }
 
     /// Append this event to the user's default feedback store
-    /// (`~/.sphereql/feedback_events.json`). Loads the existing log,
-    /// appends, and rewrites — idempotent across sessions. Returns the
-    /// resolved store path.
+    /// (`~/.sphereql/feedback_events.json`).
+    ///
+    /// O(1) per call: opens the file in append mode and writes one
+    /// JSON-encoded line. Previous implementation loaded the full
+    /// aggregator, pushed the event, and rewrote the file — O(N)
+    /// per append, which mattered on a production firehose.
+    /// Legacy array-format stores are migrated to JSONL on the first
+    /// append (one-time O(N) cost) and append at O(1) afterward.
     ///
     /// Mirrors [`MetaTrainingRecord::append_to_default_store`](crate::meta_model::MetaTrainingRecord::append_to_default_store)
-    /// — both are instance methods on the data they persist, not
-    /// statics on their aggregator, so the two APIs feel identical
-    /// in downstream code.
+    /// — both are instance methods on the data they persist.
     pub fn append_to_default_store(&self) -> io::Result<PathBuf> {
         let path = FeedbackAggregator::default_store_path()?;
-        let mut agg = FeedbackAggregator::load(&path)?;
-        agg.record(self.clone());
-        agg.save(&path)?;
+        self.append_to(&path)?;
         Ok(path)
+    }
+
+    /// Append this event to an arbitrary JSONL file. Creates the file
+    /// and any missing parent directories on first call.
+    pub fn append_to(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        use std::io::Write;
+
+        let path = path.as_ref();
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
+        }
+
+        // One-time migration: if the store is a legacy JSON array
+        // (what FeedbackAggregator::save used to write), rewrite it
+        // as JSONL so subsequent appends stay O(1).
+        if path.exists() {
+            let head = fs::read_to_string(path)?;
+            if head.trim_start().starts_with('[') {
+                let events: Vec<Self> = serde_json::from_str(head.trim_start())
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let mut migrated = String::with_capacity(head.len());
+                for e in &events {
+                    serde_json::to_string(e)
+                        .map(|line| {
+                            migrated.push_str(&line);
+                            migrated.push('\n');
+                        })
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                }
+                fs::write(path, migrated)?;
+            }
+        }
+
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        let line = serde_json::to_string(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        writeln!(f, "{line}")
     }
 }
 
@@ -284,14 +327,34 @@ impl FeedbackAggregator {
 
     /// Load an aggregator from a JSON event-log file. Returns an empty
     /// aggregator if the file does not exist.
+    ///
+    /// Accepts both a JSON array (legacy, what `save` writes for
+    /// backward compat) and JSON Lines (new format written by
+    /// [`FeedbackEvent::append_to_default_store`] and sibling append
+    /// paths). Detection is first-character based.
     pub fn load(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
             return Ok(Self::new());
         }
         let raw = fs::read_to_string(path)?;
-        let events: Vec<FeedbackEvent> = serde_json::from_str(&raw)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let trimmed = raw.trim_start();
+        if trimmed.is_empty() {
+            return Ok(Self::new());
+        }
+        let events: Vec<FeedbackEvent> = if trimmed.starts_with('[') {
+            serde_json::from_str(trimmed)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+        } else {
+            trimmed
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| {
+                    serde_json::from_str::<FeedbackEvent>(l)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+                })
+                .collect::<io::Result<Vec<_>>>()?
+        };
         Ok(Self {
             max_events: None,
             events,
@@ -440,6 +503,62 @@ mod tests {
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded.events()[0].corpus_id, "c1");
         assert_eq!(loaded.events()[1].corpus_id, "c2");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_to_creates_jsonl_then_load_roundtrips() {
+        let dir = std::env::temp_dir().join(format!("sphereql_fb_jsonl_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("nested").join("events.json");
+
+        // Append three events one by one — each call is O(1).
+        ev("c1", "q1", 0.8).append_to(&path).unwrap();
+        ev("c1", "q2", 0.6).append_to(&path).unwrap();
+        ev("c2", "q3", 0.4).append_to(&path).unwrap();
+
+        let loaded = FeedbackAggregator::load(&path).unwrap();
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded.events()[0].query_id, "q1");
+        assert_eq!(loaded.events()[1].query_id, "q2");
+        assert_eq!(loaded.events()[2].query_id, "q3");
+
+        // Raw file really is JSONL (one record per line).
+        let raw = fs::read_to_string(&path).unwrap();
+        assert_eq!(raw.lines().count(), 3);
+        assert!(!raw.trim_start().starts_with('['));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn append_to_migrates_legacy_array_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "sphereql_fb_migrate_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("events.json");
+
+        // Seed with a legacy array file (what `save` used to write).
+        let mut legacy = FeedbackAggregator::new();
+        legacy.record(ev("c1", "q1", 0.9));
+        legacy.record(ev("c2", "q2", 0.5));
+        legacy.save(&path).unwrap();
+
+        // First append migrates the file to JSONL.
+        ev("c3", "q3", 0.7).append_to(&path).unwrap();
+
+        let loaded = FeedbackAggregator::load(&path).unwrap();
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded.events()[0].query_id, "q1");
+        assert_eq!(loaded.events()[2].query_id, "q3");
+
+        // Post-migration shape is JSONL.
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.trim_start().starts_with('['));
+        assert_eq!(raw.lines().count(), 3);
 
         let _ = fs::remove_dir_all(&dir);
     }

@@ -2367,6 +2367,7 @@ name = "sphereql-embed"
 version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
+ "rayon",
  "serde",
  "serde_json",
  "sphereql-core",
@@ -2406,6 +2407,7 @@ dependencies = [
  "approx",
  "proptest",
  "rand 0.8.5",
+ "rayon",
  "sphereql-core",
  "sphereql-index",
 ]

@@ -102,6 +102,12 @@ impl MetaTrainingRecord {
 
     /// Save a list of records as a JSON array to disk. Creates parent
     /// directories as needed.
+    ///
+    /// Kept for callers who want a pretty-printed snapshot (backups,
+    /// audits, diffs). The default on-disk store uses JSONL under
+    /// [`Self::append_to_default_store`] for O(1) appends — read it
+    /// back via [`Self::load_default_store`], which auto-detects
+    /// legacy array files as well.
     pub fn save_list(records: &[Self], path: impl AsRef<Path>) -> io::Result<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent()
@@ -114,15 +120,37 @@ impl MetaTrainingRecord {
         fs::write(path, json)
     }
 
-    /// Load a list of records from a JSON array file. Returns an empty
-    /// vec if the file does not exist.
+    /// Load a list of records from disk.
+    ///
+    /// Accepts both a JSON array (legacy format and what `save_list`
+    /// writes) and JSON Lines (one record per line, the new append
+    /// format). Detection is first-character based: `[` ⇒ array,
+    /// anything else ⇒ JSONL. Returns an empty vec if the file
+    /// doesn't exist.
     pub fn load_list(path: impl AsRef<Path>) -> io::Result<Vec<Self>> {
         let path = path.as_ref();
         if !path.exists() {
             return Ok(Vec::new());
         }
         let raw = fs::read_to_string(path)?;
-        serde_json::from_str(&raw).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        let trimmed = raw.trim_start();
+        if trimmed.is_empty() {
+            return Ok(Vec::new());
+        }
+        if trimmed.starts_with('[') {
+            // Legacy JSON array.
+            return serde_json::from_str(trimmed)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
+        }
+        // JSONL: one record per non-empty line.
+        trimmed
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                serde_json::from_str::<Self>(l)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+            })
+            .collect()
     }
 
     /// Default on-disk training-store path: `~/.sphereql/meta_records.json`.
@@ -131,14 +159,61 @@ impl MetaTrainingRecord {
     }
 
     /// Append this record to the user's default training store.
-    /// Creates parent dirs and the file itself if they don't exist yet,
-    /// so repeat calls naturally accumulate a dataset across tuner runs.
+    ///
+    /// Constant-time per call: opens the file in append mode and
+    /// writes one JSON-encoded line. Previously this loaded every
+    /// record, pushed the new one, and rewrote the entire file —
+    /// O(N) per append, which dominated at N → 10k.
+    ///
+    /// Existing stores written in legacy array format keep working;
+    /// on the first append we re-emit the file as JSONL (one-time
+    /// O(N) migration), then subsequent appends are O(1).
     pub fn append_to_default_store(&self) -> io::Result<PathBuf> {
         let path = Self::default_store_path()?;
-        let mut records = Self::load_list(&path)?;
-        records.push(self.clone());
-        Self::save_list(&records, &path)?;
+        self.append_to(&path)?;
         Ok(path)
+    }
+
+    /// Append this record to an arbitrary JSONL file. Creates the
+    /// file and any missing parent directories on first call.
+    pub fn append_to(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        use std::io::Write;
+
+        let path = path.as_ref();
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Migrate a legacy array file to JSONL on the first append —
+        // one-time cost that converts N records, after which appends
+        // are O(1). New files skip this path entirely.
+        if path.exists() {
+            let head = fs::read_to_string(path)?;
+            if head.trim_start().starts_with('[') {
+                let records: Vec<Self> = serde_json::from_str(head.trim_start())
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let mut migrated = String::with_capacity(head.len());
+                for r in &records {
+                    serde_json::to_string(r)
+                        .map(|line| {
+                            migrated.push_str(&line);
+                            migrated.push('\n');
+                        })
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                }
+                fs::write(path, migrated)?;
+            }
+        }
+
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        let line = serde_json::to_string(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        writeln!(f, "{line}")
     }
 
     /// Load all records from the user's default training store. Returns

@@ -199,16 +199,41 @@ impl PcaProjection {
         (explained / self.total_variance).clamp(0.0, 1.0)
     }
 
-    /// Project a centered vector and return (x, y, z) plus the residual.
-    fn project_centered(&self, centered: &[f64]) -> (f64, f64, f64, f64) {
-        let x = dot(centered, &self.components[0]);
-        let y = dot(centered, &self.components[1]);
-        let z = dot(centered, &self.components[2]);
+    /// Allocation-free projection kernel: folds
+    /// `normalize(embedding) − mean` into the per-axis dot product
+    /// without materializing the intermediate `Vec<f64>`s that the
+    /// previous implementation allocated per call.
+    ///
+    /// Matches the numerics of `project_centered(&centered)` exactly:
+    /// each axis sums `(v_i/|v| − mean_i) · component_j[i]` over i,
+    /// plus a total-squared accumulator for the residual.
+    ///
+    /// Called by [`Self::project`] and [`Self::project_rich`]; callers
+    /// that want `SphericalPoint` or `ProjectedPoint` should use those.
+    fn project_xyz_residual(&self, embedding: &Embedding) -> (f64, f64, f64, f64) {
+        let values = &embedding.values;
+        debug_assert_eq!(values.len(), self.dim);
 
+        let mag = embedding.magnitude();
+        let inv_mag = if mag < f64::EPSILON { 0.0 } else { 1.0 / mag };
+
+        let mut x = 0.0f64;
+        let mut y = 0.0f64;
+        let mut z = 0.0f64;
+        let mut total_sq = 0.0f64;
+        let c0 = &self.components[0];
+        let c1 = &self.components[1];
+        let c2 = &self.components[2];
+        for i in 0..self.dim {
+            let n = values[i] * inv_mag;
+            let c = n - self.mean[i];
+            x += c * c0[i];
+            y += c * c1[i];
+            z += c * c2[i];
+            total_sq += c * c;
+        }
         let projected_sq = x * x + y * y + z * z;
-        let total_sq: f64 = centered.iter().map(|v| v * v).sum();
         let residual_sq = (total_sq - projected_sq).max(0.0);
-
         (x, y, z, residual_sq)
     }
 }
@@ -223,15 +248,7 @@ impl Projection for PcaProjection {
             embedding.dimension()
         );
 
-        let normalized = embedding.normalized();
-
-        let centered: Vec<f64> = normalized
-            .iter()
-            .zip(self.mean.iter())
-            .map(|(&v, &m)| v - m)
-            .collect();
-
-        let (x, y, z, _) = self.project_centered(&centered);
+        let (x, y, z, _) = self.project_xyz_residual(embedding);
 
         if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
@@ -255,19 +272,23 @@ impl Projection for PcaProjection {
         );
 
         let intensity = embedding.magnitude();
-        let normalized = embedding.normalized();
-
-        let centered: Vec<f64> = normalized
-            .iter()
-            .zip(self.mean.iter())
-            .map(|(&v, &m)| v - m)
-            .collect();
-
-        let (x, y, z, residual_sq) = self.project_centered(&centered);
+        let (x, y, z, residual_sq) = self.project_xyz_residual(embedding);
         let projection_magnitude = (x * x + y * y + z * z).sqrt();
 
-        // Per-point certainty: fraction of this point's variance captured by the 3 components
-        let total_sq: f64 = centered.iter().map(|v| v * v).sum();
+        // Per-point certainty: fraction of this point's variance captured
+        // by the 3 components. The fold below also drops the separate
+        // centered-vec allocation the old version materialized.
+        let inv_mag = if intensity < f64::EPSILON {
+            0.0
+        } else {
+            1.0 / intensity
+        };
+        let total_sq: f64 = (0..self.dim)
+            .map(|i| {
+                let c = embedding.values[i] * inv_mag - self.mean[i];
+                c * c
+            })
+            .sum();
         let certainty = if total_sq < f64::EPSILON {
             0.0
         } else {

@@ -18,3 +18,9 @@ edition = "2024"
 version = "0.1.0-alpha-2"
 license = "MIT"
 repository = "https://github.com/bkahan/sphereQL"
+
+[workspace.dependencies]
+# Data parallelism for O(n²) loops (corpus features, layout quality,
+# k-NN graph construction). Pinned at the workspace level so every
+# crate gets the same major.
+rayon = "1.10"

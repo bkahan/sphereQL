@@ -230,6 +230,7 @@ impl CorpusFeatures {
 
 // ── Similarity helpers ─────────────────────────────────────────────────
 
+#[derive(Copy, Clone)]
 enum SimilarityMode {
     IntraCategory,
     InterCategory,
@@ -240,27 +241,62 @@ fn pairwise_similarity(
     categories: &[String],
     mode: SimilarityMode,
 ) -> f64 {
+    use rayon::prelude::*;
+
     let n = embeddings.len();
     if n < 2 {
         return 0.0;
     }
-    let mut sum = 0.0;
-    let mut count: usize = 0;
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let same = categories[i] == categories[j];
-            let use_pair = match mode {
-                SimilarityMode::IntraCategory => same,
-                SimilarityMode::InterCategory => !same,
-            };
-            if !use_pair {
-                continue;
+
+    // Outer loop parallelized over `i`; each thread scans `j > i`
+    // serially into a `(sum, count)` pair, reduced at the end.
+    // `cosine_similarity` is pure, embeddings are read-only — trivial
+    // rayon pattern. At N = 10k, d = 128 this goes from ~13B serial
+    // ops to ~13B ÷ thread-count, landing in the low seconds instead
+    // of tens of seconds. Below a small threshold we stay serial to
+    // avoid the thread-pool startup cost dominating.
+    const SERIAL_THRESHOLD: usize = 256;
+    if n < SERIAL_THRESHOLD {
+        let mut sum = 0.0;
+        let mut count: usize = 0;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if pair_matches(mode, &categories[i], &categories[j]) {
+                    sum += cosine_similarity(&embeddings[i], &embeddings[j]);
+                    count += 1;
+                }
             }
-            sum += cosine_similarity(&embeddings[i], &embeddings[j]);
-            count += 1;
         }
+        return if count == 0 { 0.0 } else { sum / count as f64 };
     }
+
+    let (sum, count) = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let mut s = 0.0;
+            let mut c = 0usize;
+            for j in (i + 1)..n {
+                if pair_matches(mode, &categories[i], &categories[j]) {
+                    s += cosine_similarity(&embeddings[i], &embeddings[j]);
+                    c += 1;
+                }
+            }
+            (s, c)
+        })
+        .reduce(|| (0.0, 0), |(sa, ca), (sb, cb)| (sa + sb, ca + cb));
+
     if count == 0 { 0.0 } else { sum / count as f64 }
+}
+
+/// Predicate factored so the serial and parallel branches stay
+/// identical. Inlined by the optimizer; no cost at the call site.
+#[inline]
+fn pair_matches(mode: SimilarityMode, a: &str, b: &str) -> bool {
+    let same = a == b;
+    match mode {
+        SimilarityMode::IntraCategory => same,
+        SimilarityMode::InterCategory => !same,
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────

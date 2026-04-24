@@ -287,42 +287,84 @@ fn compute_quality(
         .map(|cp| cartesian_to_spherical(&normalized_mean(cp)))
         .collect();
 
+    // Every pair-scan below is embarrassingly parallel: pure reads
+    // over `positions` / `active_centers` / `assignments`, per-point
+    // scalar reductions. `rayon::par_iter` over the outer index
+    // keeps the reduce trivial and skips the thread-pool overhead
+    // for small corpora.
+    use rayon::prelude::*;
+    const SERIAL_THRESHOLD: usize = 128;
+
     let dispersion_score = if active_centers.len() >= 2 {
-        let mut sum = 0.0;
-        let mut count = 0;
-        for i in 0..active_centers.len() {
-            for j in (i + 1)..active_centers.len() {
-                sum += angular_distance(&active_centers[i], &active_centers[j]);
-                count += 1;
+        let len = active_centers.len();
+        let (sum, count) = if len < SERIAL_THRESHOLD {
+            let mut s = 0.0;
+            let mut c = 0u64;
+            for i in 0..len {
+                for j in (i + 1)..len {
+                    s += angular_distance(&active_centers[i], &active_centers[j]);
+                    c += 1;
+                }
             }
-        }
+            (s, c)
+        } else {
+            (0..len)
+                .into_par_iter()
+                .map(|i| {
+                    let mut s = 0.0;
+                    let mut c = 0u64;
+                    for j in (i + 1)..len {
+                        s += angular_distance(&active_centers[i], &active_centers[j]);
+                        c += 1;
+                    }
+                    (s, c)
+                })
+                .reduce(|| (0.0, 0), |(sa, ca), (sb, cb)| (sa + sb, ca + cb))
+        };
         (sum / count as f64 / PI).clamp(0.0, 1.0)
     } else {
         0.0
     };
 
-    // Overlap: fraction of pairs within threshold
-    let mut overlap_count = 0u64;
+    // Overlap: fraction of pairs within threshold.
     let total_pairs = (n * (n - 1)) / 2;
-    for i in 0..n {
-        for j in (i + 1)..n {
-            if angular_distance(&positions[i], &positions[j]) < OVERLAP_THRESHOLD {
-                overlap_count += 1;
+    let overlap_count: u64 = if n < SERIAL_THRESHOLD {
+        let mut c = 0u64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if angular_distance(&positions[i], &positions[j]) < OVERLAP_THRESHOLD {
+                    c += 1;
+                }
             }
         }
-    }
+        c
+    } else {
+        (0..n)
+            .into_par_iter()
+            .map(|i| {
+                let mut c = 0u64;
+                for j in (i + 1)..n {
+                    if angular_distance(&positions[i], &positions[j]) < OVERLAP_THRESHOLD {
+                        c += 1;
+                    }
+                }
+                c
+            })
+            .sum()
+    };
     let overlap_score = if total_pairs > 0 {
         overlap_count as f64 / total_pairs as f64
     } else {
         0.0
     };
 
-    // Silhouette coefficient
+    // Silhouette coefficient — per-point independent scans. Parallel
+    // over the outer `i` is safe since each worker builds a local
+    // scalar; the reduction is a single f64 sum.
     let silhouette_score = if num_clusters <= 1 || active_centers.len() <= 1 {
         0.0
     } else {
-        let mut sil_sum = 0.0;
-        for i in 0..n {
+        let per_point = |i: usize| -> f64 {
             let ci = assignments[i];
 
             // a(i) = mean distance to same-cluster members
@@ -366,9 +408,14 @@ fn compute_quality(
             }
 
             let denom = a.max(b);
-            let s = if denom > 0.0 { (b - a) / denom } else { 0.0 };
-            sil_sum += s;
-        }
+            if denom > 0.0 { (b - a) / denom } else { 0.0 }
+        };
+
+        let sil_sum: f64 = if n < SERIAL_THRESHOLD {
+            (0..n).map(per_point).sum()
+        } else {
+            (0..n).into_par_iter().map(per_point).sum()
+        };
         sil_sum / n as f64
     };
 
