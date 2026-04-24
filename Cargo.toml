@@ -10,6 +10,7 @@ members = [
     "sphereql-python",
     "sphereql-corpus",
     "sphereql",
+    "scripts/check-drift",
 ]
 resolver = "2"
 

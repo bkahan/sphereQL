@@ -1,0 +1,391 @@
+# Bindings drift allowlist.
+#
+# Each entry says: this public item from `sphereql-embed` or
+# `sphereql-layout` is known not to have a 1:1 binding in
+# `sphereql-python` / `sphereql-wasm`. The `reason` field is a short
+# human-readable explanation — reviewers read it when auditing drift.
+#
+# Add an entry when:
+#   1. The item is surfaced indirectly (e.g. via a dict/config param,
+#      or aggregated into a larger binding), OR
+#   2. The item is genuinely internal / Rust-only, OR
+#   3. The item doesn't map cleanly to Python/JS (generic traits, etc.).
+#
+# Remove an entry when the item gets a proper binding.
+#
+# Run the checker with:
+#   cargo run -p check-drift
+
+# ── Config structs (exposed via dict/JSON parameter, not as Python classes) ──
+
+[[exempt]]
+name = "PipelineConfig"
+reason = "passed as dict/JSON to Pipeline(..., config=…) / Pipeline.newWithConfig"
+
+[[exempt]]
+name = "BridgeConfig"
+reason = "sub-config inside PipelineConfig; reached via the outer dict"
+
+[[exempt]]
+name = "InnerSphereConfig"
+reason = "sub-config inside PipelineConfig"
+
+[[exempt]]
+name = "RoutingConfig"
+reason = "sub-config inside PipelineConfig"
+
+[[exempt]]
+name = "LaplacianConfig"
+reason = "sub-config inside PipelineConfig"
+
+[[exempt]]
+name = "SpatialConfig"
+reason = "sub-config inside PipelineConfig"
+
+[[exempt]]
+name = "QualityConfig"
+reason = "internal pipeline knob; not user-facing"
+
+[[exempt]]
+name = "ProjectionKind"
+reason = "exposed as string via Pipeline.projection_kind / config['projection_kind']"
+
+[[exempt]]
+name = "RadialStrategy"
+reason = "exposed as string or float on every projection class (`radial=` arg)"
+
+[[exempt]]
+name = "SearchSpace"
+reason = "passed as dict to auto_tune(search_space=…)"
+
+[[exempt]]
+name = "SearchStrategy"
+reason = "exposed as string name to auto_tune(strategy=…)"
+
+# ── Pipeline internals (used via the Pipeline wrapper class) ──
+
+[[exempt]]
+name = "SphereQLPipeline"
+reason = "bound as `Pipeline` class in Python / `Pipeline` in WASM"
+
+[[exempt]]
+name = "PipelineInput"
+reason = "assembled by the Pipeline constructor from categories + embeddings args"
+
+[[exempt]]
+name = "PipelineQuery"
+reason = "assembled internally from query embedding args"
+
+[[exempt]]
+name = "SphereQLOutput"
+reason = "internal enum returned by Pipeline.query; each variant surfaces as its own binding type"
+
+[[exempt]]
+name = "SphereQLQuery"
+reason = "internal enum; resolvers map to named binding methods (nearest, drill_down, …)"
+
+[[exempt]]
+name = "PipelineError"
+reason = "propagated as PyValueError / JsError via From impls"
+
+[[exempt]]
+name = "ProjectionError"
+reason = "propagated as PyValueError / JsError via From impls"
+
+[[exempt]]
+name = "EmbedderError"
+reason = "propagated as GraphQL / binding error via From impls"
+
+[[exempt]]
+name = "ConfiguredProjection"
+reason = "internal enum inside SphereQLPipeline; individual projections are bound directly"
+
+# ── Category-layer internals (aggregated into bound types) ──
+
+[[exempt]]
+name = "CategoryLayer"
+reason = "aggregated into PyCategorySummary + PyInnerSphereReport exposure"
+
+[[exempt]]
+name = "CategoryGraph"
+reason = "aggregated — edges surfaced via category_neighbors / category_concept_path"
+
+[[exempt]]
+name = "CategoryEdge"
+reason = "internal graph edge; surfaced via bridges on CategoryPathStep"
+
+[[exempt]]
+name = "CategoryPath"
+reason = "bound as PyCategoryPath / CategoryPathOut"
+
+[[exempt]]
+name = "BridgeClassification"
+reason = "exposed as string on BridgeItemOut / PyBridgeItem"
+
+[[exempt]]
+name = "InnerProjection"
+reason = "internal projection wrapper inside CategoryLayer; used by drill_down"
+
+# ── Metalearning internals ──
+
+[[exempt]]
+name = "MetaTrainingRecord"
+reason = "passed as dict/JSON to MetaModel.fit and load/append_to_default_store"
+
+[[exempt]]
+name = "TuneReport"
+reason = "bound as TuneReportOut in WASM and a dict in Python"
+
+[[exempt]]
+name = "TrialRecord"
+reason = "internal auto-tuner state; summary surfaced via TuneReport"
+
+[[exempt]]
+name = "FeedbackSummary"
+reason = "bound as FeedbackSummaryOut in WASM, dict in Python"
+
+[[exempt]]
+name = "CompositeMetric"
+reason = "selected by metric-name string in auto_tune"
+
+[[exempt]]
+name = "TerritorialHealth"
+reason = "selected by metric-name string in auto_tune"
+
+[[exempt]]
+name = "BridgeCoherence"
+reason = "selected by metric-name string in auto_tune"
+
+[[exempt]]
+name = "ClusterSilhouette"
+reason = "selected by metric-name string in auto_tune"
+
+[[exempt]]
+name = "GraphModularity"
+reason = "selected by metric-name string in auto_tune"
+
+[[exempt]]
+name = "TextEmbedder"
+reason = "Rust trait — user implements on their own newtype, no 1:1 binding"
+
+[[exempt]]
+name = "NoEmbedder"
+reason = "GraphQL context default; not exposed at the Python/WASM boundary"
+
+[[exempt]]
+name = "FnEmbedder"
+reason = "Rust-side closure adapter for TextEmbedder; not user-facing in bindings"
+
+# ── Confidence / quality / navigator aggregates ──
+
+[[exempt]]
+name = "ConfidenceLevel"
+reason = "nested inside QualitySignal; surfaced numerically via certainty / intensity"
+
+[[exempt]]
+name = "QualitySignal"
+reason = "aggregated into NearestOut certainty + intensity fields"
+
+[[exempt]]
+name = "WarningSeverity"
+reason = "exposed as string on ProjectionWarningOut / PyProjectionWarning"
+
+[[exempt]]
+name = "SpatialQuality"
+reason = "internal Monte Carlo cache populated at build time; stats surface via CategorySummary"
+
+[[exempt]]
+name = "VoronoiReport"
+reason = "internal; aggregated into run_navigator result"
+
+[[exempt]]
+name = "CurvatureReport"
+reason = "internal; aggregated into run_navigator result"
+
+[[exempt]]
+name = "AntipodalItem"
+reason = "internal; aggregated into run_navigator antipodal report"
+
+[[exempt]]
+name = "CategoryCapInfo"
+reason = "internal SpatialQuality field"
+
+[[exempt]]
+name = "CategoryCurvatureSignature"
+reason = "internal curvature-analysis intermediate"
+
+[[exempt]]
+name = "CategoryExclusivity"
+reason = "internal SpatialQuality field"
+
+[[exempt]]
+name = "GeodesicSweepItem"
+reason = "internal navigator sweep result"
+
+[[exempt]]
+name = "GeodesicSweepReport"
+reason = "internal navigator sweep result"
+
+[[exempt]]
+name = "KnowledgeCoverageReport"
+reason = "internal; aggregated into run_navigator report"
+
+[[exempt]]
+name = "OverlapPair"
+reason = "internal SpatialQuality field"
+
+[[exempt]]
+name = "OverlapReport"
+reason = "internal; aggregated into run_navigator report"
+
+[[exempt]]
+name = "PairIntersection"
+reason = "internal SpatialQuality field"
+
+# ── Concept-graph internals (aggregated into ConceptPath / DetectGlobs) ──
+
+[[exempt]]
+name = "ConceptGlob"
+reason = "internal glob-detection type; surface is Glob / GlobSummary → GlobOut"
+
+[[exempt]]
+name = "ConceptPath"
+reason = "surfaced via PathResult → PathOut"
+
+# ── Embedding plumbing (used internally; inputs take raw arrays at boundaries) ──
+
+[[exempt]]
+name = "Embedding"
+reason = "Rust struct wrapping `Vec<f64>`; bindings take raw numeric arrays"
+
+[[exempt]]
+name = "EmbeddingIndex"
+reason = "internal spatial index inside SphereQLPipeline"
+
+[[exempt]]
+name = "EmbeddingIndexBuilder"
+reason = "internal builder inside SphereQLPipeline"
+
+[[exempt]]
+name = "EmbeddingItem"
+reason = "internal; each corpus entry is constructed from bindings input"
+
+[[exempt]]
+name = "EmbeddingMapper"
+reason = "internal utility for mapping category layers"
+
+[[exempt]]
+name = "ExportedPoint"
+reason = "returned via Pipeline.exported_points / to_json / to_csv as serde shapes"
+
+# ── Layout crate (`sphereql-layout`) — not currently exposed in bindings ──
+
+[[exempt]]
+name = "ManagedLayout"
+reason = "layout crate — exposed via graphql SpatialIndex builder, not Python/WASM yet"
+
+[[exempt]]
+name = "ClusteredLayout"
+reason = "layout crate — builder strategy, not in bindings"
+
+[[exempt]]
+name = "ForceDirectedLayout"
+reason = "layout crate — builder strategy, not in bindings"
+
+[[exempt]]
+name = "UniformLayout"
+reason = "layout crate — builder strategy, not in bindings"
+
+[[exempt]]
+name = "LayoutEntry"
+reason = "layout-crate type, not surfaced in Python/WASM bindings"
+
+[[exempt]]
+name = "LayoutQuality"
+reason = "layout-crate quality metric"
+
+[[exempt]]
+name = "LayoutResult"
+reason = "layout-crate result type"
+
+[[exempt]]
+name = "SlicingManifold"
+reason = "layout-crate analysis type"
+
+[[exempt]]
+name = "SemanticQuery"
+reason = "layout-crate query type"
+
+# ── Free functions used internally ──
+
+[[exempt]]
+name = "antipodal_analysis"
+reason = "internal navigator helper; result aggregated into run_navigator"
+
+[[exempt]]
+name = "category_geodesic_sweep"
+reason = "internal navigator helper"
+
+[[exempt]]
+name = "category_path_deviation"
+reason = "internal navigator helper"
+
+[[exempt]]
+name = "compute_dispersion"
+reason = "internal stats helper"
+
+[[exempt]]
+name = "compute_overlap"
+reason = "internal stats helper"
+
+[[exempt]]
+name = "compute_quality"
+reason = "internal layout-quality helper"
+
+[[exempt]]
+name = "curvature_analysis"
+reason = "internal navigator helper"
+
+[[exempt]]
+name = "default_timestamp"
+reason = "internal feedback/meta helper"
+
+[[exempt]]
+name = "detect_domain_groups"
+reason = "called internally by SphereQLPipeline; surfaced via Pipeline.domain_groups"
+
+[[exempt]]
+name = "fit_projection_for_config"
+reason = "internal factory; callers use Pipeline constructors"
+
+[[exempt]]
+name = "gap_confidence"
+reason = "internal confidence helper"
+
+[[exempt]]
+name = "knowledge_coverage"
+reason = "internal navigator helper"
+
+[[exempt]]
+name = "lune_analysis"
+reason = "internal navigator helper"
+
+[[exempt]]
+name = "overlap_analysis"
+reason = "internal navigator helper"
+
+[[exempt]]
+name = "point_quality"
+reason = "internal confidence helper"
+
+[[exempt]]
+name = "run_full_analysis"
+reason = "internal navigator top-level; exposed as run_navigator in bindings"
+
+[[exempt]]
+name = "sphereql_home_dir"
+reason = "internal filesystem helper"
+
+[[exempt]]
+name = "voronoi_analysis"
+reason = "internal navigator helper"
