@@ -19,12 +19,12 @@ pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
 [dependencies]
-sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core", optional = true }
-sphereql-index = { version = "0.1.0-alpha", path = "../sphereql-index", optional = true }
-sphereql-layout = { version = "0.1.0-alpha", path = "../sphereql-layout", optional = true }
-sphereql-embed = { version = "0.1.0-alpha", path = "../sphereql-embed", optional = true }
-sphereql-graphql = { version = "0.1.0-alpha", path = "../sphereql-graphql", optional = true }
-sphereql-vectordb = { version = "0.1.0-alpha", path = "../sphereql-vectordb", optional = true }
+sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core", optional = true }
+sphereql-index = { version = "0.2.0-alpha", path = "../sphereql-index", optional = true }
+sphereql-layout = { version = "0.2.0-alpha", path = "../sphereql-layout", optional = true }
+sphereql-embed = { version = "0.2.0-alpha", path = "../sphereql-embed", optional = true }
+sphereql-graphql = { version = "0.2.0-alpha", path = "../sphereql-graphql", optional = true }
+sphereql-vectordb = { version = "0.2.0-alpha", path = "../sphereql-vectordb", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

@@ -76,13 +76,17 @@ jobs:
 
   python:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Create virtualenv and install tools
         run: |
           python -m venv .venv
@@ -98,3 +102,49 @@ jobs:
         run: |
           source ../.venv/bin/activate
           pytest -v
+
+  python-stubs:
+    # Verifies the checked-in `__init__.pyi` matches what
+    # `pyo3-stub-gen` would regenerate from the current bindings.
+    # Keeps stubs from drifting when someone forgets to re-run the
+    # generator after touching `#[pyclass]` / `#[pyfunction]` annotations.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Regenerate stubs
+        working-directory: sphereql-python
+        run: cargo run --bin gen-stubs
+      - name: Fail if stubs are stale
+        run: |
+          if ! git diff --exit-code sphereql-python/python/sphereql/__init__.pyi; then
+            echo "::error::python stubs are out of date — run \`cargo run --bin gen-stubs\` from sphereql-python/ and commit the diff"
+            exit 1
+          fi
+
+  wasm:
+    # Verifies the WASM bindings still build to `wasm32-unknown-unknown`
+    # (the default cargo test target on this host is native Linux; a
+    # break would only surface here otherwise).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build WASM crate to wasm32
+        run: cargo build -p sphereql-wasm --target wasm32-unknown-unknown
+
+  bindings-drift:
+    # Mirror of the separate bindings-drift workflow, but run on every
+    # PR (not just those touching embed/layout/bindings) so the
+    # allowlist can't silently rot.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run bindings drift check
+        run: cargo run -p check-drift

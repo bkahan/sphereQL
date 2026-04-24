@@ -1,7 +1,8 @@
 # Project status
 
-sphereQL is at **v0.1.0-alpha**. The core API is functional and covered
-by 450+ tests, but may change before 1.0.
+sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
+by 600+ tests, but may change before 1.0. See
+[CHANGELOG.md](../CHANGELOG.md) for the v0.1 → v0.2 diff.
 
 ## Bindings status
 
