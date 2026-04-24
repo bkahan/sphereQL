@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 
 use sphereql_core::SphericalPoint;
 use sphereql_embed::navigator;
@@ -6,6 +7,7 @@ use sphereql_embed::pipeline::SphereQLPipeline;
 
 use crate::pipeline::Pipeline;
 
+#[gen_stub_pyclass]
 #[pyclass(name = "NavigatorConfig", from_py_object)]
 #[derive(Clone)]
 pub struct PyNavigatorConfig {
@@ -27,6 +29,7 @@ pub struct PyNavigatorConfig {
     pub gap_sharpness: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyNavigatorConfig {
     #[new]
@@ -82,6 +85,7 @@ impl From<&PyNavigatorConfig> for navigator::NavigatorConfig {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "AntipodalReport", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyAntipodalReport {
@@ -95,6 +99,7 @@ pub struct PyAntipodalReport {
     pub dominant_antipodal_category: Option<String>,
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "CoverageReport", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyCoverageReport {
@@ -110,6 +115,7 @@ pub struct PyCoverageReport {
     pub total_samples: usize,
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "VoronoiCell", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyVoronoiCell {
@@ -127,6 +133,7 @@ pub struct PyVoronoiCell {
     pub voronoi_neighbors: Vec<String>,
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "CurvatureTriple", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyCurvatureTriple {
@@ -136,6 +143,7 @@ pub struct PyCurvatureTriple {
     pub excess: f64,
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "LuneReport", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyLuneReport {
@@ -153,6 +161,7 @@ pub struct PyLuneReport {
     pub asymmetry: f64,
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "NavigatorReport", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyNavigatorReport {
@@ -174,6 +183,7 @@ pub struct PyNavigatorReport {
     pub explained_variance_ratio: f64,
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = (pipeline, *, config=None))]
 pub fn run_navigator(
