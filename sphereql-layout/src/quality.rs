@@ -45,7 +45,10 @@ pub fn compute_dispersion(positions: &[SphericalPoint]) -> f64 {
     let min_dist: f64 = if n < SERIAL_THRESHOLD {
         (0..n).map(per_i_min).fold(f64::MAX, f64::min)
     } else {
-        (0..n).into_par_iter().map(per_i_min).reduce(|| f64::MAX, f64::min)
+        (0..n)
+            .into_par_iter()
+            .map(per_i_min)
+            .reduce(|| f64::MAX, f64::min)
     };
 
     (min_dist / ideal_spacing).clamp(0.0, 1.0)

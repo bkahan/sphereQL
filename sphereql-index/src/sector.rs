@@ -36,10 +36,7 @@ impl<T: SpatialItem> SectorIndex<T> {
 
     /// Fallible constructor. Returns [`IndexError::ZeroDivisions`] if
     /// either axis is 0; the binning math relies on non-zero moduli.
-    pub fn try_new(
-        theta_divisions: usize,
-        phi_divisions: usize,
-    ) -> Result<Self, IndexError> {
+    pub fn try_new(theta_divisions: usize, phi_divisions: usize) -> Result<Self, IndexError> {
         if theta_divisions == 0 {
             return Err(IndexError::ZeroDivisions {
                 field: "theta_divisions",
@@ -534,7 +531,9 @@ mod tests {
     fn try_new_rejects_zero_theta_divisions() {
         assert!(matches!(
             SectorIndex::<TestItem>::try_new(0, 4),
-            Err(IndexError::ZeroDivisions { field: "theta_divisions" })
+            Err(IndexError::ZeroDivisions {
+                field: "theta_divisions"
+            })
         ));
     }
 
@@ -542,7 +541,9 @@ mod tests {
     fn try_new_rejects_zero_phi_divisions() {
         assert!(matches!(
             SectorIndex::<TestItem>::try_new(4, 0),
-            Err(IndexError::ZeroDivisions { field: "phi_divisions" })
+            Err(IndexError::ZeroDivisions {
+                field: "phi_divisions"
+            })
         ));
     }
 

@@ -102,10 +102,7 @@ impl PcaProjection {
     /// dimensionality disagrees with the first. Previously these paths
     /// panicked via `assert!`, which surfaced as a `PanicException` in
     /// Python / WASM bindings.
-    pub fn fit(
-        embeddings: &[Embedding],
-        radial: RadialStrategy,
-    ) -> Result<Self, ProjectionError> {
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
         if embeddings.is_empty() {
             return Err(ProjectionError::EmptyCorpus);
         }

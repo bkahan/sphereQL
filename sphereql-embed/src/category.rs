@@ -659,8 +659,7 @@ impl CategoryLayer {
             // Fit inner linear PCA. On failure (too few members, dim
             // too low, etc.) skip this category's inner sphere
             // silently — the outer sphere still covers queries.
-            let Ok(inner_pca) = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0))
-            else {
+            let Ok(inner_pca) = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0)) else {
                 continue;
             };
             let inner_linear_evr = inner_pca.explained_variance_ratio();

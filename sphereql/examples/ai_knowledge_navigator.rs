@@ -721,7 +721,8 @@ fn main() {
     for (query_desc, features) in &test_queries {
         let qvec = embed(features, 42 + query_desc.len() as u64);
         let emb = sphereql::embed::Embedding::new(qvec.clone());
-        let nearby = layer.categories_near_embedding(&emb, pipeline.projection(), std::f64::consts::PI);
+        let nearby =
+            layer.categories_near_embedding(&emb, pipeline.projection(), std::f64::consts::PI);
 
         println!("  Query: \"{}\"", query_desc);
         print!("    Top categories: ");
@@ -917,7 +918,8 @@ fn main() {
         7777,
     );
     let me_emb = sphereql::embed::Embedding::new(music_econ_q.clone());
-    let me_nearby = layer.categories_near_embedding(&me_emb, pipeline.projection(), std::f64::consts::PI);
+    let me_nearby =
+        layer.categories_near_embedding(&me_emb, pipeline.projection(), std::f64::consts::PI);
     for (ci, dist) in me_nearby.iter().take(5) {
         println!(
             "    {:<22} {:.2}°",

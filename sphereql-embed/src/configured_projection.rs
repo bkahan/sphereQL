@@ -195,12 +195,17 @@ mod tests {
     #[test]
     fn explained_variance_ratio_in_range_for_every_variant() {
         let corpus = toy_corpus();
-        let pca: ConfiguredProjection =
-            PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
+        let pca: ConfiguredProjection = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0))
+            .unwrap()
+            .into();
         let kpca: ConfiguredProjection =
-            KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
+            KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0))
+                .unwrap()
+                .into();
         let lap: ConfiguredProjection =
-            LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
+            LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0))
+                .unwrap()
+                .into();
         for cp in &[pca, kpca, lap] {
             let r = cp.explained_variance_ratio();
             assert!((0.0..=1.0).contains(&r), "{:?}: {r}", cp);
@@ -210,8 +215,9 @@ mod tests {
     #[test]
     fn debug_formats_kind_not_inner() {
         let corpus = toy_corpus();
-        let pca: ConfiguredProjection =
-            PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
+        let pca: ConfiguredProjection = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0))
+            .unwrap()
+            .into();
         assert_eq!(format!("{:?}", pca), "ConfiguredProjection::Pca");
     }
 }

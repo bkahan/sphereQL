@@ -534,10 +534,7 @@ mod tests {
 
     #[test]
     fn append_to_migrates_legacy_array_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "sphereql_fb_migrate_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("sphereql_fb_migrate_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let path = dir.join("events.json");
 

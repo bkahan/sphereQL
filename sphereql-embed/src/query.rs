@@ -154,11 +154,7 @@ impl<P: Projection> EmbeddingIndex<P> {
     /// The shared `Arc` is cheap to clone, so callers can drop the lock
     /// while they run Dijkstra. Previously `concept_path` rebuilt the
     /// entire graph on every call — O(n² · k) per query.
-    fn knn_adjacency(
-        &self,
-        items: &[&EmbeddingItem],
-        k: usize,
-    ) -> Arc<Vec<Vec<(usize, f64)>>> {
+    fn knn_adjacency(&self, items: &[&EmbeddingItem], k: usize) -> Arc<Vec<Vec<(usize, f64)>>> {
         {
             let cache = self.knn_cache.lock().expect("knn cache mutex poisoned");
             if let Some(cached) = cache.as_ref()
@@ -420,8 +416,7 @@ impl<P: Projection> EmbeddingIndex<P> {
                 break;
             }
             for &(v, raw_d) in &adj[u] {
-                let (w, _) =
-                    cross_category_weight(raw_d, &item_cats, u, v, bridge_strengths);
+                let (w, _) = cross_category_weight(raw_d, &item_cats, u, v, bridge_strengths);
                 let nd = dist[u] + w;
                 if nd < dist[v] {
                     dist[v] = nd;
@@ -440,14 +435,11 @@ impl<P: Projection> EmbeddingIndex<P> {
         let mut cur = target_idx;
         loop {
             let edge_info = prev[cur].and_then(|p| {
-                adj[p]
-                    .iter()
-                    .find(|&&(v, _)| v == cur)
-                    .map(|&(_, raw_d)| {
-                        let (_, bs) =
-                            cross_category_weight(raw_d, &item_cats, p, cur, bridge_strengths);
-                        (raw_d, bs)
-                    })
+                adj[p].iter().find(|&&(v, _)| v == cur).map(|&(_, raw_d)| {
+                    let (_, bs) =
+                        cross_category_weight(raw_d, &item_cats, p, cur, bridge_strengths);
+                    (raw_d, bs)
+                })
             });
             let hop_distance = edge_info.map_or(0.0, |(d, _)| d);
             let bridge_str = edge_info.and_then(|(_, bs)| bs);

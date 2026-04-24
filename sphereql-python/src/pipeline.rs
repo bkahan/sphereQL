@@ -16,9 +16,8 @@ fn extract_config(config: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Pipeline
     match config {
         None => Ok(None),
         Some(obj) => {
-            let cfg: PipelineConfig = pythonize::depythonize(obj).map_err(|e| {
-                PyValueError::new_err(format!("invalid PipelineConfig dict: {e}"))
-            })?;
+            let cfg: PipelineConfig = pythonize::depythonize(obj)
+                .map_err(|e| PyValueError::new_err(format!("invalid PipelineConfig dict: {e}")))?;
             Ok(Some(cfg))
         }
     }
@@ -240,11 +239,12 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        let result = py.detach(|| {
-            self.inner
-                .query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner
+                    .query(SphereQLQuery::SimilarAbove { min_cosine }, &pq)
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::KNearest(items) => Ok(items.iter().map(Nearest::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -290,17 +290,18 @@ impl Pipeline {
             None => vec![0.0; self.dim],
         };
         let pq = PipelineQuery { embedding };
-        let result = py.detach(|| {
-            self.inner.query(
-                SphereQLQuery::ConceptPath {
-                    source_id,
-                    target_id,
-                    graph_k,
-                },
-                &pq,
-            )
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner.query(
+                    SphereQLQuery::ConceptPath {
+                        source_id,
+                        target_id,
+                        graph_k,
+                    },
+                    &pq,
+                )
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::ConceptPath(path) => Ok(path.as_ref().map(Path::from)),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -360,11 +361,12 @@ impl Pipeline {
             None => vec![0.0; self.dim],
         };
         let pq = PipelineQuery { embedding };
-        let result = py.detach(|| {
-            self.inner
-                .query(SphereQLQuery::DetectGlobs { k, max_k }, &pq)
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner
+                    .query(SphereQLQuery::DetectGlobs { k, max_k }, &pq)
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::Globs(globs) => Ok(globs.iter().map(Glob::from).collect()),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -405,11 +407,12 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        let result = py.detach(|| {
-            self.inner
-                .query(SphereQLQuery::LocalManifold { neighborhood_k }, &pq)
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner
+                    .query(SphereQLQuery::LocalManifold { neighborhood_k }, &pq)
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::LocalManifold(m) => Ok(Manifold::from(&m)),
             _ => Err(PyValueError::new_err("unexpected output type")),
@@ -493,16 +496,17 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: vec![0.0; self.dim],
         };
-        let result = py.detach(|| {
-            self.inner.query(
-                SphereQLQuery::CategoryConceptPath {
-                    source_category,
-                    target_category,
-                },
-                &pq,
-            )
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner.query(
+                    SphereQLQuery::CategoryConceptPath {
+                        source_category,
+                        target_category,
+                    },
+                    &pq,
+                )
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::CategoryConceptPath(path) => {
                 Ok(path.as_ref().map(PyCategoryPath::from))
@@ -521,11 +525,12 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: vec![0.0; self.dim],
         };
-        let result = py.detach(|| {
-            self.inner
-                .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner
+                    .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::CategoryNeighbors(summaries) => {
                 Ok(summaries.iter().map(PyCategorySummary::from).collect())
@@ -547,11 +552,12 @@ impl Pipeline {
         let pq = PipelineQuery {
             embedding: emb.values,
         };
-        let result = py.detach(|| {
-            self.inner
-                .query(SphereQLQuery::DrillDown { category, k }, &pq)
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = py
+            .detach(|| {
+                self.inner
+                    .query(SphereQLQuery::DrillDown { category, k }, &pq)
+            })
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         match result {
             SphereQLOutput::DrillDown(results) => {
                 Ok(results.iter().map(PyDrillDown::from).collect())

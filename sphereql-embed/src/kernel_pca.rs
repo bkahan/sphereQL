@@ -1,6 +1,8 @@
 use sphereql_core::{CartesianPoint, SphericalPoint, cartesian_to_spherical};
 
-use crate::projection::{ProjectionError, SplitMix64, dot, normalize_vec, project_xyz_to_spherical};
+use crate::projection::{
+    ProjectionError, SplitMix64, dot, normalize_vec, project_xyz_to_spherical,
+};
 use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
 use crate::projection::Projection;
@@ -87,10 +89,7 @@ impl KernelPcaProjection {
     /// embeddings divided by √2, so that the kernel value at the median
     /// distance is exp(−1) ≈ 0.37. This is a standard heuristic in the
     /// kernel methods literature.
-    pub fn fit(
-        embeddings: &[Embedding],
-        radial: RadialStrategy,
-    ) -> Result<Self, ProjectionError> {
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
         Self::fit_impl(embeddings, None, radial)
     }
 
@@ -872,9 +871,8 @@ mod tests {
         use crate::projection::PcaProjection;
         let corpus = corpus_10d();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
-        let kpca =
-            KernelPcaProjection::fit_with_sigma(&corpus, 100.0, RadialStrategy::Fixed(1.0))
-                .unwrap();
+        let kpca = KernelPcaProjection::fit_with_sigma(&corpus, 100.0, RadialStrategy::Fixed(1.0))
+            .unwrap();
         let query = emb(&[1.0, 0.1, 0.0, 0.05, 0.02, -0.01, 0.01, 0.0, 0.02, 0.01]);
         let pca_pt = pca.project(&query);
         let kpca_pt = kpca.project(&query);

@@ -109,10 +109,11 @@ impl ForceDirectedLayout {
             (min_local, count_local)
         };
         let (min_dist, overlap_count) = if n < SERIAL_THRESHOLD {
-            (0..n).map(per_i).fold(
-                (f64::MAX, 0u64),
-                |(ma, ca), (mb, cb)| (if mb < ma { mb } else { ma }, ca + cb),
-            )
+            (0..n)
+                .map(per_i)
+                .fold((f64::MAX, 0u64), |(ma, ca), (mb, cb)| {
+                    (if mb < ma { mb } else { ma }, ca + cb)
+                })
         } else {
             (0..n).into_par_iter().map(per_i).reduce(
                 || (f64::MAX, 0u64),

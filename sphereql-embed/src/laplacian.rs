@@ -96,10 +96,7 @@ pub struct LaplacianEigenmapProjection {
 
 impl LaplacianEigenmapProjection {
     /// Fit with default parameters (`k=15`, `active_threshold=0.05`).
-    pub fn fit(
-        embeddings: &[Embedding],
-        radial: RadialStrategy,
-    ) -> Result<Self, ProjectionError> {
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
         Self::fit_with_params(
             embeddings,
             DEFAULT_K_NEIGHBORS,

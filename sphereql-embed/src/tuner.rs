@@ -357,8 +357,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     // `PipelineInput` is owned — move the Vec<f64>s straight into the
     // Embedding wrappers instead of cloning each row.
     let categories = input.categories;
-    let embeddings: Vec<Embedding> =
-        input.embeddings.into_iter().map(Embedding::new).collect();
+    let embeddings: Vec<Embedding> = input.embeddings.into_iter().map(Embedding::new).collect();
 
     let mut prefit: HashMap<ProjectionFitKey, ConfiguredProjection> = HashMap::new();
     let mut trials: Vec<TrialRecord> = Vec::new();

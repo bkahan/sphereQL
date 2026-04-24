@@ -137,11 +137,7 @@ macro_rules! impl_vector_bridge_methods {
             /// pipeline using PCA with the bridge's default radial
             /// strategy and volumetric settings.
             #[pyo3(signature = (*, category_key="category"))]
-            fn build_pipeline(
-                &mut self,
-                py: Python<'_>,
-                category_key: &str,
-            ) -> PyResult<()> {
+            fn build_pipeline(&mut self, py: Python<'_>, category_key: &str) -> PyResult<()> {
                 let extractor = category_extractor(category_key);
                 py.detach(|| self.rt.block_on(self.bridge.build_pipeline(extractor)))
                     .map_err(vstore_err)?;
@@ -181,9 +177,7 @@ macro_rules! impl_vector_bridge_methods {
                     .detach(|| self.bridge.query(SphereQLQuery::Nearest { k }, &embedding))
                     .map_err(vstore_err)?;
                 match result {
-                    SphereQLOutput::Nearest(items) => {
-                        Ok(items.iter().map(Nearest::from).collect())
-                    }
+                    SphereQLOutput::Nearest(items) => Ok(items.iter().map(Nearest::from).collect()),
                     _ => Err(PyRuntimeError::new_err("unexpected output type")),
                 }
             }
@@ -271,10 +265,8 @@ macro_rules! impl_vector_bridge_methods {
                 self.check_query_dim(&embedding)?;
                 let result = py
                     .detach(|| {
-                        self.bridge.query(
-                            SphereQLQuery::LocalManifold { neighborhood_k },
-                            &embedding,
-                        )
+                        self.bridge
+                            .query(SphereQLQuery::LocalManifold { neighborhood_k }, &embedding)
                     })
                     .map_err(vstore_err)?;
                 match result {
@@ -368,10 +360,7 @@ macro_rules! impl_vector_bridge_methods {
             ) -> PyResult<(Vec<PyCategorySummary>, Vec<PyInnerSphereReport>)> {
                 let embedding = dummy_query_vec(self.projection_dim());
                 let result = py
-                    .detach(|| {
-                        self.bridge
-                            .query(SphereQLQuery::CategoryStats, &embedding)
-                    })
+                    .detach(|| self.bridge.query(SphereQLQuery::CategoryStats, &embedding))
                     .map_err(vstore_err)?;
                 match result {
                     SphereQLOutput::CategoryStats {

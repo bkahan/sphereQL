@@ -8,15 +8,15 @@ use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
 use sphereql_embed::domain_groups::DomainGroup;
+use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent};
+use sphereql_embed::meta_model::{
+    DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
+};
 use sphereql_embed::pipeline::{
     GlobSummary, NearestResult, PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline,
     SphereQLQuery,
 };
 use sphereql_embed::projection::Projection;
-use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent};
-use sphereql_embed::meta_model::{
-    DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
-};
 use sphereql_embed::quality_metric::{
     BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
     TerritorialHealth,
@@ -901,9 +901,8 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<String, JsError> {
     let space = opts.search_space.unwrap_or_default();
     let base = opts.base_config.unwrap_or_default();
 
-    let (_pipeline, report) =
-        rust_auto_tune(input, &space, metric.as_ref(), strategy, &base)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+    let (_pipeline, report) = rust_auto_tune(input, &space, metric.as_ref(), strategy, &base)
+        .map_err(|e| JsError::new(&e.to_string()))?;
 
     serde_json::to_string(&TuneReportOut::from_report(&report))
         .map_err(|e| JsError::new(&e.to_string()))
@@ -1077,8 +1076,7 @@ impl WasmFeedbackAggregator {
     /// Summarize all corpora as an array of summaries.
     #[wasm_bindgen(js_name = summarizeAll)]
     pub fn summarize_all(&self) -> Result<String, JsError> {
-        serde_json::to_string(&self.inner.summarize_all())
-            .map_err(|e| JsError::new(&e.to_string()))
+        serde_json::to_string(&self.inner.summarize_all()).map_err(|e| JsError::new(&e.to_string()))
     }
 }
 

@@ -139,18 +139,16 @@ pub fn auto_tune<'py>(
     let raw: Vec<Vec<f64>> = embs.iter().map(|e| e.values.clone()).collect();
 
     let base = match base_config {
-        Some(obj) => pythonize::depythonize::<PipelineConfig>(obj).map_err(|e| {
-            PyValueError::new_err(format!("invalid base_config dict: {e}"))
-        })?,
+        Some(obj) => pythonize::depythonize::<PipelineConfig>(obj)
+            .map_err(|e| PyValueError::new_err(format!("invalid base_config dict: {e}")))?,
         None => PipelineConfig::default(),
     };
 
     let metric_obj = resolve_metric(metric)?;
     let search_strategy = resolve_strategy(strategy, budget, seed, warmup, gamma)?;
     let space = match search_space {
-        Some(obj) => pythonize::depythonize::<SearchSpace>(obj).map_err(|e| {
-            PyValueError::new_err(format!("invalid search_space dict: {e}"))
-        })?,
+        Some(obj) => pythonize::depythonize::<SearchSpace>(obj)
+            .map_err(|e| PyValueError::new_err(format!("invalid search_space dict: {e}")))?,
         None => SearchSpace::default(),
     };
 
@@ -174,9 +172,8 @@ pub fn auto_tune<'py>(
     report_dict.set_item("best_score", report.best_score)?;
     report_dict.set_item(
         "best_config",
-        pythonize::pythonize(py, &report.best_config).map_err(|e| {
-            PyValueError::new_err(format!("failed to serialize best_config: {e}"))
-        })?,
+        pythonize::pythonize(py, &report.best_config)
+            .map_err(|e| PyValueError::new_err(format!("failed to serialize best_config: {e}")))?,
     )?;
     report_dict.set_item("trials_count", report.trials.len())?;
     report_dict.set_item("failures_count", report.failures.len())?;
@@ -225,9 +222,7 @@ pub fn corpus_features<'py>(
 
 // ── MetaModel ────────────────────────────────────────────────────────
 
-fn depythonize_records(
-    records: &Bound<'_, PyAny>,
-) -> PyResult<Vec<MetaTrainingRecord>> {
+fn depythonize_records(records: &Bound<'_, PyAny>) -> PyResult<Vec<MetaTrainingRecord>> {
     pythonize::depythonize(records)
         .map_err(|e| PyValueError::new_err(format!("invalid training records: {e}")))
 }
@@ -282,7 +277,10 @@ impl PyNearestNeighborMetaModel {
     }
 
     fn __repr__(&self) -> String {
-        format!("NearestNeighborMetaModel(records={})", self.inner.records().len())
+        format!(
+            "NearestNeighborMetaModel(records={})",
+            self.inner.records().len()
+        )
     }
 }
 

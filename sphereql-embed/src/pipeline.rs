@@ -984,9 +984,10 @@ pub fn fit_projection_for_config(
         ProjectionKind::Pca => Ok(ConfiguredProjection::Pca(
             PcaProjection::fit(embeddings, RadialStrategy::Magnitude)?.with_volumetric(true),
         )),
-        ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(
-            KernelPcaProjection::fit(embeddings, RadialStrategy::Magnitude)?,
-        )),
+        ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
+            embeddings,
+            RadialStrategy::Magnitude,
+        )?)),
         ProjectionKind::LaplacianEigenmap => {
             let lc = &config.laplacian;
             Ok(ConfiguredProjection::Laplacian(
@@ -1056,14 +1057,15 @@ mod tests {
     fn pipeline_globs() {
         let (input, query) = make_input(30, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(
-            SphereQLQuery::DetectGlobs {
-                k: Some(2),
-                max_k: 5,
-            },
-            &query,
-        )
-        .unwrap();
+        let result = pipeline
+            .query(
+                SphereQLQuery::DetectGlobs {
+                    k: Some(2),
+                    max_k: 5,
+                },
+                &query,
+            )
+            .unwrap();
         match result {
             SphereQLOutput::Globs(globs) => {
                 assert_eq!(globs.len(), 2);
@@ -1078,15 +1080,16 @@ mod tests {
     fn pipeline_concept_path() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(
-            SphereQLQuery::ConceptPath {
-                source_id: "s-0000",
-                target_id: "s-0015",
-                graph_k: 10,
-            },
-            &query,
-        )
-        .unwrap();
+        let result = pipeline
+            .query(
+                SphereQLQuery::ConceptPath {
+                    source_id: "s-0000",
+                    target_id: "s-0015",
+                    graph_k: 10,
+                },
+                &query,
+            )
+            .unwrap();
         match result {
             SphereQLOutput::ConceptPath(Some(path)) => {
                 assert!(path.steps.len() >= 2);
@@ -1211,14 +1214,15 @@ mod tests {
     fn pipeline_category_path_query() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(
-            SphereQLQuery::CategoryConceptPath {
-                source_category: "group_a",
-                target_category: "group_b",
-            },
-            &query,
-        )
-        .unwrap();
+        let result = pipeline
+            .query(
+                SphereQLQuery::CategoryConceptPath {
+                    source_category: "group_a",
+                    target_category: "group_b",
+                },
+                &query,
+            )
+            .unwrap();
         match result {
             SphereQLOutput::CategoryConceptPath(Some(path)) => {
                 assert!(path.steps.len() >= 2);
@@ -1252,14 +1256,15 @@ mod tests {
     fn pipeline_category_neighbors_query() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(
-            SphereQLQuery::CategoryNeighbors {
-                category: "group_a",
-                k: 5,
-            },
-            &query,
-        )
-        .unwrap();
+        let result = pipeline
+            .query(
+                SphereQLQuery::CategoryNeighbors {
+                    category: "group_a",
+                    k: 5,
+                },
+                &query,
+            )
+            .unwrap();
         match result {
             SphereQLOutput::CategoryNeighbors(neighbors) => {
                 assert_eq!(neighbors.len(), 1);
@@ -1273,14 +1278,15 @@ mod tests {
     fn pipeline_drill_down_query() {
         let (input, query) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let result = pipeline.query(
-            SphereQLQuery::DrillDown {
-                category: "group_a",
-                k: 5,
-            },
-            &query,
-        )
-        .unwrap();
+        let result = pipeline
+            .query(
+                SphereQLQuery::DrillDown {
+                    category: "group_a",
+                    k: 5,
+                },
+                &query,
+            )
+            .unwrap();
         match result {
             SphereQLOutput::DrillDown(results) => {
                 assert!(!results.is_empty());

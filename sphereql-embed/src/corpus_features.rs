@@ -171,8 +171,7 @@ impl CorpusFeatures {
                 }
             }
             if !inactive_magnitudes.is_empty() {
-                inactive_magnitudes
-                    .sort_by(|a, b| a.total_cmp(b));
+                inactive_magnitudes.sort_by(|a, b| a.total_cmp(b));
                 let median = inactive_magnitudes[inactive_magnitudes.len() / 2];
                 noise_sum += median;
                 noise_count += 1;
