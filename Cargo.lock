@@ -2395,6 +2395,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "sphereql-core",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

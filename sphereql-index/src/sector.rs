@@ -3,6 +3,16 @@ use sphereql_core::{Band, Cap, Contains, SphericalPoint, Wedge, angular_distance
 use std::collections::HashMap;
 use std::f64::consts::{PI, TAU};
 
+/// Reasons a spatial-index constructor can reject its arguments.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum IndexError {
+    /// A division count was zero. Every `SectorIndex` needs at least
+    /// one theta bin and one phi bin; zero would produce an empty
+    /// sectors array and divide-by-zero in [`SectorIndex::sector_index`].
+    #[error("{field} must be >= 1, got 0")]
+    ZeroDivisions { field: &'static str },
+}
+
 /// Angular sector index that partitions S² into a grid of theta × phi sectors.
 ///
 /// Each sector covers a rectangular region in (theta, phi) space. Items are
@@ -16,9 +26,30 @@ pub struct SectorIndex<T: SpatialItem> {
 }
 
 impl<T: SpatialItem> SectorIndex<T> {
+    /// Construct, panicking on zero divisions. Callers that build from
+    /// user-supplied values should prefer [`Self::try_new`], which
+    /// surfaces the rejection as a typed [`IndexError`] instead.
     pub fn new(theta_divisions: usize, phi_divisions: usize) -> Self {
-        assert!(theta_divisions >= 1, "theta_divisions must be >= 1");
-        assert!(phi_divisions >= 1, "phi_divisions must be >= 1");
+        Self::try_new(theta_divisions, phi_divisions)
+            .expect("SectorIndex::new called with zero divisions; use try_new to handle")
+    }
+
+    /// Fallible constructor. Returns [`IndexError::ZeroDivisions`] if
+    /// either axis is 0; the binning math relies on non-zero moduli.
+    pub fn try_new(
+        theta_divisions: usize,
+        phi_divisions: usize,
+    ) -> Result<Self, IndexError> {
+        if theta_divisions == 0 {
+            return Err(IndexError::ZeroDivisions {
+                field: "theta_divisions",
+            });
+        }
+        if phi_divisions == 0 {
+            return Err(IndexError::ZeroDivisions {
+                field: "phi_divisions",
+            });
+        }
 
         let total = theta_divisions * phi_divisions;
         let mut sectors = Vec::with_capacity(total);
@@ -26,12 +57,12 @@ impl<T: SpatialItem> SectorIndex<T> {
             sectors.push(Vec::new());
         }
 
-        Self {
+        Ok(Self {
             theta_divisions,
             phi_divisions,
             sectors,
             item_map: HashMap::new(),
-        }
+        })
     }
 
     pub fn insert(&mut self, item: T) {
@@ -500,15 +531,25 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "theta_divisions must be >= 1")]
-    fn zero_theta_divisions_panics() {
-        SectorIndex::<TestItem>::new(0, 4);
+    fn try_new_rejects_zero_theta_divisions() {
+        assert!(matches!(
+            SectorIndex::<TestItem>::try_new(0, 4),
+            Err(IndexError::ZeroDivisions { field: "theta_divisions" })
+        ));
     }
 
     #[test]
-    #[should_panic(expected = "phi_divisions must be >= 1")]
-    fn zero_phi_divisions_panics() {
-        SectorIndex::<TestItem>::new(4, 0);
+    fn try_new_rejects_zero_phi_divisions() {
+        assert!(matches!(
+            SectorIndex::<TestItem>::try_new(4, 0),
+            Err(IndexError::ZeroDivisions { field: "phi_divisions" })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "SectorIndex::new called with zero divisions")]
+    fn new_panics_on_zero_divisions() {
+        SectorIndex::<TestItem>::new(0, 4);
     }
 
     #[test]

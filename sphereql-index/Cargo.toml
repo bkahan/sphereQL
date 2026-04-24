@@ -9,6 +9,7 @@ readme = "README.md"
 
 [dependencies]
 sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
+thiserror = "2"
 
 [dev-dependencies]
 proptest = "1"
