@@ -1,5 +1,6 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 
 use sphereql_core::{
     CartesianPoint, GeoPoint, SphericalPoint, angular_distance as rust_angular_distance,
@@ -11,12 +12,14 @@ use sphereql_core::{
 
 // ── SphericalPoint ─────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "SphericalPoint", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PySphericalPoint {
     inner: SphericalPoint,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PySphericalPoint {
     #[new]
@@ -73,12 +76,14 @@ impl PySphericalPoint {
 
 // ── CartesianPoint ─────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "CartesianPoint", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyCartesianPoint {
     inner: CartesianPoint,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyCartesianPoint {
     #[new]
@@ -135,12 +140,14 @@ impl PyCartesianPoint {
 
 // ── GeoPoint ───────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "GeoPoint", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyGeoPoint {
     inner: GeoPoint,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyGeoPoint {
     #[new]
@@ -200,6 +207,7 @@ impl PyGeoPoint {
 // ── ProjectedPoint ─────────────────────────────────────────────────────
 
 #[cfg(feature = "embed")]
+#[gen_stub_pyclass]
 #[pyclass(name = "ProjectedPoint", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyProjectedPoint {
@@ -207,6 +215,7 @@ pub struct PyProjectedPoint {
 }
 
 #[cfg(feature = "embed")]
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyProjectedPoint {
     #[getter]
@@ -251,18 +260,21 @@ impl PyProjectedPoint {
 
 // ── Distance functions ─────────────────────────────────────────────────
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "angular_distance")]
 pub fn py_angular_distance(a: &PySphericalPoint, b: &PySphericalPoint) -> f64 {
     rust_angular_distance(a.inner(), b.inner())
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "great_circle_distance")]
 pub fn py_great_circle_distance(a: &PySphericalPoint, b: &PySphericalPoint, radius: f64) -> f64 {
     rust_great_circle_distance(a.inner(), b.inner(), radius)
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "chord_distance")]
 pub fn py_chord_distance(a: &PySphericalPoint, b: &PySphericalPoint) -> f64 {
@@ -271,12 +283,14 @@ pub fn py_chord_distance(a: &PySphericalPoint, b: &PySphericalPoint) -> f64 {
 
 // ── Conversion functions ───────────────────────────────────────────────
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "spherical_to_cartesian")]
 pub fn py_spherical_to_cartesian(p: &PySphericalPoint) -> PyCartesianPoint {
     PyCartesianPoint::from_inner(rust_spherical_to_cartesian(p.inner()))
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "cartesian_to_spherical")]
 pub fn py_cartesian_to_spherical(p: &PyCartesianPoint) -> PySphericalPoint {
@@ -287,12 +301,14 @@ pub fn py_cartesian_to_spherical(p: &PyCartesianPoint) -> PySphericalPoint {
     )))
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "spherical_to_geo")]
 pub fn py_spherical_to_geo(p: &PySphericalPoint) -> PyGeoPoint {
     PyGeoPoint::from_inner(rust_spherical_to_geo(p.inner()))
 }
 
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "geo_to_spherical")]
 pub fn py_geo_to_spherical(p: &PyGeoPoint) -> PySphericalPoint {

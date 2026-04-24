@@ -2,6 +2,7 @@ use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 use sphereql_embed::kernel_pca::KernelPcaProjection;
 use sphereql_embed::laplacian::{
@@ -101,11 +102,13 @@ pub(crate) fn extract_embeddings_2d(obj: &Bound<'_, PyAny>) -> PyResult<Vec<Embe
 
 // ── PcaProjection ──────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "PcaProjection")]
 pub struct PyPcaProjection {
     inner: PcaProjection,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyPcaProjection {
     #[classmethod]
@@ -205,11 +208,13 @@ impl PyPcaProjection {
 
 // ── RandomProjection ───────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "RandomProjection")]
 pub struct PyRandomProjection {
     inner: RandomProjection,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyRandomProjection {
     #[new]
@@ -280,11 +285,13 @@ impl PyRandomProjection {
 
 // ── KernelPcaProjection ───────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "KernelPcaProjection")]
 pub struct PyKernelPcaProjection {
     inner: KernelPcaProjection,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyKernelPcaProjection {
     #[classmethod]
@@ -398,11 +405,13 @@ impl PyKernelPcaProjection {
 // instead and typically keep category boundaries cleaner. See
 // `sphereql_embed::laplacian` for algorithmic details.
 
+#[gen_stub_pyclass]
 #[pyclass(name = "LaplacianEigenmap")]
 pub struct PyLaplacianEigenmapProjection {
     inner: LaplacianEigenmapProjection,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyLaplacianEigenmapProjection {
     /// Fit a Laplacian-eigenmap projection to a corpus.

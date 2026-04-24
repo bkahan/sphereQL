@@ -1,5 +1,10 @@
 use pyo3::prelude::*;
 
+// Registers stub-gen metadata collected from `#[gen_stub_*]` macros
+// across the crate. The `gen-stubs` bin calls `sphereql::stub_info()`
+// to drive `.pyi` generation.
+pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
+
 #[cfg(feature = "core")]
 mod core_types;
 #[cfg(feature = "embed")]

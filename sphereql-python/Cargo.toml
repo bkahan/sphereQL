@@ -10,8 +10,19 @@ publish = false
 
 [lib]
 name = "sphereql"
-crate-type = ["cdylib"]
+# `rlib` is needed so the `gen-stubs` bin can import the crate's
+# `stub_info()` function. `cdylib` is what maturin links for Python.
+crate-type = ["cdylib", "rlib"]
 doc = false
+
+[[bin]]
+name = "gen-stubs"
+path = "src/bin/gen_stubs.rs"
+# Only built when explicitly requested; it requires the default
+# features but must not be built with `extension-module` (which tells
+# the linker Python provides libpython at load time — true for the
+# cdylib, false for a standalone native binary).
+required-features = ["embed"]
 
 [features]
 # `extension-module` tells pyo3 to skip linking libpython — correct for the
@@ -34,6 +45,7 @@ full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 [dependencies]
 pyo3 = { version = "0.28", features = ["multiple-pymethods"] }
 numpy = "0.28"
+pyo3-stub-gen = "0.22"
 sphereql-core = { path = "../sphereql-core", optional = true }
 sphereql-index = { path = "../sphereql-index", optional = true }
 sphereql-layout = { path = "../sphereql-layout", optional = true }

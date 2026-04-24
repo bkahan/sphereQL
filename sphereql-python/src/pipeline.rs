@@ -1,5 +1,6 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::gen_stub_pyclass;
 
 use crate::projection::{PyPcaProjection, extract_embedding, extract_embeddings_2d};
 use crate::types::{
@@ -23,6 +24,7 @@ fn extract_config(config: Option<&Bound<'_, PyAny>>) -> PyResult<Option<Pipeline
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass]
 pub struct Pipeline {
     pub(crate) inner: SphereQLPipeline,
