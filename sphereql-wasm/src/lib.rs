@@ -102,71 +102,49 @@ impl Pipeline {
         self.inner.projection_kind().name().to_string()
     }
 
-    /// Query: k nearest neighbors.
-    /// Returns JSON: `[{id, category, distance}, ...]`
-    pub fn nearest(&self, query_json: &str, k: usize) -> Result<String, JsError> {
+    /// k nearest neighbors of the query.
+    pub fn nearest(&self, query_json: &str, k: usize) -> Result<Vec<NearestOut>, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let result = self
             .inner
             .query(SphereQLQuery::Nearest { k }, &emb)
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::Nearest(items) => {
-                serde_json::to_string(&items.iter().map(NearestOut::from).collect::<Vec<_>>())
-                    .map_err(|e| JsError::new(&e.to_string()))
-            }
+            SphereQLOutput::Nearest(items) => Ok(items.iter().map(NearestOut::from).collect()),
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
-    /// Query: all items above a cosine similarity threshold.
-    /// Returns JSON: `[{id, category, distance}, ...]`
-    pub fn similar_above(&self, query_json: &str, min_cosine: f64) -> Result<String, JsError> {
+    /// All items above a cosine similarity threshold.
+    pub fn similar_above(
+        &self,
+        query_json: &str,
+        min_cosine: f64,
+    ) -> Result<Vec<NearestOut>, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let result = self
             .inner
             .query(SphereQLQuery::SimilarAbove { min_cosine }, &emb)
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::KNearest(items) => {
-                serde_json::to_string(&items.iter().map(NearestOut::from).collect::<Vec<_>>())
-                    .map_err(|e| JsError::new(&e.to_string()))
-            }
+            SphereQLOutput::KNearest(items) => Ok(items.iter().map(NearestOut::from).collect()),
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
-    /// Query: shortest concept path between two indexed items.
-    /// Returns JSON: `{steps: [{id, category, cumulative_distance}], total_distance}` or `null`.
+    /// Shortest concept path between two indexed items; `None` when no
+    /// path exists.
     pub fn concept_path(
         &self,
         source_id: &str,
         target_id: &str,
         graph_k: usize,
         query_json: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<Option<PathOut>, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let result = self
             .inner
             .query(
@@ -179,86 +157,79 @@ impl Pipeline {
             )
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::ConceptPath(path) => serde_json::to_string(&path.map(|p| {
-                PathOut {
-                    total_distance: p.total_distance,
-                    steps: p
-                        .steps
-                        .iter()
-                        .map(|s| PathStepOut {
-                            id: s.id.clone(),
-                            category: s.category.clone(),
-                            cumulative_distance: s.cumulative_distance,
-                            hop_distance: s.hop_distance,
-                            bridge_strength: s.bridge_strength,
-                        })
-                        .collect(),
-                }
-            }))
-            .map_err(|e| JsError::new(&e.to_string())),
+            SphereQLOutput::ConceptPath(path) => Ok(path.map(|p| PathOut {
+                total_distance: p.total_distance,
+                steps: p
+                    .steps
+                    .iter()
+                    .map(|s| PathStepOut {
+                        id: s.id.clone(),
+                        category: s.category.clone(),
+                        cumulative_distance: s.cumulative_distance,
+                        hop_distance: s.hop_distance,
+                        bridge_strength: s.bridge_strength,
+                    })
+                    .collect(),
+            })),
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
-    /// Detect concept globs.
-    /// k=0 for auto-detection (silhouette), k>0 for fixed count.
-    /// Returns JSON: `[{id, centroid, member_count, radius, top_categories}, ...]`
+    /// Detect concept globs. `k = 0` → auto-detect via silhouette;
+    /// otherwise fit exactly `k` clusters.
     pub fn detect_globs(
         &self,
         k: usize,
         max_k: usize,
         query_json: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<Vec<GlobOut>, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let k_opt = if k == 0 { None } else { Some(k) };
         let result = self
             .inner
             .query(SphereQLQuery::DetectGlobs { k: k_opt, max_k }, &emb)
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::Globs(globs) => {
-                serde_json::to_string(&globs.iter().map(GlobOut::from).collect::<Vec<_>>())
-                    .map_err(|e| JsError::new(&e.to_string()))
-            }
+            SphereQLOutput::Globs(globs) => Ok(globs.iter().map(GlobOut::from).collect()),
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
     /// Fit a local manifold around the query point.
-    /// Returns JSON: `{centroid, normal, variance_ratio}`
     pub fn local_manifold(
         &self,
         query_json: &str,
         neighborhood_k: usize,
-    ) -> Result<String, JsError> {
+    ) -> Result<ManifoldOut, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let result = self
             .inner
             .query(SphereQLQuery::LocalManifold { neighborhood_k }, &emb)
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::LocalManifold(m) => serde_json::to_string(&ManifoldOut {
+            SphereQLOutput::LocalManifold(m) => Ok(ManifoldOut {
                 centroid: m.centroid,
                 normal: m.normal,
                 variance_ratio: m.variance_ratio,
-            })
-            .map_err(|e| JsError::new(&e.to_string())),
+            }),
             _ => Err(JsError::new("unexpected output type")),
         }
+    }
+
+    /// Shared dimension-mismatch guard for every query-taking method —
+    /// the pipeline panics internally on a dim mismatch; we catch it at
+    /// the WASM boundary and surface a clean error instead.
+    fn require_matching_dim(&self, query: &PipelineQuery) -> Result<(), JsError> {
+        let expected = self.inner.projection().dimensionality();
+        if query.embedding.len() != expected {
+            return Err(JsError::new(&format!(
+                "query dimension mismatch: expected {expected}, got {}",
+                query.embedding.len()
+            )));
+        }
+        Ok(())
     }
 
     /// Export all projected points as JSON.
@@ -516,15 +487,22 @@ fn parse_query(json: &str) -> Result<PipelineQuery, JsError> {
     Ok(PipelineQuery { embedding })
 }
 
-// ── Serde output types (mirrors pipeline types for JSON serialization) ──
+// ── Pipeline output types (typed, tsify-exported) ────────────────────
+//
+// Each struct below is mirrored as a TypeScript `interface` via `tsify`
+// with `into_wasm_abi`, so methods that used to return JSON-stringified
+// blobs can return strongly-typed values directly. Callers receive a
+// plain JS object whose shape matches the TS interface — no JSON.parse
+// step required.
 
-#[derive(serde::Serialize)]
-struct NearestOut {
-    id: String,
-    category: String,
-    distance: f64,
-    certainty: f64,
-    intensity: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct NearestOut {
+    pub id: String,
+    pub category: String,
+    pub distance: f64,
+    pub certainty: f64,
+    pub intensity: f64,
 }
 
 impl From<&NearestResult> for NearestOut {
@@ -539,28 +517,31 @@ impl From<&NearestResult> for NearestOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct PathOut {
-    total_distance: f64,
-    steps: Vec<PathStepOut>,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct PathOut {
+    pub total_distance: f64,
+    pub steps: Vec<PathStepOut>,
 }
 
-#[derive(serde::Serialize)]
-struct PathStepOut {
-    id: String,
-    category: String,
-    cumulative_distance: f64,
-    hop_distance: f64,
-    bridge_strength: Option<f64>,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct PathStepOut {
+    pub id: String,
+    pub category: String,
+    pub cumulative_distance: f64,
+    pub hop_distance: f64,
+    pub bridge_strength: Option<f64>,
 }
 
-#[derive(serde::Serialize)]
-struct GlobOut {
-    id: usize,
-    centroid: [f64; 3],
-    member_count: usize,
-    radius: f64,
-    top_categories: Vec<(String, usize)>,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct GlobOut {
+    pub id: usize,
+    pub centroid: [f64; 3],
+    pub member_count: usize,
+    pub radius: f64,
+    pub top_categories: Vec<(String, usize)>,
 }
 
 impl From<&GlobSummary> for GlobOut {
@@ -575,11 +556,12 @@ impl From<&GlobSummary> for GlobOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct ManifoldOut {
-    centroid: [f64; 3],
-    normal: [f64; 3],
-    variance_ratio: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct ManifoldOut {
+    pub centroid: [f64; 3],
+    pub normal: [f64; 3],
+    pub variance_ratio: f64,
 }
 
 // ── Category Enrichment output types ─────────────────────────────────
@@ -1402,5 +1384,22 @@ mod laplacian_tests {
         let cfg = r#"{}"#;
         let p = Pipeline::new_with_config(corpus_json(), cfg).expect("pipeline build failed");
         assert_eq!(p.projection_kind(), "pca");
+    }
+
+    #[test]
+    fn nearest_returns_typed_tsify_structs() {
+        // Phase 6a: `nearest` now returns `Vec<NearestOut>` directly
+        // (typed through tsify on wasm32, plain Rust on native). Verify
+        // the shape survives the migration end-to-end.
+        let p = Pipeline::new(corpus_json()).expect("pipeline build failed");
+        let results = p
+            .nearest("[0.9, 0.1, 0.0, 0.2]", 3)
+            .expect("nearest failed");
+        assert_eq!(results.len(), 3);
+        assert!(!results[0].id.is_empty());
+        assert!(!results[0].category.is_empty());
+        // Distances must be sorted ascending.
+        assert!(results[0].distance <= results[1].distance);
+        assert!(results[1].distance <= results[2].distance);
     }
 }
