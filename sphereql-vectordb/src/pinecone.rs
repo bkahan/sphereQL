@@ -145,6 +145,26 @@ impl PineconeStore {
             )))
         }
     }
+
+    /// Apply a single payload update. Split out so
+    /// [`VectorStore::set_payload`]'s `FuturesUnordered` pool can
+    /// pattern-borrow `&self` through the method instead of fighting
+    /// the closure's higher-ranked lifetimes in `buffer_unordered`.
+    async fn set_payload_one(&self, update: &PayloadUpdate) -> Result<(), VectorStoreError> {
+        let body = UpdateRequest {
+            id: update.id.clone(),
+            set_metadata: update.metadata.clone(),
+            namespace: ns_or_none(&self.config.namespace),
+        };
+        let resp = self
+            .request(reqwest::Method::POST, "/vectors/update")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
+        Self::check_response(resp).await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -373,21 +393,28 @@ impl VectorStore for PineconeStore {
     }
 
     async fn set_payload(&self, updates: &[PayloadUpdate]) -> Result<(), VectorStoreError> {
-        for update in updates {
-            let body = UpdateRequest {
-                id: update.id.clone(),
-                set_metadata: update.metadata.clone(),
-                namespace: ns_or_none(&self.config.namespace),
-            };
+        // Pinecone's `/vectors/update` endpoint is per-record — there
+        // is no batch metadata update. Previous implementation posted
+        // N requests serially; at 500k records that's tens of minutes.
+        // Sliding-window `FuturesUnordered` pool (same shape as
+        // QdrantStore::set_payload) keeps up to CONCURRENCY requests
+        // in flight. 16 is a conservative default below Pinecone's
+        // typical rate-limit budget — anything higher risks tripping
+        // 429, which now maps to VectorStoreError::RateLimited.
+        use futures::stream::{FuturesUnordered, StreamExt};
 
-            let resp = self
-                .request(reqwest::Method::POST, "/vectors/update")
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
+        const CONCURRENCY: usize = 16;
+        let mut in_flight = FuturesUnordered::new();
+        let mut iter = updates.iter();
 
-            Self::check_response(resp).await?;
+        for update in iter.by_ref().take(CONCURRENCY) {
+            in_flight.push(self.set_payload_one(update));
+        }
+        while let Some(result) = in_flight.next().await {
+            result?;
+            if let Some(update) = iter.next() {
+                in_flight.push(self.set_payload_one(update));
+            }
         }
         Ok(())
     }

@@ -132,6 +132,24 @@ impl QdrantStore {
             dimension,
         }
     }
+
+    /// Apply a single payload update. Extracted so
+    /// [`VectorStore::set_payload`]'s `FuturesUnordered` pool can hold
+    /// `impl Future<Output = ...>` values with the borrow from `&self`
+    /// threaded through the method, avoiding the higher-ranked-lifetime
+    /// wrestling `buffer_unordered` requires.
+    async fn set_payload_one(&self, update: &PayloadUpdate) -> Result<(), VectorStoreError> {
+        let point_id = string_to_point_id(&update.id);
+        let payload = metadata_to_payload(&update.metadata);
+        self.client
+            .set_payload(
+                SetPayloadPointsBuilder::new(&self.collection, payload)
+                    .points_selector(vec![point_id]),
+            )
+            .await
+            .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -318,17 +336,30 @@ impl VectorStore for QdrantStore {
     }
 
     async fn set_payload(&self, updates: &[PayloadUpdate]) -> Result<(), VectorStoreError> {
-        for update in updates {
-            let point_id = string_to_point_id(&update.id);
-            let payload = metadata_to_payload(&update.metadata);
+        // Qdrant accepts point-selector-per-request; batching by
+        // payload shape would require grouping identical metadata
+        // sets first. Bounded concurrency via `FuturesUnordered` +
+        // a sliding window of in-flight requests is cleaner than
+        // `buffer_unordered` here — the stream adapter's `FnMut`
+        // bound wrestles with capturing `&self.client` across an
+        // async closure.
+        use futures::stream::{FuturesUnordered, StreamExt};
 
-            self.client
-                .set_payload(
-                    SetPayloadPointsBuilder::new(&self.collection, payload)
-                        .points_selector(vec![point_id]),
-                )
-                .await
-                .map_err(|e| VectorStoreError::Backend(e.to_string()))?;
+        const CONCURRENCY: usize = 16;
+        let mut in_flight = FuturesUnordered::new();
+        let mut iter = updates.iter();
+
+        // Fill the initial window.
+        for update in iter.by_ref().take(CONCURRENCY) {
+            in_flight.push(self.set_payload_one(update));
+        }
+
+        // As each future completes, push the next one onto the window.
+        while let Some(result) = in_flight.next().await {
+            result?;
+            if let Some(update) = iter.next() {
+                in_flight.push(self.set_payload_one(update));
+            }
         }
         Ok(())
     }

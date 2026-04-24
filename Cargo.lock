@@ -2384,6 +2384,7 @@ dependencies = [
  "sphereql-core",
  "sphereql-index",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2433,6 +2434,7 @@ version = "0.1.0-alpha-2"
 dependencies = [
  "approx",
  "async-trait",
+ "futures",
  "qdrant-client",
  "reqwest",
  "serde",
