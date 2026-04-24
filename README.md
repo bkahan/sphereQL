@@ -3,7 +3,7 @@
 [![CI](https://github.com/bkahan/sphereQL/actions/workflows/ci.yml/badge.svg)](https://github.com/bkahan/sphereQL/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/sphereql.svg)](https://crates.io/crates/sphereql)
-[![PyPI](https://img.shields.io/pypi/v/sphereql.svg)](https://pypi.org/project/sphereql/)
+[![PyPI](https://img.shields.io/pypi/v/sphereQL.svg)](https://pypi.org/project/sphereql/)
 
 **Project high-dimensional embeddings onto a 3D sphere for fast semantic
 search, spatial queries, category-aware exploration, and interactive
