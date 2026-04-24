@@ -137,9 +137,14 @@ impl From<&CategorizedItemInput> for CategorizedItemOutput {
 /// Convert a slice of [`CategorizedItemInput`] into the pipeline's
 /// expected input shape (parallel `categories` / `embeddings` vecs).
 ///
-/// `id` is currently dropped — the pipeline assigns its own internal
-/// ids — but we keep it on the input type so future mutations can stash
-/// it for round-tripping.
+/// # Id handling
+///
+/// The `id` field on the input is **dropped** — the pipeline assigns its
+/// own stable internal ids of the form `s-0000`, `s-0001`, … in input
+/// order. Query results surface those generated ids, not the ones the
+/// caller supplied. The field is kept on the input type so future
+/// sphereql-embed work can round-trip user ids without a breaking shape
+/// change here.
 pub fn items_to_pipeline_input(items: &[CategorizedItemInput]) -> PipelineInput {
     PipelineInput {
         categories: items.iter().map(|i| i.category.clone()).collect(),
