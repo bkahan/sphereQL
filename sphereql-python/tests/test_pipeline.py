@@ -64,6 +64,67 @@ class TestPipelineConstruction:
         assert p.num_items == 10
 
 
+# ── Laplacian projection (standalone + pipeline-config) ─────────────────
+
+class TestLaplacianEigenmap:
+    def test_standalone_fit_and_project(self):
+        proj = sphereql.LaplacianEigenmap.fit(EMBEDDINGS)
+        # `dimensionality` reports input dim (4 here); output is always
+        # 3 (points on S²).
+        assert proj.dimensionality == 4
+        assert 0.0 <= proj.connectivity_ratio <= 1.0
+        assert proj.connectivity_ratio == proj.explained_variance_ratio
+        ev = proj.eigenvalues
+        assert len(ev) == 3
+        for v in ev:
+            assert -1.0 <= v <= 1.0
+        # Default radial strategy is "magnitude" → r equals the input's
+        # L2 norm. Use a fixed radial below if you want unit-sphere r.
+        point = proj.project(QUERY)
+        expected_r = sum(v * v for v in QUERY) ** 0.5
+        assert abs(point.r - expected_r) < 1e-6
+
+    def test_standalone_fixed_radial(self):
+        proj = sphereql.LaplacianEigenmap.fit(EMBEDDINGS, radial=1.0)
+        point = proj.project(QUERY)
+        assert abs(point.r - 1.0) < 1e-6
+
+    def test_standalone_fit_with_params(self):
+        proj = sphereql.LaplacianEigenmap.fit(
+            EMBEDDINGS, k_neighbors=4, active_threshold=0.01
+        )
+        assert proj.dimensionality == 4
+
+    def test_standalone_project_batch(self):
+        proj = sphereql.LaplacianEigenmap.fit(EMBEDDINGS)
+        points = proj.project_batch(EMBEDDINGS)
+        assert len(points) == len(EMBEDDINGS)
+
+    def test_standalone_repr(self):
+        proj = sphereql.LaplacianEigenmap.fit(EMBEDDINGS)
+        assert "LaplacianEigenmap(" in repr(proj)
+
+    def test_pipeline_with_laplacian_config(self):
+        cfg = {"projection_kind": "LaplacianEigenmap"}
+        p = sphereql.Pipeline(CATEGORIES, EMBEDDINGS, config=cfg)
+        assert p.num_items == 10
+        assert p.projection_kind == "laplacian_eigenmap"
+        # Pipeline still queryable end-to-end.
+        results = p.nearest(QUERY, 3)
+        assert len(results) == 3
+
+    def test_pipeline_with_laplacian_full_config(self):
+        cfg = {
+            "projection_kind": "LaplacianEigenmap",
+            "laplacian": {
+                "k_neighbors": 4,
+                "active_threshold": 0.01,
+            },
+        }
+        p = sphereql.Pipeline(CATEGORIES, EMBEDDINGS, config=cfg)
+        assert p.projection_kind == "laplacian_eigenmap"
+
+
 # ── Nearest ─────────────────────────────────────────────────────────────
 
 class TestNearest:

@@ -8,8 +8,9 @@ repository.workspace = true
 readme = "README.md"
 
 [dependencies]
-sphereql-core = { version = "0.1.0-alpha", path = "../sphereql-core" }
-sphereql-index = { version = "0.1.0-alpha", path = "../sphereql-index" }
+sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
+sphereql-index = { version = "0.2.0-alpha", path = "../sphereql-index" }
+sphereql-embed = { version = "0.2.0-alpha", path = "../sphereql-embed" }
 async-graphql = "6"
 tokio = { version = "1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }

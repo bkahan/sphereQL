@@ -1,5 +1,6 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::gen_stub_pyfunction;
 
 use sphereql_core::conversions::{cartesian_to_spherical, spherical_to_cartesian};
 use sphereql_core::types::CartesianPoint;
@@ -73,6 +74,7 @@ fn open_in_browser(py: Python<'_>, path: &str) -> PyResult<()> {
 ///
 /// Returns:
 ///     Absolute path of the generated HTML file.
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = (categories, embeddings, output="sphere_viz.html", labels=None, title=None, open_browser=true))]
 pub fn visualize(
@@ -153,6 +155,7 @@ pub fn visualize(
 ///
 /// Returns:
 ///     Absolute path of the generated HTML file.
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = (pipeline, output="sphere_viz.html", title=None, open_browser=true))]
 pub fn visualize_pipeline(

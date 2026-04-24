@@ -1,0 +1,25 @@
+name: Bindings drift
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "sphereql-embed/**"
+      - "sphereql-layout/**"
+      - "sphereql-python/**"
+      - "sphereql-wasm/**"
+      - ".bindings-ignore.toml"
+      - "scripts/check-drift/**"
+      - ".github/workflows/bindings-drift.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run bindings drift check
+        run: cargo run -p check-drift

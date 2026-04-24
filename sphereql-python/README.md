@@ -67,21 +67,38 @@ results = bridge.hybrid_search(query_vec, final_k=5, recall_k=20)
 
 ## How It Works
 
-SphereQL fits a PCA projection to reduce embeddings to 3 dimensions, then maps
+SphereQL fits a projection to reduce embeddings to 3 dimensions, then maps
 them onto spherical coordinates (r, theta, phi). The radial component encodes
 magnitude/confidence, while angular position preserves semantic similarity.
 This enables angular-distance queries, cluster detection, concept paths, and
 interactive 3D visualization — all in projected space.
 
-> The Rust library also provides Kernel PCA and Laplacian eigenmap projections
-> plus an auto-tuning / meta-learning framework (`PipelineConfig`, `auto_tune`,
-> `MetaModel`, `FeedbackAggregator`). The Python bindings currently expose PCA
-> only; the additional layers will follow.
+Four projection families are exposed: `PcaProjection`, `KernelPcaProjection`,
+`LaplacianEigenmap` (connectivity-preserving spectral projection over a
+k-NN similarity graph), and `RandomProjection`. The full auto-tuning and
+meta-learning framework is available too — `auto_tune`, `NearestNeighborMetaModel`,
+`DistanceWeightedMetaModel`, and `FeedbackAggregator`.
+
+```python
+# Non-default projection via config dict
+pipeline = sphereql.Pipeline(
+    categories, embeddings,
+    config={"projection_kind": "LaplacianEigenmap"},
+)
+
+# Auto-tune over the search space
+tuned, report = sphereql.auto_tune(categories, embeddings, budget=16)
+```
 
 ## API Reference
 
-See the [type stubs](https://github.com/bkahan/sphereQL/blob/main/sphereql-python/python/sphereql/sphereql.pyi)
-for complete API signatures and docstrings.
+Type stubs (`python/sphereql/__init__.pyi`) are auto-generated via
+`pyo3-stub-gen` and ship with the wheel — IDEs, `mypy`, and `pyright`
+pick them up automatically. Regenerate after binding changes with:
+
+```bash
+cd sphereql-python && cargo run --bin gen-stubs
+```
 
 ## License
 

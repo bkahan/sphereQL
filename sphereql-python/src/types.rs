@@ -1,5 +1,6 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 use sphereql_embed::category::{
     BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
@@ -27,6 +28,7 @@ fn severity_name(s: WarningSeverity) -> &'static str {
 
 // ── Nearest ────────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "NearestHit", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Nearest {
@@ -42,6 +44,7 @@ pub struct Nearest {
     pub intensity: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl Nearest {
     fn __repr__(&self) -> String {
@@ -94,6 +97,7 @@ impl From<&NearestResult> for Nearest {
 
 // ── PathStep ───────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PathStep {
@@ -109,6 +113,7 @@ pub struct PathStep {
     pub bridge_strength: Option<f64>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PathStep {
     fn __repr__(&self) -> String {
@@ -149,6 +154,7 @@ impl PathStep {
 
 // ── Path ───────────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "PathResult", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Path {
@@ -158,6 +164,7 @@ pub struct Path {
     pub steps: Vec<PathStep>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl Path {
     fn __repr__(&self) -> String {
@@ -235,6 +242,7 @@ impl From<&PathResult> for Path {
 
 // ── Glob ───────────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "GlobInfo", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Glob {
@@ -250,6 +258,7 @@ pub struct Glob {
     pub top_categories: Vec<(String, usize)>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl Glob {
     fn __repr__(&self) -> String {
@@ -314,6 +323,7 @@ impl From<&GlobSummary> for Glob {
 
 // ── Manifold ───────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "ManifoldInfo", frozen, from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct Manifold {
@@ -325,6 +335,7 @@ pub struct Manifold {
     pub variance_ratio: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl Manifold {
     fn __repr__(&self) -> String {
@@ -368,6 +379,7 @@ impl From<&ManifoldResult> for Manifold {
 
 // ── CategorySummary ───────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "CategorySummaryInfo", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyCategorySummary {
@@ -389,6 +401,7 @@ pub struct PyCategorySummary {
     pub bridge_quality: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyCategorySummary {
     fn __repr__(&self) -> String {
@@ -415,6 +428,7 @@ impl From<&CategorySummary> for PyCategorySummary {
 
 // ── BridgeItem ────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "BridgeItemInfo", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyBridgeItem {
@@ -435,6 +449,7 @@ pub struct PyBridgeItem {
     pub classification: String,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyBridgeItem {
     fn __repr__(&self) -> String {
@@ -465,6 +480,7 @@ impl From<&BridgeItem> for PyBridgeItem {
 
 // ── CategoryPathStep ──────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "CategoryPathStep", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyCategoryPathStep {
@@ -482,6 +498,7 @@ pub struct PyCategoryPathStep {
     pub hop_confidence: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyCategoryPathStep {
     fn __repr__(&self) -> String {
@@ -509,6 +526,7 @@ impl From<&CategoryPathStep> for PyCategoryPathStep {
 
 // ── CategoryPath ──────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "CategoryPathResult", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyCategoryPath {
@@ -522,6 +540,7 @@ pub struct PyCategoryPath {
     pub path_confidence: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyCategoryPath {
     fn __repr__(&self) -> String {
@@ -546,6 +565,7 @@ impl From<&CategoryPath> for PyCategoryPath {
 
 // ── DrillDown ─────────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "DrillDownHit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyDrillDown {
@@ -557,6 +577,7 @@ pub struct PyDrillDown {
     pub used_inner_sphere: bool,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDrillDown {
     fn __repr__(&self) -> String {
@@ -579,6 +600,7 @@ impl From<&DrillDownResult> for PyDrillDown {
 
 // ── InnerSphereReport ─────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "InnerSphereInfo", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyInnerSphereReport {
@@ -598,6 +620,7 @@ pub struct PyInnerSphereReport {
     pub evr_improvement: f64,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyInnerSphereReport {
     fn __repr__(&self) -> String {
@@ -624,6 +647,7 @@ impl From<&InnerSphereReport> for PyInnerSphereReport {
 
 // ── DomainGroup ───────────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "DomainGroupInfo", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyDomainGroup {
@@ -644,6 +668,7 @@ pub struct PyDomainGroup {
     pub total_items: usize,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDomainGroup {
     fn __repr__(&self) -> String {
@@ -672,6 +697,7 @@ impl From<&DomainGroup> for PyDomainGroup {
 
 // ── ProjectionWarning ────────────────────────────────────────────────
 
+#[gen_stub_pyclass]
 #[pyclass(name = "ProjectionWarningInfo", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyProjectionWarning {
@@ -684,6 +710,7 @@ pub struct PyProjectionWarning {
     pub severity: String,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyProjectionWarning {
     fn __repr__(&self) -> String {

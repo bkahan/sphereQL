@@ -16,6 +16,7 @@
 /// Every field is a sub-config grouped by area. [`Self::default`] returns
 /// the values the crate shipped with before the config surface existed.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
 pub struct PipelineConfig {
     /// Outer-sphere projection family.
     pub projection_kind: ProjectionKind,
@@ -85,6 +86,7 @@ impl ProjectionKind {
 
 /// Thresholds governing when a category gets its own inner projection.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct InnerSphereConfig {
     /// Minimum member count for a category to be considered.
     pub min_size: usize,
@@ -112,6 +114,7 @@ impl Default for InnerSphereConfig {
 
 /// Parameters controlling bridge detection and classification.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct BridgeConfig {
     /// Constant term in the EVR-adaptive bridge threshold
     /// `threshold = threshold_base + (1 − evr)² · threshold_evr_penalty`.
@@ -148,6 +151,7 @@ impl BridgeConfig {
 
 /// Parameters for hierarchical domain-group routing.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct RoutingConfig {
     /// Number of domain groups detected at build time by
     /// [`detect_domain_groups`](crate::domain_groups::detect_domain_groups).
@@ -170,6 +174,7 @@ impl Default for RoutingConfig {
 
 /// Graph-construction parameters for [`LaplacianEigenmapProjection`](crate::laplacian::LaplacianEigenmapProjection).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct LaplacianConfig {
     /// k in the k-NN graph sparsification step.
     pub k_neighbors: usize,
@@ -192,6 +197,7 @@ impl Default for LaplacianConfig {
 ///
 /// These run once at build time. Higher = more precise but slower.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct SpatialConfig {
     /// Samples used to estimate what fraction of S² is covered by any
     /// category's cap. Higher = tighter coverage estimate. Default

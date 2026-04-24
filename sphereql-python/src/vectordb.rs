@@ -131,6 +131,7 @@ fn dummy_query_vec(bridge_dim: Option<usize>) -> Vec<f64> {
 
 macro_rules! impl_vector_bridge_methods {
     ($type:ident, $label:expr) => {
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         #[pymethods]
         impl $type {
             /// Pull all vectors from the store and build the sphereQL
@@ -516,12 +517,14 @@ macro_rules! impl_vector_bridge_methods {
 ///
 /// Uses brute-force cosine similarity — O(n) per query.
 /// Pass this to VectorStoreBridge to build a sphereQL pipeline.
+#[pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "InMemoryStore")]
 pub struct PyInMemoryStore {
     inner: Arc<InMemoryStore>,
     rt: Arc<Runtime>,
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyInMemoryStore {
     /// Create an in-memory vector store.
@@ -575,12 +578,14 @@ impl PyInMemoryStore {
 /// Pulls vectors from the store, fits a projection, and exposes the
 /// full sphereQL query surface (nearest, concept path, globs, category
 /// enrichment, hierarchical routing, hybrid search).
+#[pyo3_stub_gen::derive::gen_stub_pyclass]
 #[pyclass(name = "VectorStoreBridge")]
 pub struct PyVectorStoreBridge {
     bridge: VectorStoreBridge<SharedStore>,
     rt: Arc<Runtime>,
 }
 
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl PyVectorStoreBridge {
     /// Create a bridge from an InMemoryStore.
@@ -623,12 +628,14 @@ mod qdrant_bridge {
     ///
     /// Connects to a Qdrant instance, pulls vectors, fits a projection,
     /// and exposes the full sphereQL query surface plus hybrid search.
+    #[pyo3_stub_gen::derive::gen_stub_pyclass]
     #[pyclass(name = "QdrantBridge")]
     pub struct PyQdrantBridge {
         pub(super) bridge: VectorStoreBridge<QdrantStore>,
         pub(super) rt: Arc<Runtime>,
     }
 
+    #[pyo3_stub_gen::derive::gen_stub_pymethods]
     #[pymethods]
     impl PyQdrantBridge {
         /// Connect to Qdrant and create a bridge.
@@ -681,12 +688,14 @@ mod pinecone_bridge {
     ///
     /// Connects to Pinecone via REST API, pulls vectors, fits a
     /// projection, and exposes the full sphereQL query surface.
+    #[pyo3_stub_gen::derive::gen_stub_pyclass]
     #[pyclass(name = "PineconeBridge")]
     pub struct PyPineconeBridge {
         pub(super) bridge: VectorStoreBridge<PineconeStore>,
         pub(super) rt: Arc<Runtime>,
     }
 
+    #[pyo3_stub_gen::derive::gen_stub_pymethods]
     #[pymethods]
     impl PyPineconeBridge {
         /// Connect to a Pinecone index and create a bridge.

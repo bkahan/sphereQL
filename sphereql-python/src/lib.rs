@@ -1,5 +1,10 @@
 use pyo3::prelude::*;
 
+// Registers stub-gen metadata collected from `#[gen_stub_*]` macros
+// across the crate. The `gen-stubs` bin calls `sphereql::stub_info()`
+// to drive `.pyi` generation.
+pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
+
 #[cfg(feature = "core")]
 mod core_types;
 #[cfg(feature = "embed")]
@@ -39,6 +44,7 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<projection::PyPcaProjection>()?;
         m.add_class::<projection::PyRandomProjection>()?;
         m.add_class::<projection::PyKernelPcaProjection>()?;
+        m.add_class::<projection::PyLaplacianEigenmapProjection>()?;
         m.add_class::<pipeline::Pipeline>()?;
         m.add_class::<types::Nearest>()?;
         m.add_class::<types::Path>()?;

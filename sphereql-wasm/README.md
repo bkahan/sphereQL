@@ -5,9 +5,14 @@ project.
 
 Exposes the pipeline, category enrichment layer, and the full
 metalearning framework (`corpusFeatures`, `autoTune`, `MetaModel`,
-`FeedbackAggregator`) to the browser via `wasm-bindgen`. Construct a
-pipeline once with corpus data, then query it repeatedly from
-JavaScript.
+`FeedbackAggregator`) plus a standalone `LaplacianEigenmapProjection`
+class to the browser via `wasm-bindgen`. Construct a pipeline once
+with corpus data, then query it repeatedly from JavaScript.
+
+Every pipeline / category / metalearning method returns **typed**
+values via [`tsify`](https://github.com/madonoharu/tsify) — the
+`.d.ts` emitted by `wasm-pack build` has a named interface for every
+payload, and the JS side receives a real object (no `JSON.parse`).
 
 ## Example
 

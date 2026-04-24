@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use sphereql_embed::pipeline::{PipelineError, SphereQLPipeline};
+use sphereql_embed::text_embedder::{NoEmbedder, TextEmbedder};
 use sphereql_index::SpatialIndexBuilder;
 
 use crate::query::{PointIndex, SphericalQueryRoot};
 use crate::subscription::{SpatialEventBus, SphericalSubscriptionRoot};
+use crate::types::{CategorizedItemInput, items_to_pipeline_input};
 
 pub type SphericalSchema = async_graphql::Schema<
     SphericalQueryRoot,
@@ -34,6 +37,94 @@ pub fn create_default_index() -> PointIndex {
 
 pub fn create_schema_with_defaults() -> SphericalSchema {
     build_schema(create_default_index(), SpatialEventBus::new(256))
+}
+
+// ── Category-enrichment context ────────────────────────────────────────
+//
+// The category resolvers (Phase 4) consume two extra context resources:
+//
+// - [`CategoryPipelineHandle`] — the fitted [`SphereQLPipeline`] wrapped in
+//   `Arc<RwLock<…>>` so resolvers can read concurrently and the (eventual)
+//   mutation surface can swap it under exclusive lock.
+// - [`EmbedderHandle`] — a type-erased [`TextEmbedder`] used by resolvers
+//   that take a `queryText: String` argument (drillDown,
+//   hierarchicalNearest, etc.). Defaults to [`NoEmbedder`], which returns
+//   a clear error rather than silently degrading.
+
+/// Shared, lockable handle to the fitted category-enrichment pipeline.
+pub type CategoryPipelineHandle = Arc<tokio::sync::RwLock<SphereQLPipeline>>;
+
+/// Type-erased text embedder shared across resolvers.
+pub type EmbedderHandle = Arc<dyn TextEmbedder>;
+
+/// Wrap an existing [`SphereQLPipeline`] for use as GraphQL context data.
+pub fn into_pipeline_handle(pipeline: SphereQLPipeline) -> CategoryPipelineHandle {
+    Arc::new(tokio::sync::RwLock::new(pipeline))
+}
+
+/// Build a fresh [`SphereQLPipeline`] from a slice of
+/// [`CategorizedItemInput`]s using [`SphereQLPipeline::new`] (default
+/// `PipelineConfig`). Returns the wrapped handle ready to feed into a
+/// schema.
+///
+/// For finer control (custom projection kind, Laplacian params, etc.)
+/// build the pipeline directly via [`SphereQLPipeline::new_with_config`]
+/// and pass the result through [`into_pipeline_handle`].
+pub fn build_pipeline_handle_from_items(
+    items: &[CategorizedItemInput],
+) -> Result<CategoryPipelineHandle, PipelineError> {
+    let input = items_to_pipeline_input(items);
+    let pipeline = SphereQLPipeline::new(input)?;
+    Ok(into_pipeline_handle(pipeline))
+}
+
+/// Default embedder handle that always errors. Use this when wiring a
+/// schema for a deployment that only exposes resolvers which don't
+/// require text embedding (or as a placeholder until a real embedder
+/// is plugged in).
+pub fn default_no_embedder_handle() -> EmbedderHandle {
+    Arc::new(NoEmbedder)
+}
+
+#[cfg(test)]
+mod category_context_tests {
+    use super::*;
+
+    fn synthetic_items() -> Vec<CategorizedItemInput> {
+        let pairs = [
+            ("a", "science", vec![1.0, 0.1, 0.0, 0.2]),
+            ("b", "cooking", vec![0.1, 1.0, 0.0, 0.2]),
+            ("c", "science", vec![0.9, 0.2, 0.1, 0.3]),
+            ("d", "cooking", vec![0.2, 0.9, 0.1, 0.3]),
+            ("e", "science", vec![0.8, 0.3, 0.2, 0.1]),
+            ("f", "cooking", vec![0.3, 0.8, 0.2, 0.1]),
+        ];
+        pairs
+            .into_iter()
+            .map(|(id, cat, emb)| CategorizedItemInput {
+                id: id.into(),
+                category: cat.into(),
+                embedding: emb,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn build_pipeline_handle_from_items_constructs_pipeline() {
+        let items = synthetic_items();
+        let handle = build_pipeline_handle_from_items(&items).expect("pipeline build failed");
+        let read = handle.read().await;
+        assert_eq!(read.num_items(), 6);
+        // Default projection kind is PCA.
+        assert_eq!(read.projection_kind().name(), "pca");
+    }
+
+    #[tokio::test]
+    async fn no_embedder_handle_errors_on_embed() {
+        let h = default_no_embedder_handle();
+        let err = h.embed("hi").unwrap_err();
+        assert!(err.to_string().contains("no TextEmbedder configured"));
+    }
 }
 
 #[cfg(test)]

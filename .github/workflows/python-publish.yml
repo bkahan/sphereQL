@@ -12,8 +12,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Guard against publishing a wheel with stale `.pyi` stubs. The
+  # generator is deterministic — any diff against the checked-in file
+  # means the binding author forgot to regenerate before tagging.
+  verify-stubs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Regenerate stubs
+        working-directory: sphereql-python
+        run: cargo run --bin gen-stubs
+      - name: Fail if stubs are stale
+        run: |
+          if ! git diff --exit-code sphereql-python/python/sphereql/__init__.pyi; then
+            echo "::error::python stubs are stale — run \`cargo run --bin gen-stubs\` from sphereql-python/ and commit before publishing"
+            exit 1
+          fi
+
   build:
+    needs: verify-stubs
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -35,19 +56,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Build wheels for every supported interpreter (3.10–3.13) via
+      # maturin's abi3 path. Dropping 3.9 in line with pyo3 0.28 — the
+      # crate's minimum supported interpreter.
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --interpreter python3
+          args: --release --out dist --interpreter 'python3.10 python3.11 python3.12 python3.13'
           manylinux: auto
           working-directory: sphereql-python
           before-all: |
-            # Symlink manylinux container's Python 3.12 into PATH so maturin can find it
-            if [ -d /opt/python/cp312-cp312/bin ]; then
-              ln -sf /opt/python/cp312-cp312/bin/python3 /usr/local/bin/python3
+            # Symlink manylinux container's Python into PATH so maturin
+            # can find the oldest supported interpreter (3.10).
+            if [ -d /opt/python/cp310-cp310/bin ]; then
+              ln -sf /opt/python/cp310-cp310/bin/python3 /usr/local/bin/python3
             else
-              echo "Python 3.12 not found at /opt/python/cp312-cp312/bin"
+              echo "Python 3.10 not found at /opt/python/cp310-cp310/bin"
               ls /opt/python/ 2>/dev/null || echo "/opt/python does not exist"
               exit 1
             fi
@@ -57,6 +82,7 @@ jobs:
           path: sphereql-python/dist
 
   sdist:
+    needs: verify-stubs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

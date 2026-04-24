@@ -5,6 +5,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction, gen_stub_pymethods};
 
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
@@ -99,6 +100,7 @@ fn resolve_strategy(
 ///     Tuple `(Pipeline, report)` where `report` is a dict with
 ///     `metric_name`, `best_score`, `best_config`, `trials_count`,
 ///     `failures_count`, `mean_score`.
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = (
     categories,
@@ -199,6 +201,7 @@ pub fn auto_tune<'py>(
 ///
 /// Returns:
 ///     dict of corpus features.
+#[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(signature = (categories, embeddings))]
 pub fn corpus_features<'py>(
@@ -234,12 +237,14 @@ fn depythonize_features(features: &Bound<'_, PyAny>) -> PyResult<CorpusFeatures>
 
 /// Nearest-neighbor meta-model: picks the training record whose corpus
 /// feature vector is closest to the query (z-score normalized Euclidean).
+#[gen_stub_pyclass]
 #[pyclass(name = "NearestNeighborMetaModel")]
 #[derive(Default)]
 pub struct PyNearestNeighborMetaModel {
     inner: NearestNeighborMetaModel,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyNearestNeighborMetaModel {
     #[new]
@@ -287,12 +292,14 @@ impl PyNearestNeighborMetaModel {
 /// Distance-weighted meta-model: picks the training record that
 /// maximizes `best_score × 1/(distance + epsilon)`, balancing similarity
 /// and observed quality.
+#[gen_stub_pyclass]
 #[pyclass(name = "DistanceWeightedMetaModel")]
 #[derive(Default)]
 pub struct PyDistanceWeightedMetaModel {
     inner: DistanceWeightedMetaModel,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyDistanceWeightedMetaModel {
     #[new]
@@ -338,6 +345,7 @@ impl PyDistanceWeightedMetaModel {
 /// Load all training records from the default store at
 /// `~/.sphereql/meta_records.json`. Returns an empty list if the
 /// store does not exist yet.
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn load_default_store<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
     let records = MetaTrainingRecord::load_default_store()
@@ -348,6 +356,7 @@ pub fn load_default_store<'py>(py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
 
 /// Append one training record to the default store. Returns the absolute
 /// path of the store file.
+#[gen_stub_pyfunction]
 #[pyfunction]
 pub fn append_to_default_store(record: &Bound<'_, PyAny>) -> PyResult<String> {
     let rec: MetaTrainingRecord = pythonize::depythonize(record)
@@ -364,12 +373,14 @@ pub fn append_to_default_store(record: &Bound<'_, PyAny>) -> PyResult<String> {
 ///
 /// `score` is a scalar in `[0, 1]`; the aggregator clamps it at
 /// summarize time, so stored raw values are preserved.
+#[gen_stub_pyclass]
 #[pyclass(name = "FeedbackEvent", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyFeedbackEvent {
     pub(crate) inner: FeedbackEvent,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyFeedbackEvent {
     #[new]
@@ -431,12 +442,14 @@ impl PyFeedbackEvent {
 }
 
 /// Accumulates [`FeedbackEvent`]s and summarizes them by `corpus_id`.
+#[gen_stub_pyclass]
 #[pyclass(name = "FeedbackAggregator")]
 #[derive(Default)]
 pub struct PyFeedbackAggregator {
     inner: FeedbackAggregator,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyFeedbackAggregator {
     #[new]

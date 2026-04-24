@@ -1,4 +1,5 @@
 use sphereql_core::{Band, Cap, Cone, Region, Shell, SphericalPoint, Wedge};
+use sphereql_embed::pipeline::PipelineInput;
 
 // --- Output types ---
 
@@ -93,6 +94,62 @@ pub struct RegionInput {
     pub wedge: Option<WedgeInput>,
     pub intersection: Option<Vec<RegionInput>>,
     pub union: Option<Vec<RegionInput>>,
+}
+
+// --- Categorized item (for the category-enrichment surface) ---
+
+/// Input type for items consumed by the category-enrichment pipeline.
+///
+/// `embedding` is the high-dimensional vector that the pipeline projects
+/// onto S²; `category` is the label the enrichment layer groups by; `id`
+/// is a stable string returned in query results.
+///
+/// Used as the input shape when (re)building the pipeline from GraphQL
+/// or from in-process Rust callers; the pipeline itself stores categories
+/// and embeddings in parallel `Vec`s rather than as items, so this type
+/// exists only at the boundary.
+#[derive(async_graphql::InputObject, Debug, Clone)]
+pub struct CategorizedItemInput {
+    pub id: String,
+    pub category: String,
+    pub embedding: Vec<f64>,
+}
+
+/// Output mirror of [`CategorizedItemInput`] — useful for echoing items
+/// back to clients, or for resolvers that surface the underlying vectors.
+#[derive(async_graphql::SimpleObject, Debug, Clone)]
+pub struct CategorizedItemOutput {
+    pub id: String,
+    pub category: String,
+    pub embedding: Vec<f64>,
+}
+
+impl From<&CategorizedItemInput> for CategorizedItemOutput {
+    fn from(i: &CategorizedItemInput) -> Self {
+        Self {
+            id: i.id.clone(),
+            category: i.category.clone(),
+            embedding: i.embedding.clone(),
+        }
+    }
+}
+
+/// Convert a slice of [`CategorizedItemInput`] into the pipeline's
+/// expected input shape (parallel `categories` / `embeddings` vecs).
+///
+/// # Id handling
+///
+/// The `id` field on the input is **dropped** — the pipeline assigns its
+/// own stable internal ids of the form `s-0000`, `s-0001`, … in input
+/// order. Query results surface those generated ids, not the ones the
+/// caller supplied. The field is kept on the input type so future
+/// sphereql-embed work can round-trip user ids without a breaking shape
+/// change here.
+pub fn items_to_pipeline_input(items: &[CategorizedItemInput]) -> PipelineInput {
+    PipelineInput {
+        categories: items.iter().map(|i| i.category.clone()).collect(),
+        embeddings: items.iter().map(|i| i.embedding.clone()).collect(),
+    }
 }
 
 // --- Enum ---

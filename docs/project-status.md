@@ -1,7 +1,36 @@
 # Project status
 
-sphereQL is at **v0.1.0-alpha**. The core API is functional and covered
-by 400+ tests, but may change before 1.0.
+sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
+by 600+ tests, but may change before 1.0. See
+[CHANGELOG.md](../CHANGELOG.md) for the v0.1 → v0.2 diff.
+
+## Bindings status
+
+Python and WASM bindings are at full parity with the Rust surface:
+
+- Projection families: PCA, Kernel PCA, **Laplacian eigenmap**, Random.
+- Pipeline queries: nearest, similar-above, concept path, glob detection,
+  local manifold.
+- Category enrichment: concept paths, category neighbors, drill-down,
+  hierarchical nearest, domain groups, category stats.
+- Metalearning: `auto_tune`, `NearestNeighborMetaModel`,
+  `DistanceWeightedMetaModel`, `FeedbackAggregator`,
+  `MetaTrainingRecord` default-store helpers.
+- Partial-config support: any `PipelineConfig` field can be omitted;
+  missing keys fall back to defaults (no more "specify every knob").
+
+**Python**: type stubs (`.pyi`) are auto-generated via `pyo3-stub-gen` —
+IDE and `mypy`/`pyright` pick them up automatically.
+
+**WASM**: return values are typed via `tsify` — `wasm-pack build` emits
+a `.d.ts` with a named interface for every payload. No `JSON.parse`
+step required on the JS side for pipeline, category, or metalearning
+methods.
+
+**GraphQL**: full spatial + category enrichment surface via a single
+`MergedQueryRoot`. Text queries embed server-side through an
+injectable `TextEmbedder` trait (default `NoEmbedder` returns a
+descriptive error until a real embedder is plugged in).
 
 ## Known limitations
 
@@ -20,20 +49,27 @@ by 400+ tests, but may change before 1.0.
   See [search-precision-roadmap.md](search-precision-roadmap.md) for
   tracked improvements.
 
-- **GraphQL does not expose category enrichment.** The GraphQL crate
-  operates on the raw spatial index, not the embedding pipeline.
-  Category queries (concept paths, neighbors, drill-down, stats) are
-  available in Rust, Python, and WASM but not yet through GraphQL.
-
 - **Inner spheres require 20+ items per category.** Categories below
   this threshold fall back to the outer sphere for drill-down queries.
   This is by design — small categories don't benefit from a separate
   projection, and the threshold is configurable via
   `InnerSphereConfig::min_size`.
 
-- **Python and WASM bindings lag behind Rust.** The Laplacian projection,
-  `auto_tune`, `MetaModel`, and `FeedbackAggregator` layers are Rust-only
-  in 0.1.x.
+## Drift protection
+
+A CI job (`.github/workflows/bindings-drift.yml`) runs
+`cargo run -p check-drift` on every PR that touches `sphereql-embed`,
+`sphereql-layout`, or either binding crate. The tool `syn`-parses the
+public API surface of embed + layout, compares against
+`#[pyfunction]`/`#[pyclass]` exports in Python and `#[wasm_bindgen]` /
+Tsify-derived exports in WASM, and fails when a new public item has
+neither a binding nor an entry in `.bindings-ignore.toml`.
+
+Adding a new public type to `sphereql-embed`? Either bind it in Python
+and/or WASM, or add it to `.bindings-ignore.toml` with a `reason` field
+explaining why a 1:1 binding isn't required. The allowlist ships with
+~90 intentionally-exempt items (config structs reached via dict,
+internal helpers, layout-crate internals, foreign-trait objects).
 
 ## Roadmap
 
@@ -41,6 +77,4 @@ by 400+ tests, but may change before 1.0.
 - HNSW or VP-tree indexing for better recall without brute-force
   fallback.
 - Streaming/incremental PCA for large-scale datasets.
-- GraphQL integration for category enrichment queries.
-- Python/WASM bindings for Laplacian projection, auto-tuner, and
-  meta-model.
+- Expose `sphereql-layout`'s managed layouts through the bindings.
