@@ -259,56 +259,46 @@ impl Pipeline {
     /// Falls back to plain k-NN when EVR is above the configured
     /// `low_evr_threshold`; otherwise routes the query through a coarse
     /// domain group before drilling into member categories.
-    /// Returns JSON: `[{id, category, distance, certainty, intensity}, ...]`.
     #[wasm_bindgen(js_name = hierarchicalNearest)]
-    pub fn hierarchical_nearest(&self, query_json: &str, k: usize) -> Result<String, JsError> {
+    pub fn hierarchical_nearest(
+        &self,
+        query_json: &str,
+        k: usize,
+    ) -> Result<Vec<NearestOut>, JsError> {
         use sphereql_embed::types::Embedding;
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let embedding = Embedding::new(emb.embedding);
         let results = self.inner.hierarchical_nearest(&embedding, k);
-        serde_json::to_string(&results.iter().map(NearestOut::from).collect::<Vec<_>>())
-            .map_err(|e| JsError::new(&e.to_string()))
+        Ok(results.iter().map(NearestOut::from).collect())
     }
 
     /// Coarse domain groups detected from category geometry.
-    /// Returns JSON: `[{member_categories, category_names, centroid_theta, centroid_phi, angular_spread, cohesion, total_items}, ...]`.
     #[wasm_bindgen(js_name = domainGroups)]
-    pub fn domain_groups(&self) -> Result<String, JsError> {
-        let groups: Vec<DomainGroupOut> =
-            self.inner.domain_groups().iter().map(Into::into).collect();
-        serde_json::to_string(&groups).map_err(|e| JsError::new(&e.to_string()))
+    pub fn domain_groups(&self) -> Vec<DomainGroupOut> {
+        self.inner.domain_groups().iter().map(Into::into).collect()
     }
 
     /// Structured projection-quality warnings. Empty array when EVR
     /// is above `warn_below_evr`.
-    /// Returns JSON: `[{message, evr, severity}, ...]`.
     #[wasm_bindgen(js_name = projectionWarnings)]
-    pub fn projection_warnings(&self) -> Result<String, JsError> {
-        let warnings: Vec<ProjectionWarningOut> = self
-            .inner
+    pub fn projection_warnings(&self) -> Vec<ProjectionWarningOut> {
+        self.inner
             .projection_warnings()
             .iter()
             .map(Into::into)
-            .collect();
-        serde_json::to_string(&warnings).map_err(|e| JsError::new(&e.to_string()))
+            .collect()
     }
 
     // ── Category Enrichment Layer ──────────────────────────────────────
 
-    /// Find the shortest path between two categories through the category graph.
-    /// Returns JSON: `{steps: [{category_index, category_name, cumulative_distance, bridges_to_next}], total_distance}` or `null`.
+    /// Shortest path between two categories through the category graph.
+    /// `None` when no path exists.
     pub fn category_concept_path(
         &self,
         source_category: &str,
         target_category: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<Option<CategoryPathOut>, JsError> {
         let pq = self.dummy_query();
         let result = self
             .inner
@@ -321,67 +311,54 @@ impl Pipeline {
             )
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::CategoryConceptPath(path) => {
-                serde_json::to_string(&path.map(CategoryPathOut::from))
-                    .map_err(|e| JsError::new(&e.to_string()))
-            }
+            SphereQLOutput::CategoryConceptPath(path) => Ok(path.map(CategoryPathOut::from)),
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
-    /// Find the k nearest neighbor categories to the given category.
-    /// Returns JSON: `[{name, member_count, centroid_theta, centroid_phi, angular_spread, cohesion}, ...]`
-    pub fn category_neighbors(&self, category: &str, k: usize) -> Result<String, JsError> {
+    /// The k nearest neighbor categories to the given category.
+    pub fn category_neighbors(
+        &self,
+        category: &str,
+        k: usize,
+    ) -> Result<Vec<CategorySummaryOut>, JsError> {
         let pq = self.dummy_query();
         let result = self
             .inner
             .query(SphereQLQuery::CategoryNeighbors { category, k }, &pq)
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
-            SphereQLOutput::CategoryNeighbors(summaries) => serde_json::to_string(
-                &summaries
-                    .iter()
-                    .map(CategorySummaryOut::from)
-                    .collect::<Vec<_>>(),
-            )
-            .map_err(|e| JsError::new(&e.to_string())),
+            SphereQLOutput::CategoryNeighbors(summaries) => {
+                Ok(summaries.iter().map(CategorySummaryOut::from).collect())
+            }
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
     /// Drill down into a category: k-NN within the category using the
-    /// inner sphere's projection if available.
-    /// Returns JSON: `[{item_index, distance, used_inner_sphere}, ...]`
+    /// inner sphere's projection when one is available.
     pub fn drill_down(
         &self,
         category: &str,
         k: usize,
         query_json: &str,
-    ) -> Result<String, JsError> {
+    ) -> Result<Vec<DrillDownOut>, JsError> {
         let emb = parse_query(query_json)?;
-        let expected_dim = self.inner.projection().dimensionality();
-        if emb.embedding.len() != expected_dim {
-            return Err(JsError::new(&format!(
-                "query dimension mismatch: expected {expected_dim}, got {}",
-                emb.embedding.len()
-            )));
-        }
+        self.require_matching_dim(&emb)?;
         let result = self
             .inner
             .query(SphereQLQuery::DrillDown { category, k }, &emb)
             .map_err(|e| JsError::new(&e.to_string()))?;
         match result {
             SphereQLOutput::DrillDown(results) => {
-                serde_json::to_string(&results.iter().map(DrillDownOut::from).collect::<Vec<_>>())
-                    .map_err(|e| JsError::new(&e.to_string()))
+                Ok(results.iter().map(DrillDownOut::from).collect())
             }
             _ => Err(JsError::new("unexpected output type")),
         }
     }
 
-    /// Get summary statistics for all categories and inner spheres.
-    /// Returns JSON: `{summaries: [...], inner_sphere_reports: [...]}`
-    pub fn category_stats(&self) -> Result<String, JsError> {
+    /// Summary statistics for all categories and inner spheres.
+    pub fn category_stats(&self) -> Result<CategoryStatsOut, JsError> {
         let pq = self.dummy_query();
         let result = self
             .inner
@@ -391,14 +368,13 @@ impl Pipeline {
             SphereQLOutput::CategoryStats {
                 summaries,
                 inner_sphere_reports,
-            } => serde_json::to_string(&CategoryStatsOut {
+            } => Ok(CategoryStatsOut {
                 summaries: summaries.iter().map(CategorySummaryOut::from).collect(),
                 inner_sphere_reports: inner_sphere_reports
                     .iter()
                     .map(InnerSphereReportOut::from)
                     .collect(),
-            })
-            .map_err(|e| JsError::new(&e.to_string())),
+            }),
             _ => Err(JsError::new("unexpected output type")),
         }
     }
@@ -566,15 +542,16 @@ pub struct ManifoldOut {
 
 // ── Category Enrichment output types ─────────────────────────────────
 
-#[derive(serde::Serialize)]
-struct CategorySummaryOut {
-    name: String,
-    member_count: usize,
-    centroid_theta: f64,
-    centroid_phi: f64,
-    angular_spread: f64,
-    cohesion: f64,
-    bridge_quality: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct CategorySummaryOut {
+    pub name: String,
+    pub member_count: usize,
+    pub centroid_theta: f64,
+    pub centroid_phi: f64,
+    pub angular_spread: f64,
+    pub cohesion: f64,
+    pub bridge_quality: f64,
 }
 
 impl From<&CategorySummary> for CategorySummaryOut {
@@ -591,15 +568,16 @@ impl From<&CategorySummary> for CategorySummaryOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct BridgeItemOut {
-    item_index: usize,
-    source_category: usize,
-    target_category: usize,
-    affinity_to_source: f64,
-    affinity_to_target: f64,
-    bridge_strength: f64,
-    classification: &'static str,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct BridgeItemOut {
+    pub item_index: usize,
+    pub source_category: usize,
+    pub target_category: usize,
+    pub affinity_to_source: f64,
+    pub affinity_to_target: f64,
+    pub bridge_strength: f64,
+    pub classification: String,
 }
 
 impl From<&BridgeItem> for BridgeItemOut {
@@ -611,18 +589,19 @@ impl From<&BridgeItem> for BridgeItemOut {
             affinity_to_source: b.affinity_to_source,
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
-            classification: classification_name(b.classification),
+            classification: classification_name(b.classification).to_string(),
         }
     }
 }
 
-#[derive(serde::Serialize)]
-struct CategoryPathStepOut {
-    category_index: usize,
-    category_name: String,
-    cumulative_distance: f64,
-    bridges_to_next: Vec<BridgeItemOut>,
-    hop_confidence: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct CategoryPathStepOut {
+    pub category_index: usize,
+    pub category_name: String,
+    pub cumulative_distance: f64,
+    pub bridges_to_next: Vec<BridgeItemOut>,
+    pub hop_confidence: f64,
 }
 
 impl From<&CategoryPathStep> for CategoryPathStepOut {
@@ -637,11 +616,12 @@ impl From<&CategoryPathStep> for CategoryPathStepOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct CategoryPathOut {
-    total_distance: f64,
-    steps: Vec<CategoryPathStepOut>,
-    path_confidence: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct CategoryPathOut {
+    pub total_distance: f64,
+    pub steps: Vec<CategoryPathStepOut>,
+    pub path_confidence: f64,
 }
 
 impl From<CategoryPath> for CategoryPathOut {
@@ -654,11 +634,12 @@ impl From<CategoryPath> for CategoryPathOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct DrillDownOut {
-    item_index: usize,
-    distance: f64,
-    used_inner_sphere: bool,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct DrillDownOut {
+    pub item_index: usize,
+    pub distance: f64,
+    pub used_inner_sphere: bool,
 }
 
 impl From<&DrillDownResult> for DrillDownOut {
@@ -671,15 +652,16 @@ impl From<&DrillDownResult> for DrillDownOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct InnerSphereReportOut {
-    category_name: String,
-    category_index: usize,
-    member_count: usize,
-    projection_type: String,
-    inner_evr: f64,
-    global_subset_evr: f64,
-    evr_improvement: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct InnerSphereReportOut {
+    pub category_name: String,
+    pub category_index: usize,
+    pub member_count: usize,
+    pub projection_type: String,
+    pub inner_evr: f64,
+    pub global_subset_evr: f64,
+    pub evr_improvement: f64,
 }
 
 impl From<&InnerSphereReport> for InnerSphereReportOut {
@@ -696,21 +678,23 @@ impl From<&InnerSphereReport> for InnerSphereReportOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct CategoryStatsOut {
-    summaries: Vec<CategorySummaryOut>,
-    inner_sphere_reports: Vec<InnerSphereReportOut>,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct CategoryStatsOut {
+    pub summaries: Vec<CategorySummaryOut>,
+    pub inner_sphere_reports: Vec<InnerSphereReportOut>,
 }
 
-#[derive(serde::Serialize)]
-struct DomainGroupOut {
-    member_categories: Vec<usize>,
-    category_names: Vec<String>,
-    centroid_theta: f64,
-    centroid_phi: f64,
-    angular_spread: f64,
-    cohesion: f64,
-    total_items: usize,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct DomainGroupOut {
+    pub member_categories: Vec<usize>,
+    pub category_names: Vec<String>,
+    pub centroid_theta: f64,
+    pub centroid_phi: f64,
+    pub angular_spread: f64,
+    pub cohesion: f64,
+    pub total_items: usize,
 }
 
 impl From<&DomainGroup> for DomainGroupOut {
@@ -727,11 +711,12 @@ impl From<&DomainGroup> for DomainGroupOut {
     }
 }
 
-#[derive(serde::Serialize)]
-struct ProjectionWarningOut {
-    message: String,
-    evr: f64,
-    severity: &'static str,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct ProjectionWarningOut {
+    pub message: String,
+    pub evr: f64,
+    pub severity: String,
 }
 
 impl From<&ProjectionWarning> for ProjectionWarningOut {
@@ -739,7 +724,7 @@ impl From<&ProjectionWarning> for ProjectionWarningOut {
         Self {
             message: w.message.clone(),
             evr: w.evr,
-            severity: severity_name(w.severity),
+            severity: severity_name(w.severity).to_string(),
         }
     }
 }
