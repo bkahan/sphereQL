@@ -281,7 +281,7 @@ fn main() {
         "Fitting PCA from {} documents ({DIM}-d embeddings → 3D sphere)...",
         docs.len()
     );
-    let pca = PcaProjection::fit(&all_embeddings, RadialStrategy::Magnitude);
+    let pca = PcaProjection::fit(&all_embeddings, RadialStrategy::Magnitude).expect("PCA fit");
 
     // -----------------------------------------------------------------------
     // Build index — insert with metadata-driven radius (importance score)

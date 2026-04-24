@@ -30,6 +30,11 @@ pub enum PipelineError {
     /// Fewer than 3 embeddings — not enough to fit a 3D projection.
     #[error("need at least 3 embeddings, got {0}")]
     TooFewEmbeddings(usize),
+    /// Projection fit rejected the input. Wraps
+    /// [`ProjectionError`](crate::projection::ProjectionError) — empty
+    /// corpus, dim-too-low, inconsistent dim, invalid sigma, etc.
+    #[error("projection fit failed: {0}")]
+    Projection(#[from] crate::projection::ProjectionError),
     /// Every [`auto_tune`](crate::tuner::auto_tune) trial failed a
     /// downstream validator (e.g. every candidate config was rejected
     /// by the pipeline builder). The attached `failures` list carries
@@ -246,7 +251,7 @@ impl SphereQLPipeline {
             .map(|v| Embedding::new(v.clone()))
             .collect();
 
-        let projection = fit_projection_for_config(&embeddings, &config);
+        let projection = fit_projection_for_config(&embeddings, &config)?;
         Self::with_configured_projection_and_config(
             input.categories,
             embeddings,
@@ -920,22 +925,23 @@ impl SphereQLPipeline {
 pub fn fit_projection_for_config(
     embeddings: &[Embedding],
     config: &PipelineConfig,
-) -> ConfiguredProjection {
+) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
     match config.projection_kind {
-        ProjectionKind::Pca => ConfiguredProjection::Pca(
-            PcaProjection::fit(embeddings, RadialStrategy::Magnitude).with_volumetric(true),
-        ),
-        ProjectionKind::KernelPca => ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
-            embeddings,
-            RadialStrategy::Magnitude,
+        ProjectionKind::Pca => Ok(ConfiguredProjection::Pca(
+            PcaProjection::fit(embeddings, RadialStrategy::Magnitude)?.with_volumetric(true),
+        )),
+        ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(
+            KernelPcaProjection::fit(embeddings, RadialStrategy::Magnitude)?,
         )),
         ProjectionKind::LaplacianEigenmap => {
             let lc = &config.laplacian;
-            ConfiguredProjection::Laplacian(LaplacianEigenmapProjection::fit_with_params(
-                embeddings,
-                lc.k_neighbors,
-                lc.active_threshold,
-                RadialStrategy::Magnitude,
+            Ok(ConfiguredProjection::Laplacian(
+                LaplacianEigenmapProjection::fit_with_params(
+                    embeddings,
+                    lc.k_neighbors,
+                    lc.active_threshold,
+                    RadialStrategy::Magnitude,
+                )?,
             ))
         }
     }

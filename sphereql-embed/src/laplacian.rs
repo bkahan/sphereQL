@@ -31,7 +31,9 @@
 
 use sphereql_core::SphericalPoint;
 
-use crate::projection::{Projection, SplitMix64, dot, normalize_vec, project_xyz_to_spherical};
+use crate::projection::{
+    Projection, ProjectionError, SplitMix64, dot, normalize_vec, project_xyz_to_spherical,
+};
 use crate::types::{Embedding, ProjectedPoint, RadialStrategy};
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -94,7 +96,10 @@ pub struct LaplacianEigenmapProjection {
 
 impl LaplacianEigenmapProjection {
     /// Fit with default parameters (`k=15`, `active_threshold=0.05`).
-    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Self {
+    pub fn fit(
+        embeddings: &[Embedding],
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
         Self::fit_with_params(
             embeddings,
             DEFAULT_K_NEIGHBORS,
@@ -116,14 +121,21 @@ impl LaplacianEigenmapProjection {
         k: usize,
         active_threshold: f64,
         radial: RadialStrategy,
-    ) -> Self {
+    ) -> Result<Self, ProjectionError> {
         let n = embeddings.len();
-        assert!(
-            n >= 4,
-            "Laplacian eigenmap needs at least 4 embeddings, got {n}"
-        );
+        if n < 4 {
+            return Err(ProjectionError::TooFewEmbeddings {
+                got: n,
+                required: 4,
+            });
+        }
         let dim = embeddings[0].dimension();
-        assert!(dim > 0, "embedding dimensionality must be positive");
+        if dim == 0 {
+            return Err(ProjectionError::DimensionTooLow {
+                got: dim,
+                required: 1,
+            });
+        }
         let k = k.min(n - 1).max(1);
 
         // 1. Active-axis sets (sorted for merge-style intersection).
@@ -262,7 +274,7 @@ impl LaplacianEigenmapProjection {
         let connectivity_ratio =
             (eigenvalues[0].abs() + eigenvalues[1].abs() + eigenvalues[2].abs()) / 3.0;
 
-        Self {
+        Ok(Self {
             active_threshold,
             radial,
             dim,
@@ -271,7 +283,7 @@ impl LaplacianEigenmapProjection {
             eigenvectors,
             eigenvalues,
             connectivity_ratio,
-        }
+        })
     }
 
     /// Top-3 non-trivial eigenvalues of the normalized affinity matrix
@@ -589,7 +601,7 @@ mod tests {
     #[test]
     fn fit_produces_non_trivial_eigenvalues() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let [m1, m2, m3] = lap.eigenvalues();
         // All retained eigenvalues must be strictly below 1 (trivial excluded)
         // and above 0 (the 3-cluster structure should produce meaningful
@@ -605,7 +617,7 @@ mod tests {
     #[test]
     fn connectivity_ratio_in_unit_interval() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let r = lap.connectivity_ratio();
         assert!((0.0..=1.0).contains(&r), "connectivity_ratio = {r}");
         assert_eq!(r, lap.explained_variance_ratio());
@@ -614,7 +626,7 @@ mod tests {
     #[test]
     fn projection_lands_on_unit_sphere() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         for e in &corpus {
             let sp = lap.project(e);
             assert!((sp.r - 1.0).abs() < 1e-9, "r = {}", sp.r);
@@ -626,7 +638,7 @@ mod tests {
     #[test]
     fn same_cluster_points_closer_than_cross_cluster() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let positions: Vec<SphericalPoint> = corpus.iter().map(|e| lap.project(e)).collect();
 
         // Within cluster A (indices 0..5): max pairwise distance.
@@ -659,7 +671,7 @@ mod tests {
         // coord because Jaccard(x, x) = 1 but W[i][i] = 0 during fit), but
         // the same corpus point should project consistently across calls.
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let first = lap.project(&corpus[0]);
         let again = lap.project(&corpus[0]);
         assert!((first.theta - again.theta).abs() < 1e-12);
@@ -669,7 +681,7 @@ mod tests {
     #[test]
     fn new_point_in_known_cluster_routes_to_cluster_region() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         // Synthesize a fresh "cluster-A" point and check it lands closer to
         // an existing cluster-A member than to a cluster-C member.
         let query = emb(&[1.0, 0.8, 0.7, 0.02, -0.02, 0.02, -0.02, 0.02]);
@@ -687,21 +699,26 @@ mod tests {
     #[test]
     fn dimensionality_matches_input() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(lap.dimensionality(), 8);
     }
 
     #[test]
-    #[should_panic(expected = "at least 4 embeddings")]
     fn fit_rejects_tiny_corpus() {
         let corpus = vec![emb(&[1.0, 0.0]), emb(&[0.0, 1.0])];
-        let _ = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        assert!(matches!(
+            LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::TooFewEmbeddings {
+                got: 2,
+                required: 4
+            })
+        ));
     }
 
     #[test]
     fn project_rich_certainty_in_range() {
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         for e in &corpus {
             let pp = lap.project_rich(e);
             assert!(pp.certainty >= 0.0 && pp.certainty <= 1.0);
@@ -714,7 +731,7 @@ mod tests {
         // to the corpus. It should still produce a valid SphericalPoint
         // rather than NaN.
         let corpus = three_cluster_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let query = emb(&[0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]);
         let sp = lap.project(&query);
         assert!(sp.r.is_finite());

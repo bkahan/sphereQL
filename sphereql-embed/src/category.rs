@@ -656,8 +656,13 @@ impl CategoryLayer {
                 .sum::<f64>()
                 / member_embs.len() as f64;
 
-            // Fit inner linear PCA
-            let inner_pca = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
+            // Fit inner linear PCA. On failure (too few members, dim
+            // too low, etc.) skip this category's inner sphere
+            // silently — the outer sphere still covers queries.
+            let Ok(inner_pca) = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0))
+            else {
+                continue;
+            };
             let inner_linear_evr = inner_pca.explained_variance_ratio();
 
             if inner_linear_evr - global_subset_evr < cfg.min_evr_improvement {
@@ -665,13 +670,18 @@ impl CategoryLayer {
             }
 
             let (inner_proj, inner_evr) = if summary.member_count >= cfg.kernel_pca_min_size {
-                let inner_kpca = KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0));
-                let kernel_evr = inner_kpca.explained_variance_ratio();
-
-                if kernel_evr > inner_linear_evr + cfg.min_kernel_improvement {
-                    (InnerProjection::KernelPca(inner_kpca), kernel_evr)
-                } else {
-                    (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+                // Kernel PCA can fail on degenerate subsets too; fall
+                // back to the already-successful linear fit.
+                match KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0)) {
+                    Ok(inner_kpca) => {
+                        let kernel_evr = inner_kpca.explained_variance_ratio();
+                        if kernel_evr > inner_linear_evr + cfg.min_kernel_improvement {
+                            (InnerProjection::KernelPca(inner_kpca), kernel_evr)
+                        } else {
+                            (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+                        }
+                    }
+                    Err(_) => (InnerProjection::LinearPca(inner_pca), inner_linear_evr),
                 }
             } else {
                 (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
@@ -1098,7 +1108,7 @@ mod tests {
 
     fn build_test_layer() -> (CategoryLayer, Vec<Embedding>, PcaProjection) {
         let (categories, embeddings) = test_corpus();
-        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
         let evr = pca.explained_variance_ratio();
         let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr);
@@ -1145,7 +1155,7 @@ mod tests {
 
     fn build_large_test_layer() -> (CategoryLayer, Vec<Embedding>, PcaProjection) {
         let (categories, embeddings) = large_category_corpus();
-        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
         let evr = pca.explained_variance_ratio();
         let layer = CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr);
@@ -1622,7 +1632,7 @@ mod tests {
         let corpus: Vec<Embedding> = (0..5)
             .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
             .collect();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(
             format!("{:?}", InnerProjection::LinearPca(pca)),
             "LinearPca"
@@ -1634,7 +1644,7 @@ mod tests {
         let corpus: Vec<Embedding> = (0..5)
             .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
             .collect();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let proj = InnerProjection::LinearPca(pca.clone());
         let e = emb(&[1.0, 0.0, 0.0, 0.0, 0.0]);
         let sp_enum = proj.project(&e);
@@ -1648,7 +1658,7 @@ mod tests {
         let corpus: Vec<Embedding> = (0..5)
             .map(|i| emb(&[i as f64, 0.0, 0.0, 0.0, 0.0]))
             .collect();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(InnerProjection::LinearPca(pca).dimensionality(), 5);
     }
 }

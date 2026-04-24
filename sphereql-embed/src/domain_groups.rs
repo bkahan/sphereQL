@@ -177,7 +177,7 @@ mod tests {
             emb(&[0.05, 0.15, 0.9, 0.03, 0.01]),
             emb(&[0.1, 0.05, 0.95, 0.04, 0.03]),
         ];
-        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
         let evr = pca.explained_variance_ratio();
         CategoryLayer::build(&categories, &embeddings, &projected, &pca, evr)

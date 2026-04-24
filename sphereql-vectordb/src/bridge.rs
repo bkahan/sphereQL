@@ -97,6 +97,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             .collect();
 
         let pca = PcaProjection::fit(&embs, self.config.radial_strategy.clone())
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?
             .with_volumetric(self.config.volumetric);
 
         let pipeline = SphereQLPipeline::with_projection(categories, embs, pca.clone())

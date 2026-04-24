@@ -432,7 +432,7 @@ fn main() {
         "Fitting PCA projection from {} word embeddings ({DIM} dimensions → 3D sphere)...\n",
         words.len()
     );
-    let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude);
+    let pca = PcaProjection::fit(&embeddings, RadialStrategy::Magnitude).expect("PCA fit");
 
     // -----------------------------------------------------------------------
     // Build spatial index

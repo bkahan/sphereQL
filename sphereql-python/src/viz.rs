@@ -100,7 +100,9 @@ pub fn visualize(
         .map(|v| Embedding::from(v.as_slice()))
         .collect();
 
-    let pca = PcaProjection::fit(&embs, RadialStrategy::Magnitude).with_volumetric(true);
+    let pca = PcaProjection::fit(&embs, RadialStrategy::Magnitude)
+        .map_err(|e| PyValueError::new_err(format!("PCA fit failed: {e}")))?
+        .with_volumetric(true);
     let evr = pca.explained_variance_ratio();
 
     let mut cart_points = Vec::with_capacity(embs.len());

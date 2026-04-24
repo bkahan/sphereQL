@@ -374,11 +374,16 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         let key = ProjectionFitKey::from_config(&cfg);
         let projection = match prefit.get(&key) {
             Some(p) => p.clone(),
-            None => {
-                let p = fit_projection_for_config(&embeddings, &cfg);
-                prefit.insert(key, p.clone());
-                p
-            }
+            None => match fit_projection_for_config(&embeddings, &cfg) {
+                Ok(p) => {
+                    prefit.insert(key, p.clone());
+                    p
+                }
+                Err(e) => {
+                    failures.push((cfg, e.to_string()));
+                    return;
+                }
+            },
         };
 
         let start = Instant::now();
@@ -464,11 +469,15 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let best_score = trials[best_idx].score;
 
     // Build the winning pipeline fresh so the caller gets it owned.
+    // Winner came from a successful trial, so the prefit cache has its
+    // projection. The unwrap_or is defensive — if the cache entry went
+    // missing somehow, re-fit and propagate any error as a
+    // `PipelineError::Projection`.
     let best_key = ProjectionFitKey::from_config(&best_config);
-    let best_projection = prefit
-        .get(&best_key)
-        .cloned()
-        .unwrap_or_else(|| fit_projection_for_config(&embeddings, &best_config));
+    let best_projection = match prefit.get(&best_key).cloned() {
+        Some(p) => p,
+        None => fit_projection_for_config(&embeddings, &best_config)?,
+    };
     let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
         categories,
         embeddings,

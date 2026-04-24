@@ -1139,7 +1139,7 @@ mod tests {
     #[test]
     fn search_nearest_returns_sorted() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
             .phi_divisions(3)
@@ -1204,7 +1204,7 @@ mod tests {
     #[test]
     fn magnitude_radial_with_shell_query() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude);
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .uniform_shells(5, 10.0)
             .theta_divisions(4)
@@ -1289,7 +1289,7 @@ mod tests {
     #[test]
     fn semantic_query_region_used_in_index() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let projection_clone = pca.clone();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
@@ -1314,7 +1314,7 @@ mod tests {
     #[test]
     fn concept_path_populates_hop_distance() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
             .phi_divisions(3)
@@ -1342,7 +1342,7 @@ mod tests {
     #[test]
     fn concept_path_bridged_same_category_equals_unbridged() {
         let corpus = test_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let mut idx = EmbeddingIndex::builder(pca)
             .theta_divisions(4)
             .phi_divisions(3)

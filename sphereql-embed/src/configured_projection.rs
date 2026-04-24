@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn pca_variant_dispatches() {
         let corpus = toy_corpus();
-        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let cp: ConfiguredProjection = pca.into();
         assert_eq!(cp.kind(), ProjectionKind::Pca);
         assert_eq!(cp.dimensionality(), 5);
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn kernel_pca_variant_dispatches() {
         let corpus = toy_corpus();
-        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let cp: ConfiguredProjection = kpca.into();
         assert_eq!(cp.kind(), ProjectionKind::KernelPca);
         assert_eq!(cp.dimensionality(), 5);
@@ -184,7 +184,7 @@ mod tests {
         // Laplacian needs ≥4 embeddings and at least one active axis per
         // point — the toy corpus above qualifies.
         let corpus = toy_corpus();
-        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0));
+        let lap = LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let cp: ConfiguredProjection = lap.into();
         assert_eq!(cp.kind(), ProjectionKind::LaplacianEigenmap);
         assert_eq!(cp.dimensionality(), 5);
@@ -196,11 +196,11 @@ mod tests {
     fn explained_variance_ratio_in_range_for_every_variant() {
         let corpus = toy_corpus();
         let pca: ConfiguredProjection =
-            PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).into();
+            PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
         let kpca: ConfiguredProjection =
-            KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).into();
+            KernelPcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
         let lap: ConfiguredProjection =
-            LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).into();
+            LaplacianEigenmapProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
         for cp in &[pca, kpca, lap] {
             let r = cp.explained_variance_ratio();
             assert!((0.0..=1.0).contains(&r), "{:?}: {r}", cp);
@@ -211,7 +211,7 @@ mod tests {
     fn debug_formats_kind_not_inner() {
         let corpus = toy_corpus();
         let pca: ConfiguredProjection =
-            PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).into();
+            PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap().into();
         assert_eq!(format!("{:?}", pca), "ConfiguredProjection::Pca");
     }
 }
