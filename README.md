@@ -98,11 +98,13 @@ results = pipeline.nearest([0.15, 0.85, 0.35, 0.05], k=3)
 sphereql.visualize(categories, embeddings, title="My Embeddings")
 ```
 
-The Python bindings expose PCA and Kernel PCA today; Laplacian
-projection, `auto_tune`, and the `MetaModel` layer are Rust-only in
-0.1.x. See the [Python quickstart](docs/quickstart-python.md) for
-semantic search, 3D visualization, vector database bridges, and the
-core type surface.
+The Python bindings cover the full Rust surface — PCA, Kernel PCA,
+Laplacian eigenmap, `auto_tune`, `MetaModel`, `FeedbackAggregator`,
+and the category enrichment layer. Type stubs (`.pyi`) are
+auto-generated via `pyo3-stub-gen`. See the
+[Python quickstart](docs/quickstart-python.md) for semantic search,
+3D visualization, vector database bridges, and the core type
+surface.
 
 ## WASM — minimal example
 
@@ -121,9 +123,11 @@ const pipeline = new Pipeline(JSON.stringify({
 const results = pipeline.nearest(JSON.stringify([0.15, 0.85, 0.35]), 1);
 ```
 
-Same bindings coverage as Python. See the
-[WASM quickstart](docs/quickstart-wasm.md) for category enrichment in
-the browser.
+Same bindings coverage as Python. Every pipeline / category /
+metalearning method returns typed values via `tsify` — `wasm-pack build`
+emits a `.d.ts` with named interfaces, no `JSON.parse` required. See
+the [WASM quickstart](docs/quickstart-wasm.md) for category enrichment
+in the browser.
 
 ## Workspace layout
 
@@ -134,7 +138,7 @@ the browser.
 | `sphereql-index` | Spatial indexing with shell + sector partitioning. |
 | `sphereql-layout` | Layout engines (Fibonacci spiral, k-means, force-directed). |
 | `sphereql-embed` | Projections, query pipeline, Category Enrichment Layer, metalearning framework. |
-| `sphereql-graphql` | async-graphql schema with cone/shell/band/wedge queries + subscriptions. |
+| `sphereql-graphql` | async-graphql schema: spatial queries (cone/shell/band/wedge), the full category enrichment surface, subscriptions, and a pluggable `TextEmbedder` trait for text query input. |
 | `sphereql-vectordb` | Vector store bridge (InMemory, Qdrant, Pinecone) with hybrid search. |
 | `sphereql-python` | Python bindings via PyO3/maturin. |
 | `sphereql-wasm` | WASM bindings via wasm-bindgen. |
@@ -146,8 +150,13 @@ Full dependency graph and crate-by-crate description in
 ## Project status
 
 sphereQL is at **v0.1.0-alpha**. The core API is functional and covered
-by 400+ tests, but may change before 1.0. Known limitations and roadmap
+by 450+ tests, but may change before 1.0. Known limitations and roadmap
 are in [project-status.md](docs/project-status.md).
+
+Binding parity is protected by a drift check (`scripts/check-drift`) —
+new public items in `sphereql-embed` / `sphereql-layout` must either
+have a Python/WASM binding or an allowlist entry with a reason in
+`.bindings-ignore.toml`.
 
 ## Contributing
 
