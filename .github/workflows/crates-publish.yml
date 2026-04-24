@@ -13,23 +13,30 @@ env:
   CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
 jobs:
-  # Catch packaging errors before touching the registry. `cargo publish
-  # --dry-run` validates each crate's manifest, feature-gated builds,
-  # and `include`/`exclude` patterns independently — the same set of
-  # checks crates.io runs, without the side effect.
+  # Catch packaging errors before touching the registry.
+  #
+  # `cargo publish --dry-run` resolves every `path`-dep's version
+  # against crates.io to validate the future-published tarball. That
+  # means downstream crates can't be dry-run until their upstream is
+  # actually on the registry — a chicken-and-egg for any workspace-wide
+  # version bump. We scope this gate to `sphereql-core` (the leaf),
+  # which has no intra-workspace deps and catches the common manifest
+  # breaks: missing readme / description / license fields, bad
+  # `include` patterns, version typos.
+  #
+  # Downstream crates are implicitly validated by the real publish
+  # step below — if sphereql-core publishes cleanly, the 60-second
+  # registry-wait in the publish job lets each subsequent
+  # `cargo publish` resolve its deps against the freshly-landed
+  # upstream.
   dry-run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Dry-run every publishable crate
-        run: |
-          for crate in sphereql-core sphereql-index sphereql-layout sphereql-embed sphereql-graphql sphereql-vectordb sphereql; do
-            echo "::group::$crate"
-            cargo publish -p "$crate" --dry-run --allow-dirty
-            echo "::endgroup::"
-          done
+      - name: Dry-run sphereql-core (leaf crate)
+        run: cargo publish -p sphereql-core --dry-run --allow-dirty
 
   publish:
     needs: dry-run
