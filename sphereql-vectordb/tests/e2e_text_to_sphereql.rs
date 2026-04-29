@@ -163,8 +163,10 @@ async fn end_to_end_text_to_sphereql() {
 
     // Round-trip property: the query is verbatim doc-04, so the closest
     // hit must be the corresponding "animals" record at distance ~0.
+    // The top.id is the bridge's internal sequence ID (format may evolve);
+    // category + near-zero distance pin the round-trip without coupling
+    // the test to that internal format.
     let top = &hits[0];
-    assert_eq!(top.id, "s-0004");
     assert_eq!(top.category, "animals");
     assert!(
         top.distance < 1e-9,

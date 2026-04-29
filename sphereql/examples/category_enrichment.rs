@@ -490,7 +490,7 @@ fn main() {
     println!("\n━━━ Category bridge_quality Ranking ━━━\n");
 
     let mut ranked: Vec<&CategorySummary> = layer.summaries.iter().collect();
-    ranked.sort_by(|a, b| b.bridge_quality.partial_cmp(&a.bridge_quality).unwrap());
+    ranked.sort_by(|a, b| b.bridge_quality.total_cmp(&a.bridge_quality));
 
     println!(
         "  {:>4} {:<12} {:>7} {:>14} {:>12} {:>14}",
