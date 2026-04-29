@@ -476,7 +476,7 @@ fn main() {
     } else {
         println!("  OverlapArtifact pairs (shared territory, not real connectors):");
         for (s, t, strength) in &overlap_pairs {
-            println!("    {} ↔ {}  (strongest={:.3})", s, t, strength);
+            println!("    {s} ↔ {t}  (strongest={strength:.3})");
         }
     }
 

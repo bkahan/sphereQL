@@ -24,8 +24,8 @@
 //! Run with:
 //!   cargo run --example full_e2e --features embed --release
 
-use sphereql::core::spatial::*;
 use sphereql::core::SphericalPoint;
+use sphereql::core::spatial::*;
 use sphereql::embed::{
     BridgeClassification, CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, Embedding,
     FeedbackAggregator, FeedbackEvent, MetaModel, MetaTrainingRecord, NavigatorConfig,
@@ -92,7 +92,10 @@ fn main() {
         "  grid cardinality ........ {} configs",
         space.grid_cardinality()
     );
-    println!("  strategy ................ Random(budget={}, seed=0x{:X})", budget, seed);
+    println!(
+        "  strategy ................ Random(budget={}, seed=0x{:X})",
+        budget, seed
+    );
     println!("  metric .................. {}\n", metric.name());
 
     let start = std::time::Instant::now();
@@ -117,14 +120,8 @@ fn main() {
     );
     println!("  Best score:   {:.4}", tune_report.best_score);
     println!("  Mean score:   {:.4}", tune_report.mean_score());
-    println!(
-        "  Projection:   {}",
-        pipeline.projection_kind().name()
-    );
-    println!(
-        "  EVR:          {:.1}% variance explained\n",
-        evr * 100.0
-    );
+    println!("  Projection:   {}", pipeline.projection_kind().name());
+    println!("  EVR:          {:.1}% variance explained\n", evr * 100.0);
 
     println!("Top 5 trials:");
     println!(
@@ -214,19 +211,9 @@ fn main() {
 
     let nn_pred = nn_model.predict(&features);
     let dw_pred = dw_model.predict(&features);
-    println!(
-        "\nMeta-model predictions (self-query, should match tuner):"
-    );
-    println!(
-        "  {} → {}",
-        nn_model.name(),
-        nn_pred.projection_kind.name(),
-    );
-    println!(
-        "  {} → {}",
-        dw_model.name(),
-        dw_pred.projection_kind.name(),
-    );
+    println!("\nMeta-model predictions (self-query, should match tuner):");
+    println!("  {} → {}", nn_model.name(), nn_pred.projection_kind.name(),);
+    println!("  {} → {}", dw_model.name(), dw_pred.projection_kind.name(),);
     let matches = nn_pred.projection_kind == pipeline.projection_kind();
     println!(
         "  Match tuner winner ({}): {}",
@@ -251,7 +238,10 @@ fn main() {
         summary.n_events, summary.mean_score, summary.min_score, summary.max_score,
     );
 
-    println!("\nScore blending (automated={:.3}, user_mean={:.3}):", record.best_score, summary.mean_score);
+    println!(
+        "\nScore blending (automated={:.3}, user_mean={:.3}):",
+        record.best_score, summary.mean_score
+    );
     println!("  {:<8} {:<10} interpretation", "alpha", "blended");
     println!("  {}", "─".repeat(50));
     for alpha in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -282,7 +272,13 @@ fn main() {
         .collect();
 
     // Show a sample of projected points across different categories
-    let sample_cats = ["physics", "music", "computer_science", "biology", "philosophy"];
+    let sample_cats = [
+        "physics",
+        "music",
+        "computer_science",
+        "biology",
+        "philosophy",
+    ];
     println!(
         "  {:<30} {:<18} {:>7} {:>7} {:>9} {:>9}",
         "Concept", "Category", "θ (°)", "φ (°)", "Certainty", "Intensity"
@@ -318,9 +314,7 @@ fn main() {
     let fresh_vec = embed(&fresh_query_features, 42);
     let fresh_emb = Embedding::new(fresh_vec.clone());
     let projected = pipeline.projection().project_rich(&fresh_emb);
-    println!(
-        "\n  Fresh query (quantum computing):"
-    );
+    println!("\n  Fresh query (quantum computing):");
     println!(
         "    Projected to: θ={:.1}°, φ={:.1}°, r={:.4}",
         projected.position.theta.to_degrees(),
@@ -505,7 +499,11 @@ fn main() {
     for s in sorted_summaries.iter().take(15) {
         println!(
             "  {:<22} {:>5} {:>10.2} {:>8.4} {:>9.4}",
-            s.name, s.member_count, s.angular_spread.to_degrees(), s.cohesion, s.bridge_quality,
+            s.name,
+            s.member_count,
+            s.angular_spread.to_degrees(),
+            s.cohesion,
+            s.bridge_quality,
         );
     }
     if sorted_summaries.len() > 15 {
@@ -516,9 +514,17 @@ fn main() {
     println!("\n  ── §5b. CROSS-DOMAIN CONCEPT PATHS ────────────────────────");
 
     let path_queries = [
-        ("nanotechnology", "economics", "How does nanotech impact the economy?"),
+        (
+            "nanotechnology",
+            "economics",
+            "How does nanotech impact the economy?",
+        ),
         ("music", "biology", "Musical patterns in living systems?"),
-        ("philosophy", "computer_science", "From abstract thought to computation"),
+        (
+            "philosophy",
+            "computer_science",
+            "From abstract thought to computation",
+        ),
     ];
 
     for (src, tgt, question) in &path_queries {
@@ -542,10 +548,16 @@ fn main() {
                         .bridges_to_next
                         .iter()
                         .take(2)
-                        .map(|b| format!("\"{}\" (s={:.3})", labels[b.item_index], b.bridge_strength))
+                        .map(|b| {
+                            format!("\"{}\" (s={:.3})", labels[b.item_index], b.bridge_strength)
+                        })
                         .collect();
                     if !bridge_labels.is_empty() {
-                        println!("    {} bridged by: {}", step.category_name, bridge_labels.join(", "));
+                        println!(
+                            "    {} bridged by: {}",
+                            step.category_name,
+                            bridge_labels.join(", ")
+                        );
                     }
                 }
             }
@@ -572,7 +584,12 @@ fn main() {
             print!("  {} ↔ {}: ", src, tgt);
             let desc: Vec<String> = all
                 .iter()
-                .map(|b| format!("\"{}\" (s={:.3}, {:?})", labels[b.item_index], b.bridge_strength, b.classification))
+                .map(|b| {
+                    format!(
+                        "\"{}\" (s={:.3}, {:?})",
+                        labels[b.item_index], b.bridge_strength, b.classification
+                    )
+                })
                 .collect();
             println!("{}", desc.join(", "));
         }
@@ -610,7 +627,11 @@ fn main() {
         for s in &stats {
             println!(
                 "  {:<22} {:>6} {:>10.4} {:>10.4} {:>10.4}",
-                s.category_name, s.member_count, s.inner_evr, s.global_subset_evr, s.evr_improvement,
+                s.category_name,
+                s.member_count,
+                s.inner_evr,
+                s.global_subset_evr,
+                s.evr_improvement,
             );
         }
     }
@@ -667,14 +688,27 @@ fn main() {
     println!("\n  ── §6b. DRILL-DOWN ───────────────────────────────────────");
     for cat in ["physics", "computer_science", "mathematics"] {
         let drill = pipeline
-            .query(SphereQLQuery::DrillDown { category: cat, k: 3 }, &pq)
+            .query(
+                SphereQLQuery::DrillDown {
+                    category: cat,
+                    k: 3,
+                },
+                &pq,
+            )
             .ok();
         if let Some(SphereQLOutput::DrillDown(results)) = drill {
             let items: Vec<String> = results
                 .iter()
                 .map(|r| {
-                    let sphere = if r.used_inner_sphere { "inner" } else { "outer" };
-                    format!("\"{}\" ({}, d={:.4})", labels[r.item_index], sphere, r.distance)
+                    let sphere = if r.used_inner_sphere {
+                        "inner"
+                    } else {
+                        "outer"
+                    };
+                    format!(
+                        "\"{}\" ({}, d={:.4})",
+                        labels[r.item_index], sphere, r.distance
+                    )
                 })
                 .collect();
             println!("  {:<20} → {}", cat, items.join(", "));
@@ -744,15 +778,21 @@ fn main() {
 
     // 6e: Hierarchical routing
     println!("\n  ── §6e. HIERARCHICAL ROUTING ─────────────────────────────");
-    println!(
-        "  EVR={:.3} (hierarchical activates below 0.35)\n",
-        evr
-    );
+    println!("  EVR={:.3} (hierarchical activates below 0.35)\n", evr);
 
     let route_queries = [
-        ("quantum computing", vec![(QUANTUM, 0.8), (COMPUTATION, 0.7), (MATH, 0.5)]),
-        ("musical cognition", vec![(SOUND, 0.7), (CONSCIOUSNESS, 0.6), (EMOTION, 0.5)]),
-        ("legal ethics of AI", vec![(LEGAL, 0.7), (ETHICS, 0.8), (AI, 0.5)]),
+        (
+            "quantum computing",
+            vec![(QUANTUM, 0.8), (COMPUTATION, 0.7), (MATH, 0.5)],
+        ),
+        (
+            "musical cognition",
+            vec![(SOUND, 0.7), (CONSCIOUSNESS, 0.6), (EMOTION, 0.5)],
+        ),
+        (
+            "legal ethics of AI",
+            vec![(LEGAL, 0.7), (ETHICS, 0.8), (AI, 0.5)],
+        ),
     ];
 
     for (desc, feats) in &route_queries {
@@ -795,11 +835,21 @@ fn main() {
     let test_points = [
         (
             "At physics centroid",
-            layer.summaries.iter().find(|s| s.name == "physics").unwrap().centroid_position,
+            layer
+                .summaries
+                .iter()
+                .find(|s| s.name == "physics")
+                .unwrap()
+                .centroid_position,
         ),
         (
             "At music centroid",
-            layer.summaries.iter().find(|s| s.name == "music").unwrap().centroid_position,
+            layer
+                .summaries
+                .iter()
+                .find(|s| s.name == "music")
+                .unwrap()
+                .centroid_position,
         ),
         (
             "North pole (void?)",
@@ -811,14 +861,18 @@ fn main() {
         ),
         (
             "Physics antipode",
-            antipode(&layer.summaries.iter().find(|s| s.name == "physics").unwrap().centroid_position),
+            antipode(
+                &layer
+                    .summaries
+                    .iter()
+                    .find(|s| s.name == "physics")
+                    .unwrap()
+                    .centroid_position,
+            ),
         ),
     ];
 
-    println!(
-        "  {:<25} {:>12} interpretation",
-        "Location", "Confidence"
-    );
+    println!("  {:<25} {:>12} interpretation", "Location", "Confidence");
     println!("  {}", "─".repeat(55));
     for (name, pt) in &test_points {
         let conf = gap_confidence(pt, layer, config.gap_sharpness);
@@ -992,7 +1046,10 @@ fn main() {
                     .map(|b| format!("\"{}\" (s={:.3})", labels[b.item_index], b.bridge_strength))
                     .collect();
                 if all_labels.is_empty() {
-                    println!("    {} → {}: (adjacency)", step.category_name, next.category_name);
+                    println!(
+                        "    {} → {}: (adjacency)",
+                        step.category_name, next.category_name
+                    );
                 } else {
                     println!(
                         "    {} → {}: {}",
@@ -1027,7 +1084,9 @@ fn main() {
             if dev > 0.3 {
                 println!("    The graph path detours significantly — the connection is indirect.");
             } else {
-                println!("    The graph path tracks the geodesic closely — domains are well-linked.");
+                println!(
+                    "    The graph path tracks the geodesic closely — domains are well-linked."
+                );
             }
         }
 
@@ -1040,7 +1099,11 @@ fn main() {
                     "    {:<22} gap_conf={:.4} {}",
                     step.category_name,
                     conf,
-                    if conf > 0.7 { "— solid ground" } else { "— thin coverage" }
+                    if conf > 0.7 {
+                        "— solid ground"
+                    } else {
+                        "— thin coverage"
+                    }
                 );
             }
         }
@@ -1063,13 +1126,19 @@ fn main() {
             "  │  Music and physics are {} on the semantic  │",
             closeness
         );
-        println!("  │  sphere (distance {:.3} / π). The connection runs     │", path.total_distance);
+        println!(
+            "  │  sphere (distance {:.3} / π). The connection runs     │",
+            path.total_distance
+        );
         println!("  │  through shared mathematical structure — waves,        │");
         println!("  │  harmonics, and resonance are native to both fields.   │");
         println!("  │                                                          │");
         println!("  │  Bridge concepts at each transition provide specific    │");
         println!("  │  jumping-off points for cross-domain reasoning. The    │");
-        println!("  │  projection preserves {:.1}% of the original semantic    │", evr * 100.0);
+        println!(
+            "  │  projection preserves {:.1}% of the original semantic    │",
+            evr * 100.0
+        );
         println!("  │  structure, giving confidence that these spatial        │");
         println!("  │  relationships reflect genuine conceptual affinity.     │");
         println!("  └──────────────────────────────────────────────────────────┘");
@@ -1083,16 +1152,53 @@ fn main() {
     println!("║  SUMMARY                                                    ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
-    println!("  Corpus:       {} concepts across {} categories", n, pipeline.num_categories());
-    println!("  Projection:   {} (EVR={:.1}%)", pipeline.projection_kind().name(), evr * 100.0);
-    println!("  Tuning:       best={:.4} over {} trials in {:.2}s", tune_report.best_score, tune_report.trials.len(), tune_elapsed.as_secs_f64());
-    println!("  Meta-model:   {} + {} fitted", nn_model.name(), dw_model.name());
-    println!("  Feedback:     {} events, blended score at α=0.5: {:.4}", summary.n_events, record.adjust_score_with_feedback(&summary, 0.5));
-    println!("  Coverage:     {:.1}% of S²", cov.coverage_fraction * 100.0);
-    println!("  Voronoi:      {} cells, total area {:.3} sr", vor.cells.len(), vor.total_area);
-    println!("  Bridges:      {} total — {} genuine / {} weak / {} artifact", total_bridges, genuine, weak, artifact);
-    println!("  Groups:       {} hierarchical domain groups", groups.len());
-    println!("  Curvature:    {} triples analyzed", curv.top_triples.len());
+    println!(
+        "  Corpus:       {} concepts across {} categories",
+        n,
+        pipeline.num_categories()
+    );
+    println!(
+        "  Projection:   {} (EVR={:.1}%)",
+        pipeline.projection_kind().name(),
+        evr * 100.0
+    );
+    println!(
+        "  Tuning:       best={:.4} over {} trials in {:.2}s",
+        tune_report.best_score,
+        tune_report.trials.len(),
+        tune_elapsed.as_secs_f64()
+    );
+    println!(
+        "  Meta-model:   {} + {} fitted",
+        nn_model.name(),
+        dw_model.name()
+    );
+    println!(
+        "  Feedback:     {} events, blended score at α=0.5: {:.4}",
+        summary.n_events,
+        record.adjust_score_with_feedback(&summary, 0.5)
+    );
+    println!(
+        "  Coverage:     {:.1}% of S²",
+        cov.coverage_fraction * 100.0
+    );
+    println!(
+        "  Voronoi:      {} cells, total area {:.3} sr",
+        vor.cells.len(),
+        vor.total_area
+    );
+    println!(
+        "  Bridges:      {} total — {} genuine / {} weak / {} artifact",
+        total_bridges, genuine, weak, artifact
+    );
+    println!(
+        "  Groups:       {} hierarchical domain groups",
+        groups.len()
+    );
+    println!(
+        "  Curvature:    {} triples analyzed",
+        curv.top_triples.len()
+    );
 
     println!("\n  All 7 phases demonstrated: auto-tune → meta-learn → embed →");
     println!("  spatial analysis → category analysis → queries → AI divergence.");

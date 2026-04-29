@@ -95,4 +95,3 @@ pub fn build_unified_schema_from_items(
         default_no_embedder_handle(),
     ))
 }
-

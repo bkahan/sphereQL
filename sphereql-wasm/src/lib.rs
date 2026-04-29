@@ -421,9 +421,7 @@ fn parse_input(input_json: &str) -> Result<PipelineInput, JsError> {
                         JsError::new(&format!("embedding[{i}][{j}] must be a number"))
                     })?;
                     if !f.is_finite() {
-                        return Err(JsError::new(&format!(
-                            "embedding[{i}][{j}] must be finite"
-                        )));
+                        return Err(JsError::new(&format!("embedding[{i}][{j}] must be finite")));
                     }
                     Ok(f)
                 })
