@@ -2748,6 +2748,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sphereql-lingua"
+version = "0.2.0-alpha"
+dependencies = [
+ "approx",
+ "regex",
+ "serde",
+ "sphereql-core",
+]
+
+[[package]]
 name = "sphereql-python"
 version = "0.2.0-alpha"
 dependencies = [
@@ -2762,6 +2772,7 @@ dependencies = [
  "sphereql-graphql",
  "sphereql-index",
  "sphereql-layout",
+ "sphereql-lingua",
  "sphereql-vectordb",
  "tokio",
 ]
