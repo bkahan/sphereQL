@@ -6,7 +6,8 @@
       "Bash(cargo check *)",
       "Bash(cargo run *)",
       "Bash(cargo clippy *)",
-      "Bash(cargo fmt *)"
+      "Bash(cargo fmt *)",
+      "Read(//private/tmp/cr_review/**)"
     ]
   }
 }
