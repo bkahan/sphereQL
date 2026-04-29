@@ -7,6 +7,8 @@ pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
 #[cfg(feature = "core")]
 mod core_types;
+#[cfg(feature = "lingua")]
+mod lingua;
 #[cfg(feature = "embed")]
 mod meta;
 #[cfg(feature = "embed")]
@@ -93,6 +95,14 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "qdrant")]
     {
         m.add_class::<vectordb::PyQdrantBridge>()?;
+    }
+
+    #[cfg(feature = "lingua")]
+    {
+        m.add_class::<lingua::PyLinguaPipeline>()?;
+        m.add_class::<lingua::PyConceptGraph>()?;
+        m.add_class::<lingua::PyConcept>()?;
+        m.add_function(wrap_pyfunction!(lingua::py_lingua_process, m)?)?;
     }
 
     Ok(())

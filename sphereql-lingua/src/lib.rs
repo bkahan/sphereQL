@@ -8,18 +8,18 @@
 //! delegates all spherical math (Vincenty distance, SLERP, conversions)
 //! to `sphereql-core`.
 
-pub mod concept;
-pub mod taxonomy;
 pub mod abstraction;
-pub mod salience;
-pub mod relation;
+pub mod concept;
 pub mod graph;
 pub mod pipeline;
+pub mod relation;
+pub mod salience;
+pub mod taxonomy;
 
-pub use concept::{Concept, ConceptExtractor, RegexExtractor};
-pub use taxonomy::{DomainAnchor, DomainTaxonomy};
 pub use abstraction::AbstractionResolver;
-pub use salience::SalienceScorer;
-pub use relation::{Relation, RelationType, RelationEncoder};
+pub use concept::{Concept, ConceptExtractor, RegexExtractor};
 pub use graph::ConceptGraph;
 pub use pipeline::LinguaPipeline;
+pub use relation::{Relation, RelationEncoder, RelationType};
+pub use salience::SalienceScorer;
+pub use taxonomy::{DomainAnchor, DomainTaxonomy};

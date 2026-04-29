@@ -2,8 +2,8 @@
 //! Run: cargo run --example e2e -p sphereql-lingua
 
 use sphereql_core::angular_distance;
-use sphereql_lingua::{LinguaPipeline, ConceptGraph};
 use sphereql_lingua::taxonomy::theta_distance;
+use sphereql_lingua::{ConceptGraph, LinguaPipeline};
 use std::f64::consts::PI;
 
 const TEXT_META: &str = "\
@@ -47,16 +47,24 @@ is not reductionism - it is recognition that abstraction and representation \
 are universal operations of mind.";
 
 fn pt(g: &ConceptGraph, name: &str) -> sphereql_core::SphericalPoint {
-    g.get_concept(name).unwrap_or_else(|| panic!("'{name}' not found")).point.expect("unresolved")
+    g.get_concept(name)
+        .unwrap_or_else(|| panic!("'{name}' not found"))
+        .point
+        .expect("unresolved")
 }
 
 fn main() {
-    println!("{'='repeat 70}");
+    let bar = "=".repeat(70);
+    println!("{bar}");
     println!("  SPHEREQL-LINGUA  End-to-End Rust Demonstration");
-    println!("{'='repeat 70}\n");
+    println!("{bar}\n");
 
     let pipeline = LinguaPipeline::new();
-    let texts = [("Meta/Formal", TEXT_META), ("Medical", TEXT_MEDICAL), ("Philosophical", TEXT_PHILOSOPHY)];
+    let texts = [
+        ("Meta/Formal", TEXT_META),
+        ("Medical", TEXT_MEDICAL),
+        ("Philosophical", TEXT_PHILOSOPHY),
+    ];
     let mut graphs = Vec::new();
 
     for (label, text) in &texts {
@@ -65,14 +73,32 @@ fn main() {
         println!("-- {label} ({} chars) --", text.len());
         if let Some(c) = g.centroid() {
             let dom = pipeline.taxonomy().domain_name(c.theta);
-            let abs = if c.phi < PI/2.0 { "Abstract" } else { "Concrete" };
-            println!("  Centroid: t={:.3} p={:.3} r={:.3} [{dom}, {abs}]", c.theta, c.phi, c.r);
+            let abs = if c.phi < PI / 2.0 {
+                "Abstract"
+            } else {
+                "Concrete"
+            };
+            println!(
+                "  Centroid: t={:.3} p={:.3} r={:.3} [{dom}, {abs}]",
+                c.theta, c.phi, c.r
+            );
         }
         println!("  Concepts: {n}  Relations: {}", g.relations.len());
-        let mut top: Vec<_> = g.concepts.iter().filter_map(|c| c.point.map(|p| (&c.normalized, p))).collect();
+        let mut top: Vec<_> = g
+            .concepts
+            .iter()
+            .filter_map(|c| c.point.map(|p| (&c.normalized, p)))
+            .collect();
         top.sort_by(|a, b| b.1.r.partial_cmp(&a.1.r).unwrap());
         for (name, p) in top.iter().take(5) {
-            println!("    r={:.3} t={:.3} p={:.3}  {:<28} [{}]", p.r, p.theta, p.phi, name, pipeline.taxonomy().domain_name(p.theta));
+            println!(
+                "    r={:.3} t={:.3} p={:.3}  {:<28} [{}]",
+                p.r,
+                p.theta,
+                p.phi,
+                name,
+                pipeline.taxonomy().domain_name(p.theta)
+            );
         }
         println!();
         graphs.push(g);
@@ -82,27 +108,72 @@ fn main() {
     println!("-- VALIDATION --\n");
     let (mut pass, mut total) = (0u32, 0u32);
     macro_rules! check {
-        ($n:expr, $c:expr, $d:expr) => {{ total += 1; if $c { pass += 1; } println!("  [{}] {}", if $c {"PASS"} else {"FAIL"}, $n); println!("         {}", $d); }};
+        ($n:expr, $c:expr, $d:expr) => {{
+            total += 1;
+            if $c {
+                pass += 1;
+            }
+            println!("  [{}] {}", if $c { "PASS" } else { "FAIL" }, $n);
+            println!("         {}", $d);
+        }};
     }
     let g = &graphs[0];
-    let dt_oc = theta_distance(pt(g,"oncology").theta, pt(g,"cardiology").theta);
-    let dt_ol = theta_distance(pt(g,"oncology").theta, pt(g,"contract law").theta);
-    check!("Oncology ~ Cardiology", dt_oc < 0.5, format!("dt={dt_oc:.4}"));
-    check!("Oncology closer to Cardiology than Law", dt_oc < dt_ol, format!("{dt_oc:.4} < {dt_ol:.4}"));
-    check!("Disease phi < Oncology phi", pt(g,"disease").phi < pt(g,"oncology").phi,
-           format!("{:.3} < {:.3}", pt(g,"disease").phi, pt(g,"oncology").phi));
-    check!("Disease phi < Stage-3", pt(g,"disease").phi < pt(g,"stage-3 pancreatic adenocarcinoma").phi,
-           format!("{:.3} < {:.3}", pt(g,"disease").phi, pt(g,"stage-3 pancreatic adenocarcinoma").phi));
-    check!("Language phi < English phi", pt(g,"language").phi < pt(g,"english").phi,
-           format!("{:.3} < {:.3}", pt(g,"language").phi, pt(g,"english").phi));
-    check!("Universality phi < Mathematics phi", pt(g,"universality").phi < pt(g,"mathematics").phi,
-           format!("{:.3} < {:.3}", pt(g,"universality").phi, pt(g,"mathematics").phi));
-    check!("SphereQL r > Graph r", pt(g,"sphereql").r > pt(g,"graph").r,
-           format!("{:.3} > {:.3}", pt(g,"sphereql").r, pt(g,"graph").r));
-    let (lang, llm, sph) = (pt(g,"language"), pt(g,"llm"), pt(g,"sphereql"));
-    let (dac, dab, dbc) = (angular_distance(&lang, &sph), angular_distance(&lang, &llm), angular_distance(&llm, &sph));
-    check!("Triangle inequality", dac <= dab + dbc + 1e-9,
-           format!("{dac:.4} <= {:.4}", dab + dbc));
+    let dt_oc = theta_distance(pt(g, "oncology").theta, pt(g, "cardiology").theta);
+    let dt_ol = theta_distance(pt(g, "oncology").theta, pt(g, "contract law").theta);
+    check!(
+        "Oncology ~ Cardiology",
+        dt_oc < 0.5,
+        format!("dt={dt_oc:.4}")
+    );
+    check!(
+        "Oncology closer to Cardiology than Law",
+        dt_oc < dt_ol,
+        format!("{dt_oc:.4} < {dt_ol:.4}")
+    );
+    check!(
+        "Disease phi < Oncology phi",
+        pt(g, "disease").phi < pt(g, "oncology").phi,
+        format!("{:.3} < {:.3}", pt(g, "disease").phi, pt(g, "oncology").phi)
+    );
+    check!(
+        "Disease phi < Stage-3",
+        pt(g, "disease").phi < pt(g, "stage-3 pancreatic adenocarcinoma").phi,
+        format!(
+            "{:.3} < {:.3}",
+            pt(g, "disease").phi,
+            pt(g, "stage-3 pancreatic adenocarcinoma").phi
+        )
+    );
+    check!(
+        "Language phi < English phi",
+        pt(g, "language").phi < pt(g, "english").phi,
+        format!("{:.3} < {:.3}", pt(g, "language").phi, pt(g, "english").phi)
+    );
+    check!(
+        "Universality phi < Mathematics phi",
+        pt(g, "universality").phi < pt(g, "mathematics").phi,
+        format!(
+            "{:.3} < {:.3}",
+            pt(g, "universality").phi,
+            pt(g, "mathematics").phi
+        )
+    );
+    check!(
+        "SphereQL r > Graph r",
+        pt(g, "sphereql").r > pt(g, "graph").r,
+        format!("{:.3} > {:.3}", pt(g, "sphereql").r, pt(g, "graph").r)
+    );
+    let (lang, llm, sph) = (pt(g, "language"), pt(g, "llm"), pt(g, "sphereql"));
+    let (dac, dab, dbc) = (
+        angular_distance(&lang, &sph),
+        angular_distance(&lang, &llm),
+        angular_distance(&llm, &sph),
+    );
+    check!(
+        "Triangle inequality",
+        dac <= dab + dbc + 1e-9,
+        format!("{dac:.4} <= {:.4}", dab + dbc)
+    );
 
     println!("\n  RESULT: {pass}/{total} passed\n");
 
@@ -113,10 +184,21 @@ fn main() {
     // Geodesic
     println!("-- GEODESIC: language -> sphereql --\n");
     println!("  Direct: {dac:.4} rad ({:.1} deg)", dac * 180.0 / PI);
-    println!("  Via LLM: {:.4} rad ({:.1} deg, {:.1}% overhead)", dab+dbc, (dab+dbc)*180.0/PI, ((dab+dbc)/dac-1.0)*100.0);
+    println!(
+        "  Via LLM: {:.4} rad ({:.1} deg, {:.1}% overhead)",
+        dab + dbc,
+        (dab + dbc) * 180.0 / PI,
+        ((dab + dbc) / dac - 1.0) * 100.0
+    );
     for i in 0..=10 {
         let t = i as f64 / 10.0;
         let p = sphereql_core::full_slerp(&lang, &sph, t);
-        println!("    t={t:.1} t={:.4} p={:.4} r={:.4} [{}]", p.theta, p.phi, p.r, pipeline.taxonomy().domain_name(p.theta));
+        println!(
+            "    t={t:.1} t={:.4} p={:.4} r={:.4} [{}]",
+            p.theta,
+            p.phi,
+            p.r,
+            pipeline.taxonomy().domain_name(p.theta)
+        );
     }
 }

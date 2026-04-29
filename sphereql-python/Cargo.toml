@@ -40,6 +40,7 @@ graphql = ["index", "dep:sphereql-graphql"]
 vectordb = ["embed", "dep:sphereql-vectordb", "dep:tokio", "dep:async-trait"]
 pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 qdrant = ["vectordb", "sphereql-vectordb/qdrant"]
+lingua = ["core", "dep:sphereql-lingua"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
 
 [dependencies]
@@ -54,5 +55,6 @@ sphereql-graphql = { path = "../sphereql-graphql", optional = true }
 sphereql-vectordb = { path = "../sphereql-vectordb", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 async-trait = { version = "0.1", optional = true }
+sphereql-lingua = { path = "../sphereql-lingua", optional = true }
 pythonize = "0.28"
 serde_json = "1"
