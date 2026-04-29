@@ -259,16 +259,22 @@
             for (const e of events) {
                 agg.record(JSON.stringify(e));
             }
-            const summary = JSON.parse(agg.summarize("demo_corpus"));
+            // wasm-bindgen already returns a JS object / array; no JSON.parse needed.
+            const summary = agg.summarize("demo_corpus");
+            const corpusIds = agg.corpusIds();
 
             write("out-feedback", [
                 `events recorded:  ${agg.len()}`,
-                `corpora tracked:  ${JSON.parse(agg.corpusIds()).join(", ")}`,
+                `corpora tracked:  ${corpusIds.join(", ")}`,
                 ``,
                 `demo_corpus summary:`,
-                `  n_events:    ${summary.n_events}`,
-                `  mean_score:  ${summary.mean_score.toFixed(4)}`,
-                `  range:       [${summary.min_score.toFixed(2)}, ${summary.max_score.toFixed(2)}]`,
+                summary
+                    ? `  n_events:    ${summary.n_events}`
+                    : `  (no summary for demo_corpus)`,
+                summary ? `  mean_score:  ${summary.mean_score.toFixed(4)}` : ``,
+                summary
+                    ? `  range:       [${summary.min_score.toFixed(2)}, ${summary.max_score.toFixed(2)}]`
+                    : ``,
                 ``,
                 `// persistence: agg.toJson() / FeedbackAggregator.fromJson()`,
                 `// store the JSON in localStorage, IndexedDB, or POST to a server.`,

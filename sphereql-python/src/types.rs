@@ -188,6 +188,8 @@ impl Path {
                     "id": s.id,
                     "category": s.category,
                     "cumulative_distance": s.cumulative_distance,
+                    "hop_distance": s.hop_distance,
+                    "bridge_strength": s.bridge_strength,
                 })
             })
             .collect();
@@ -381,7 +383,7 @@ impl From<&ManifoldResult> for Manifold {
 
 #[gen_stub_pyclass]
 #[pyclass(name = "CategorySummaryInfo", frozen, from_py_object)]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PyCategorySummary {
     #[pyo3(get)]
     pub name: String,
@@ -409,6 +411,10 @@ impl PyCategorySummary {
             "CategorySummaryInfo(name={:?}, members={}, cohesion={:.4}, bridge_quality={:.4})",
             self.name, self.member_count, self.cohesion, self.bridge_quality
         )
+    }
+
+    fn __eq__(&self, other: &PyCategorySummary) -> bool {
+        self == other
     }
 }
 

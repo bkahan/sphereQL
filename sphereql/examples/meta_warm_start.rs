@@ -151,6 +151,10 @@ fn check_eq(label: &str, actual: f64, expected: f64) {
         "  [{}] {:<28} actual={:.4}  expected={:.4}",
         mark, label, actual, expected
     );
+    // Exit non-zero so this example actually fails CI when a pinned knob drifts.
+    if !ok {
+        std::process::exit(1);
+    }
 }
 
 fn check_eq_usize(label: &str, actual: usize, expected: usize) {
@@ -160,4 +164,7 @@ fn check_eq_usize(label: &str, actual: usize, expected: usize) {
         "  [{}] {:<28} actual={}  expected={}",
         mark, label, actual, expected
     );
+    if !ok {
+        std::process::exit(1);
+    }
 }

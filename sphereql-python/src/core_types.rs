@@ -136,6 +136,10 @@ impl PyCartesianPoint {
     pub(crate) fn from_inner(inner: CartesianPoint) -> Self {
         Self { inner }
     }
+
+    pub(crate) fn inner(&self) -> &CartesianPoint {
+        &self.inner
+    }
 }
 
 // ── GeoPoint ───────────────────────────────────────────────────────────
@@ -294,11 +298,7 @@ pub fn py_spherical_to_cartesian(p: &PySphericalPoint) -> PyCartesianPoint {
 #[pyfunction]
 #[pyo3(name = "cartesian_to_spherical")]
 pub fn py_cartesian_to_spherical(p: &PyCartesianPoint) -> PySphericalPoint {
-    PySphericalPoint::from_inner(rust_cartesian_to_spherical(&CartesianPoint::new(
-        p.x(),
-        p.y(),
-        p.z(),
-    )))
+    PySphericalPoint::from_inner(rust_cartesian_to_spherical(p.inner()))
 }
 
 #[gen_stub_pyfunction]

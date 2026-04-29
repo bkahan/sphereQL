@@ -33,7 +33,7 @@ impl From<&CategorySummary> for CategorySummaryOutput {
     fn from(s: &CategorySummary) -> Self {
         Self {
             name: s.name.clone(),
-            member_count: s.member_count as i32,
+            member_count: i32::try_from(s.member_count).unwrap_or(i32::MAX),
             centroid_theta: s.centroid_position.theta,
             centroid_phi: s.centroid_position.phi,
             angular_spread: s.angular_spread,
@@ -80,9 +80,9 @@ pub struct BridgeItemOutput {
 impl From<&BridgeItem> for BridgeItemOutput {
     fn from(b: &BridgeItem) -> Self {
         Self {
-            item_index: b.item_index as i32,
-            source_category: b.source_category as i32,
-            target_category: b.target_category as i32,
+            item_index: i32::try_from(b.item_index).unwrap_or(i32::MAX),
+            source_category: i32::try_from(b.source_category).unwrap_or(i32::MAX),
+            target_category: i32::try_from(b.target_category).unwrap_or(i32::MAX),
             affinity_to_source: b.affinity_to_source,
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
@@ -105,7 +105,7 @@ pub struct CategoryPathStepOutput {
 impl From<&CategoryPathStep> for CategoryPathStepOutput {
     fn from(s: &CategoryPathStep) -> Self {
         Self {
-            category_index: s.category_index as i32,
+            category_index: i32::try_from(s.category_index).unwrap_or(i32::MAX),
             category_name: s.category_name.clone(),
             cumulative_distance: s.cumulative_distance,
             hop_confidence: s.hop_confidence,
@@ -185,7 +185,7 @@ pub struct DrillDownOutput {
 impl From<&DrillDownResult> for DrillDownOutput {
     fn from(r: &DrillDownResult) -> Self {
         Self {
-            item_index: r.item_index as i32,
+            item_index: i32::try_from(r.item_index).unwrap_or(i32::MAX),
             distance: r.distance,
             used_inner_sphere: r.used_inner_sphere,
         }
@@ -209,8 +209,8 @@ impl From<&InnerSphereReport> for InnerSphereReportOutput {
     fn from(r: &InnerSphereReport) -> Self {
         Self {
             category_name: r.category_name.clone(),
-            category_index: r.category_index as i32,
-            member_count: r.member_count as i32,
+            category_index: i32::try_from(r.category_index).unwrap_or(i32::MAX),
+            member_count: i32::try_from(r.member_count).unwrap_or(i32::MAX),
             projection_type: r.projection_type.to_string(),
             inner_evr: r.inner_evr,
             global_subset_evr: r.global_subset_evr,
@@ -243,13 +243,17 @@ pub struct DomainGroupOutput {
 impl From<&DomainGroup> for DomainGroupOutput {
     fn from(g: &DomainGroup) -> Self {
         Self {
-            member_categories: g.member_categories.iter().map(|&i| i as i32).collect(),
+            member_categories: g
+                .member_categories
+                .iter()
+                .map(|&i| i32::try_from(i).unwrap_or(i32::MAX))
+                .collect(),
             category_names: g.category_names.clone(),
             centroid_theta: g.centroid.theta,
             centroid_phi: g.centroid.phi,
             angular_spread: g.angular_spread,
             cohesion: g.cohesion,
-            total_items: g.total_items as i32,
+            total_items: i32::try_from(g.total_items).unwrap_or(i32::MAX),
         }
     }
 }

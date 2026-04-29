@@ -120,7 +120,9 @@ impl VectorStore for InMemoryStore {
         let state = self.state.read().await;
 
         let start = match offset {
-            Some(off) => off.parse::<usize>().unwrap_or(0),
+            Some(off) => off.parse::<usize>().map_err(|_| {
+                VectorStoreError::InvalidConfig(format!("invalid pagination cursor: {off:?}"))
+            })?,
             None => 0,
         };
 

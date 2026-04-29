@@ -323,7 +323,7 @@ impl Projection for KernelPcaProjection {
         if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
             if sp.r < f64::EPSILON {
-                return SphericalPoint::new_unchecked(0.0, 0.0, 0.0);
+                return SphericalPoint::origin();
             }
             SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
         } else {
@@ -360,7 +360,7 @@ impl Projection for KernelPcaProjection {
         let position = if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
             if sp.r < f64::EPSILON {
-                SphericalPoint::new_unchecked(0.0, 0.0, 0.0)
+                SphericalPoint::origin()
             } else {
                 SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
             }

@@ -428,16 +428,12 @@ fn main() {
     for (&(src, tgt), items) in &layer.graph.bridges {
         if let Some(strongest) = items
             .iter()
-            .max_by(|a, b| a.bridge_strength.partial_cmp(&b.bridge_strength).unwrap())
+            .max_by(|a, b| a.bridge_strength.total_cmp(&b.bridge_strength))
         {
             pair_rows.push((src, tgt, items.len(), strongest));
         }
     }
-    pair_rows.sort_by(|a, b| {
-        b.3.bridge_strength
-            .partial_cmp(&a.3.bridge_strength)
-            .unwrap()
-    });
+    pair_rows.sort_by(|a, b| b.3.bridge_strength.total_cmp(&a.3.bridge_strength));
 
     println!();
     println!(

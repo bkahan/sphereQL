@@ -19,8 +19,6 @@ pub use query::*;
 pub use subscription::*;
 pub use types::*;
 
-use std::sync::Arc;
-
 /// Merged GraphQL query root combining the spatial-only resolvers and
 /// the category-enrichment resolvers.
 #[derive(async_graphql::MergedObject, Default)]
@@ -98,9 +96,3 @@ pub fn build_unified_schema_from_items(
     ))
 }
 
-// Touch Arc so the import is used in the public re-export path tests
-// downstream might rely on.
-#[allow(dead_code)]
-fn _ensure_arc_in_scope() -> Arc<()> {
-    Arc::new(())
-}

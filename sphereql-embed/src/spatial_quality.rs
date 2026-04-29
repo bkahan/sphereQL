@@ -86,6 +86,11 @@ impl SpatialQuality {
         evr: f64,
         config: &PipelineConfig,
     ) -> Self {
+        assert_eq!(
+            centroids.len(),
+            half_angles.len(),
+            "centroids and half_angles must have matching length"
+        );
         let n = centroids.len();
         let sc = &config.spatial;
 
@@ -97,7 +102,8 @@ impl SpatialQuality {
 
         let voronoi_cells = spherical_voronoi(centroids, sc.voronoi_samples);
 
-        let mut pairwise_intersections = Vec::with_capacity(n * (n - 1) / 2);
+        let mut pairwise_intersections =
+            Vec::with_capacity(if n >= 2 { n * (n - 1) / 2 } else { 0 });
         for i in 0..n {
             for j in (i + 1)..n {
                 let area = cap_intersection_area(

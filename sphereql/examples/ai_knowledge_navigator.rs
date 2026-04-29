@@ -1083,7 +1083,7 @@ fn main() {
             .collect();
         sizes.sort_by_key(|x| std::cmp::Reverse(x.1));
         for (name, count) in sizes.iter().take(10) {
-            let bar = "█".repeat(*count);
+            let bar = "█".repeat((*count).min(40));
             let threshold_marker = if *count >= 20 { " ✓ (eligible)" } else { "" };
             println!("    {:<22} {:>3} {}{}", name, count, bar, threshold_marker);
         }

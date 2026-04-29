@@ -6,10 +6,10 @@ use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 /// Async interface to a vector database backend.
 ///
 /// Implementations exist for:
-/// - [`InMemoryStore`](crate::InMemoryStore) \u2014 always available, for testing and small datasets
-/// - `QdrantStore` \u2014 behind the `qdrant` feature flag
+/// - [`InMemoryStore`](crate::InMemoryStore) — always available, for testing and small datasets
+/// - `QdrantStore` — behind the `qdrant` feature flag
 ///
-/// All methods accept `&self` \u2014 implementations must handle interior
+/// All methods accept `&self` — implementations must handle interior
 /// mutability (typically via `RwLock` or the backend's own concurrency).
 #[async_trait]
 pub trait VectorStore: Send + Sync {

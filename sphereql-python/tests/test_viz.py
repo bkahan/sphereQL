@@ -34,7 +34,8 @@ class TestVisualize:
         result = sphereql.visualize(cats, embs, output=out, open_browser=False)
         assert os.path.exists(out)
         assert result.endswith("test_viz.html")
-        content = open(out).read()
+        with open(out) as f:
+            content = f.read()
         assert "<script" in content
         assert "THREE" in content
 
@@ -42,7 +43,8 @@ class TestVisualize:
         cats, embs = make_data()
         out = str(tmp_path / "test_cats.html")
         sphereql.visualize(cats, embs, output=out, open_browser=False)
-        content = open(out).read()
+        with open(out) as f:
+            content = f.read()
         assert "science" in content
         assert "cooking" in content
 
@@ -50,7 +52,8 @@ class TestVisualize:
         cats, embs = make_data()
         out = str(tmp_path / "test_stats.html")
         sphereql.visualize(cats, embs, output=out, open_browser=False)
-        content = open(out).read()
+        with open(out) as f:
+            content = f.read()
         assert "evr" in content
         assert "PCA variance" in content
 
@@ -61,7 +64,8 @@ class TestVisualize:
         sphereql.visualize(
             cats, embs, output=out, labels=labels, open_browser=False
         )
-        content = open(out).read()
+        with open(out) as f:
+            content = f.read()
         assert "item-0" in content
 
     def test_with_title(self, tmp_path):
@@ -70,7 +74,8 @@ class TestVisualize:
         sphereql.visualize(
             cats, embs, output=out, title="My Test Sphere", open_browser=False
         )
-        content = open(out).read()
+        with open(out) as f:
+            content = f.read()
         assert "My Test Sphere" in content
 
 
@@ -84,6 +89,7 @@ class TestVisualizePipeline:
         )
         assert os.path.exists(out)
         assert result.endswith("test_pipeline_viz.html")
-        content = open(out).read()
+        with open(out) as f:
+            content = f.read()
         assert "<script" in content
         assert "THREE" in content
