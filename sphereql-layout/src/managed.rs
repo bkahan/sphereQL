@@ -64,6 +64,11 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
         mapper: &dyn DimensionMapper<Item = T>,
     ) {
         let result = strategy.layout(&self.items, mapper);
+        debug_assert_eq!(
+            result.entries.len(),
+            self.positions.len(),
+            "LayoutStrategy must return one entry per item"
+        );
         for (i, entry) in result.entries.into_iter().enumerate() {
             if i < self.positions.len() {
                 self.positions[i] = entry.position;
@@ -88,14 +93,16 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
         }
 
         let dirty_indices: Vec<usize> = self.dirty.iter().copied().collect();
-        let dirty_items: Vec<T> = dirty_indices
-            .iter()
-            .map(|&i| self.items[i].clone())
-            .collect();
 
-        let result = strategy.layout(&dirty_items, mapper);
-        for (i, entry) in dirty_indices.iter().zip(result.entries) {
-            self.positions[*i] = entry.position;
+        // Pass the full item set so global strategies (e.g. force-directed)
+        // can see all neighbors when placing dirty nodes — but only commit
+        // position updates for the dirty subset to preserve incremental
+        // semantics.
+        let result = strategy.layout(&self.items, mapper);
+        for &i in &dirty_indices {
+            if let Some(entry) = result.entries.get(i) {
+                self.positions[i] = entry.position;
+            }
         }
 
         self.dirty.clear();

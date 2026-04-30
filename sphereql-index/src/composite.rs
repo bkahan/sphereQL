@@ -80,6 +80,9 @@ impl SpatialIndexBuilder {
     }
 
     pub fn uniform_shells(mut self, count: usize, max_r: f64) -> Self {
+        if count == 0 {
+            return self;
+        }
         for i in 0..=count {
             self.shell_boundaries.push(max_r * i as f64 / count as f64);
         }

@@ -214,13 +214,13 @@ function selectPoint(idx){
   const sizeAttr=pointsGeo.getAttribute("size");
   const colorAttr=pointsGeo.getAttribute("color");
   for(let i=0;i<N;i++){
+    const base=new THREE.Color(catColor[pts[i].cat]);
     if(neighborSet.has(i)){
       sizeAttr.array[i]=6.0;
-      const c=new THREE.Color(catColor[pts[i].cat]);
-      colorAttr.array[i*3]=c.r;colorAttr.array[i*3+1]=c.g;colorAttr.array[i*3+2]=c.b;
+      colorAttr.array[i*3]=base.r;colorAttr.array[i*3+1]=base.g;colorAttr.array[i*3+2]=base.b;
     }else{
       sizeAttr.array[i]=2.0;
-      colorAttr.array[i*3]*=0.3;colorAttr.array[i*3+1]*=0.3;colorAttr.array[i*3+2]*=0.3;
+      colorAttr.array[i*3]=base.r*0.3;colorAttr.array[i*3+1]=base.g*0.3;colorAttr.array[i*3+2]=base.b*0.3;
     }
   }
   sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;

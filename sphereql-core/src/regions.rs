@@ -8,6 +8,11 @@ pub trait Contains {
     fn contains(&self, point: &SphericalPoint) -> bool;
 }
 
+/// A directional cone anchored at the sphere origin.
+///
+/// `apex` is retained for serialization and downstream tooling but is
+/// not consulted by [`Cone::contains`]; containment is decided purely by
+/// the angular distance from the test point to `axis`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Cone {
     pub apex: SphericalPoint,

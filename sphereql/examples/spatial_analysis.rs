@@ -722,8 +722,9 @@ fn main() {
         for i in 0..nc {
             let row_label = {
                 let n = cat_names[i];
-                if n.len() > 14 {
-                    format!("{}..", &n[..12])
+                if n.chars().count() > 14 {
+                    let prefix: String = n.chars().take(12).collect();
+                    format!("{}..", prefix)
                 } else {
                     n.to_string()
                 }

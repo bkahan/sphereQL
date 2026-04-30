@@ -428,16 +428,12 @@ fn main() {
     for (&(src, tgt), items) in &layer.graph.bridges {
         if let Some(strongest) = items
             .iter()
-            .max_by(|a, b| a.bridge_strength.partial_cmp(&b.bridge_strength).unwrap())
+            .max_by(|a, b| a.bridge_strength.total_cmp(&b.bridge_strength))
         {
             pair_rows.push((src, tgt, items.len(), strongest));
         }
     }
-    pair_rows.sort_by(|a, b| {
-        b.3.bridge_strength
-            .partial_cmp(&a.3.bridge_strength)
-            .unwrap()
-    });
+    pair_rows.sort_by(|a, b| b.3.bridge_strength.total_cmp(&a.3.bridge_strength));
 
     println!();
     println!(
@@ -480,7 +476,7 @@ fn main() {
     } else {
         println!("  OverlapArtifact pairs (shared territory, not real connectors):");
         for (s, t, strength) in &overlap_pairs {
-            println!("    {} ↔ {}  (strongest={:.3})", s, t, strength);
+            println!("    {s} ↔ {t}  (strongest={strength:.3})");
         }
     }
 
@@ -494,7 +490,7 @@ fn main() {
     println!("\n━━━ Category bridge_quality Ranking ━━━\n");
 
     let mut ranked: Vec<&CategorySummary> = layer.summaries.iter().collect();
-    ranked.sort_by(|a, b| b.bridge_quality.partial_cmp(&a.bridge_quality).unwrap());
+    ranked.sort_by(|a, b| b.bridge_quality.total_cmp(&a.bridge_quality));
 
     println!(
         "  {:>4} {:<12} {:>7} {:>14} {:>12} {:>14}",

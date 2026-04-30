@@ -186,14 +186,7 @@ pub fn visualize_pipeline(
         spherical.push((sp.r, sp.theta, sp.phi));
     }
 
-    let label_refs: Vec<String> = labels;
-    let data_json = build_data_json(
-        &categories,
-        &cart_points,
-        &spherical,
-        Some(&label_refs),
-        evr,
-    );
+    let data_json = build_data_json(&categories, &cart_points, &spherical, Some(&labels), evr);
     let title_str = title.unwrap_or("SphereQL Visualization");
     let html = render_html(&data_json, title_str);
 

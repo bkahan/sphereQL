@@ -546,20 +546,21 @@ impl PyInMemoryStore {
     /// Args:
     ///     records: List of dicts with keys 'id' (str), 'vector' (list[float]),
     ///         and optionally 'metadata' (dict).
-    fn upsert(&self, records: Vec<Bound<'_, PyDict>>) -> PyResult<()> {
+    fn upsert(&self, py: Python<'_>, records: Vec<Bound<'_, PyDict>>) -> PyResult<()> {
         let recs: Vec<VectorRecord> = records.iter().map(parse_record).collect::<PyResult<_>>()?;
-        self.rt
-            .block_on(self.inner.upsert(&recs))
-            .map_err(vstore_err)
+        py.detach(|| self.rt.block_on(self.inner.upsert(&recs)))
+            .map_err(vstore_err)?;
+        Ok(())
     }
 
     /// Return the number of records in the store.
-    fn count(&self) -> PyResult<usize> {
-        self.rt.block_on(self.inner.count()).map_err(vstore_err)
+    fn count(&self, py: Python<'_>) -> PyResult<usize> {
+        py.detach(|| self.rt.block_on(self.inner.count()))
+            .map_err(vstore_err)
     }
 
-    fn __len__(&self) -> PyResult<usize> {
-        self.count()
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        self.count(py)
     }
 
     fn __repr__(&self) -> String {

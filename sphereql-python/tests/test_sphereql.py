@@ -309,6 +309,7 @@ class TestKernelPcaProjection:
         assert isinstance(pt, sphereql.SphericalPoint)
 
     def test_f32_input(self):
+        np.random.seed(42)
         embs = np.random.randn(20, 64).astype(np.float32)
         kpca = sphereql.KernelPcaProjection.fit(embs)
         pt = kpca.project(embs[0])
@@ -362,6 +363,7 @@ class TestRandomProjection:
 
 class TestNumpyIntegration:
     def test_f32_upcast(self):
+        np.random.seed(42)
         embs = np.random.randn(20, 64).astype(np.float32)
         pca = sphereql.PcaProjection.fit(embs)
         pt = pca.project(embs[0])

@@ -280,6 +280,7 @@ def main():
         })
 
     json.dump(output, sys.stdout, indent=None, separators=(",", ":"))
+    sys.stdout.flush()
     print(f"\nDone: {len(texts)} sentences + {len(query_texts)} queries, {embeddings.shape[1]}-d", file=sys.stderr)
 
 

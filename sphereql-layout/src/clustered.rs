@@ -76,7 +76,8 @@ fn normalized_mean(points: &[CartesianPoint]) -> CartesianPoint {
     }
     let mean = CartesianPoint::new(sx, sy, sz);
     let n = mean.normalize();
-    if n.magnitude() == 0.0 {
+    // Antipodal points cancel; fall back to an arbitrary member direction.
+    if n.magnitude() < 1e-12 {
         points[0].normalize()
     } else {
         n

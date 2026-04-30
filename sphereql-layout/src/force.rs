@@ -166,6 +166,7 @@ impl<T: Clone> LayoutStrategy<T> for ForceDirectedLayout {
 
             for i in 0..n {
                 let pi = positions[i];
+                let sp_i = cartesian_to_spherical(&pi);
 
                 // Repulsion from every other point
                 for (j, &pj) in positions.iter().enumerate() {
@@ -173,7 +174,6 @@ impl<T: Clone> LayoutStrategy<T> for ForceDirectedLayout {
                         continue;
                     }
 
-                    let sp_i = cartesian_to_spherical(&pi);
                     let sp_j = cartesian_to_spherical(&pj);
                     let dist = angular_distance(&sp_i, &sp_j);
 
@@ -197,7 +197,6 @@ impl<T: Clone> LayoutStrategy<T> for ForceDirectedLayout {
 
                 // Attraction toward mapper's original position
                 let oi = original_cartesian[i];
-                let sp_i = cartesian_to_spherical(&pi);
                 let sp_oi = cartesian_to_spherical(&oi);
                 let dist_to_original = angular_distance(&sp_i, &sp_oi);
 

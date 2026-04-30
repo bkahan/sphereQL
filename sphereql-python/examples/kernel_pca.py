@@ -22,10 +22,13 @@ def header(title):
 
 
 def angular_distance(a, b):
-    """Great-circle distance between two SphericalPoints."""
+    """Great-circle distance between two SphericalPoints.
+
+    `phi` is the polar angle (from +z), `theta` is the azimuth.
+    """
     cos_d = (
-        math.sin(a.theta) * math.sin(b.theta) * math.cos(a.phi - b.phi)
-        + math.cos(a.theta) * math.cos(b.theta)
+        math.sin(a.phi) * math.sin(b.phi) * math.cos(a.theta - b.theta)
+        + math.cos(a.phi) * math.cos(b.phi)
     )
     return math.acos(max(-1.0, min(1.0, cos_d)))
 

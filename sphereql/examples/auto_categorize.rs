@@ -216,10 +216,11 @@ fn find_text(sentences: &[Sent], id: &str, max: usize) -> String {
         .find(|s| s.id == id)
         .map(|s| s.text.as_str())
         .unwrap_or("");
-    if text.len() <= max {
+    if text.chars().count() <= max {
         text.to_string()
     } else {
-        format!("{}…", &text[..max])
+        let head: String = text.chars().take(max).collect();
+        format!("{head}…")
     }
 }
 

@@ -95,6 +95,37 @@ impl Default for SearchSpace {
 }
 
 impl SearchSpace {
+    /// Panic with a clear message if any axis a sampler is about to read
+    /// from is empty. Empty axes would otherwise blow up via mod-by-zero
+    /// in [`Self::config_at_kind_index`] or out-of-bounds in
+    /// [`pick_uniform`], with messages that don't point at the real cause.
+    fn assert_axes_non_empty(&self, kind: ProjectionKind) {
+        let common = [
+            ("num_domain_groups", self.num_domain_groups.len()),
+            ("low_evr_threshold", self.low_evr_threshold.len()),
+            (
+                "overlap_artifact_territorial",
+                self.overlap_artifact_territorial.len(),
+            ),
+            ("threshold_base", self.threshold_base.len()),
+            ("threshold_evr_penalty", self.threshold_evr_penalty.len()),
+            ("min_evr_improvement", self.min_evr_improvement.len()),
+        ];
+        for (name, len) in common {
+            assert!(len > 0, "SearchSpace axis `{name}` is empty");
+        }
+        if matches!(kind, ProjectionKind::LaplacianEigenmap) {
+            assert!(
+                !self.laplacian_k_neighbors.is_empty(),
+                "SearchSpace axis `laplacian_k_neighbors` is empty"
+            );
+            assert!(
+                !self.laplacian_active_threshold.is_empty(),
+                "SearchSpace axis `laplacian_active_threshold` is empty"
+            );
+        }
+    }
+
     /// Number of kind-agnostic knob combinations. Every projection kind's
     /// grid slice is at least this large; Laplacian multiplies by its
     /// specific knob counts on top.
@@ -154,6 +185,7 @@ impl SearchSpace {
         mut idx: usize,
         base: &PipelineConfig,
     ) -> PipelineConfig {
+        self.assert_axes_non_empty(kind);
         let take = |idx: &mut usize, len: usize| -> usize {
             let v = *idx % len;
             *idx /= len;
@@ -428,8 +460,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             gamma,
             seed,
         } => {
-            let mut rng = SplitMix64::new(*seed);
             let budget = *budget;
+            assert!(
+                budget >= 2,
+                "Bayesian search requires budget >= 2 (got {budget})"
+            );
+            let mut rng = SplitMix64::new(*seed);
             let warmup = (*warmup).clamp(2, budget);
             let gamma = gamma.clamp(0.05, 0.95);
 
