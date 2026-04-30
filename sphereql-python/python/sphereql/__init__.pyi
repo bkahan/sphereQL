@@ -153,6 +153,7 @@ class CategorySummaryInfo:
         0.0 if this category has no bridged neighbors.
         """
     def __repr__(self) -> builtins.str: ...
+    def __eq__(self, other: CategorySummaryInfo) -> builtins.bool: ...
 
 @typing.final
 class CoverageReport:
