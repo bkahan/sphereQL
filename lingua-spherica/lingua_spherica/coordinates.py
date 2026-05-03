@@ -142,7 +142,10 @@ def spherical_centroid(points: List[SphericalPoint],
             cy += w * y / norm
             cz += w * z / norm
         cr += w * p.r
-    cx /= total_w; cy /= total_w; cz /= total_w; cr /= total_w
+    cx /= total_w
+    cy /= total_w
+    cz /= total_w
+    cr /= total_w
     result = SphericalPoint.from_cartesian(cx, cy, cz)
     result.r = cr
     return result
