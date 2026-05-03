@@ -42,6 +42,8 @@ def circular_weighted_mean(angles: List[float], weights: List[float]) -> float:
     """Von Mises MLE for mean direction. Handles wraparound correctly."""
     if not angles:
         return 0.0
+    if len(angles) != len(weights):
+        raise ValueError("angles and weights must have the same length")
     total_weight = sum(weights)
     if total_weight < EPSILON:
         return angles[0]
@@ -57,6 +59,8 @@ def circular_variance(angles: List[float], weights: Optional[List[float]] = None
         return 0.0
     if weights is None:
         weights = [1.0] * len(angles)
+    elif len(angles) != len(weights):
+        raise ValueError("angles and weights must have the same length")
     total = sum(weights)
     if total < EPSILON:
         return 0.0
@@ -77,23 +81,43 @@ def slerp(p1: SphericalPoint, p2: SphericalPoint, t: float) -> SphericalPoint:
            math.sin(p2.phi) * math.sin(p2.theta), math.cos(p2.phi))
     dot = max(-1.0, min(1.0, sum(a * b for a, b in zip(c1, c2))))
     omega = math.acos(dot)
+    r_lerp = (1 - t) * p1.r + t * p2.r
     if omega < EPSILON:
-        r = (1 - t) * p1.r + t * p2.r
-        return SphericalPoint(p1.theta, p1.phi, r)
+        return SphericalPoint(p1.theta, p1.phi, r_lerp)
     sin_omega = math.sin(omega)
+    if sin_omega < EPSILON:
+        # Antipodal (or near-antipodal): the geodesic is degenerate.
+        # Pick a deterministic orthogonal tangent to c1 and trace
+        # cos(omega*t)*c1 + sin(omega*t)*tangent along that great circle.
+        basis = (0.0, 0.0, 1.0) if abs(c1[2]) < 0.9 else (1.0, 0.0, 0.0)
+        proj = sum(b * a for b, a in zip(basis, c1))
+        ux, uy, uz = (basis[0] - proj * c1[0],
+                      basis[1] - proj * c1[1],
+                      basis[2] - proj * c1[2])
+        u_norm = math.sqrt(ux * ux + uy * uy + uz * uz)
+        ux, uy, uz = ux / u_norm, uy / u_norm, uz / u_norm
+        ca, sa = math.cos(omega * t), math.sin(omega * t)
+        x = ca * c1[0] + sa * ux
+        y = ca * c1[1] + sa * uy
+        z = ca * c1[2] + sa * uz
+        result = SphericalPoint.from_cartesian(x, y, z)
+        result.r = r_lerp
+        return result
     a = math.sin((1 - t) * omega) / sin_omega
     b = math.sin(t * omega) / sin_omega
     x = a * c1[0] + b * c2[0]
     y = a * c1[1] + b * c2[1]
     z = a * c1[2] + b * c2[2]
     result = SphericalPoint.from_cartesian(x, y, z)
-    result.r = (1 - t) * p1.r + t * p2.r
+    result.r = r_lerp
     return result
 
 
 def geodesic_path(p1: SphericalPoint, p2: SphericalPoint,
                   n_points: int = 50) -> List[SphericalPoint]:
     """Discrete geodesic path: n_points uniformly spaced on the great circle."""
+    if n_points < 2:
+        raise ValueError("n_points must be >= 2")
     return [slerp(p1, p2, i / (n_points - 1)) for i in range(n_points)]
 
 
@@ -104,6 +128,8 @@ def spherical_centroid(points: List[SphericalPoint],
         return SphericalPoint(0.0, HALF_PI, 0.5)
     if weights is None:
         weights = [1.0] * len(points)
+    elif len(points) != len(weights):
+        raise ValueError("points and weights must have the same length")
     total_w = sum(weights)
     if total_w < EPSILON:
         total_w = 1.0

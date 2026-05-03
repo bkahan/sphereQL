@@ -5,6 +5,7 @@ Six-stage orchestrator: Text -> Concepts -> theta -> phi -> r -> Relations -> Sp
 Each stage is a separate, replaceable module.
 """
 
+import math
 from typing import List, Optional
 from .types import Concept, ConceptGraph, SphericalPoint
 from .concept_extractor import ConceptExtractor
@@ -69,7 +70,7 @@ class LinguaSphericaEngine:
         # Stage 3: Abstraction Resolution (phi)
         for concept in concepts:
             phi = self.abstraction_resolver.assign_phi(concept, text)
-            concept.point.phi = phi
+            concept.point.phi = max(0.0, min(math.pi, phi))
         if self.verbose:
             print(f"[Engine] phi assigned. Abstraction levels:")
             sorted_by_phi = sorted(concepts, key=lambda c: c.point.phi)
@@ -80,7 +81,8 @@ class LinguaSphericaEngine:
         # Stage 4: Salience Scoring (r)
         self.salience_scorer.score_all(concepts, text)
         for concept in concepts:
-            concept.point.r = self.salience_scorer.salience_to_r(concept.salience_score)
+            raw_r = self.salience_scorer.salience_to_r(concept.salience_score)
+            concept.point.r = max(0.0, min(1.0, raw_r))
         if self.verbose:
             print(f"[Engine] r assigned. Top concepts by salience:")
             sorted_by_r = sorted(concepts, key=lambda c: c.point.r, reverse=True)
