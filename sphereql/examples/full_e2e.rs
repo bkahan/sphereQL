@@ -287,19 +287,19 @@ fn main() {
 
     let layer = pipeline.category_layer();
     for &cat in &sample_cats {
-        if let Some(s) = layer.summaries.iter().find(|s| s.name == cat) {
-            if let Some(&idx) = s.member_indices.first() {
-                let p = &exported[idx];
-                println!(
-                    "  {:<30} {:<18} {:>7.1} {:>7.1} {:>9.4} {:>9.4}",
-                    labels[idx],
-                    cat,
-                    p.theta.to_degrees(),
-                    p.phi.to_degrees(),
-                    p.certainty,
-                    p.intensity,
-                );
-            }
+        if let Some(s) = layer.summaries.iter().find(|s| s.name == cat)
+            && let Some(&idx) = s.member_indices.first()
+        {
+            let p = &exported[idx];
+            println!(
+                "  {:<30} {:<18} {:>7.1} {:>7.1} {:>9.4} {:>9.4}",
+                labels[idx],
+                cat,
+                p.theta.to_degrees(),
+                p.phi.to_degrees(),
+                p.certainty,
+                p.intensity,
+            );
         }
     }
 
@@ -1128,7 +1128,7 @@ fn main() {
         );
         println!(
             "  │  sphere (distance {:.3} / π). The connection runs     │",
-            path.total_distance
+            path.total_distance / std::f64::consts::PI
         );
         println!("  │  through shared mathematical structure — waves,        │");
         println!("  │  harmonics, and resonance are native to both fields.   │");

@@ -233,8 +233,13 @@ impl SearchSpace {
     /// to the tuner — external callers go through [`auto_tune`] with a
     /// [`SearchStrategy::Random`] strategy.
     pub(crate) fn sample(&self, rng: &mut SplitMix64, base: &PipelineConfig) -> PipelineConfig {
+        assert!(
+            !self.projection_kinds.is_empty(),
+            "SearchSpace axis `projection_kinds` is empty"
+        );
         let mut cfg = base.clone();
         cfg.projection_kind = pick_uniform(rng, &self.projection_kinds);
+        self.assert_axes_non_empty(cfg.projection_kind);
         cfg.routing = RoutingConfig {
             num_domain_groups: pick_uniform(rng, &self.num_domain_groups),
             low_evr_threshold: pick_uniform(rng, &self.low_evr_threshold),

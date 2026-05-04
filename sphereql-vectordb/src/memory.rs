@@ -325,6 +325,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_invalid_cursor_returns_error() {
+        let store = InMemoryStore::new("test", 3);
+        store
+            .upsert(&[record("a", vec![1.0, 0.0, 0.0])])
+            .await
+            .unwrap();
+
+        let err = store.list(10, Some("not-a-number")).await.unwrap_err();
+        assert!(
+            matches!(err, VectorStoreError::InvalidConfig(_)),
+            "expected InvalidConfig, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn set_payload_merges() {
         let store = InMemoryStore::new("test", 3);
         store

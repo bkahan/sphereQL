@@ -451,6 +451,14 @@ impl SphereQLPipeline {
         self.index.get(id).is_some()
     }
 
+    /// All indexed item ids, in the order they were inserted (i.e. parallel
+    /// to the input embeddings/categories). Currently auto-generated as
+    /// `s-{i:04}` strings; callers that need stable mapping back to their
+    /// own ids should keep their own parallel array.
+    pub fn ids(&self) -> &[String] {
+        &self.ids
+    }
+
     /// Execute a typed query against the pipeline.
     ///
     /// Returns [`PipelineError::UnknownCategory`] when a category

@@ -11,6 +11,22 @@ use sphereql_embed::category::{
 };
 use sphereql_embed::domain_groups::DomainGroup;
 use sphereql_embed::pipeline::{NearestResult, PathResult, PipelinePathStep};
+use tracing::warn;
+
+/// Narrow a `usize` into the GraphQL `Int` (i32) domain. Counts and
+/// indices that exceed `i32::MAX` are clamped *and* logged, so the cap
+/// is no longer silent: production callers staring at "2147483647" in a
+/// response now have a `warn!` line correlating it with the field.
+fn usize_to_i32(field: &'static str, v: usize) -> i32 {
+    i32::try_from(v).unwrap_or_else(|_| {
+        warn!(
+            field,
+            value = v,
+            "value exceeds i32::MAX in GraphQL Int field; clamping"
+        );
+        i32::MAX
+    })
+}
 
 // ── CategorySummary ────────────────────────────────────────────────────
 
@@ -33,7 +49,7 @@ impl From<&CategorySummary> for CategorySummaryOutput {
     fn from(s: &CategorySummary) -> Self {
         Self {
             name: s.name.clone(),
-            member_count: i32::try_from(s.member_count).unwrap_or(i32::MAX),
+            member_count: usize_to_i32("CategorySummary.member_count", s.member_count),
             centroid_theta: s.centroid_position.theta,
             centroid_phi: s.centroid_position.phi,
             angular_spread: s.angular_spread,
@@ -80,9 +96,9 @@ pub struct BridgeItemOutput {
 impl From<&BridgeItem> for BridgeItemOutput {
     fn from(b: &BridgeItem) -> Self {
         Self {
-            item_index: i32::try_from(b.item_index).unwrap_or(i32::MAX),
-            source_category: i32::try_from(b.source_category).unwrap_or(i32::MAX),
-            target_category: i32::try_from(b.target_category).unwrap_or(i32::MAX),
+            item_index: usize_to_i32("BridgeItem.item_index", b.item_index),
+            source_category: usize_to_i32("BridgeItem.source_category", b.source_category),
+            target_category: usize_to_i32("BridgeItem.target_category", b.target_category),
             affinity_to_source: b.affinity_to_source,
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
@@ -105,7 +121,7 @@ pub struct CategoryPathStepOutput {
 impl From<&CategoryPathStep> for CategoryPathStepOutput {
     fn from(s: &CategoryPathStep) -> Self {
         Self {
-            category_index: i32::try_from(s.category_index).unwrap_or(i32::MAX),
+            category_index: usize_to_i32("CategoryPathStep.category_index", s.category_index),
             category_name: s.category_name.clone(),
             cumulative_distance: s.cumulative_distance,
             hop_confidence: s.hop_confidence,
@@ -185,7 +201,7 @@ pub struct DrillDownOutput {
 impl From<&DrillDownResult> for DrillDownOutput {
     fn from(r: &DrillDownResult) -> Self {
         Self {
-            item_index: i32::try_from(r.item_index).unwrap_or(i32::MAX),
+            item_index: usize_to_i32("DrillDown.item_index", r.item_index),
             distance: r.distance,
             used_inner_sphere: r.used_inner_sphere,
         }
@@ -209,8 +225,8 @@ impl From<&InnerSphereReport> for InnerSphereReportOutput {
     fn from(r: &InnerSphereReport) -> Self {
         Self {
             category_name: r.category_name.clone(),
-            category_index: i32::try_from(r.category_index).unwrap_or(i32::MAX),
-            member_count: i32::try_from(r.member_count).unwrap_or(i32::MAX),
+            category_index: usize_to_i32("InnerSphereReport.category_index", r.category_index),
+            member_count: usize_to_i32("InnerSphereReport.member_count", r.member_count),
             projection_type: r.projection_type.to_string(),
             inner_evr: r.inner_evr,
             global_subset_evr: r.global_subset_evr,
@@ -246,14 +262,14 @@ impl From<&DomainGroup> for DomainGroupOutput {
             member_categories: g
                 .member_categories
                 .iter()
-                .map(|&i| i32::try_from(i).unwrap_or(i32::MAX))
+                .map(|&i| usize_to_i32("DomainGroup.member_categories", i))
                 .collect(),
             category_names: g.category_names.clone(),
             centroid_theta: g.centroid.theta,
             centroid_phi: g.centroid.phi,
             angular_spread: g.angular_spread,
             cohesion: g.cohesion,
-            total_items: i32::try_from(g.total_items).unwrap_or(i32::MAX),
+            total_items: usize_to_i32("DomainGroup.total_items", g.total_items),
         }
     }
 }

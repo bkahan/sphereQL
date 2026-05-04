@@ -28,6 +28,23 @@ use std::fs;
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// In-process serialization for the legacy-JSON → JSONL migration in
+/// [`FeedbackEvent::append_to`]. Two threads racing the migration would
+/// otherwise duplicate the migrated bytes (each reads the legacy array,
+/// each writes its own copy back). Keyed per canonical path so unrelated
+/// stores don't contend.
+fn migration_lock(path: &Path) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let map = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = map.lock().expect("migration lock map poisoned");
+    guard
+        .entry(key)
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
 
 fn first_non_ws_byte(path: &Path) -> io::Result<Option<u8>> {
     let mut f = fs::File::open(path)?;
@@ -119,20 +136,32 @@ impl FeedbackEvent {
         // Only the first non-whitespace byte is needed to disambiguate.
         // Reading the whole file on every append turned this into an
         // O(file_size) hot path on busy event streams.
+        //
+        // Migration is serialized per-path and re-checks the format
+        // under the lock so concurrent appenders don't double-migrate.
+        // Writes go through a sibling temp file + rename so a crash
+        // mid-migration leaves either the legacy array or the migrated
+        // JSONL — never a half-written mix.
         if path.exists() && first_non_ws_byte(path)? == Some(b'[') {
-            let head = fs::read_to_string(path)?;
-            let events: Vec<Self> = serde_json::from_str(head.trim_start())
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            let mut migrated = String::with_capacity(head.len());
-            for e in &events {
-                serde_json::to_string(e)
-                    .map(|line| {
-                        migrated.push_str(&line);
-                        migrated.push('\n');
-                    })
+            let lock = migration_lock(path);
+            let _g = lock.lock().expect("migration lock poisoned");
+            if path.exists() && first_non_ws_byte(path)? == Some(b'[') {
+                let head = fs::read_to_string(path)?;
+                let events: Vec<Self> = serde_json::from_str(head.trim_start())
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let mut migrated = String::with_capacity(head.len());
+                for e in &events {
+                    serde_json::to_string(e)
+                        .map(|line| {
+                            migrated.push_str(&line);
+                            migrated.push('\n');
+                        })
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                }
+                let tmp = path.with_extension("jsonl.migrating");
+                fs::write(&tmp, migrated)?;
+                fs::rename(&tmp, path)?;
             }
-            fs::write(path, migrated)?;
         }
 
         let mut f = fs::OpenOptions::new()
