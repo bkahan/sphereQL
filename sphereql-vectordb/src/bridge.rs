@@ -764,6 +764,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn nearest_returns_caller_facing_ids() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.9; 10];
+        let result = bridge
+            .query(SphereQLQuery::Nearest { k: 5 }, &query_vec)
+            .unwrap();
+
+        match result {
+            SphereQLOutput::Nearest(items) => {
+                assert_eq!(items.len(), 5);
+                for item in &items {
+                    assert!(
+                        item.id.starts_with("rec-"),
+                        "expected caller-facing rec-* id, got {:?}",
+                        item.id
+                    );
+                    assert!(
+                        !item.id.starts_with("s-"),
+                        "leaked internal pipeline id: {:?}",
+                        item.id
+                    );
+                }
+            }
+            _ => panic!("expected Nearest"),
+        }
+    }
+
+    #[tokio::test]
+    async fn similar_above_returns_caller_facing_ids() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.9; 10];
+        let result = bridge
+            .query(SphereQLQuery::SimilarAbove { min_cosine: -1.0 }, &query_vec)
+            .unwrap();
+
+        match result {
+            SphereQLOutput::KNearest(items) => {
+                assert!(!items.is_empty());
+                for item in &items {
+                    assert!(
+                        item.id.starts_with("rec-"),
+                        "expected caller-facing rec-* id, got {:?}",
+                        item.id
+                    );
+                    assert!(
+                        !item.id.starts_with("s-"),
+                        "leaked internal pipeline id: {:?}",
+                        item.id
+                    );
+                }
+            }
+            _ => panic!("expected KNearest"),
+        }
+    }
+
+    #[tokio::test]
     async fn concept_path_unknown_id_returns_invalid_config() {
         let store = InMemoryStore::new("test", 10);
         store.upsert(&make_records(20, 10)).await.unwrap();

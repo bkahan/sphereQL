@@ -36,12 +36,6 @@ use sphereql::embed::{
 use sphereql_corpus::axes::*;
 use sphereql_corpus::{DIM, build_corpus, embed};
 
-fn parse_item_index(id: &str) -> usize {
-    id.strip_prefix("s-")
-        .and_then(|s| s.parse().ok())
-        .expect("invalid item ID format")
-}
-
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║      SphereQL — Full End-to-End Demo                       ║");
@@ -111,6 +105,19 @@ fn main() {
     )
     .expect("auto_tune failed");
     let tune_elapsed = start.elapsed();
+
+    // Map pipeline-assigned IDs back to human-readable labels. The
+    // pipeline's `ids()` slice is index-aligned with `categories` /
+    // `embeddings` (the order we passed them in), so zipping with
+    // `labels` yields the right pairing without assuming the ID format
+    // is parseable.
+    let id_to_label: std::collections::HashMap<String, &str> = pipeline
+        .ids()
+        .iter()
+        .zip(labels.iter())
+        .map(|(id, &label)| (id.clone(), label))
+        .collect();
+    let label_for = |id: &str| -> &str { id_to_label.get(id).copied().unwrap_or("<unknown>") };
 
     let evr = pipeline.explained_variance_ratio();
     println!(
@@ -672,11 +679,10 @@ fn main() {
         );
         println!("  {}", "─".repeat(72));
         for (i, r) in results.iter().enumerate() {
-            let idx = parse_item_index(&r.id);
             println!(
                 "  {:<4} {:<30} {:<18} {:>7.2} {:>9.4}",
                 i + 1,
-                labels[idx],
+                label_for(&r.id),
                 r.category,
                 r.distance.to_degrees(),
                 r.certainty,
@@ -721,14 +727,31 @@ fn main() {
         embedding: vec![0.0; DIM],
     };
 
-    let src_id = "s-0010";
-    let tgt_id = "s-0125";
-    println!("  Path: {} → {}", src_id, tgt_id);
+    // Pick concrete source / target items by category instead of
+    // hardcoding `s-####` strings. Pipeline IDs are an opaque
+    // implementation detail; selecting through `categories` keeps the
+    // example correct even if the ID scheme or insertion order changes.
+    let pick_id_by_category = |target: &str| -> Option<String> {
+        pipeline
+            .ids()
+            .iter()
+            .zip(pipeline.categories().iter())
+            .find_map(|(id, cat)| (cat == target).then(|| id.clone()))
+    };
+    let src_id = pick_id_by_category("physics").expect("physics item in corpus");
+    let tgt_id = pick_id_by_category("computer_science").expect("CS item in corpus");
+    println!(
+        "  Path: {} ({}) → {} ({})",
+        src_id,
+        label_for(&src_id),
+        tgt_id,
+        label_for(&tgt_id),
+    );
     let cp_result = pipeline
         .query(
             SphereQLQuery::ConceptPath {
-                source_id: src_id,
-                target_id: tgt_id,
+                source_id: &src_id,
+                target_id: &tgt_id,
                 graph_k: 8,
             },
             &dummy_q,
@@ -736,11 +759,10 @@ fn main() {
         .expect("concept_path query");
     if let SphereQLOutput::ConceptPath(Some(path)) = cp_result {
         for (i, step) in path.steps.iter().enumerate() {
-            let item_idx = parse_item_index(&step.id);
             println!(
                 "    [{}] \"{}\" [{}] (cum={:.4})",
                 i + 1,
-                labels[item_idx],
+                label_for(&step.id),
                 step.category,
                 step.cumulative_distance,
             );
@@ -810,10 +832,7 @@ fn main() {
         let hier = pipeline.hierarchical_nearest(&emb, 3);
         let items: Vec<String> = hier
             .iter()
-            .map(|r| {
-                let idx = parse_item_index(&r.id);
-                format!("\"{}\" [{}]", labels[idx], r.category)
-            })
+            .map(|r| format!("\"{}\" [{}]", label_for(&r.id), r.category))
             .collect();
         println!("    hierarchical top 3: {}", items.join(", "));
     }

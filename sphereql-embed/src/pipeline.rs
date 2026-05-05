@@ -55,6 +55,15 @@ pub enum PipelineError {
     AllTrialsFailed {
         failures: Vec<(crate::config::PipelineConfig, String)>,
     },
+    /// `auto_tune` was called with a malformed
+    /// [`SearchSpace`](crate::tuner::SearchSpace) or
+    /// [`SearchStrategy`](crate::tuner::SearchStrategy) — empty axis,
+    /// budget too small for the strategy to make progress, etc.
+    /// Surfaced upfront so every search mode (Grid, Random, Bayesian)
+    /// fails at the same boundary instead of panicking mid-trial or
+    /// rolling up into `AllTrialsFailed { failures: [] }`.
+    #[error("invalid search space: {0}")]
+    InvalidSearchSpace(String),
 }
 
 // ── Input contract ──────────────────────────────────────────────────────────
@@ -1044,6 +1053,36 @@ mod tests {
     }
 
     // ── Existing tests (unchanged) ─────────────────────────────────────
+
+    #[test]
+    fn ids_are_insertion_order_aligned_with_categories_and_points() {
+        let (input, _) = make_input(20, 10);
+        let categories_in = input.categories.clone();
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+
+        let ids = pipeline.ids();
+        assert_eq!(ids.len(), 20);
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(id, &format!("s-{i:04}"));
+        }
+
+        // categories() must be index-aligned with ids().
+        let cats = pipeline.categories();
+        assert_eq!(cats.len(), ids.len());
+        for (i, cat) in cats.iter().enumerate() {
+            assert_eq!(cat, &categories_in[i]);
+        }
+
+        // projected_points() emits (id, category, [x,y,z]) in the same
+        // insertion order — bridge.rs relies on this alignment to
+        // round-trip caller IDs.
+        let pts = pipeline.projected_points();
+        assert_eq!(pts.len(), ids.len());
+        for (i, (id, cat, _)) in pts.iter().enumerate() {
+            assert_eq!(*id, ids[i].as_str());
+            assert_eq!(*cat, cats[i].as_str());
+        }
+    }
 
     #[test]
     fn pipeline_nearest() {
