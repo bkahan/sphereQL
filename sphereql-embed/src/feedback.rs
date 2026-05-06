@@ -30,20 +30,37 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use indexmap::IndexMap;
+
+/// Hard cap on the number of distinct canonicalized paths we keep
+/// migration locks for. Long-running processes that touch many
+/// feedback files would otherwise grow the lock map unboundedly. The
+/// per-path lock is only contended during the one-shot legacy-JSON →
+/// JSONL migration, so evicting an idle entry is safe — the next
+/// migration on that path just allocates a fresh lock.
+const MIGRATION_LOCK_CAPACITY: usize = 128;
+
 /// In-process serialization for the legacy-JSON → JSONL migration in
 /// [`FeedbackEvent::append_to`]. Two threads racing the migration would
 /// otherwise duplicate the migrated bytes (each reads the legacy array,
 /// each writes its own copy back). Keyed per canonical path so unrelated
-/// stores don't contend.
+/// stores don't contend. Bounded LRU so a long-running daemon that
+/// rotates through many files doesn't leak.
 fn migration_lock(path: &Path) -> Arc<Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    static LOCKS: OnceLock<Mutex<IndexMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
     let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let map = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let map = LOCKS.get_or_init(|| Mutex::new(IndexMap::new()));
     let mut guard = map.lock().expect("migration lock map poisoned");
-    guard
-        .entry(key)
-        .or_insert_with(|| Arc::new(Mutex::new(())))
-        .clone()
+    if let Some(existing) = guard.shift_remove(&key) {
+        guard.insert(key, existing.clone());
+        return existing;
+    }
+    while guard.len() >= MIGRATION_LOCK_CAPACITY {
+        guard.shift_remove_index(0);
+    }
+    let lock = Arc::new(Mutex::new(()));
+    guard.insert(key, lock.clone());
+    lock
 }
 
 fn first_non_ws_byte(path: &Path) -> io::Result<Option<u8>> {
@@ -158,9 +175,10 @@ impl FeedbackEvent {
                         })
                         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                 }
-                let tmp = path.with_extension("jsonl.migrating");
-                fs::write(&tmp, migrated)?;
-                fs::rename(&tmp, path)?;
+                let parent = path.parent().unwrap_or_else(|| Path::new("."));
+                let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+                io::Write::write_all(&mut tmp, migrated.as_bytes())?;
+                tmp.persist(path).map_err(io::Error::other)?;
             }
         }
 

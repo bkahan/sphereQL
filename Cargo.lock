@@ -2721,12 +2721,14 @@ name = "sphereql-embed"
 version = "0.2.0-alpha"
 dependencies = [
  "approx",
+ "indexmap 2.13.1",
  "rayon",
  "serde",
  "serde_json",
  "sphereql-core",
  "sphereql-index",
  "sphereql-layout",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 

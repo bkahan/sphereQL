@@ -15,7 +15,6 @@ Mathematical Convention (Physics convention):
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, List, Dict, Tuple
 import math
 
 
@@ -36,7 +35,7 @@ class SphericalPoint:
         self.phi = max(0.0, min(math.pi, self.phi))
         self.r = max(1e-6, self.r)
 
-    def to_cartesian(self) -> Tuple[float, float, float]:
+    def to_cartesian(self) -> tuple[float, float, float]:
         x = self.r * math.sin(self.phi) * math.cos(self.theta)
         y = self.r * math.sin(self.phi) * math.sin(self.theta)
         z = self.r * math.cos(self.phi)
@@ -75,13 +74,13 @@ class Concept:
     """A semantic concept extracted from natural language."""
     text: str
     normalized: str
-    point: Optional[SphericalPoint] = None
+    point: SphericalPoint | None = None
     frequency: int = 1
-    positions: List[int] = field(default_factory=list)
-    domain_scores: Dict[str, float] = field(default_factory=dict)
+    positions: list[int] = field(default_factory=list)
+    domain_scores: dict[str, float] = field(default_factory=dict)
     abstraction_score: float = 0.5
     salience_score: float = 0.5
-    primary_domain: Optional[str] = None
+    primary_domain: str | None = None
     hierarchy_depth: int = 0
 
     def __hash__(self):
@@ -130,9 +129,9 @@ class Relation:
     target: Concept
     relation_type: RelationType
     weight: float = 1.0
-    evidence: Optional[str] = None
+    evidence: str | None = None
 
-    def geodesic_length(self) -> Optional[float]:
+    def geodesic_length(self) -> float | None:
         if self.source.point and self.target.point:
             return self.source.point.angular_distance_to(self.target.point)
         return None
@@ -141,22 +140,22 @@ class Relation:
 @dataclass
 class ConceptGraph:
     """A graph of concepts and relations, fully resolved in spherical space."""
-    concepts: List[Concept] = field(default_factory=list)
-    relations: List[Relation] = field(default_factory=list)
+    concepts: list[Concept] = field(default_factory=list)
+    relations: list[Relation] = field(default_factory=list)
     source_text: str = ""
-    metadata: Dict = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
     @property
-    def concept_map(self) -> Dict[str, Concept]:
+    def concept_map(self) -> dict[str, Concept]:
         return {c.normalized: c for c in self.concepts}
 
-    def get_concept(self, normalized: str) -> Optional[Concept]:
+    def get_concept(self, normalized: str) -> Concept | None:
         for c in self.concepts:
             if c.normalized == normalized:
                 return c
         return None
 
-    def neighbors(self, concept: Concept) -> List[Tuple[Concept, Relation]]:
+    def neighbors(self, concept: Concept) -> list[tuple[Concept, Relation]]:
         result = []
         for r in self.relations:
             if r.source == concept:
@@ -165,7 +164,7 @@ class ConceptGraph:
                 result.append((r.source, r))
         return result
 
-    def centroid(self) -> Optional[SphericalPoint]:
+    def centroid(self) -> SphericalPoint | None:
         """Weighted spherical centroid (epistemic-weighted Fréchet mean).
 
         Each concept's Cartesian position is weighted by its radius `r`
@@ -202,10 +201,22 @@ class DomainAnchor:
     name: str
     theta: float
     angular_width: float = 0.3
-    keywords: List[str] = field(default_factory=list)
-    parent: Optional[str] = None
+    keywords: list[str] = field(default_factory=list)
+    parent: str | None = None
 
     @property
-    def theta_range(self) -> Tuple[float, float]:
+    def theta_range(self) -> tuple[float, float]:
+        """Theta interval covered by this anchor, normalized into [0, 2π).
+
+        The raw `(theta - half, theta + half)` form can produce negative
+        endpoints or values past 2π near the seam — callers comparing a
+        normalized theta against the range would miss matches. Both ends
+        are taken modulo 2π. When the band straddles the seam (`lo > hi`)
+        callers should treat the range as the wrap-around union
+        `[lo, 2π) ∪ [0, hi]`.
+        """
+        two_pi = 2 * math.pi
         half = self.angular_width / 2
-        return (self.theta - half, self.theta + half)
+        lo = (self.theta - half) % two_pi
+        hi = (self.theta + half) % two_pi
+        return (lo, hi)
