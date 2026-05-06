@@ -7,7 +7,9 @@
       "Bash(cargo run *)",
       "Bash(cargo clippy *)",
       "Bash(cargo fmt *)",
-      "Read(./.cr_review/**)"
+      "Read(./.cr_review/**)",
+      "Bash(coderabbit --version)",
+      "Bash(coderabbit auth *)"
     ]
   }
 }
