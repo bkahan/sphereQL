@@ -585,12 +585,14 @@ fn main() {
         let bridges = pipeline.bridge_items(src, tgt, 3);
         let rev = pipeline.bridge_items(tgt, src, 3);
 
-        // Collect both directions into a single Vec, deduplicate by item_index,
-        // sort by bridge_strength descending, then take top N
-        let mut all: Vec<_> = bridges.into_iter().chain(rev.into_iter()).collect();
-        all.sort_by(|a, b| a.item_index.cmp(&b.item_index));
+        let mut all: Vec<_> = bridges.into_iter().chain(rev).collect();
+        all.sort_by_key(|a| a.item_index);
         all.dedup_by(|a, b| a.item_index == b.item_index);
-        all.sort_by(|a, b| b.bridge_strength.partial_cmp(&a.bridge_strength).unwrap_or(std::cmp::Ordering::Equal));
+        all.sort_by(|a, b| {
+            b.bridge_strength
+                .partial_cmp(&a.bridge_strength)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let all: Vec<_> = all.iter().take(3).collect();
 
         if all.is_empty() {
@@ -1067,11 +1069,14 @@ fn main() {
                 let bridges = pipeline.bridge_items(&step.category_name, &next.category_name, 2);
                 let rev = pipeline.bridge_items(&next.category_name, &step.category_name, 2);
 
-                // Collect both directions, deduplicate by item_index, rank by bridge_strength, then truncate
-                let mut all: Vec<_> = bridges.into_iter().chain(rev.into_iter()).collect();
-                all.sort_by(|a, b| a.item_index.cmp(&b.item_index));
+                let mut all: Vec<_> = bridges.into_iter().chain(rev).collect();
+                all.sort_by_key(|a| a.item_index);
                 all.dedup_by(|a, b| a.item_index == b.item_index);
-                all.sort_by(|a, b| b.bridge_strength.partial_cmp(&a.bridge_strength).unwrap_or(std::cmp::Ordering::Equal));
+                all.sort_by(|a, b| {
+                    b.bridge_strength
+                        .partial_cmp(&a.bridge_strength)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
                 let all: Vec<_> = all.iter().take(2).collect();
 
                 let all_labels: Vec<String> = all
