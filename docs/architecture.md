@@ -20,9 +20,13 @@ sphereql-graphql  sphereql-vectordb           |
     +----------sphereql-index                 |
                     |                         |
                 sphereql-core ----------------+
+                    ^
+                    |
+                sphereql-lingua  (text → ConceptGraph pipeline)
 
     sphereql-python  (PyO3 bindings via maturin)
     sphereql-wasm    (wasm-bindgen bindings)
+    lingua-spherica  (Python skeleton: types + spherical math only)
 
     sphereql-corpus  (shared example data, no runtime deps)
 ```
@@ -37,6 +41,7 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-embed` | Embedding projection (PCA / Kernel PCA / Laplacian eigenmap / random), query pipeline (k-NN, similarity threshold, concept paths, glob detection, local manifold fitting), Category Enrichment Layer (inter-category graph, bridge classification, inner spheres, drill-down, hierarchical domain-group routing), and a metalearning framework (`PipelineConfig`, `QualityMetric`, `auto_tune`, `MetaModel`, `FeedbackAggregator`). |
 | `sphereql-graphql` | `async-graphql` schema with spatial queries (cone/shell/band/wedge/region, k-NN, distances), the full category enrichment surface (concept paths, drill-down, domain groups, stats), real-time subscriptions, and a pluggable `TextEmbedder` trait for natural-language query inputs. |
 | `sphereql-vectordb` | Vector store bridge for InMemory, Qdrant (gRPC), and Pinecone backends. Handles sync, PCA fitting, projection, and hybrid search with cosine re-ranking. |
+| `sphereql-lingua` | Six-stage text → `ConceptGraph` pipeline that maps natural language onto SphereQL `(r, θ, φ)` coordinates: concept extraction (pluggable `ConceptExtractor`, regex default), domain taxonomy θ assignment, abstraction φ resolution, salience-driven r weighting, relation encoding (typed geodesic arcs), graph assembly. Built on `sphereql-core` so coordinate convention and distance math match the rest of the workspace. **Rust is the source of truth** — the Python `lingua-spherica` package is a types/math skeleton only. |
 | `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline (with category enrichment + Laplacian), every projection family, vector store bridges, `auto_tune`, the `MetaModel` layer, `FeedbackAggregator`, and interactive 3D visualization. Type stubs (`.pyi`) auto-generated via `pyo3-stub-gen`. |
 | `sphereql-wasm` | WebAssembly bindings via `wasm-bindgen`. Typed return values via `tsify` — every pipeline / category / metalearning method returns a TypeScript-typed value, no `JSON.parse` required on the JS side. |
 | `scripts/check-drift` | CI tool that `syn`-parses `sphereql-embed` + `sphereql-layout` public APIs and fails when a new public item isn't bound in Python/WASM and isn't in `.bindings-ignore.toml`. |

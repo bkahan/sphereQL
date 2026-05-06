@@ -59,6 +59,7 @@ Full documentation lives under [`docs/`](docs/README.md).
 - [Architecture](docs/architecture.md) — workspace crates and feature flags
 - [Projections](docs/projections.md) — how the four projection families work
 - [Auto-tuning & meta-learning](docs/auto-tuning.md) — the metalearning framework
+- [Lingua pipeline](sphereql-lingua/README.md) — text → `ConceptGraph` (six-stage Rust pipeline)
 - [Empirical findings](docs/empirical-findings.md) — when does each projection win?
 - [Examples catalog](docs/examples.md) · [Performance](docs/performance.md) · [Project status](docs/project-status.md)
 

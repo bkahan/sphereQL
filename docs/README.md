@@ -29,6 +29,10 @@ topic lives here.
 
 - [Auto-tuning & meta-learning](auto-tuning.md) — `PipelineConfig`,
   `auto_tune`, `MetaModel`, `FeedbackEvent` — the full metalearning framework.
+- [Lingua pipeline](../sphereql-lingua/README.md) — six-stage text →
+  `ConceptGraph` pipeline that places every concept at a SphereQL
+  `(r, θ, φ)` position. Python-side skeleton lives in
+  [`lingua-spherica`](../lingua-spherica/README.md).
 
 ## Reference
 

@@ -4,6 +4,89 @@ All notable user-visible changes. sphereQL follows semver from v1.0
 onward; while on `0.x-alpha` expect breaking changes between minor
 versions.
 
+## [Unreleased]
+
+### Added
+
+- **`sphereql-lingua`** — six-stage pipeline crate that turns free-form
+  text into a `ConceptGraph` with every node placed at a SphereQL
+  `(r, θ, φ)` position (concept extraction → θ domain assignment → φ
+  abstraction resolution → r salience scoring → relation encoding →
+  graph assembly). Built on `sphereql-core` so coordinate convention
+  and distance math are shared with the rest of the workspace.
+- **`lingua-spherica`** (Python) — thin skeleton package exposing the
+  coordinate types (`SphericalPoint`, `Concept`, `Relation`,
+  `ConceptGraph`, `DomainAnchor`) and spherical-math helpers
+  (`angular_distance` Vincenty form, `slerp` with antipodal branch,
+  weighted spherical centroid, semantic-distance combiner). The full
+  text → graph pipeline lives in the Rust `sphereql-lingua` crate;
+  this package is intentionally limited to types + math.
+- `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1.
+- README "How sphereQL compares to vector databases" section
+  positioning against FAISS / Qdrant / Milvus / Weaviate / pgvector.
+- `docs/performance.md` projection-fit cost disclosure (KPCA at
+  n=10k ≈ 85 minutes).
+
+### Changed — Rust API stability
+
+- `#[non_exhaustive]` on `SphereQlError`, `IndexError`,
+  `VectorStoreError`, and both `DistanceMetric` enums (vectordb +
+  graphql) so future variants can be added without breaking external
+  exhaustive matches.
+- `#[must_use]` on the four index builders (`CompositeIndexBuilder`,
+  `ShellIndexBuilder`, `CacheIndexBuilder`, `QueryBuilder`) so a
+  forgotten `.build()` is now a compile-time warning.
+- `Region` and `LuneSide` intentionally left exhaustive — they are
+  sum types meant for full caller match.
+
+### Changed — Python (`lingua-spherica`)
+
+- Modernized to PEP 585 lowercase generics and `X | None` instead of
+  `Optional[X]`; removed `typing` imports. `zip(..., strict=True)` on
+  paired-iterable code paths so length mismatches surface as errors.
+- `SphericalPoint(r, theta, phi)` field order matches the canonical
+  Rust `sphereql_core::SphericalPoint::new` signature so positional
+  construction round-trips between languages.
+- `DomainAnchor.theta_range` now wraps endpoints into `[0, 2π)` and
+  documents the wrap-around case (`lo > hi` ⇒ band straddles the
+  seam, range is `[lo, 2π) ∪ [0, hi]`).
+
+### Performance — WASM
+
+- Re-enabled `wasm-opt = ["-Oz", ...]` in the release profile (≈30–40%
+  bundle size reduction).
+- Switched the wasm32 global allocator to `lol_alloc::LeakingPageAllocator`
+  (≈50 bytes vs the ~10 KB `dlmalloc` baseline).
+- Panic-hook installation moved behind a new `debug` cargo feature so
+  release builds don't pay for `console_error_panic_hook`.
+- Finished the `tsify` migration: `LaplacianEigenmapProjection.project`
+  and `projectBatch` now return typed `SphericalPointOut` /
+  `SphericalPointBatchOut` values directly — no JSON parsing in JS.
+
+### Fixed
+
+- `sphereql-embed` migration locks now use a bounded LRU
+  (`IndexMap`-backed, capacity 128) keyed by canonicalized path,
+  preventing unbounded growth in long-running processes.
+- Atomic feedback-file replacement via `tempfile::NamedTempFile::persist`
+  with cleanup-on-failure, replacing the prior `fs::write` + `rename`
+  pair.
+- `sphereql-layout::ManagedLayout` now `debug_assert`s that the layout
+  result entry count matches the input item count.
+- PyO3 `json_to_py` propagates conversion errors with `?` instead of
+  `unwrap()`.
+
+### Docs
+
+- Backfilled detailed READMEs for `sphereql-core`, `sphereql-index`,
+  `sphereql-layout`, `sphereql-vectordb` (previously 7-line stubs).
+- New READMEs for `sphereql-lingua` and `lingua-spherica`.
+- `CONTRIBUTING.md` updated to point at the `gen-stubs` flow that
+  produces `__init__.pyi` (the prior `sphereql.pyi` reference was
+  stale).
+- `docs/architecture.md`, `docs/project-status.md`, top README updated
+  to include the lingua text → graph pipeline.
+
 ## [0.2.0-alpha] — 2026-04-24
 
 ### Added — bindings parity

@@ -27,6 +27,16 @@ a `.d.ts` with a named interface for every payload. No `JSON.parse`
 step required on the JS side for pipeline, category, or metalearning
 methods.
 
+**Lingua (text → graph)**: `sphereql-lingua` exposes a six-stage pipeline
+that converts free-form text into a `ConceptGraph` with every node placed
+at a SphereQL `(r, θ, φ)` position — concept extraction, θ domain
+assignment, φ abstraction resolution, r salience weighting, relation
+encoding, graph assembly. The default pipeline runs on heuristic
+extractors and needs no external dependencies; swap in an LLM-backed
+`ConceptExtractor` for production fidelity. The Python `lingua-spherica`
+package is a types-and-math skeleton only — the pipeline lives in Rust
+and is reached from Python via the `sphereql-python` bindings.
+
 **GraphQL**: full spatial + category enrichment surface via a single
 `MergedQueryRoot`. Text queries embed server-side through an
 injectable `TextEmbedder` trait (default `NoEmbedder` returns a
