@@ -8,6 +8,11 @@
 use sphereql_core::SphericalPoint;
 
 /// Confidence assessment for a single query result or point on S².
+///
+/// `void_distance` is signed: negative = inside category coverage (high
+/// `gap_confidence`), positive = in a void (low `gap_confidence`). The
+/// sigmoid `gap_confidence = 1 / (1 + exp(sharpness · void_distance))`
+/// in [`Self::compute`] maps that sign convention onto [0, 1].
 #[derive(Debug, Clone, Copy)]
 pub struct QualitySignal {
     pub evr: f64,

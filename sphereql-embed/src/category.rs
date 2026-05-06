@@ -515,8 +515,14 @@ impl CategoryLayer {
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding);
 
-                    // EVR-adaptive threshold: stricter when projection is lossy
-                    if sim_to_other > 0.0 && sim_to_other > sim_to_own * bridge_threshold {
+                    // EVR-adaptive threshold: stricter when projection is lossy.
+                    // Require positive own-affinity too; otherwise the harmonic-mean
+                    // strength below collapses or goes negative for a category that
+                    // doesn't even hold the item.
+                    if sim_to_own > 0.0
+                        && sim_to_other > 0.0
+                        && sim_to_other > sim_to_own * bridge_threshold
+                    {
                         let raw_strength = if sim_to_own + sim_to_other > f64::EPSILON {
                             2.0 * sim_to_own * sim_to_other / (sim_to_own + sim_to_other)
                         } else {

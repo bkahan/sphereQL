@@ -76,12 +76,12 @@ class TestVectorStoreBridge:
         _, bridge = make_store_and_bridge()
         query = [0.9] * DIM
         path = bridge.query_concept_path(
-            "s-0000", "s-0015", graph_k=10, embedding=query
+            "rec-0", "rec-15", graph_k=10, embedding=query
         )
         assert path is not None
         assert len(path.steps) >= 2
-        assert path.steps[0].id == "s-0000"
-        assert path.steps[-1].id == "s-0015"
+        assert path.steps[0].id == "rec-0"
+        assert path.steps[-1].id == "rec-15"
 
     def test_detect_globs(self):
         _, bridge = make_store_and_bridge(n=30)

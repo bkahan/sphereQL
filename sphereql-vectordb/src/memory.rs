@@ -120,7 +120,9 @@ impl VectorStore for InMemoryStore {
         let state = self.state.read().await;
 
         let start = match offset {
-            Some(off) => off.parse::<usize>().unwrap_or(0),
+            Some(off) => off.parse::<usize>().map_err(|_| {
+                VectorStoreError::InvalidConfig(format!("invalid pagination cursor: {off:?}"))
+            })?,
             None => 0,
         };
 
@@ -320,6 +322,21 @@ mod tests {
         assert_eq!(page2.records.len(), 1);
         assert!(page2.next_offset.is_none());
         assert_eq!(page2.records[0].id, "c");
+    }
+
+    #[tokio::test]
+    async fn list_invalid_cursor_returns_error() {
+        let store = InMemoryStore::new("test", 3);
+        store
+            .upsert(&[record("a", vec![1.0, 0.0, 0.0])])
+            .await
+            .unwrap();
+
+        let err = store.list(10, Some("not-a-number")).await.unwrap_err();
+        assert!(
+            matches!(err, VectorStoreError::InvalidConfig(_)),
+            "expected InvalidConfig, got {err:?}"
+        );
     }
 
     #[tokio::test]

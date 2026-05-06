@@ -13,4 +13,4 @@ Quick start:
 
 from sphereql.sphereql import *  # noqa: F401,F403
 
-__version__ = "0.1.0"
+__version__ = "0.2.0a0"

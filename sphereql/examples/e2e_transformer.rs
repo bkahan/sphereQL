@@ -418,15 +418,20 @@ fn main() {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        let head: String = s.chars().take(max).collect();
+        format!("{head}…")
     }
 }
 
 fn esc(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    // Delegate to serde_json so control characters (\n, \r, \t, <0x20)
+    // and unicode escapes are handled correctly. The serializer wraps the
+    // value in quotes; strip them so callers can compose their own.
+    let quoted = serde_json::to_string(s).expect("string is always serializable");
+    quoted[1..quoted.len() - 1].to_string()
 }
 
 /// Minimum bounding sphere via Ritter's algorithm.

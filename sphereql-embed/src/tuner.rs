@@ -95,6 +95,102 @@ impl Default for SearchSpace {
 }
 
 impl SearchSpace {
+    /// Validate this space against a [`SearchStrategy`] and return a
+    /// structured [`PipelineError::InvalidSearchSpace`] if anything is
+    /// off — empty axis, missing kind-specific knobs, or budget too
+    /// small for the strategy to make progress. Called upfront from
+    /// [`auto_tune`] so every strategy fails at the same boundary
+    /// instead of panicking mid-trial (random/Bayesian) or silently
+    /// rolling up into `AllTrialsFailed { failures: [] }` (Grid).
+    pub fn validate(&self, strategy: &SearchStrategy) -> Result<(), PipelineError> {
+        if self.projection_kinds.is_empty() {
+            return Err(PipelineError::InvalidSearchSpace(
+                "axis `projection_kinds` is empty".into(),
+            ));
+        }
+        for &kind in &self.projection_kinds {
+            self.check_axes_non_empty(kind)?;
+        }
+        match strategy {
+            SearchStrategy::Grid => {}
+            SearchStrategy::Random { budget, .. } => {
+                if *budget == 0 {
+                    return Err(PipelineError::InvalidSearchSpace(
+                        "Random search requires budget >= 1".into(),
+                    ));
+                }
+            }
+            SearchStrategy::Bayesian {
+                budget,
+                warmup,
+                gamma,
+                ..
+            } => {
+                if *budget < 2 {
+                    return Err(PipelineError::InvalidSearchSpace(format!(
+                        "Bayesian search requires budget >= 2 (got {budget})"
+                    )));
+                }
+                if *warmup < 2 {
+                    return Err(PipelineError::InvalidSearchSpace(format!(
+                        "Bayesian search requires warmup >= 2 (got {warmup})"
+                    )));
+                }
+                if !gamma.is_finite() || *gamma <= 0.0 || *gamma >= 1.0 {
+                    return Err(PipelineError::InvalidSearchSpace(format!(
+                        "Bayesian gamma must be in (0, 1), got {gamma}"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn check_axes_non_empty(&self, kind: ProjectionKind) -> Result<(), PipelineError> {
+        let common = [
+            ("num_domain_groups", self.num_domain_groups.len()),
+            ("low_evr_threshold", self.low_evr_threshold.len()),
+            (
+                "overlap_artifact_territorial",
+                self.overlap_artifact_territorial.len(),
+            ),
+            ("threshold_base", self.threshold_base.len()),
+            ("threshold_evr_penalty", self.threshold_evr_penalty.len()),
+            ("min_evr_improvement", self.min_evr_improvement.len()),
+        ];
+        for (name, len) in common {
+            if len == 0 {
+                return Err(PipelineError::InvalidSearchSpace(format!(
+                    "axis `{name}` is empty"
+                )));
+            }
+        }
+        if matches!(kind, ProjectionKind::LaplacianEigenmap) {
+            if self.laplacian_k_neighbors.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `laplacian_k_neighbors` is empty".into(),
+                ));
+            }
+            if self.laplacian_active_threshold.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `laplacian_active_threshold` is empty".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Defensive guard for the public [`Self::config_at_index`] path.
+    /// `auto_tune` always validates upfront via [`Self::validate`], but
+    /// external callers that decode grid indices on a hand-built
+    /// [`SearchSpace`] still need a clear panic instead of a
+    /// mod-by-zero deeper in the decoder.
+    fn assert_axes_non_empty(&self, kind: ProjectionKind) {
+        if let Err(e) = self.check_axes_non_empty(kind) {
+            panic!("{e}");
+        }
+    }
+
     /// Number of kind-agnostic knob combinations. Every projection kind's
     /// grid slice is at least this large; Laplacian multiplies by its
     /// specific knob counts on top.
@@ -138,6 +234,7 @@ impl SearchSpace {
     pub fn config_at_index(&self, index: usize, base: &PipelineConfig) -> Option<PipelineConfig> {
         let mut offset = 0usize;
         for &kind in &self.projection_kinds {
+            self.assert_axes_non_empty(kind);
             let slice = self.kind_cardinality(kind);
             if index < offset + slice {
                 return Some(self.config_at_kind_index(kind, index - offset, base));
@@ -201,8 +298,21 @@ impl SearchSpace {
     /// to the tuner — external callers go through [`auto_tune`] with a
     /// [`SearchStrategy::Random`] strategy.
     pub(crate) fn sample(&self, rng: &mut SplitMix64, base: &PipelineConfig) -> PipelineConfig {
+        // `auto_tune` calls [`Self::validate`] upfront, so by the time
+        // we reach here projection_kinds and every per-kind axis are
+        // guaranteed non-empty. `debug_assert!` keeps the invariant
+        // visible during development without re-introducing a runtime
+        // panic on the hot path.
+        debug_assert!(
+            !self.projection_kinds.is_empty(),
+            "SearchSpace::sample called without prior validate()"
+        );
         let mut cfg = base.clone();
         cfg.projection_kind = pick_uniform(rng, &self.projection_kinds);
+        debug_assert!(
+            self.check_axes_non_empty(cfg.projection_kind).is_ok(),
+            "SearchSpace::sample called without prior validate()"
+        );
         cfg.routing = RoutingConfig {
             num_domain_groups: pick_uniform(rng, &self.num_domain_groups),
             low_evr_threshold: pick_uniform(rng, &self.low_evr_threshold),
@@ -354,6 +464,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     strategy: SearchStrategy,
     base_config: &PipelineConfig,
 ) -> Result<(SphereQLPipeline, TuneReport), PipelineError> {
+    // Validate space + strategy upfront so every search mode fails at
+    // the same boundary with a structured PipelineError instead of
+    // panicking mid-trial (random/Bayesian) or silently rolling up
+    // into AllTrialsFailed { failures: [] } (Grid).
+    space.validate(&strategy)?;
+
     // `PipelineInput` is owned — move the Vec<f64>s straight into the
     // Embedding wrappers instead of cloning each row.
     let categories = input.categories;
@@ -428,8 +544,9 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             gamma,
             seed,
         } => {
-            let mut rng = SplitMix64::new(*seed);
+            // budget/warmup/gamma already validated above by space.validate(&strategy).
             let budget = *budget;
+            let mut rng = SplitMix64::new(*seed);
             let warmup = (*warmup).clamp(2, budget);
             let gamma = gamma.clamp(0.05, 0.95);
 
@@ -747,6 +864,137 @@ mod tests {
         PipelineInput {
             categories,
             embeddings,
+        }
+    }
+
+    fn full_search_space() -> SearchSpace {
+        SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.3],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        }
+    }
+
+    #[test]
+    fn validate_rejects_empty_projection_kinds_for_every_strategy() {
+        let mut s = full_search_space();
+        s.projection_kinds.clear();
+        for strategy in [
+            SearchStrategy::Grid,
+            SearchStrategy::Random { budget: 4, seed: 1 },
+            SearchStrategy::Bayesian {
+                budget: 4,
+                warmup: 2,
+                gamma: 0.25,
+                seed: 1,
+            },
+        ] {
+            match s.validate(&strategy) {
+                Err(PipelineError::InvalidSearchSpace(msg)) => {
+                    assert!(msg.contains("projection_kinds"), "msg = {msg:?}");
+                }
+                other => panic!("expected InvalidSearchSpace, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn validate_rejects_empty_axis() {
+        let mut s = full_search_space();
+        s.threshold_base.clear();
+        match s.validate(&SearchStrategy::Grid) {
+            Err(PipelineError::InvalidSearchSpace(msg)) => {
+                assert!(msg.contains("threshold_base"), "msg = {msg:?}");
+            }
+            other => panic!("expected InvalidSearchSpace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_rejects_empty_laplacian_axis_only_when_kind_present() {
+        let mut s = full_search_space();
+        s.laplacian_k_neighbors.clear();
+        // PCA-only space: missing laplacian axis is fine because the
+        // kind isn't in `projection_kinds`.
+        assert!(s.validate(&SearchStrategy::Grid).is_ok());
+        s.projection_kinds.push(ProjectionKind::LaplacianEigenmap);
+        match s.validate(&SearchStrategy::Grid) {
+            Err(PipelineError::InvalidSearchSpace(msg)) => {
+                assert!(msg.contains("laplacian_k_neighbors"), "msg = {msg:?}");
+            }
+            other => panic!("expected InvalidSearchSpace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_rejects_bad_bayesian_params() {
+        let s = full_search_space();
+        let cases: &[(SearchStrategy, &str)] = &[
+            (
+                SearchStrategy::Bayesian {
+                    budget: 1,
+                    warmup: 2,
+                    gamma: 0.25,
+                    seed: 1,
+                },
+                "budget",
+            ),
+            (
+                SearchStrategy::Bayesian {
+                    budget: 5,
+                    warmup: 1,
+                    gamma: 0.25,
+                    seed: 1,
+                },
+                "warmup",
+            ),
+            (
+                SearchStrategy::Bayesian {
+                    budget: 5,
+                    warmup: 2,
+                    gamma: 0.0,
+                    seed: 1,
+                },
+                "gamma",
+            ),
+            (
+                SearchStrategy::Bayesian {
+                    budget: 5,
+                    warmup: 2,
+                    gamma: f64::NAN,
+                    seed: 1,
+                },
+                "gamma",
+            ),
+        ];
+        for (strategy, needle) in cases {
+            match s.validate(strategy) {
+                Err(PipelineError::InvalidSearchSpace(msg)) => {
+                    assert!(msg.contains(needle), "msg={msg:?} needle={needle:?}");
+                }
+                other => panic!("expected InvalidSearchSpace for {needle:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn auto_tune_propagates_invalid_search_space_for_grid() {
+        let s = SearchSpace {
+            projection_kinds: vec![],
+            ..full_search_space()
+        };
+        let metric = BridgeCoherence;
+        let base = PipelineConfig::default();
+        match auto_tune(make_input(30, 10), &s, &metric, SearchStrategy::Grid, &base) {
+            Err(PipelineError::InvalidSearchSpace(_)) => {}
+            Err(other) => panic!("expected InvalidSearchSpace, got {other:?}"),
+            Ok(_) => panic!("expected error, got Ok"),
         }
     }
 

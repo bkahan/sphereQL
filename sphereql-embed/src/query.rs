@@ -750,7 +750,10 @@ impl GlobResult {
         assert_eq!(n, ids.len());
         assert!(n >= 2, "need at least 2 points for clustering");
 
-        let max_k = max_k.min(n);
+        // Silhouette-driven auto-search needs at least k = 2 to be well-defined.
+        // Clamping here means callers can pass any non-negative max_k without
+        // tripping the `k.clamp(2, max_k)` panic when max < min.
+        let max_k = max_k.max(2).min(n);
 
         if let Some(k) = k {
             let k = k.clamp(2, max_k);

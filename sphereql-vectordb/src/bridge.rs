@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use sphereql_embed::{
-    ConfiguredProjection, Embedding, PcaProjection, PipelineConfig, PipelineInput, PipelineQuery,
-    Projection, ProjectionKind, RadialStrategy, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
+    ConfiguredProjection, Embedding, PathResult, PcaProjection, PipelineConfig, PipelineInput,
+    PipelinePathStep, PipelineQuery, Projection, ProjectionKind, RadialStrategy, SphereQLOutput,
+    SphereQLPipeline, SphereQLQuery,
 };
 
 use crate::error::VectorStoreError;
@@ -55,6 +56,18 @@ pub struct VectorStoreBridge<S: VectorStore> {
     projection: Option<ConfiguredProjection>,
     /// Original store IDs, parallel to the pipeline's internal index order.
     store_ids: Vec<String>,
+    /// Pipeline IDs (snapshot of `pipeline.ids()` after build), parallel to
+    /// `store_ids`. Used to translate IDs across the bridge boundary so
+    /// callers see their own IDs (`store_ids`) rather than the pipeline's
+    /// auto-generated `s-{i:04}` form.
+    pipeline_ids: Vec<String>,
+    /// `store_id` → index lookup, populated alongside `store_ids` to keep
+    /// inbound translation O(1) on the query hot path.
+    store_id_to_index: HashMap<String, usize>,
+    /// `pipeline_id` → index lookup, the inverse of `pipeline_ids`. Built
+    /// once at pipeline-build time so outbound translation in
+    /// `query_results_to_store_ids` stays O(steps) rather than O(steps × n).
+    pipeline_id_to_index: HashMap<String, usize>,
     /// Raw embeddings, kept for sync_projections.
     embeddings: Vec<Vec<f64>>,
 }
@@ -67,8 +80,60 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             pipeline: None,
             projection: None,
             store_ids: Vec::new(),
+            pipeline_ids: Vec::new(),
+            store_id_to_index: HashMap::new(),
+            pipeline_id_to_index: HashMap::new(),
             embeddings: Vec::new(),
         }
+    }
+
+    /// Snapshot pipeline IDs and rebuild both lookup maps. Called from
+    /// every `build_pipeline*` path after the pipeline has been
+    /// constructed and `store_ids` has been assigned.
+    fn install_id_maps(&mut self) {
+        let pipeline_ids: Vec<String> = self
+            .pipeline
+            .as_ref()
+            .map(|p| p.ids().to_vec())
+            .unwrap_or_default();
+        debug_assert_eq!(self.store_ids.len(), pipeline_ids.len());
+
+        self.store_id_to_index = self
+            .store_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.clone(), i))
+            .collect();
+        self.pipeline_id_to_index = pipeline_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.clone(), i))
+            .collect();
+        self.pipeline_ids = pipeline_ids;
+    }
+
+    /// Translate a caller-facing store ID into the internal pipeline ID.
+    /// Returns `Err(VectorStoreError::InvalidConfig)` when the ID is
+    /// unknown to this bridge — callers should never see the pipeline's
+    /// raw `s-{i:04}` form, so an unknown store ID has to fail before we
+    /// hand it to the pipeline (which would otherwise reject it with the
+    /// internal id name in the error message).
+    fn pipeline_id_for(&self, store_id: &str) -> Result<&str, VectorStoreError> {
+        self.store_id_to_index
+            .get(store_id)
+            .and_then(|&i| self.pipeline_ids.get(i).map(String::as_str))
+            .ok_or_else(|| VectorStoreError::InvalidConfig(format!("unknown id: {store_id:?}")))
+    }
+
+    /// Translate an internal pipeline ID back to its caller-facing store ID.
+    /// Falls back to the pipeline ID itself if the mapping is somehow
+    /// missing — that would indicate a bug, but the fallback keeps the
+    /// query result usable instead of panicking on the hot path.
+    fn store_id_for(&self, pipeline_id: &str) -> String {
+        self.pipeline_id_to_index
+            .get(pipeline_id)
+            .and_then(|&i| self.store_ids.get(i).cloned())
+            .unwrap_or_else(|| pipeline_id.to_string())
     }
 
     /// Pull all vectors from the store and build the sphereQL pipeline
@@ -107,6 +172,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         self.projection = Some(ConfiguredProjection::Pca(pca));
         self.store_ids = store_ids;
         self.embeddings = embeddings;
+        self.install_id_maps();
 
         Ok(self.pipeline.as_ref().unwrap())
     }
@@ -145,6 +211,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         self.pipeline = Some(pipeline);
         self.store_ids = store_ids;
         self.embeddings = embeddings;
+        self.install_id_maps();
 
         Ok(self.pipeline.as_ref().unwrap())
     }
@@ -244,12 +311,79 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             .as_ref()
             .ok_or(VectorStoreError::PipelineNotBuilt)?;
 
+        // Translate caller-facing store IDs into the pipeline's internal
+        // ids. Only ConceptPath carries item IDs in the request — category
+        // queries refer to category names, which already pass through
+        // unchanged.
+        let translated_source;
+        let translated_target;
+        let pipeline_query = match q {
+            SphereQLQuery::ConceptPath {
+                source_id,
+                target_id,
+                graph_k,
+            } => {
+                translated_source = self.pipeline_id_for(source_id)?.to_string();
+                translated_target = self.pipeline_id_for(target_id)?.to_string();
+                SphereQLQuery::ConceptPath {
+                    source_id: &translated_source,
+                    target_id: &translated_target,
+                    graph_k,
+                }
+            }
+            other => other,
+        };
+
         let pq = PipelineQuery {
             embedding: query_embedding.to_vec(),
         };
-        pipeline
-            .query(q, &pq)
-            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))
+        let raw = pipeline
+            .query(pipeline_query, &pq)
+            .map_err(|e| VectorStoreError::InvalidConfig(e.to_string()))?;
+
+        Ok(self.translate_output_ids(raw))
+    }
+
+    /// Translate any pipeline IDs that appear in the output back to the
+    /// caller-facing store IDs. Touches the variants that carry item IDs
+    /// (`Nearest`, `KNearest`, `ConceptPath`); everything else passes
+    /// through untouched. Globs return numeric cluster IDs and category
+    /// outputs already use category names, so they need no rewrite.
+    fn translate_output_ids(&self, output: SphereQLOutput) -> SphereQLOutput {
+        match output {
+            SphereQLOutput::Nearest(items) => SphereQLOutput::Nearest(
+                items
+                    .into_iter()
+                    .map(|mut n| {
+                        n.id = self.store_id_for(&n.id);
+                        n
+                    })
+                    .collect(),
+            ),
+            SphereQLOutput::KNearest(items) => SphereQLOutput::KNearest(
+                items
+                    .into_iter()
+                    .map(|mut n| {
+                        n.id = self.store_id_for(&n.id);
+                        n
+                    })
+                    .collect(),
+            ),
+            SphereQLOutput::ConceptPath(path) => SphereQLOutput::ConceptPath(path.map(|p| {
+                PathResult {
+                    total_distance: p.total_distance,
+                    steps: p
+                        .steps
+                        .into_iter()
+                        .map(|s| PipelinePathStep {
+                            id: self.store_id_for(&s.id),
+                            ..s
+                        })
+                        .collect(),
+                }
+            })),
+            other => other,
+        }
     }
 
     /// Hybrid search: use the vector store's ANN for initial recall,
@@ -611,8 +745,8 @@ mod tests {
         let result = bridge
             .query(
                 SphereQLQuery::ConceptPath {
-                    source_id: "s-0000",
-                    target_id: "s-0015",
+                    source_id: "rec-0",
+                    target_id: "rec-15",
                     graph_k: 10,
                 },
                 &query_vec,
@@ -622,11 +756,99 @@ mod tests {
         match result {
             SphereQLOutput::ConceptPath(Some(path)) => {
                 assert!(path.steps.len() >= 2);
-                assert_eq!(path.steps.first().unwrap().id, "s-0000");
-                assert_eq!(path.steps.last().unwrap().id, "s-0015");
+                assert_eq!(path.steps.first().unwrap().id, "rec-0");
+                assert_eq!(path.steps.last().unwrap().id, "rec-15");
             }
             _ => panic!("expected ConceptPath(Some)"),
         }
+    }
+
+    #[tokio::test]
+    async fn nearest_returns_caller_facing_ids() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.9; 10];
+        let result = bridge
+            .query(SphereQLQuery::Nearest { k: 5 }, &query_vec)
+            .unwrap();
+
+        match result {
+            SphereQLOutput::Nearest(items) => {
+                assert_eq!(items.len(), 5);
+                for item in &items {
+                    assert!(
+                        item.id.starts_with("rec-"),
+                        "expected caller-facing rec-* id, got {:?}",
+                        item.id
+                    );
+                    assert!(
+                        !item.id.starts_with("s-"),
+                        "leaked internal pipeline id: {:?}",
+                        item.id
+                    );
+                }
+            }
+            _ => panic!("expected Nearest"),
+        }
+    }
+
+    #[tokio::test]
+    async fn similar_above_returns_caller_facing_ids() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.9; 10];
+        let result = bridge
+            .query(SphereQLQuery::SimilarAbove { min_cosine: -1.0 }, &query_vec)
+            .unwrap();
+
+        match result {
+            SphereQLOutput::KNearest(items) => {
+                assert!(!items.is_empty());
+                for item in &items {
+                    assert!(
+                        item.id.starts_with("rec-"),
+                        "expected caller-facing rec-* id, got {:?}",
+                        item.id
+                    );
+                    assert!(
+                        !item.id.starts_with("s-"),
+                        "leaked internal pipeline id: {:?}",
+                        item.id
+                    );
+                }
+            }
+            _ => panic!("expected KNearest"),
+        }
+    }
+
+    #[tokio::test]
+    async fn concept_path_unknown_id_returns_invalid_config() {
+        let store = InMemoryStore::new("test", 10);
+        store.upsert(&make_records(20, 10)).await.unwrap();
+
+        let mut bridge = VectorStoreBridge::new(store, BridgeConfig::default());
+        bridge.build_pipeline(category_extractor).await.unwrap();
+
+        let query_vec = vec![0.9; 10];
+        let err = bridge
+            .query(
+                SphereQLQuery::ConceptPath {
+                    source_id: "does-not-exist",
+                    target_id: "rec-1",
+                    graph_k: 10,
+                },
+                &query_vec,
+            )
+            .unwrap_err();
+        assert!(matches!(err, VectorStoreError::InvalidConfig(_)));
     }
 
     // ── Category enrichment through bridge ────────────────────────────

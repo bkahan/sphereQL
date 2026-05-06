@@ -329,7 +329,6 @@ impl<T: SpatialItem> CachedIndex<T> {
             let key_owned = key.clone();
             self.cache.remove(&key_owned);
             self.lru_order.retain(|k| k != &key_owned);
-            return None;
         }
         None
     }

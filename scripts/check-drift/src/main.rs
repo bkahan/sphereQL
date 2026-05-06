@@ -361,13 +361,12 @@ fn main() {
     bound.extend(wasm_names.iter().cloned());
     let bound_lower: BTreeSet<String> = bound.iter().map(|s| s.to_ascii_lowercase()).collect();
 
-    let mut missing: Vec<String> = embed_names
+    let missing: Vec<String> = embed_names
         .iter()
         .filter(|n| !exempts.contains(n.as_str()))
         .filter(|n| !is_bound(n, &bound, &bound_lower))
         .cloned()
         .collect();
-    missing.sort();
 
     println!(
         "embed/layout pub items: {}, python bindings: {}, wasm bindings: {}, allowlisted: {}",

@@ -14,6 +14,7 @@ Usage:
 
 import json
 import sys
+from collections import Counter
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline as hf_pipeline
 
@@ -407,10 +408,9 @@ def main():
         )
 
     json.dump(output, sys.stdout, indent=None, separators=(",", ":"))
+    sys.stdout.flush()
 
     # ── Summary ──────────────────────────────────────────────────────────
-    from collections import Counter
-
     counts = Counter(categories)
     print(f"\nDone: {n} sentences, {len(QUERIES)} queries, {sentence_embeddings.shape[1]}-d", file=sys.stderr)
     print(f"Category distribution (auto-classified):", file=sys.stderr)

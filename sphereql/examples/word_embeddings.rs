@@ -544,7 +544,7 @@ fn main() {
     let region = SemanticQuery::in_shell(2.0, 100.0);
     let shell_result = index.search_region(&region);
     let mut shell_items: Vec<_> = shell_result.items.iter().collect();
-    shell_items.sort_by(|a, b| b.position.r.partial_cmp(&a.position.r).unwrap());
+    shell_items.sort_by(|a, b| b.position.r.total_cmp(&a.position.r));
     for item in &shell_items {
         let tag = words
             .iter()

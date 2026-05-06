@@ -208,7 +208,7 @@ mod tests {
                 .into();
         for cp in &[pca, kpca, lap] {
             let r = cp.explained_variance_ratio();
-            assert!((0.0..=1.0).contains(&r), "{:?}: {r}", cp);
+            assert!((0.0..=1.0).contains(&r), "{cp:?}: {r}");
         }
     }
 
@@ -218,6 +218,6 @@ mod tests {
         let pca: ConfiguredProjection = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0))
             .unwrap()
             .into();
-        assert_eq!(format!("{:?}", pca), "ConfiguredProjection::Pca");
+        assert_eq!(format!("{pca:?}"), "ConfiguredProjection::Pca");
     }
 }

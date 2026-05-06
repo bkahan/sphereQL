@@ -438,6 +438,7 @@ impl Pipeline {
         .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    #[gen_stub(override_return_type(type_repr = "builtins.list[builtins.dict[builtins.str, typing.Any]]", imports = ("builtins", "typing")))]
     fn exported_points<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyList>> {
         let points = self.inner.exported_points();
         let list = pyo3::types::PyList::empty(py);
