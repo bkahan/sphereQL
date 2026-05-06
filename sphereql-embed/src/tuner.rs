@@ -234,6 +234,7 @@ impl SearchSpace {
     pub fn config_at_index(&self, index: usize, base: &PipelineConfig) -> Option<PipelineConfig> {
         let mut offset = 0usize;
         for &kind in &self.projection_kinds {
+            self.assert_axes_non_empty(kind);
             let slice = self.kind_cardinality(kind);
             if index < offset + slice {
                 return Some(self.config_at_kind_index(kind, index - offset, base));
@@ -250,7 +251,6 @@ impl SearchSpace {
         mut idx: usize,
         base: &PipelineConfig,
     ) -> PipelineConfig {
-        self.assert_axes_non_empty(kind);
         let take = |idx: &mut usize, len: usize| -> usize {
             let v = *idx % len;
             *idx /= len;
