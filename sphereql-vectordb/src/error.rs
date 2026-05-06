@@ -42,11 +42,9 @@ pub enum VectorStoreError {
     )]
     RateLimited { retry_after: Option<Duration> },
 
-    /// The backend's response exceeds the configured
-    /// [`BridgeConfig::max_response_bytes`] cap. Rejected without
-    /// allocation to guard against OOM from a buggy or malicious
-    /// server. Raise the cap in `BridgeConfig` if your corpus has
-    /// legitimately large payloads.
+    /// The backend's response exceeds the configured byte cap. Rejected
+    /// without allocation to guard against OOM from a buggy or malicious
+    /// server.
     #[error("response size {bytes} exceeds cap of {cap} bytes")]
     ResponseTooLarge { bytes: u64, cap: u64 },
 }

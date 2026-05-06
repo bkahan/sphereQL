@@ -7,6 +7,11 @@
       "Bash(cargo run *)",
       "Bash(cargo clippy *)",
       "Bash(cargo fmt *)",
+      "Bash(cargo doc *)",
+      "Bash(RUSTFLAGS=\"-Dwarnings\" cargo clippy --workspace --all-features --all-targets)",
+      "Bash(coderabbit --version)",
+      "Bash(coderabbit auth *)",
+      "Bash(coderabbit review *)"
       "Read(./.cr_review/**)"
     ]
   }

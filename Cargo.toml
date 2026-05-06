@@ -11,6 +11,7 @@ members = [
     "sphereql-corpus",
     "sphereql",
     "scripts/check-drift",
+    "sphereql-lingua",
 ]
 resolver = "2"
 

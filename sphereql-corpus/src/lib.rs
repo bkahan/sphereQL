@@ -15,7 +15,7 @@
 //!   connectivity-preserving projections (Laplacian eigenmap) recover
 //!   the authored signature. See [`stress_corpus`] for details.
 //!
-//! Both corpora are embedded via [`embed`] (default noise) or
+//! Both corpora are embedded via [`embed`](fn@embed) (default noise) or
 //! [`embed_with_noise`] (explicit amplitude).
 
 pub mod axes;
