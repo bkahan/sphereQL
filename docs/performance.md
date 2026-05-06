@@ -43,3 +43,23 @@ Laplacian params) combination.
 
 At n=775 (built-in corpus), a random search of budget 24 runs in ~3
 seconds release mode.
+
+## Projection fit costs
+
+PCA fits in milliseconds at n ≤ 10k — its cost is dominated by a
+single SVD on the d × n embedding matrix.
+
+**Kernel PCA is materially slower.** It builds an n × n Gram matrix
+and runs eigendecomposition on it, both O(n²)–O(n³). On the 10k-point
+benchmark above (384-d, 20 clusters), KPCA fitting takes
+**~85 minutes** in release mode on a modern laptop CPU. Only fit KPCA
+once and serialize the resulting projection — refitting per request
+is not feasible. Auto-tuner runs that include KPCA in the search
+space should expect a one-shot prefit cost of similar magnitude per
+distinct kernel-parameter tuple. See `sphereql-embed/src/kernel_pca.rs`
+for the implementation.
+
+Laplacian eigenmap fitting is between PCA and KPCA — graph
+construction is O(n · k) and eigendecomposition is O(n²) but on a
+sparse Laplacian, so practical cost is closer to PCA than KPCA at
+mid-size n.

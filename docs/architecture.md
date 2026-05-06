@@ -60,7 +60,7 @@ sphereql-graphql  sphereql-vectordb           |
 explicitly if you need the Pinecone backend:
 
 ```toml
-sphereql = { version = "0.1", features = ["full", "pinecone"] }
+sphereql = { version = "0.2.0-alpha", features = ["full", "pinecone"] }
 ```
 
 The `qdrant` feature is available on `sphereql-vectordb` and `sphereql-python`
