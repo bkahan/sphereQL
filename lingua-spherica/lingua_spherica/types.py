@@ -31,6 +31,14 @@ class SphericalPoint:
     phi: float
 
     def __post_init__(self):
+        if not math.isfinite(self.theta):
+            raise ValueError(f"theta must be finite, got {self.theta}")
+        if not math.isfinite(self.phi):
+            raise ValueError(f"phi must be finite, got {self.phi}")
+        if not math.isfinite(self.r):
+            raise ValueError(f"r must be finite, got {self.r}")
+        if self.r <= 0:
+            raise ValueError(f"r must be positive, got {self.r}")
         self.theta = self.theta % (2 * math.pi)
         self.phi = max(0.0, min(math.pi, self.phi))
         self.r = max(1e-6, self.r)
@@ -215,6 +223,10 @@ class DomainAnchor:
     parent: str | None = None
 
     def __post_init__(self):
+        if not math.isfinite(self.theta):
+            raise ValueError(f"theta must be finite, got {self.theta}")
+        if not math.isfinite(self.angular_width):
+            raise ValueError(f"angular_width must be finite, got {self.angular_width}")
         two_pi = 2 * math.pi
         if self.angular_width <= 0:
             raise ValueError(
@@ -225,6 +237,7 @@ class DomainAnchor:
                 "DomainAnchor.angular_width must be < 2π "
                 f"(would cover the full circle), got {self.angular_width}"
             )
+        self.theta = self.theta % (2 * math.pi)
 
     @property
     def theta_range(self) -> tuple[float, float]:
