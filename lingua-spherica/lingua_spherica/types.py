@@ -42,7 +42,7 @@ class SphericalPoint:
         return (x, y, z)
 
     @staticmethod
-    def from_cartesian(x: float, y: float, z: float) -> 'SphericalPoint':
+    def from_cartesian(x: float, y: float, z: float) -> SphericalPoint:
         r = math.sqrt(x*x + y*y + z*z)
         if r < 1e-10:
             return SphericalPoint(r=0.0, theta=0.0, phi=0.0)
@@ -50,7 +50,7 @@ class SphericalPoint:
         theta = math.atan2(y, x) % (2 * math.pi)
         return SphericalPoint(r=r, theta=theta, phi=phi)
 
-    def angular_distance_to(self, other: 'SphericalPoint') -> float:
+    def angular_distance_to(self, other: SphericalPoint) -> float:
         """Great-circle distance via the Vincenty atan2 form.
 
         Numerically stable for both near-identical and near-antipodal pairs,

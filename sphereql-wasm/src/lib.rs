@@ -1284,10 +1284,7 @@ impl WasmLaplacianEigenmapProjection {
     /// Project a batch (JSON 2-D array). Returns a typed array of
     /// `{ r, theta, phi }` via tsify.
     #[wasm_bindgen(js_name = projectBatch)]
-    pub fn project_batch(
-        &self,
-        embeddings_json: &str,
-    ) -> Result<SphericalPointBatchOut, JsError> {
+    pub fn project_batch(&self, embeddings_json: &str) -> Result<SphericalPointBatchOut, JsError> {
         let embs = parse_embeddings_2d(embeddings_json)?;
         let out: Vec<SphericalPointOut> = embs
             .iter()

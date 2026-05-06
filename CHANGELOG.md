@@ -33,9 +33,9 @@ versions.
   `VectorStoreError`, and both `DistanceMetric` enums (vectordb +
   graphql) so future variants can be added without breaking external
   exhaustive matches.
-- `#[must_use]` on the four index builders (`CompositeIndexBuilder`,
-  `ShellIndexBuilder`, `CacheIndexBuilder`, `QueryBuilder`) so a
-  forgotten `.build()` is now a compile-time warning.
+- `#[must_use]` on the four index builders (`SpatialIndexBuilder`,
+  `ShellIndexBuilder`, `CachedIndexBuilder`, `EmbeddingIndexBuilder`)
+  so a forgotten `.build()` is now a compile-time warning.
 - `Region` and `LuneSide` intentionally left exhaustive — they are
   sum types meant for full caller match.
 

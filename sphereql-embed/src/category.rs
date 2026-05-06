@@ -1477,10 +1477,12 @@ mod tests {
 
     #[test]
     fn cosine_similarity_orthogonal() {
-        assert!(cosine_similarity(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0])
-            .unwrap()
-            .abs()
-            < 1e-12);
+        assert!(
+            cosine_similarity(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0])
+                .unwrap()
+                .abs()
+                < 1e-12
+        );
     }
 
     #[test]
@@ -1492,10 +1494,12 @@ mod tests {
 
     #[test]
     fn cosine_similarity_zero_vector() {
-        assert!(cosine_similarity(&[0.0, 0.0, 0.0], &[1.0, 0.0, 0.0])
-            .unwrap()
-            .abs()
-            < 1e-12);
+        assert!(
+            cosine_similarity(&[0.0, 0.0, 0.0], &[1.0, 0.0, 0.0])
+                .unwrap()
+                .abs()
+                < 1e-12
+        );
     }
 
     // ======== Phase 2 tests (inner spheres) ========

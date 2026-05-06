@@ -12,7 +12,8 @@
       "Bash(coderabbit --version)",
       "Bash(coderabbit auth *)",
       "Bash(coderabbit review *)",
-      "Read(./.cr_review/**)"
+      "Read(./.cr_review/**)",
+      "Bash(gh pr *)"
     ]
   }
 }

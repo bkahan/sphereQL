@@ -485,12 +485,8 @@ pub fn pairwise_overlaps(centers: &[SphericalPoint], half_angles: &[f64]) -> Vec
         let mut out = Vec::with_capacity(n * (n - 1) / 2);
         for i in 0..n {
             for j in (i + 1)..n {
-                let area = cap_intersection_area(
-                    &centers[i],
-                    half_angles[i],
-                    &centers[j],
-                    half_angles[j],
-                );
+                let area =
+                    cap_intersection_area(&centers[i], half_angles[i], &centers[j], half_angles[j]);
                 if area > 1e-15 {
                     out.push(PairwiseOverlap {
                         category_a: i,
