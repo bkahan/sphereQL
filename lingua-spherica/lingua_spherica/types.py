@@ -45,7 +45,10 @@ class SphericalPoint:
     def from_cartesian(x: float, y: float, z: float) -> SphericalPoint:
         r = math.sqrt(x*x + y*y + z*z)
         if r < 1e-10:
-            return SphericalPoint(r=0.0, theta=0.0, phi=0.0)
+            # Degenerate origin input — `__post_init__` floors `r` at 1e-6,
+            # so use that sentinel explicitly rather than passing 0.0 and
+            # silently being clamped.
+            return SphericalPoint(r=1e-6, theta=0.0, phi=0.0)
         phi = math.acos(max(-1, min(1, z / r)))
         theta = math.atan2(y, x) % (2 * math.pi)
         return SphericalPoint(r=r, theta=theta, phi=phi)
@@ -191,6 +194,11 @@ class ConceptGraph:
         cx /= total_r
         cy /= total_r
         cz /= total_r
+        # Resultant length: if the unit vectors cancel, the centroid
+        # direction is undefined (e.g. perfectly antipodal pairs). Signal
+        # that with `None` rather than collapsing to an arbitrary pole.
+        if math.sqrt(cx * cx + cy * cy + cz * cz) < 1e-10:
+            return None
         avg_r = total_r / len(resolved)
         pt = SphericalPoint.from_cartesian(cx, cy, cz)
         pt.r = avg_r
@@ -205,6 +213,18 @@ class DomainAnchor:
     angular_width: float = 0.3
     keywords: list[str] = field(default_factory=list)
     parent: str | None = None
+
+    def __post_init__(self):
+        two_pi = 2 * math.pi
+        if self.angular_width <= 0:
+            raise ValueError(
+                f"DomainAnchor.angular_width must be > 0, got {self.angular_width}"
+            )
+        if self.angular_width >= two_pi:
+            raise ValueError(
+                "DomainAnchor.angular_width must be < 2π "
+                f"(would cover the full circle), got {self.angular_width}"
+            )
 
     @property
     def theta_range(self) -> tuple[float, float]:
