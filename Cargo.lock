@@ -2688,6 +2688,7 @@ dependencies = [
  "approx",
  "criterion",
  "proptest",
+ "rayon",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -2729,6 +2730,7 @@ version = "0.2.0-alpha"
 dependencies = [
  "approx",
  "criterion",
+ "indexmap 2.13.1",
  "proptest",
  "rand 0.8.5",
  "sphereql-core",
@@ -2785,6 +2787,7 @@ dependencies = [
  "async-trait",
  "futures",
  "qdrant-client",
+ "rayon",
  "reqwest",
  "serde",
  "serde_json",

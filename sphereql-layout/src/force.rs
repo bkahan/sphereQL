@@ -161,59 +161,78 @@ impl<T: Clone> LayoutStrategy<T> for ForceDirectedLayout {
 
         let mut temperature = 1.0;
 
+        // The inner loop runs once per (point, point) pair per iteration,
+        // so this is the dominant cost of the layout. Two wins applied
+        // here:
+        //
+        // 1. Both `pi` and `pj` come out of `project_to_unit_sphere` and
+        //    are kept on the unit sphere by `.normalize()` after every
+        //    step, so `angular_distance` reduces to a single `acos` of
+        //    the dot product. The previous code paid two
+        //    `cartesian_to_spherical` calls plus a Vincenty `atan2`
+        //    inside `angular_distance` per pair, all of which can be
+        //    skipped.
+        // 2. Each `i` builds its force independently from read-only
+        //    snapshots of `positions` / `original_cartesian`, so the
+        //    outer loop is trivially parallel. Stays serial under a
+        //    small threshold to avoid thread-pool churn for tiny inputs.
+        use rayon::prelude::*;
+        const FORCE_PARALLEL_THRESHOLD: usize = 128;
+
         for _ in 0..self.iterations {
-            let mut forces: Vec<CartesianPoint> = vec![CartesianPoint::new(0.0, 0.0, 0.0); n];
-
-            for i in 0..n {
+            let compute_force = |i: usize| -> CartesianPoint {
                 let pi = positions[i];
-                let sp_i = cartesian_to_spherical(&pi);
+                let mut fx = 0.0;
+                let mut fy = 0.0;
+                let mut fz = 0.0;
 
-                // Repulsion from every other point
                 for (j, &pj) in positions.iter().enumerate() {
                     if i == j {
                         continue;
                     }
 
-                    let sp_j = cartesian_to_spherical(&pj);
-                    let dist = angular_distance(&sp_i, &sp_j);
+                    let dot = pi.x * pj.x + pi.y * pj.y + pi.z * pj.z;
+                    let dist = dot.clamp(-1.0, 1.0).acos();
 
                     let dx = pi.x - pj.x;
                     let dy = pi.y - pj.y;
                     let dz = pi.z - pj.z;
-
                     let cart_dist = (dx * dx + dy * dy + dz * dz).sqrt();
                     if cart_dist < EPSILON {
                         continue;
                     }
 
                     let magnitude = self.repulsion_strength / (dist * dist + EPSILON);
-
-                    forces[i] = CartesianPoint::new(
-                        forces[i].x + magnitude * dx / cart_dist,
-                        forces[i].y + magnitude * dy / cart_dist,
-                        forces[i].z + magnitude * dz / cart_dist,
-                    );
+                    let inv = magnitude / cart_dist;
+                    fx += inv * dx;
+                    fy += inv * dy;
+                    fz += inv * dz;
                 }
 
-                // Attraction toward mapper's original position
                 let oi = original_cartesian[i];
-                let sp_oi = cartesian_to_spherical(&oi);
-                let dist_to_original = angular_distance(&sp_i, &sp_oi);
+                let dot_oi = pi.x * oi.x + pi.y * oi.y + pi.z * oi.z;
+                let dist_to_original = dot_oi.clamp(-1.0, 1.0).acos();
 
                 let dx = oi.x - pi.x;
                 let dy = oi.y - pi.y;
                 let dz = oi.z - pi.z;
                 let cart_dist = (dx * dx + dy * dy + dz * dz).sqrt();
-
                 if cart_dist > EPSILON {
                     let magnitude = self.attraction_strength * dist_to_original;
-                    forces[i] = CartesianPoint::new(
-                        forces[i].x + magnitude * dx / cart_dist,
-                        forces[i].y + magnitude * dy / cart_dist,
-                        forces[i].z + magnitude * dz / cart_dist,
-                    );
+                    let inv = magnitude / cart_dist;
+                    fx += inv * dx;
+                    fy += inv * dy;
+                    fz += inv * dz;
                 }
-            }
+
+                CartesianPoint::new(fx, fy, fz)
+            };
+
+            let forces: Vec<CartesianPoint> = if n < FORCE_PARALLEL_THRESHOLD {
+                (0..n).map(compute_force).collect()
+            } else {
+                (0..n).into_par_iter().map(compute_force).collect()
+            };
 
             // Apply forces: project onto tangent plane, then normalize back to sphere
             let step_size = temperature * STEP_SIZE_FACTOR;

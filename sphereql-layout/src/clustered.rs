@@ -367,49 +367,52 @@ fn compute_quality(
         0.0
     };
 
-    // Silhouette coefficient — per-point independent scans. Parallel
-    // over the outer `i` is safe since each worker builds a local
-    // scalar; the reduction is a single f64 sum.
+    // Silhouette coefficient. Pre-bucket assignments by cluster so the
+    // per-point inner work visits each remote point exactly once across
+    // all `k`. Without bucketing the inner loop scans `n` points per
+    // cluster, making the function O(n² · num_clusters); with it the
+    // total stays at O(n²). Singleton clusters trivially have a(i) = 0
+    // and are short-circuited.
     let silhouette_score = if num_clusters <= 1 || active_centers.len() <= 1 {
         0.0
     } else {
-        let per_point = |i: usize| -> f64 {
-            let ci = assignments[i];
-
-            // a(i) = mean distance to same-cluster members
-            let mut a_sum = 0.0;
-            let mut a_count = 0;
-            for j in 0..n {
-                if j != i && assignments[j] == ci {
-                    a_sum += angular_distance(&positions[i], &positions[j]);
-                    a_count += 1;
+        let cluster_members: Vec<Vec<usize>> = {
+            let mut buckets = vec![Vec::new(); num_clusters];
+            for (j, &cj) in assignments.iter().enumerate() {
+                if cj < num_clusters {
+                    buckets[cj].push(j);
                 }
             }
-            let a = if a_count > 0 {
-                a_sum / a_count as f64
-            } else {
+            buckets
+        };
+
+        let per_point = |i: usize| -> f64 {
+            let ci = assignments[i];
+            let same = &cluster_members[ci];
+
+            let a = if same.len() <= 1 {
                 0.0
+            } else {
+                let s: f64 = same
+                    .iter()
+                    .filter(|&&j| j != i)
+                    .map(|&j| angular_distance(&positions[i], &positions[j]))
+                    .sum();
+                s / (same.len() - 1) as f64
             };
 
-            // b(i) = min over other clusters of mean distance to that cluster
             let mut b = f64::MAX;
-            for k in 0..num_clusters {
-                if k == ci {
+            for (k, members) in cluster_members.iter().enumerate() {
+                if k == ci || members.is_empty() {
                     continue;
                 }
-                let mut b_sum = 0.0;
-                let mut b_count = 0;
-                for j in 0..n {
-                    if assignments[j] == k {
-                        b_sum += angular_distance(&positions[i], &positions[j]);
-                        b_count += 1;
-                    }
-                }
-                if b_count > 0 {
-                    let mean_dist = b_sum / b_count as f64;
-                    if mean_dist < b {
-                        b = mean_dist;
-                    }
+                let s: f64 = members
+                    .iter()
+                    .map(|&j| angular_distance(&positions[i], &positions[j]))
+                    .sum();
+                let mean_dist = s / members.len() as f64;
+                if mean_dist < b {
+                    b = mean_dist;
                 }
             }
             if b == f64::MAX {
