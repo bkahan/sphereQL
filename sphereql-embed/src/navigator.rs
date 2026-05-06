@@ -1,7 +1,7 @@
 //! AI Knowledge Navigator — semantic spatial queries on S².
 //!
 //! Wires the pure geometry primitives from `sphereql_core::spatial` to the
-//! [`CategoryLayer`] and [`SphereQLPipeline`], giving every geometric query
+//! [`CategoryLayer`] and [`crate::SphereQLPipeline`], giving every geometric query
 //! its semantic meaning.
 //!
 //! Each public struct/function maps to one of the 7 research areas:

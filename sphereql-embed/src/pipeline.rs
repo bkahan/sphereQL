@@ -45,7 +45,7 @@ pub enum PipelineError {
     /// pipeline.
     #[error("unknown id: {0:?}")]
     UnknownId(String),
-    /// Every [`auto_tune`](crate::tuner::auto_tune) trial failed a
+    /// Every [`crate::tuner::auto_tune`] trial failed a
     /// downstream validator (e.g. every candidate config was rejected
     /// by the pipeline builder). The attached `failures` list carries
     /// the `(config, error)` pairs the tuner observed — callers should
@@ -673,7 +673,7 @@ impl SphereQLPipeline {
     /// Borrow the fitted projection regardless of kind.
     ///
     /// Returns a `&ConfiguredProjection`, which implements the
-    /// [`Projection`](crate::projection::Projection) trait — so most
+    /// [`crate::projection::Projection`] trait — so most
     /// callers never need to pattern-match on the enum. The old
     /// `.pca()` accessor was removed because it panicked under any
     /// non-PCA config and every caller already worked through this

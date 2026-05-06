@@ -1,6 +1,6 @@
 //! GraphQL integration for sphereQL spatial queries.
 //!
-//! Provides an [`async-graphql`] schema with queries for cone, shell, band,
+//! Provides an `async-graphql` schema with queries for cone, shell, band,
 //! wedge, and region lookups, k-nearest-neighbor search, real-time
 //! subscriptions via a broadcast event bus, and the full category
 //! enrichment surface (concept paths, drill-down, domain groups, stats).
@@ -57,7 +57,7 @@ pub type UnifiedSchema =
 /// pipeline + embedder context entries are unused there.
 ///
 /// To run a category-only deployment, pass a no-op
-/// [`PointIndex`](crate::query::PointIndex) created via
+/// [`PointIndex`] created via
 /// [`create_default_index`] alongside the real pipeline; spatial
 /// resolvers will return empty results but won't error.
 pub fn build_unified_schema(

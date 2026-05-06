@@ -18,9 +18,9 @@ pub struct Concept {
     pub positions: Vec<usize>,
     /// Hint from vocabulary: which domain does this belong to?
     pub domain_hint: Option<String>,
-    /// Raw abstraction score ∈ [0,1] before φ mapping.
+    /// Raw abstraction score ∈ \[0,1\] before φ mapping.
     pub abstraction_hint: f64,
-    /// Raw salience score ∈ [0,1] before r mapping.
+    /// Raw salience score ∈ \[0,1\] before r mapping.
     pub salience_score: f64,
 }
 

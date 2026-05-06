@@ -232,7 +232,7 @@ pub struct InnerSphere {
     pub evr_improvement: f64,
 }
 
-/// A single item from a [`drill_down`](CategoryLayer::drill_down) query.
+/// A single item from a [`CategoryLayer::drill_down_with_projection`] query.
 #[derive(Debug, Clone)]
 pub struct DrillDownResult {
     /// Index of the item in the pipeline's global item list.

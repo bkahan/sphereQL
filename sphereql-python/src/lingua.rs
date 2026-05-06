@@ -85,7 +85,7 @@ impl PyConceptGraph {
 }
 
 #[gen_stub_pyclass]
-#[pyclass(name = "LinguaConcept", frozen)]
+#[pyclass(name = "LinguaConcept", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PyConcept {
     #[pyo3(get)]
