@@ -131,6 +131,14 @@ impl CorpusFeatures {
         let dim = if n > 0 { embeddings[0].len() } else { 0 };
         assert!(n > 0, "cannot extract features from an empty corpus");
         assert!(dim > 0, "embeddings must have positive dimensionality");
+        for (i, e) in embeddings.iter().enumerate() {
+            assert_eq!(
+                e.len(),
+                dim,
+                "ragged embeddings: row {i} length {} != dim {dim}",
+                e.len()
+            );
+        }
 
         // 1. Category bookkeeping.
         let mut cat_counts: HashMap<&str, usize> = HashMap::new();

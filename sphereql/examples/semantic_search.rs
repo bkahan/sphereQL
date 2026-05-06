@@ -469,9 +469,10 @@ fn run_nearest_query(
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        format!("{}…", &s[..max])
+        let head: String = s.chars().take(max).collect();
+        format!("{head}…")
     }
 }

@@ -266,11 +266,6 @@ impl<T: SpatialItem> SectorIndex<T> {
         SphericalPoint::new_unchecked(1.0, (t_min + t_max) / 2.0, (p_min + p_max) / 2.0)
     }
 
-    /// Conservative upper bound on the angular diagonal of a single sector.
-    ///
-    /// Treats the theta and phi angular extents as legs of a right triangle
-    /// on the sphere. Overestimates for large sectors, which is the safe
-    /// direction for candidate pruning.
     /// Conservative upper bound on the angular diagonal of a single sector,
     /// accounting for the latitude-dependent shrinkage of theta arcs.
     ///

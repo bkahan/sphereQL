@@ -23,8 +23,6 @@ impl UniformLayout {
     fn fibonacci_point(&self, i: usize, n: usize) -> SphericalPoint {
         let phi = (1.0 - 2.0 * (i as f64 + 0.5) / n as f64).acos();
         let theta = (GOLDEN_ANGLE * i as f64) % TAU;
-        // Ensure theta is non-negative after modulo
-        let theta = if theta < 0.0 { theta + TAU } else { theta };
         SphericalPoint::new_unchecked(self.radius, theta, phi)
     }
 

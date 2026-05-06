@@ -2,7 +2,7 @@
 
 Shared test corpora for examples in the [sphereQL](https://github.com/bkahan/sphereQL) project.
 
-`build_corpus()` provides 775 concepts across 31 academic domains (physics, mathematics, biology, medicine, neuroscience, CS, AI, chemistry, engineering, astronomy, earth science, environmental science, psychology, philosophy, religion, linguistics, literature, history, sociology, anthropology, political science, law, economics, education, visual arts, music, film, performing arts, culinary arts, nanotechnology) with hand-crafted 128-dimensional sparse embeddings. Every semantic axis receives mass and bridge concepts deliberately straddle category boundaries.
+`build_corpus()` provides 775 concepts across 31 academic domains (physics, mathematics, biology, medicine, neuroscience, computer science, data science, chemistry, engineering, architecture, astronomy, earth science, environmental science, psychology, philosophy, religion, linguistics, literature, history, sociology, anthropology, political science, law, economics, education, visual arts, music, film studies, performing arts, culinary arts, nanotechnology) with hand-crafted 128-dimensional sparse embeddings. Every semantic axis receives mass and bridge concepts deliberately straddle category boundaries.
 
 `build_stress_corpus()` provides a second 300-concept synthetic corpus: 10 categories, 30 concepts each, exactly 2 authored signal axes per concept, `0.2` noise amplitude (5× the built-in default of `0.04`). A controlled A/B probe for projection families — variance-maximizing projections (PCA) degrade in this regime while connectivity-preserving ones (Laplacian eigenmap) recover the authored signature.
 

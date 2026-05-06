@@ -26,6 +26,19 @@ fn severity_name(s: WarningSeverity) -> &'static str {
     }
 }
 
+fn required_str(v: &serde_json::Value, field: &str) -> PyResult<String> {
+    v.get(field)
+        .and_then(|x| x.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| PyValueError::new_err(format!("missing or non-string field: {field}")))
+}
+
+fn required_f64(v: &serde_json::Value, field: &str) -> PyResult<f64> {
+    v.get(field)
+        .and_then(|x| x.as_f64())
+        .ok_or_else(|| PyValueError::new_err(format!("missing or non-numeric field: {field}")))
+}
+
 // ── Nearest ────────────────────────────────────────────────────────────
 
 #[gen_stub_pyclass]
@@ -74,11 +87,11 @@ impl Nearest {
         let v: serde_json::Value =
             serde_json::from_str(json).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self {
-            id: v["id"].as_str().unwrap_or("").to_string(),
-            category: v["category"].as_str().unwrap_or("").to_string(),
-            distance: v["distance"].as_f64().unwrap_or(0.0),
-            certainty: v["certainty"].as_f64().unwrap_or(0.0),
-            intensity: v["intensity"].as_f64().unwrap_or(0.0),
+            id: required_str(&v, "id")?,
+            category: required_str(&v, "category")?,
+            distance: required_f64(&v, "distance")?,
+            certainty: required_f64(&v, "certainty")?,
+            intensity: required_f64(&v, "intensity")?,
         })
     }
 }
@@ -143,11 +156,11 @@ impl PathStep {
         let v: serde_json::Value =
             serde_json::from_str(json).map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self {
-            id: v["id"].as_str().unwrap_or("").to_string(),
-            category: v["category"].as_str().unwrap_or("").to_string(),
-            cumulative_distance: v["cumulative_distance"].as_f64().unwrap_or(0.0),
-            hop_distance: v["hop_distance"].as_f64().unwrap_or(0.0),
-            bridge_strength: v["bridge_strength"].as_f64(),
+            id: required_str(&v, "id")?,
+            category: required_str(&v, "category")?,
+            cumulative_distance: required_f64(&v, "cumulative_distance")?,
+            hop_distance: required_f64(&v, "hop_distance")?,
+            bridge_strength: v.get("bridge_strength").and_then(|x| x.as_f64()),
         })
     }
 }
@@ -188,6 +201,8 @@ impl Path {
                     "id": s.id,
                     "category": s.category,
                     "cumulative_distance": s.cumulative_distance,
+                    "hop_distance": s.hop_distance,
+                    "bridge_strength": s.bridge_strength,
                 })
             })
             .collect();
@@ -202,21 +217,23 @@ impl Path {
     fn from_json(json: &str) -> PyResult<Self> {
         let v: serde_json::Value =
             serde_json::from_str(json).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let steps = v["steps"]
+        let steps: PyResult<Vec<PathStep>> = v["steps"]
             .as_array()
             .ok_or_else(|| PyValueError::new_err("missing 'steps' array"))?
             .iter()
-            .map(|s| PathStep {
-                id: s["id"].as_str().unwrap_or("").to_string(),
-                category: s["category"].as_str().unwrap_or("").to_string(),
-                cumulative_distance: s["cumulative_distance"].as_f64().unwrap_or(0.0),
-                hop_distance: s["hop_distance"].as_f64().unwrap_or(0.0),
-                bridge_strength: s["bridge_strength"].as_f64(),
+            .map(|s| {
+                Ok(PathStep {
+                    id: required_str(s, "id")?,
+                    category: required_str(s, "category")?,
+                    cumulative_distance: required_f64(s, "cumulative_distance")?,
+                    hop_distance: required_f64(s, "hop_distance")?,
+                    bridge_strength: s.get("bridge_strength").and_then(|x| x.as_f64()),
+                })
             })
             .collect();
         Ok(Self {
-            total_distance: v["total_distance"].as_f64().unwrap_or(0.0),
-            steps,
+            total_distance: required_f64(&v, "total_distance")?,
+            steps: steps?,
         })
     }
 }
@@ -381,7 +398,7 @@ impl From<&ManifoldResult> for Manifold {
 
 #[gen_stub_pyclass]
 #[pyclass(name = "CategorySummaryInfo", frozen, from_py_object)]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PyCategorySummary {
     #[pyo3(get)]
     pub name: String,
@@ -409,6 +426,10 @@ impl PyCategorySummary {
             "CategorySummaryInfo(name={:?}, members={}, cohesion={:.4}, bridge_quality={:.4})",
             self.name, self.member_count, self.cohesion, self.bridge_quality
         )
+    }
+
+    fn __eq__(&self, other: &PyCategorySummary) -> bool {
+        self == other
     }
 }
 

@@ -265,7 +265,6 @@ impl Pipeline {
         query_json: &str,
         k: usize,
     ) -> Result<Vec<NearestOut>, JsError> {
-        use sphereql_embed::types::Embedding;
         let emb = parse_query(query_json)?;
         self.require_matching_dim(&emb)?;
         let embedding = Embedding::new(emb.embedding);
@@ -418,9 +417,13 @@ fn parse_input(input_json: &str) -> Result<PipelineInput, JsError> {
             arr.iter()
                 .enumerate()
                 .map(|(j, v)| {
-                    v.as_f64().ok_or_else(|| {
+                    let f = v.as_f64().ok_or_else(|| {
                         JsError::new(&format!("embedding[{i}][{j}] must be a number"))
-                    })
+                    })?;
+                    if !f.is_finite() {
+                        return Err(JsError::new(&format!("embedding[{i}][{j}] must be finite")));
+                    }
+                    Ok(f)
                 })
                 .collect::<Result<Vec<_>, _>>()
         })

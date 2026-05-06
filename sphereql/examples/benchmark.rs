@@ -189,6 +189,9 @@ fn ndcg_at_k(retrieved_ids: &[String], truth_relevance: &HashMap<String, f64>, k
 }
 
 fn p99(mut latencies: Vec<f64>) -> f64 {
+    if latencies.is_empty() {
+        return 0.0;
+    }
     latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let idx = ((latencies.len() as f64 * 0.99) as usize).min(latencies.len() - 1);
     latencies[idx]

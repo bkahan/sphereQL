@@ -183,9 +183,10 @@ mod tests {
         assert!(res.errors.is_empty(), "errors: {:?}", res.errors);
         let data = res.data.into_json().unwrap();
         let items = data["withinCone"]["items"].as_array().unwrap();
-        assert!(
-            items.len() >= 2,
-            "expected at least 2 items in cone, got {}",
+        assert_eq!(
+            items.len(),
+            2,
+            "expected exactly 2 items in cone, got {}",
             items.len()
         );
     }

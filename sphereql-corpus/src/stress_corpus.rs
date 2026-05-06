@@ -65,7 +65,7 @@ pub fn build_stress_corpus() -> Vec<Concept> {
         // Disjoint 2-axis signature per category at (2c, 2c+1).
         let axis_a = 2 * c;
         let axis_b = 2 * c + 1;
-        let category_name: &'static str = leak_string(format!("stress_cat_{:02}", c));
+        let category_name: &'static str = leak_string(format!("stress_cat_{c:02}"));
 
         for i in 0..STRESS_CONCEPTS_PER_CATEGORY {
             // Smooth variation around the signature so within-category
@@ -76,7 +76,7 @@ pub fn build_stress_corpus() -> Vec<Concept> {
             let weight_a = 1.0 + 0.15 * theta.sin();
             let weight_b = 0.6 + 0.15 * theta.cos();
 
-            let label: &'static str = leak_string(format!("stress_cat_{:02}_item_{:02}", c, i));
+            let label: &'static str = leak_string(format!("stress_cat_{c:02}_item_{i:02}"));
 
             out.push(Concept {
                 label,

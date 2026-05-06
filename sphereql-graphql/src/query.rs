@@ -54,14 +54,13 @@ where
     let idx = index.read().await;
     let result = query(&idx);
 
-    let mut items: Vec<SphericalPointOutput> = result
+    let take = limit.map(|n| n.max(0) as usize).unwrap_or(usize::MAX);
+    let items: Vec<SphericalPointOutput> = result
         .items
         .iter()
+        .take(take)
         .map(|item| SphericalPointOutput::from(item.position()))
         .collect();
-    if let Some(n) = limit {
-        items.truncate(n.max(0) as usize);
-    }
 
     Ok(SpatialQueryResultOutput {
         items,

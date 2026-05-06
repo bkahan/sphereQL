@@ -76,8 +76,17 @@ fn normalized_mean(points: &[CartesianPoint]) -> CartesianPoint {
     }
     let mean = CartesianPoint::new(sx, sy, sz);
     let n = mean.normalize();
-    if n.magnitude() == 0.0 {
-        points[0].normalize()
+    // Antipodal points cancel; fall back to the first member that has a
+    // well-defined direction. If every member is degenerate (mag ≈ 0),
+    // fall back to the canonical north pole rather than returning an
+    // unnormalized zero vector.
+    if n.magnitude() < 1e-12 {
+        for p in points {
+            if p.magnitude() >= 1e-12 {
+                return p.normalize();
+            }
+        }
+        CartesianPoint::new(0.0, 0.0, 1.0)
     } else {
         n
     }
