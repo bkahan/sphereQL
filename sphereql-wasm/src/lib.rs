@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 // ~10 KB; LeakingPageAllocator is ~50 bytes. The "leaking" name is
 // accurate but not a problem — wasm tabs are short-lived and pages
 // are reclaimed when the module is dropped.
-#[cfg(all(target_arch = "wasm32", not(test)))]
+#[cfg(all(target_arch = "wasm32", not(debug_assertions), not(test)))]
 #[global_allocator]
 static ALLOCATOR: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
 

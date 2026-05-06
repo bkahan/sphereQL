@@ -477,6 +477,9 @@ pub struct PairwiseOverlap {
 pub fn pairwise_overlaps(centers: &[SphericalPoint], half_angles: &[f64]) -> Vec<PairwiseOverlap> {
     assert_eq!(centers.len(), half_angles.len());
     let n = centers.len();
+    if n < 2 {
+        return Vec::new();
+    }
 
     use rayon::prelude::*;
     const SERIAL_THRESHOLD: usize = 128;

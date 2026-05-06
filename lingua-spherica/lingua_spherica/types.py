@@ -179,10 +179,12 @@ class ConceptGraph:
         total_r = 0.0
         for c in resolved:
             x, y, z = c.point.to_cartesian()
+            norm = math.sqrt(x * x + y * y + z * z)
             w = c.point.r
-            cx += w * x
-            cy += w * y
-            cz += w * z
+            if norm > 1e-10:
+                cx += w * x / norm
+                cy += w * y / norm
+                cz += w * z / norm
             total_r += w
         if total_r <= 0.0:
             return None

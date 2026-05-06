@@ -27,6 +27,17 @@ versions.
 - `docs/performance.md` projection-fit cost disclosure (KPCA at
   n=10k ≈ 85 minutes).
 
+### Changed — Rust API (breaking)
+
+- `sphereql_core::cosine_similarity` now returns
+  `Result<f64, SphereQlError>` instead of `f64`; mismatched-dimension
+  inputs produce the new `SphereQlError::DimensionMismatch` variant
+  rather than silently returning a nonsense scalar. Existing callers
+  must handle (or `?`-propagate) the `Result`.
+- New `SphereQlError::DimensionMismatch { expected, got }` variant.
+  `SphereQlError` is `#[non_exhaustive]`, but call sites that already
+  match on it should add this arm.
+
 ### Changed — Rust API stability
 
 - `#[non_exhaustive]` on `SphereQlError`, `IndexError`,
@@ -50,6 +61,20 @@ versions.
 - `DomainAnchor.theta_range` now wraps endpoints into `[0, 2π)` and
   documents the wrap-around case (`lo > hi` ⇒ band straddles the
   seam, range is `[lo, 2π) ∪ [0, hi]`).
+
+### Performance — Rust core
+
+- Silhouette computation rewritten to a single O(n²) pass (down from
+  the prior nested iteration that was effectively O(n³) on large
+  inputs).
+- `rayon` parallelization for pairwise overlap / distance scans in
+  `sphereql-core::spatial`, gated behind a serial-threshold so small
+  inputs don't pay the thread-pool cost. Adds `rayon` as a workspace
+  dependency.
+- Cached norms on hot distance paths (cosine / angular re-rank) to
+  avoid recomputing the per-vector L2 norm on every comparison.
+- `sphereql-embed` migration-lock map is now O(1) on insert/lookup
+  via `IndexMap`-backed LRU (capacity 128).
 
 ### Performance — WASM
 
