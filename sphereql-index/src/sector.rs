@@ -8,7 +8,7 @@ use std::f64::consts::{PI, TAU};
 pub enum IndexError {
     /// A division count was zero. Every `SectorIndex` needs at least
     /// one theta bin and one phi bin; zero would produce an empty
-    /// sectors array and divide-by-zero in [`SectorIndex::sector_index`].
+    /// sectors array and divide-by-zero in `sector_index`.
     #[error("{field} must be >= 1, got 0")]
     ZeroDivisions { field: &'static str },
 }

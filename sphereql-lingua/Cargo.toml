@@ -1,0 +1,15 @@
+[package]
+name = "sphereql-lingua"
+description = "Language to native SphereQL coordinates: text to (theta, phi, r)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sphereql-core = { path = "../sphereql-core" }
+serde = { version = "1", features = ["derive"] }
+regex = "1"
+
+[dev-dependencies]
+approx = "0.5"

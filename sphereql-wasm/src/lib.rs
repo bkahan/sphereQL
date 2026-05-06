@@ -894,7 +894,7 @@ fn resolve_metric(name: &str) -> Result<Box<dyn QualityMetric>, JsError> {
 /// `metric`, `strategy`, `budget`, `seed`, `warmup`, `gamma`, `base_config`.
 ///
 /// To construct the tuned pipeline, pass the returned `best_config`
-/// object straight back into [`Pipeline::newWithConfig`].
+/// object straight back into `Pipeline::newWithConfig`.
 #[wasm_bindgen(js_name = autoTune)]
 pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<TuneReportOut, JsError> {
     let input = parse_input(input_json)?;
@@ -958,7 +958,7 @@ impl WasmNearestNeighborMetaModel {
     }
 
     /// Predict the PipelineConfig for a new corpus profile. Returns
-    /// `PipelineConfig` JSON ready to pass to [`Pipeline::newWithConfig`].
+    /// `PipelineConfig` JSON ready to pass to `Pipeline::newWithConfig`.
     pub fn predict(&self, features_json: &str) -> Result<String, JsError> {
         let features = parse_features(features_json)?;
         serialize_config(&self.inner.predict(&features))
