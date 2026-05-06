@@ -416,6 +416,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         // they're dropped here. The `dropped_no_vector` counter below
         // makes that visible to callers via the tracing event.
         let mut dropped_no_vector = 0usize;
+        let mut dropped_dim_mismatch = 0usize;
         let mut scored: Vec<(SearchResult, f64)> = candidates
             .into_iter()
             .filter_map(|mut result| {
@@ -423,9 +424,19 @@ impl<S: VectorStore> VectorStoreBridge<S> {
                     dropped_no_vector += 1;
                     return None;
                 };
-                let cosine_sim = sphereql_core::cosine_similarity(query_embedding, vec);
-                result.score = cosine_sim;
-                Some((result, cosine_sim))
+                match sphereql_core::cosine_similarity(query_embedding, vec) {
+                    Ok(cosine_sim) => {
+                        result.score = cosine_sim;
+                        Some((result, cosine_sim))
+                    }
+                    Err(_) => {
+                        // Remote store returned a vector with the wrong
+                        // dimensionality. Drop it from the rerank set rather
+                        // than panicking the host.
+                        dropped_dim_mismatch += 1;
+                        None
+                    }
+                }
             })
             .collect();
 
@@ -444,17 +455,19 @@ impl<S: VectorStore> VectorStoreBridge<S> {
             tracing::warn!(
                 recalled,
                 dropped_no_vector,
+                dropped_dim_mismatch,
                 final_k,
                 recall_k,
                 "hybrid_search returned fewer results than requested; \
                  consider raising recall_k or enabling vector storage \
                  on the backend"
             );
-        } else if dropped_no_vector > 0 {
+        } else if dropped_no_vector > 0 || dropped_dim_mismatch > 0 {
             tracing::debug!(
                 dropped_no_vector,
-                "hybrid_search dropped candidates missing `vector`; \
-                 re-rank couldn't score them"
+                dropped_dim_mismatch,
+                "hybrid_search dropped candidates missing `vector` \
+                 or with mismatched dimensions; re-rank couldn't score them"
             );
         }
 

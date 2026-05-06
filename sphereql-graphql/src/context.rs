@@ -20,6 +20,8 @@ pub fn build_schema(index: PointIndex, event_bus: SpatialEventBus) -> SphericalS
         async_graphql::EmptyMutation,
         SphericalSubscriptionRoot,
     )
+    .limit_depth(crate::DEFAULT_MAX_DEPTH)
+    .limit_complexity(crate::DEFAULT_MAX_COMPLEXITY)
     .data(index)
     .data(event_bus)
     .finish()

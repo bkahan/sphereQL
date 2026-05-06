@@ -47,10 +47,22 @@ class SphericalPoint:
         return SphericalPoint(theta, phi, r)
 
     def angular_distance_to(self, other: 'SphericalPoint') -> float:
-        cos_d = (math.sin(self.phi) * math.sin(other.phi) *
-                 math.cos(self.theta - other.theta) +
-                 math.cos(self.phi) * math.cos(other.phi))
-        return math.acos(max(-1.0, min(1.0, cos_d)))
+        """Great-circle distance via the Vincenty atan2 form.
+
+        Numerically stable for both near-identical and near-antipodal pairs,
+        unlike the textbook `acos(...)` formula which loses precision near
+        the endpoints of its domain.
+        """
+        sin_phi1, cos_phi1 = math.sin(self.phi), math.cos(self.phi)
+        sin_phi2, cos_phi2 = math.sin(other.phi), math.cos(other.phi)
+        delta_theta = self.theta - other.theta
+        cos_dt, sin_dt = math.cos(delta_theta), math.sin(delta_theta)
+        num = math.sqrt(
+            (sin_phi2 * sin_dt) ** 2
+            + (sin_phi1 * cos_phi2 - cos_phi1 * sin_phi2 * cos_dt) ** 2
+        )
+        den = cos_phi1 * cos_phi2 + sin_phi1 * sin_phi2 * cos_dt
+        return math.atan2(num, den)
 
 
 @dataclass
@@ -149,20 +161,31 @@ class ConceptGraph:
         return result
 
     def centroid(self) -> Optional[SphericalPoint]:
-        """Spherical centroid via Cartesian mean and re-projection."""
+        """Weighted spherical centroid (epistemic-weighted Fréchet mean).
+
+        Each concept's Cartesian position is weighted by its radius `r`
+        (epistemic weight per the module convention), the weighted sum
+        is normalized by the total weight, and the resulting direction
+        is re-projected onto the sphere with radius = mean(r).
+        """
         resolved = [c for c in self.concepts if c.point is not None]
         if not resolved:
             return None
-        cx, cy, cz = 0.0, 0.0, 0.0
+        cx = cy = cz = 0.0
         total_r = 0.0
         for c in resolved:
             x, y, z = c.point.to_cartesian()
             w = c.point.r
-            cx += x; cy += y; cz += z
+            cx += w * x
+            cy += w * y
+            cz += w * z
             total_r += w
-        n = len(resolved)
-        cx /= n; cy /= n; cz /= n
-        avg_r = total_r / n
+        if total_r <= 0.0:
+            return None
+        cx /= total_r
+        cy /= total_r
+        cz /= total_r
+        avg_r = total_r / len(resolved)
         pt = SphericalPoint.from_cartesian(cx, cy, cz)
         pt.r = avg_r
         return pt
