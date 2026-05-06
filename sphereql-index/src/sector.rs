@@ -5,6 +5,7 @@ use std::f64::consts::{PI, TAU};
 
 /// Reasons a spatial-index constructor can reject its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum IndexError {
     /// A division count was zero. Every `SectorIndex` needs at least
     /// one theta bin and one phi bin; zero would produce an empty

@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, thiserror::Error)]
+#[non_exhaustive]
 pub enum SphereQlError {
     #[error("invalid radius {0}: must be >= 0")]
     InvalidRadius(f64),

@@ -130,6 +130,7 @@ enum CachedResult<T: SpatialItem> {
     Nearest(Vec<NearestResult<T>>),
 }
 
+#[must_use = "builders must be terminated with `.build()` to construct the index"]
 pub struct CachedIndexBuilder {
     inner_builder: SpatialIndexBuilder,
     cache_capacity: usize,

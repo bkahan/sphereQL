@@ -56,6 +56,7 @@ pub struct CollectionConfig {
 
 /// Distance metric used by the vector index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum DistanceMetric {
     #[default]
     Cosine,

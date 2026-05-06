@@ -760,17 +760,16 @@ fn json_to_py(py: Python<'_>, v: &serde_json::Value) -> PyResult<Py<PyAny>> {
             .unbind(),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                i.into_pyobject(py).unwrap().into_any().unbind()
+                i.into_pyobject(py)?.into_any().unbind()
             } else {
                 n.as_f64()
                     .unwrap_or(0.0)
-                    .into_pyobject(py)
-                    .unwrap()
+                    .into_pyobject(py)?
                     .into_any()
                     .unbind()
             }
         }
-        serde_json::Value::String(s) => s.into_pyobject(py).unwrap().into_any().unbind(),
+        serde_json::Value::String(s) => s.into_pyobject(py)?.into_any().unbind(),
         serde_json::Value::Array(arr) => {
             let items: Vec<Py<PyAny>> = arr
                 .iter()

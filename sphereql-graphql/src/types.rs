@@ -155,6 +155,7 @@ pub fn items_to_pipeline_input(items: &[CategorizedItemInput]) -> PipelineInput 
 // --- Enum ---
 
 #[derive(async_graphql::Enum, Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub enum DistanceMetric {
     Angular,
     GreatCircle,
