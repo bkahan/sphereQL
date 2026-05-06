@@ -21,10 +21,15 @@ import math
 
 @dataclass
 class SphericalPoint:
-    """A point in the SphereQL coordinate system."""
+    """A point in the SphereQL coordinate system.
+
+    Field order matches the canonical Rust `SphericalPoint::new(r, theta, phi)`
+    in `sphereql-core` so positional construction is portable across the
+    Python and Rust surfaces.
+    """
+    r: float
     theta: float
     phi: float
-    r: float
 
     def __post_init__(self):
         self.theta = self.theta % (2 * math.pi)
@@ -41,10 +46,10 @@ class SphericalPoint:
     def from_cartesian(x: float, y: float, z: float) -> 'SphericalPoint':
         r = math.sqrt(x*x + y*y + z*z)
         if r < 1e-10:
-            return SphericalPoint(0.0, 0.0, 0.0)
+            return SphericalPoint(r=0.0, theta=0.0, phi=0.0)
         phi = math.acos(max(-1, min(1, z / r)))
         theta = math.atan2(y, x) % (2 * math.pi)
-        return SphericalPoint(theta, phi, r)
+        return SphericalPoint(r=r, theta=theta, phi=phi)
 
     def angular_distance_to(self, other: 'SphericalPoint') -> float:
         """Great-circle distance via the Vincenty atan2 form.

@@ -83,7 +83,7 @@ def slerp(p1: SphericalPoint, p2: SphericalPoint, t: float) -> SphericalPoint:
     omega = math.acos(dot)
     r_lerp = (1 - t) * p1.r + t * p2.r
     if omega < EPSILON:
-        return SphericalPoint(p1.theta, p1.phi, r_lerp)
+        return SphericalPoint(r=r_lerp, theta=p1.theta, phi=p1.phi)
     sin_omega = math.sin(omega)
     if sin_omega < EPSILON:
         # Antipodal (or near-antipodal): the geodesic is degenerate.
@@ -125,7 +125,7 @@ def spherical_centroid(points: List[SphericalPoint],
                        weights: Optional[List[float]] = None) -> SphericalPoint:
     """Frechet mean on S2: Cartesian mean then re-project."""
     if not points:
-        return SphericalPoint(0.0, HALF_PI, 0.5)
+        return SphericalPoint(r=0.5, theta=0.0, phi=HALF_PI)
     if weights is None:
         weights = [1.0] * len(points)
     elif len(points) != len(weights):
