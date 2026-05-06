@@ -197,8 +197,9 @@ impl RelationEncoder {
             let mut rs: Vec<f64> = resolved
                 .iter()
                 .filter_map(|(_, c)| c.point.as_ref().map(|p| p.r))
+                .filter(|r| r.is_finite())
                 .collect();
-            rs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            rs.sort_by(|a, b| a.total_cmp(b));
             rs.get(rs.len() / 2).copied().unwrap_or(0.5)
         };
 
@@ -236,26 +237,15 @@ impl RelationEncoder {
                 }
             }
         }
-        rels.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap());
+        rels.sort_by(|a, b| b.weight.total_cmp(&a.weight));
         rels.truncate(15);
         rels
     }
 
     fn deduplicate(&self, rels: &mut Vec<Relation>) {
-        let mut seen = std::collections::HashMap::new();
-        rels.retain(|r| {
-            let key = (r.source_idx, r.target_idx, r.relation_type);
-            if let Some(existing_weight) = seen.get(&key) {
-                if r.weight > *existing_weight {
-                    seen.insert(key, r.weight);
-                    true
-                } else {
-                    false
-                }
-            } else {
-                seen.insert(key, r.weight);
-                true
-            }
-        });
+        // Sort highest-weight first so the first occurrence retained is always the best.
+        rels.sort_by(|a, b| b.weight.total_cmp(&a.weight));
+        let mut seen = std::collections::HashSet::new();
+        rels.retain(|r| seen.insert((r.source_idx, r.target_idx, r.relation_type)));
     }
 }

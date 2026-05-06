@@ -66,23 +66,33 @@ def main():
         top = sorted(graph.concepts(), key=lambda x: x.r or 0, reverse=True)[:5]
         print("  Top 5:")
         for con in top:
-            print(f"    r={con.r:.3f} theta={con.theta:.3f} phi={con.phi:.3f}  {con.normalized}")
+            if con.r is not None:
+                print(f"    r={con.r:.3f} theta={con.theta:.3f} phi={con.phi:.3f}  {con.normalized}")
+            else:
+                print(f"    (unresolved)  {con.normalized}")
 
     # Validation
     print(f"\n{'=' * 70}")
     print("  VALIDATION")
     g = graphs["Meta/Formal"]
     passed = total = 0
-    def check(name, cond, detail=""):
+
+    def check(name: str, cond: bool, detail: str = "") -> None:
         nonlocal passed, total
         total += 1
-        if cond: passed += 1
+        if cond:
+            passed += 1
         print(f"  [{'PASS' if cond else 'FAIL'}] {name}")
-        if detail: print(f"         {detail}")
+        if detail:
+            print(f"         {detail}")
 
-    cp = lambda n: g.get_concept(n)
+    def cp(n: str):
+        return g.get_concept(n)
+
     onc, card, claw = cp("oncology"), cp("cardiology"), cp("contract law")
-    dt = lambda a, b: min(abs(a-b) % (2*math.pi), 2*math.pi - abs(a-b) % (2*math.pi))
+
+    def dt(a: float, b: float) -> float:
+        return min(abs(a - b) % (2 * math.pi), 2 * math.pi - abs(a - b) % (2 * math.pi))
     d_oc = dt(onc.theta, card.theta)
     d_ol = dt(onc.theta, claw.theta)
     check("Oncology ~ Cardiology (domain)", d_oc < 0.5, f"dt={d_oc:.4f}")
@@ -95,7 +105,9 @@ def main():
           f"sphereql={cp('sphereql').r:.3f} graph={cp('graph').r:.3f}")
 
     # Triangle inequality via Rust angular_distance
-    mk = lambda n: sphereql.SphericalPoint(cp(n).r, cp(n).theta, cp(n).phi)
+    def mk(n: str):
+        c = cp(n)
+        return sphereql.SphericalPoint(c.r, c.theta, c.phi)
     dac = sphereql.angular_distance(mk("language"), mk("sphereql"))
     dab = sphereql.angular_distance(mk("language"), mk("llm"))
     dbc = sphereql.angular_distance(mk("llm"), mk("sphereql"))

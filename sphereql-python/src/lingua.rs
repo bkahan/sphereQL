@@ -145,6 +145,8 @@ impl PyConcept {
 #[gen_stub_pyfunction]
 #[pyfunction]
 #[pyo3(name = "lingua_process")]
+/// Convenience one-shot: creates a new `LinguaPipeline` per call.
+/// For repeated processing, instantiate `LinguaPipeline` once and call `.process()` directly.
 pub fn py_lingua_process(text: &str) -> PyConceptGraph {
     let pipeline = sphereql_lingua::LinguaPipeline::new();
     let g = pipeline.process(text);

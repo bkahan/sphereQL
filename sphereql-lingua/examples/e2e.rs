@@ -194,7 +194,7 @@ fn main() {
         let t = i as f64 / 10.0;
         let p = sphereql_core::full_slerp(&lang, &sph, t);
         println!(
-            "    t={t:.1} t={:.4} p={:.4} r={:.4} [{}]",
+            "    t={t:.1} theta={:.4} phi={:.4} r={:.4} [{}]",
             p.theta,
             p.phi,
             p.r,

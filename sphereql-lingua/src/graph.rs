@@ -77,7 +77,7 @@ impl ConceptGraph {
         sorted.sort_by(|&a, &b| {
             let ra = self.concepts[a].point.as_ref().unwrap().r;
             let rb = self.concepts[b].point.as_ref().unwrap().r;
-            rb.partial_cmp(&ra).unwrap()
+            rb.total_cmp(&ra)
         });
         for &i in &sorted {
             let c = &self.concepts[i];

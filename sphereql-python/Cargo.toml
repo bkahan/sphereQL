@@ -41,7 +41,7 @@ vectordb = ["embed", "dep:sphereql-vectordb", "dep:tokio", "dep:async-trait"]
 pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 qdrant = ["vectordb", "sphereql-vectordb/qdrant"]
 lingua = ["core", "dep:sphereql-lingua"]
-full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
+full = ["core", "index", "layout", "embed", "graphql", "vectordb", "lingua"]
 
 [dependencies]
 pyo3 = { version = "0.28", features = ["multiple-pymethods"] }

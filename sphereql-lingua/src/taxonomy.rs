@@ -17,12 +17,28 @@ pub struct DomainAnchor {
 ///
 /// Semantically related domains are placed adjacent on the circle:
 /// Math → Formal → CS → AI → CogSci → Linguistics → Philosophy → ...
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DomainTaxonomy {
     pub anchors: Vec<DomainAnchor>,
     /// keyword → Vec<(anchor_index, weight)>
     #[serde(skip)]
     keyword_index: HashMap<String, Vec<(usize, f64)>>,
+}
+
+impl<'de> serde::Deserialize<'de> for DomainTaxonomy {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Wire {
+            anchors: Vec<DomainAnchor>,
+        }
+        let w = Wire::deserialize(deserializer)?;
+        let mut tax = DomainTaxonomy {
+            anchors: w.anchors,
+            keyword_index: HashMap::new(),
+        };
+        tax.rebuild_index();
+        Ok(tax)
+    }
 }
 
 impl Default for DomainTaxonomy {

@@ -40,8 +40,13 @@ impl AbstractionResolver {
         if let Some(&d) = self.hierarchy.get(&concept.normalized) {
             return d;
         }
+        // Whole-phrase fallback: avoids matching "phi" inside "philosophy" or
+        // "graph" inside "paragraph" by requiring token-boundary alignment.
         for (key, &d) in &self.hierarchy {
-            if key.contains(&concept.normalized) || concept.normalized.contains(key) {
+            if key.len() > 3
+                && (contains_phrase(&concept.normalized, key)
+                    || contains_phrase(key, &concept.normalized))
+            {
                 return d;
             }
         }
@@ -181,4 +186,12 @@ impl AbstractionResolver {
         ];
         e.iter().map(|(k, v)| (k.to_string(), *v)).collect()
     }
+}
+
+/// Returns true when `phrase` matches `haystack` at a whole-token boundary.
+fn contains_phrase(haystack: &str, phrase: &str) -> bool {
+    haystack == phrase
+        || haystack.starts_with(&format!("{phrase} "))
+        || haystack.ends_with(&format!(" {phrase}"))
+        || haystack.contains(&format!(" {phrase} "))
 }

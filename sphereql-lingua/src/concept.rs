@@ -2,6 +2,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sphereql_core::SphericalPoint;
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
+
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
 /// A semantic concept extracted from natural language.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +42,8 @@ impl Concept {
     }
 }
 
+// Equality and hashing are based solely on `normalized` for deduplication.
+// Fields like `frequency`, `positions`, and `point` are intentionally excluded.
 impl PartialEq for Concept {
     fn eq(&self, other: &Self) -> bool {
         self.normalized == other.normalized
@@ -317,11 +322,8 @@ impl RegexExtractor {
 
     fn normalize_text(&self, text: &str) -> String {
         let mut s = text.to_lowercase();
-        // Map Greek letters to ASCII names
         s = s.replace('θ', "theta").replace('φ', "phi");
-        // Collapse whitespace
-        let re = Regex::new(r"\s+").unwrap();
-        re.replace_all(&s, " ").trim().to_string()
+        WHITESPACE_RE.replace_all(&s, " ").trim().to_string()
     }
 
     fn count_occurrences(term: &str, text: &str) -> (u32, Vec<usize>) {
@@ -368,7 +370,12 @@ impl ConceptExtractor for RegexExtractor {
         }
         for (word, freq) in &word_freq {
             if *freq >= 2 && !seen.contains(word) {
-                let is_sub = seen.iter().any(|s| s.contains(word.as_str()));
+                // Suppress word only if it appears as a whole token inside an
+                // already-matched term — prevents "graph" from being shadowed by
+                // "paragraph" while still suppressing "graph" from "concept graph".
+                let is_sub = seen
+                    .iter()
+                    .any(|s| s.split_whitespace().any(|t| t == word.as_str()));
                 if !is_sub {
                     let (_, positions) = Self::count_occurrences(word, &normalized);
                     let mut c = Concept::new(word, word);
