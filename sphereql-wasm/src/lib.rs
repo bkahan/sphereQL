@@ -1,5 +1,25 @@
 use wasm_bindgen::prelude::*;
 
+// Use `lol_alloc::LeakingPageAllocator` as the global allocator for
+// release wasm32 builds. wasm32-unknown-unknown's default dlmalloc is
+// ~10 KB; LeakingPageAllocator is ~50 bytes. The "leaking" name is
+// accurate but not a problem — wasm tabs are short-lived and pages
+// are reclaimed when the module is dropped.
+#[cfg(all(target_arch = "wasm32", not(debug_assertions), not(test)))]
+#[global_allocator]
+static ALLOCATOR: lol_alloc::LeakingPageAllocator = lol_alloc::LeakingPageAllocator;
+
+/// Install a `console.error` panic hook for JS-side stack traces.
+/// Only wired up when the `debug` feature is enabled. Idempotent —
+/// safe to call from each constructor.
+#[cfg(feature = "debug")]
+fn install_panic_hook() {
+    console_error_panic_hook::set_once();
+}
+
+#[cfg(not(feature = "debug"))]
+fn install_panic_hook() {}
+
 use sphereql_embed::category::{
     BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
     DrillDownResult, InnerSphereReport,
@@ -66,6 +86,7 @@ impl Pipeline {
     /// All embedding sub-arrays must have the same length (>= 3).
     #[wasm_bindgen(constructor)]
     pub fn new(input_json: &str) -> Result<Pipeline, JsError> {
+        install_panic_hook();
         let input = parse_input(input_json)?;
         Ok(Pipeline {
             inner: SphereQLPipeline::new(input).map_err(|e| JsError::new(&e.to_string()))?,
@@ -1177,12 +1198,17 @@ fn parse_radial_strategy(json: Option<&str>) -> Result<RadialStrategy, JsError> 
     }
 }
 
-#[derive(serde::Serialize)]
-struct SphericalPointOut {
-    r: f64,
-    theta: f64,
-    phi: f64,
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct SphericalPointOut {
+    pub r: f64,
+    pub theta: f64,
+    pub phi: f64,
 }
+
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct SphericalPointBatchOut(pub Vec<SphericalPointOut>);
 
 /// Laplacian-eigenmap projection — connectivity-preserving embedding on S².
 ///
@@ -1244,22 +1270,21 @@ impl WasmLaplacianEigenmapProjection {
     }
 
     /// Project a single embedding (JSON array of numbers) to a spherical
-    /// point. Returns `{ r, theta, phi }` as JSON.
-    pub fn project(&self, embedding_json: &str) -> Result<String, JsError> {
+    /// point. Returns a typed `{ r, theta, phi }` object via tsify.
+    pub fn project(&self, embedding_json: &str) -> Result<SphericalPointOut, JsError> {
         let emb = parse_embedding_1d(embedding_json)?;
         let p = self.inner.project(&emb);
-        let out = SphericalPointOut {
+        Ok(SphericalPointOut {
             r: p.r,
             theta: p.theta,
             phi: p.phi,
-        };
-        serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
+        })
     }
 
-    /// Project a batch (JSON 2-D array). Returns a JSON array of
-    /// `{ r, theta, phi }`.
+    /// Project a batch (JSON 2-D array). Returns a typed array of
+    /// `{ r, theta, phi }` via tsify.
     #[wasm_bindgen(js_name = projectBatch)]
-    pub fn project_batch(&self, embeddings_json: &str) -> Result<String, JsError> {
+    pub fn project_batch(&self, embeddings_json: &str) -> Result<SphericalPointBatchOut, JsError> {
         let embs = parse_embeddings_2d(embeddings_json)?;
         let out: Vec<SphericalPointOut> = embs
             .iter()
@@ -1272,7 +1297,7 @@ impl WasmLaplacianEigenmapProjection {
                 }
             })
             .collect();
-        serde_json::to_string(&out).map_err(|e| JsError::new(&e.to_string()))
+        Ok(SphericalPointBatchOut(out))
     }
 }
 
@@ -1384,18 +1409,17 @@ mod laplacian_tests {
 
         // Default radial strategy is Magnitude → r equals the input
         // embedding's L2 norm (sqrt(0.86) ≈ 0.927 here), not 1.
-        let point_json = proj
+        let point = proj
             .project("[0.9, 0.1, 0.0, 0.2]")
             .expect("project failed");
-        let v: serde_json::Value = serde_json::from_str(&point_json).unwrap();
-        let r = v["r"].as_f64().unwrap();
         let expected = (0.81f64 + 0.01 + 0.0 + 0.04).sqrt();
         assert!(
-            (r - expected).abs() < 1e-6,
-            "got r={r}, expected ≈{expected}"
+            (point.r - expected).abs() < 1e-6,
+            "got r={}, expected ≈{expected}",
+            point.r
         );
-        assert!(v["theta"].as_f64().unwrap().is_finite());
-        assert!(v["phi"].as_f64().unwrap().is_finite());
+        assert!(point.theta.is_finite());
+        assert!(point.phi.is_finite());
     }
 
     #[test]
@@ -1411,9 +1435,8 @@ mod laplacian_tests {
         let proj =
             WasmLaplacianEigenmapProjection::new(embeddings, Some("1.0".into()), Some(3), None)
                 .expect("fit failed");
-        let p: serde_json::Value =
-            serde_json::from_str(&proj.project("[0.9, 0.1, 0.0, 0.2]").unwrap()).unwrap();
-        assert!((p["r"].as_f64().unwrap() - 1.0).abs() < 1e-6);
+        let p = proj.project("[0.9, 0.1, 0.0, 0.2]").unwrap();
+        assert!((p.r - 1.0).abs() < 1e-6);
     }
 
     #[test]

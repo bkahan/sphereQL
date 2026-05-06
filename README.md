@@ -22,6 +22,35 @@ pipeline per corpus against a scalar `QualityMetric`; a meta-model
 recalls winning configs from past tuner runs when a new corpus arrives.
 Callable from Rust, Python, or the browser via WASM.
 
+## How sphereQL compares to vector databases
+
+sphereQL is **not** a drop-in replacement for FAISS, Qdrant, or
+pgvector. Those systems return *the most similar vectors*. sphereQL
+returns *the most similar vectors plus a 3D coordinate system you can
+visualize, navigate, and reason about geometrically*.
+
+| | FAISS | Qdrant / Milvus / Weaviate | pgvector | **sphereQL** |
+|---|---|---|---|---|
+| ANN nearest-neighbor | yes | yes | yes | yes (via 3D sphere index) |
+| Hosted service | no | yes | yes (Postgres) | no — embed as library |
+| Filtering on metadata | manual | yes | yes (SQL) | yes |
+| 3D positions for visualization | no | no | no | **yes** |
+| Spatial queries (cone, cap, shell, wedge) | no | no | no | **yes** |
+| Category bridges + inner spheres | no | no | no | **yes** |
+| Auto-tuned per corpus | no | no | no | **yes** |
+| Returns full-d cosine accuracy | yes | yes | yes | only via hybrid re-rank |
+
+**Use a vector DB when** you need scale-out k-NN over millions of
+vectors, durable hosted storage, or multi-tenant access control.
+**Use sphereQL when** you need 3D layouts for visualization, spatial
+queries beyond k-NN, category-aware exploration, or an in-process
+embedded library that runs in the browser via WASM.
+
+The two compose: sphereQL ships [Pinecone and
+Qdrant](docs/architecture.md) backends in `sphereql-vectordb` so you
+can keep authoritative vectors in a hosted store and use sphereQL for
+projection, layout, and category enrichment.
+
 ## Documentation
 
 Full documentation lives under [`docs/`](docs/README.md).
@@ -30,6 +59,7 @@ Full documentation lives under [`docs/`](docs/README.md).
 - [Architecture](docs/architecture.md) — workspace crates and feature flags
 - [Projections](docs/projections.md) — how the four projection families work
 - [Auto-tuning & meta-learning](docs/auto-tuning.md) — the metalearning framework
+- [Lingua pipeline](sphereql-lingua/README.md) — text → `ConceptGraph` (six-stage Rust pipeline)
 - [Empirical findings](docs/empirical-findings.md) — when does each projection win?
 - [Examples catalog](docs/examples.md) · [Performance](docs/performance.md) · [Project status](docs/project-status.md)
 
@@ -38,7 +68,7 @@ Full documentation lives under [`docs/`](docs/README.md).
 ```toml
 # Cargo.toml
 [dependencies]
-sphereql = { version = "0.1", features = ["full"] }
+sphereql = { version = "0.2.0-alpha", features = ["full"] }
 ```
 
 ```bash

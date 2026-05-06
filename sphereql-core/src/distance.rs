@@ -1,4 +1,5 @@
 use crate::conversions::spherical_to_cartesian;
+use crate::error::SphereQlError;
 use crate::types::{CartesianPoint, SphericalPoint};
 
 /// Returns the angular separation (in radians) between two spherical points.
@@ -112,20 +113,26 @@ pub fn euclidean_distance(a: &CartesianPoint, b: &CartesianPoint) -> f64 {
 /// vector has zero norm. This operates on the **original** embedding space,
 /// not the projected sphere.
 ///
+/// # Errors
+///
+/// Returns [`SphereQlError::DimensionMismatch`] when the input slices have
+/// different lengths. Use this fallible form at any boundary that ingests
+/// vectors from an external source (remote vector stores, user payloads).
+///
 /// ```
 /// use sphereql_core::cosine_similarity;
 ///
 /// let a = vec![1.0, 0.0, 0.0];
 /// let b = vec![1.0, 0.0, 0.0];
-/// assert!((cosine_similarity(&a, &b) - 1.0).abs() < 1e-10);
+/// assert!((cosine_similarity(&a, &b).unwrap() - 1.0).abs() < 1e-10);
 /// ```
-#[must_use]
-pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "vectors must have equal length for cosine similarity"
-    );
+pub fn cosine_similarity(a: &[f64], b: &[f64]) -> Result<f64, SphereQlError> {
+    if a.len() != b.len() {
+        return Err(SphereQlError::DimensionMismatch {
+            expected: a.len(),
+            actual: b.len(),
+        });
+    }
     let (mut dot, mut norm_a, mut norm_b) = (0.0, 0.0, 0.0);
     for (&x, &y) in a.iter().zip(b.iter()) {
         dot += x * y;
@@ -134,9 +141,9 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> f64 {
     }
     let denom = norm_a.sqrt() * norm_b.sqrt();
     if denom < f64::EPSILON {
-        return 0.0;
+        return Ok(0.0);
     }
-    (dot / denom).clamp(-1.0, 1.0)
+    Ok((dot / denom).clamp(-1.0, 1.0))
 }
 
 #[cfg(test)]
@@ -290,27 +297,41 @@ mod tests {
     #[test]
     fn cosine_similarity_identical() {
         let a = vec![1.0, 2.0, 3.0];
-        assert_relative_eq!(cosine_similarity(&a, &a), 1.0, epsilon = 1e-12);
+        assert_relative_eq!(cosine_similarity(&a, &a).unwrap(), 1.0, epsilon = 1e-12);
     }
 
     #[test]
     fn cosine_similarity_opposite() {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![-1.0, 0.0, 0.0];
-        assert_relative_eq!(cosine_similarity(&a, &b), -1.0, epsilon = 1e-12);
+        assert_relative_eq!(cosine_similarity(&a, &b).unwrap(), -1.0, epsilon = 1e-12);
     }
 
     #[test]
     fn cosine_similarity_orthogonal() {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![0.0, 1.0, 0.0];
-        assert_relative_eq!(cosine_similarity(&a, &b), 0.0, epsilon = 1e-12);
+        assert_relative_eq!(cosine_similarity(&a, &b).unwrap(), 0.0, epsilon = 1e-12);
     }
 
     #[test]
     fn cosine_similarity_zero_vector() {
         let a = vec![0.0, 0.0, 0.0];
         let b = vec![1.0, 2.0, 3.0];
-        assert_relative_eq!(cosine_similarity(&a, &b), 0.0, epsilon = 1e-12);
+        assert_relative_eq!(cosine_similarity(&a, &b).unwrap(), 0.0, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn cosine_similarity_dimension_mismatch() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0];
+        let err = cosine_similarity(&a, &b).unwrap_err();
+        assert!(matches!(
+            err,
+            SphereQlError::DimensionMismatch {
+                expected: 3,
+                actual: 2
+            }
+        ));
     }
 }

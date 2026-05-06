@@ -22,6 +22,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
+# Parallel scoring of the in-memory store's brute-force search.
+rayon = { workspace = true }
 
 qdrant-client = { version = "1.12", optional = true }
 sha2 = { version = "0.10", optional = true }

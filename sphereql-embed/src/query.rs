@@ -56,6 +56,7 @@ impl EmbeddingItem {
     }
 }
 
+#[must_use = "builders must be terminated with `.build()` to construct the index"]
 pub struct EmbeddingIndexBuilder<P> {
     projection: P,
     inner: SpatialIndexBuilder,

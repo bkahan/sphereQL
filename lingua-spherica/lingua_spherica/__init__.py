@@ -1,9 +1,14 @@
 """
 Lingua Spherica — Language to SphereQL Mapping System
+
+This Python package contains the core spherical-geometry primitives
+(types and coordinate math). The full six-stage pipeline lives in the
+`sphereql-lingua` Rust crate and is exposed to Python via the
+`sphereql-python` bindings — Rust is the source of truth.
 """
 
 from .types import (
-    SphericalPoint, Concept, Relation, RelationType, 
+    SphericalPoint, Concept, Relation, RelationType,
     ConceptGraph, DomainAnchor
 )
 from .coordinates import (
@@ -12,7 +17,6 @@ from .coordinates import (
     slerp, geodesic_path, spherical_centroid,
     semantic_distance
 )
-from .engine import LinguaSphericaEngine
 
 __all__ = [
     'SphericalPoint', 'Concept', 'Relation', 'RelationType',
@@ -21,5 +25,4 @@ __all__ = [
     'circular_weighted_mean', 'circular_variance',
     'slerp', 'geodesic_path', 'spherical_centroid',
     'semantic_distance',
-    'LinguaSphericaEngine',
 ]

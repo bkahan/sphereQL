@@ -19,6 +19,22 @@ pub use query::*;
 pub use subscription::*;
 pub use types::*;
 
+/// Default maximum query depth applied to every schema this crate builds.
+///
+/// Without a depth bound, a client can submit a deeply-nested query that
+/// exhausts the resolver stack and the pipeline read lock. 10 is enough
+/// for legitimate category drill-down + spatial sub-selection.
+pub const DEFAULT_MAX_DEPTH: usize = 10;
+
+/// Default maximum query complexity applied to every schema this crate builds.
+///
+/// Each scalar field counts as 1 complexity unit by default; list-typed
+/// fields multiply by their list-size argument when that argument is
+/// resolvable at validation time. A 1,000-unit ceiling rejects fan-out
+/// queries that would touch more than a few thousand index entries per
+/// request.
+pub const DEFAULT_MAX_COMPLEXITY: usize = 1000;
+
 /// Merged GraphQL query root combining the spatial-only resolvers and
 /// the category-enrichment resolvers.
 #[derive(async_graphql::MergedObject, Default)]
@@ -69,6 +85,8 @@ pub fn build_unified_schema(
         async_graphql::EmptyMutation,
         SphericalSubscriptionRoot,
     )
+    .limit_depth(DEFAULT_MAX_DEPTH)
+    .limit_complexity(DEFAULT_MAX_COMPLEXITY)
     .data(index)
     .data(event_bus)
     .data(pipeline)

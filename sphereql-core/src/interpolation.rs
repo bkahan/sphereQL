@@ -6,6 +6,11 @@ use crate::types::{CartesianPoint, SphericalPoint};
 ///
 /// The parameter `t` is clamped to [0, 1]. At t=0 returns `a`, at t=1 returns `b`.
 ///
+/// At antipodal (or near-antipodal) inputs the geodesic is not unique — every
+/// great circle through the two points is equally valid. To stay numerically
+/// stable and deterministic we pick a fixed orthogonal tangent to `a` and
+/// trace `cos(ωt)·a + sin(ωt)·tangent` along that great circle.
+///
 /// ```
 /// use sphereql_core::{SphericalPoint, slerp, angular_distance};
 /// use std::f64::consts::FRAC_PI_2;
@@ -28,12 +33,38 @@ pub fn slerp(a: &SphericalPoint, b: &SphericalPoint, t: f64) -> SphericalPoint {
         return a_unit;
     }
 
-    let sin_omega = omega.sin();
-    let factor_a = ((1.0 - t) * omega).sin() / sin_omega;
-    let factor_b = (t * omega).sin() / sin_omega;
-
     let ac = spherical_to_cartesian(&a_unit);
     let bc = spherical_to_cartesian(&b_unit);
+
+    let sin_omega = omega.sin();
+    if sin_omega.abs() < 1e-10 {
+        // Antipodal (or near-antipodal): the geodesic is degenerate.
+        // Pick a deterministic orthogonal tangent to `a` and trace
+        // cos(ωt)·a + sin(ωt)·tangent along that great circle.
+        let basis = if ac.z.abs() < 0.9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let proj = basis[0] * ac.x + basis[1] * ac.y + basis[2] * ac.z;
+        let mut ux = basis[0] - proj * ac.x;
+        let mut uy = basis[1] - proj * ac.y;
+        let mut uz = basis[2] - proj * ac.z;
+        let u_norm = (ux * ux + uy * uy + uz * uz).sqrt();
+        ux /= u_norm;
+        uy /= u_norm;
+        uz /= u_norm;
+        let (ca, sa) = ((omega * t).cos(), (omega * t).sin());
+        let result = CartesianPoint::new(
+            ca * ac.x + sa * ux,
+            ca * ac.y + sa * uy,
+            ca * ac.z + sa * uz,
+        );
+        return cartesian_to_spherical(&result);
+    }
+
+    let factor_a = ((1.0 - t) * omega).sin() / sin_omega;
+    let factor_b = (t * omega).sin() / sin_omega;
 
     let result = CartesianPoint::new(
         factor_a * ac.x + factor_b * bc.x,
@@ -184,6 +215,36 @@ mod tests {
         assert_relative_eq!(at_b.r, b.r, epsilon = 1e-12);
         assert_relative_eq!(at_b.theta, b.theta, epsilon = 1e-12);
         assert_relative_eq!(at_b.phi, b.phi, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn slerp_antipodal_is_finite_and_on_sphere() {
+        // Antipodal pair on the equator — sin(ω) = 0, the naive formula
+        // produces NaN. The branch must return a finite unit-sphere point.
+        let a = unit_point(0.0, FRAC_PI_2);
+        let b = unit_point(std::f64::consts::PI, FRAC_PI_2);
+
+        let mid = slerp(&a, &b, 0.5);
+        assert!(mid.theta.is_finite());
+        assert!(mid.phi.is_finite());
+
+        // Midpoint must be exactly π/2 from both endpoints (great-circle
+        // midpoint of an antipodal pair).
+        let half_pi = FRAC_PI_2;
+        let da = angular_distance(&mid, &a);
+        let db = angular_distance(&mid, &b);
+        assert_relative_eq!(da, half_pi, epsilon = 1e-10);
+        assert_relative_eq!(db, half_pi, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn slerp_antipodal_endpoints_match() {
+        let a = unit_point(0.0, FRAC_PI_2);
+        let b = unit_point(std::f64::consts::PI, FRAC_PI_2);
+
+        let at_zero = slerp(&a, &b, 0.0);
+        assert_relative_eq!(at_zero.theta, a.theta, epsilon = 1e-10);
+        assert_relative_eq!(at_zero.phi, a.phi, epsilon = 1e-10);
     }
 
     #[test]

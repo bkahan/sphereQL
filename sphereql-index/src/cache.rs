@@ -1,7 +1,7 @@
 use crate::composite::{SpatialIndex, SpatialIndexBuilder};
 use crate::item::{NearestResult, SpatialItem, SpatialQueryResult};
+use indexmap::IndexMap;
 use sphereql_core::*;
-use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -130,6 +130,7 @@ enum CachedResult<T: SpatialItem> {
     Nearest(Vec<NearestResult<T>>),
 }
 
+#[must_use = "builders must be terminated with `.build()` to construct the index"]
 pub struct CachedIndexBuilder {
     inner_builder: SpatialIndexBuilder,
     cache_capacity: usize,
@@ -171,8 +172,7 @@ impl CachedIndexBuilder {
     pub fn build<T: SpatialItem>(self) -> CachedIndex<T> {
         CachedIndex {
             inner: self.inner_builder.build(),
-            cache: HashMap::new(),
-            lru_order: VecDeque::new(),
+            cache: IndexMap::new(),
             capacity: self.cache_capacity,
             generation: 0,
             cache_hits: 0,
@@ -189,17 +189,13 @@ impl Default for CachedIndexBuilder {
 
 /// LRU-capped query-result cache wrapping a [`SpatialIndex`].
 ///
-/// **LRU-touch cost.** `lru_order` is a `VecDeque<CacheKey>` with
-/// `retain` / `position + remove` / `push_back` on each hit or miss —
-/// all O(capacity). The default capacity is 128, so 128 ops per touch
-/// is negligible for any workload this cache was designed for. If you
-/// set `cache_capacity` above a few thousand, consider swapping this
-/// module's Vec-based LRU for an `indexmap::IndexMap` keyed variant
-/// (O(1) move-to-back via `shift_remove` + re-insert at tail).
+/// **LRU-touch cost.** Backed by `IndexMap`, which preserves insertion
+/// order and supports amortized O(1) move-to-back (`shift_remove` +
+/// re-insert at tail). Hot-path overhead per hit is independent of
+/// `cache_capacity`, so cache sizes in the thousands stay cheap.
 pub struct CachedIndex<T: SpatialItem> {
     inner: SpatialIndex<T>,
-    cache: HashMap<CacheKey, CacheEntry<T>>,
-    lru_order: VecDeque<CacheKey>,
+    cache: IndexMap<CacheKey, CacheEntry<T>>,
     capacity: usize,
     generation: u64,
     cache_hits: usize,
@@ -247,7 +243,6 @@ impl<T: SpatialItem> CachedIndex<T> {
 
     pub fn clear_cache(&mut self) {
         self.cache.clear();
-        self.lru_order.clear();
     }
 
     pub fn query_cone(&mut self, cone: &Cone) -> SpatialQueryResult<T> {
@@ -315,22 +310,25 @@ impl<T: SpatialItem> CachedIndex<T> {
     }
 
     /// Returns a cloned result if the cache has a valid (non-stale) entry.
-    /// Handles LRU touch on hit and lazy eviction of stale entries.
+    /// Touches the entry on hit (move-to-back via `shift_remove` + tail
+    /// re-insert, both O(1) amortized in `IndexMap`) and evicts stale
+    /// generations lazily.
     fn cache_lookup(&mut self, key: &CacheKey) -> Option<CachedResult<T>> {
         self.cache_lookups += 1;
 
-        if let Some(entry) = self.cache.get(key) {
-            if entry.generation == self.generation {
-                self.cache_hits += 1;
-                let result = entry.result.clone();
-                self.touch_lru(key);
-                return Some(result);
-            }
-            let key_owned = key.clone();
-            self.cache.remove(&key_owned);
-            self.lru_order.retain(|k| k != &key_owned);
+        let entry = self.cache.get(key)?;
+        if entry.generation != self.generation {
+            self.cache.shift_remove(key);
+            return None;
         }
-        None
+
+        self.cache_hits += 1;
+        // shift_remove + insert is the IndexMap LRU-touch idiom: it
+        // moves the entry to the tail in O(1) amortized.
+        let entry = self.cache.shift_remove(key).expect("just observed");
+        let result = entry.result.clone();
+        self.cache.insert(key.clone(), entry);
+        Some(result)
     }
 
     fn cache_insert(&mut self, key: CacheKey, result: CachedResult<T>) {
@@ -339,12 +337,13 @@ impl<T: SpatialItem> CachedIndex<T> {
         }
 
         if self.cache.contains_key(&key) {
-            self.touch_lru(&key);
+            self.cache.shift_remove(&key);
         } else {
             while self.cache.len() >= self.capacity {
-                self.evict_lru();
+                // shift_remove_index(0) drops the oldest entry — the
+                // head of the IndexMap's insertion order.
+                self.cache.shift_remove_index(0);
             }
-            self.lru_order.push_back(key.clone());
         }
 
         self.cache.insert(
@@ -354,19 +353,6 @@ impl<T: SpatialItem> CachedIndex<T> {
                 result,
             },
         );
-    }
-
-    fn touch_lru(&mut self, key: &CacheKey) {
-        if let Some(pos) = self.lru_order.iter().position(|k| k == key) {
-            self.lru_order.remove(pos);
-            self.lru_order.push_back(key.clone());
-        }
-    }
-
-    fn evict_lru(&mut self) {
-        if let Some(key) = self.lru_order.pop_front() {
-            self.cache.remove(&key);
-        }
     }
 
     fn invalidate(&mut self) {
@@ -621,7 +607,6 @@ mod tests {
 
         index.clear_cache();
         assert!(index.cache.is_empty());
-        assert!(index.lru_order.is_empty());
     }
 
     #[test]

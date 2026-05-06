@@ -469,24 +469,61 @@ pub struct PairwiseOverlap {
 }
 
 /// Computes pairwise cap overlaps, sorted by descending intersection area.
+///
+/// `O(n²)` pair-scan; the outer loop is parallelized once `n` exceeds a
+/// small threshold to amortize thread-pool startup. Each worker emits
+/// its own sub-vector and the results are flattened in deterministic
+/// `(i, j)` order before the final sort.
 pub fn pairwise_overlaps(centers: &[SphericalPoint], half_angles: &[f64]) -> Vec<PairwiseOverlap> {
     assert_eq!(centers.len(), half_angles.len());
     let n = centers.len();
-    let mut overlaps = Vec::with_capacity(n * (n - 1) / 2);
+    if n < 2 {
+        return Vec::new();
+    }
 
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let area =
-                cap_intersection_area(&centers[i], half_angles[i], &centers[j], half_angles[j]);
-            if area > 1e-15 {
-                overlaps.push(PairwiseOverlap {
-                    category_a: i,
-                    category_b: j,
-                    intersection_area: area,
-                });
+    use rayon::prelude::*;
+    const SERIAL_THRESHOLD: usize = 128;
+
+    let mut overlaps: Vec<PairwiseOverlap> = if n < SERIAL_THRESHOLD {
+        let mut out = Vec::with_capacity(n * (n - 1) / 2);
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let area =
+                    cap_intersection_area(&centers[i], half_angles[i], &centers[j], half_angles[j]);
+                if area > 1e-15 {
+                    out.push(PairwiseOverlap {
+                        category_a: i,
+                        category_b: j,
+                        intersection_area: area,
+                    });
+                }
             }
         }
-    }
+        out
+    } else {
+        (0..n)
+            .into_par_iter()
+            .flat_map_iter(|i| {
+                let mut local = Vec::new();
+                for j in (i + 1)..n {
+                    let area = cap_intersection_area(
+                        &centers[i],
+                        half_angles[i],
+                        &centers[j],
+                        half_angles[j],
+                    );
+                    if area > 1e-15 {
+                        local.push(PairwiseOverlap {
+                            category_a: i,
+                            category_b: j,
+                            intersection_area: area,
+                        });
+                    }
+                }
+                local
+            })
+            .collect()
+    };
 
     overlaps.sort_by(|a, b| {
         b.intersection_area
@@ -576,24 +613,57 @@ pub fn spherical_excess(a: &SphericalPoint, b: &SphericalPoint, c: &SphericalPoi
 
 /// Curvature signature: distribution of spherical excesses across all
 /// triples that include the point at `target`. Sorted ascending.
+///
+/// `O(n²)` triangle scan; the outer loop is parallelized once `n` exceeds
+/// a small threshold so the per-triangle `spherical_excess` cost (4× tan,
+/// 1× sqrt, 1× atan) is spread across cores.
 pub fn curvature_signature(target: usize, all_points: &[SphericalPoint]) -> Vec<f64> {
     let n = all_points.len();
     if n < 3 || target >= n {
         return Vec::new();
     }
-    let mut excesses = Vec::new();
-    for i in 0..n {
-        if i == target {
-            continue;
-        }
-        for j in (i + 1)..n {
-            if j == target {
+
+    use rayon::prelude::*;
+    const SERIAL_THRESHOLD: usize = 128;
+
+    let mut excesses: Vec<f64> = if n < SERIAL_THRESHOLD {
+        let mut out = Vec::new();
+        for i in 0..n {
+            if i == target {
                 continue;
             }
-            let e = spherical_excess(&all_points[target], &all_points[i], &all_points[j]);
-            excesses.push(e);
+            for j in (i + 1)..n {
+                if j == target {
+                    continue;
+                }
+                out.push(spherical_excess(
+                    &all_points[target],
+                    &all_points[i],
+                    &all_points[j],
+                ));
+            }
         }
-    }
+        out
+    } else {
+        (0..n)
+            .into_par_iter()
+            .flat_map_iter(|i| {
+                let mut local = Vec::new();
+                if i != target {
+                    for j in (i + 1)..n {
+                        if j != target {
+                            local.push(spherical_excess(
+                                &all_points[target],
+                                &all_points[i],
+                                &all_points[j],
+                            ));
+                        }
+                    }
+                }
+                local
+            })
+            .collect()
+    };
     excesses.sort_by(|a, b| a.total_cmp(b));
     excesses
 }

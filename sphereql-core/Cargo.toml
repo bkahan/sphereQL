@@ -11,6 +11,9 @@ readme = "README.md"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 approx = "0.5"
+# Data parallelism for O(n²) pairwise scans (pairwise_overlaps,
+# curvature_signature). Stays out of the trig-only hot paths.
+rayon = { workspace = true }
 
 [dev-dependencies]
 proptest = "1"

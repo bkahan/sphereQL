@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, thiserror::Error)]
+#[non_exhaustive]
 pub enum SphereQlError {
     #[error("invalid radius {0}: must be >= 0")]
     InvalidRadius(f64),
@@ -26,4 +27,6 @@ pub enum SphereQlError {
     InvalidWedgeBounds { theta_min: f64, theta_max: f64 },
     #[error("zero vector cannot be normalized")]
     ZeroVector,
+    #[error("vector length mismatch: expected {expected}, got {actual}")]
+    DimensionMismatch { expected: usize, actual: usize },
 }

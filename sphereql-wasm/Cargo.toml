@@ -9,10 +9,21 @@ readme = "README.md"
 publish = false
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+# Run wasm-opt with `-Oz` (size) and signpost-stripping. Cuts the
+# release bundle ~30–40 % vs. raw wasm-bindgen output. Re-enabled in
+# Phase 4 — was off during early iteration so panics surfaced cleanly.
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[features]
+# Toggle in `wasm-pack build --features debug` for development. Pulls
+# in `console_error_panic_hook` so panics get a JS stack trace instead
+# of a silent unreachable trap. Off by default — release builds are
+# panic = abort, console hook adds ~10 KB and isn't useful there.
+default = []
+debug = ["dep:console_error_panic_hook"]
 
 [dependencies]
 sphereql-core = { path = "../sphereql-core" }
@@ -28,6 +39,12 @@ js-sys = "0.3"
 # direct JS-object handoff (no JSON round-trip).
 tsify = { version = "0.5", default-features = false, features = ["js"] }
 serde-wasm-bindgen = "0.6"
+# Tiny bump-allocator — replaces wee_alloc (unmaintained) for ~6 KB
+# release bundle savings vs. dlmalloc. Only wired up under
+# `cfg(target_arch = "wasm32")` in lib.rs so cargo test on host still
+# uses the system allocator.
+lol_alloc = "0.4"
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

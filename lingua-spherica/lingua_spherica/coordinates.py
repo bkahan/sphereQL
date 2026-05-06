@@ -6,8 +6,9 @@ Physics convention: theta=azimuthal, phi=polar.
 Great-circle distance: d(p1,p2) = arccos(sin phi1 sin phi2 cos(theta1-theta2) + cos phi1 cos phi2)
 """
 
+from __future__ import annotations
+
 import math
-from typing import List, Tuple, Optional
 from .types import SphericalPoint
 
 TWO_PI = 2.0 * math.pi
@@ -38,7 +39,7 @@ def phi_distance(phi1: float, phi2: float) -> float:
     return abs(phi1 - phi2)
 
 
-def circular_weighted_mean(angles: List[float], weights: List[float]) -> float:
+def circular_weighted_mean(angles: list[float], weights: list[float]) -> float:
     """Von Mises MLE for mean direction. Handles wraparound correctly."""
     if not angles:
         return 0.0
@@ -47,13 +48,13 @@ def circular_weighted_mean(angles: List[float], weights: List[float]) -> float:
     total_weight = sum(weights)
     if total_weight < EPSILON:
         return angles[0]
-    sin_sum = sum(w * math.sin(a) for a, w in zip(angles, weights))
-    cos_sum = sum(w * math.cos(a) for a, w in zip(angles, weights))
+    sin_sum = sum(w * math.sin(a) for a, w in zip(angles, weights, strict=True))
+    cos_sum = sum(w * math.cos(a) for a, w in zip(angles, weights, strict=True))
     mean = math.atan2(sin_sum / total_weight, cos_sum / total_weight)
     return mean % TWO_PI
 
 
-def circular_variance(angles: List[float], weights: Optional[List[float]] = None) -> float:
+def circular_variance(angles: list[float], weights: list[float] | None = None) -> float:
     """V = 1 - R_bar. V=0 means concentrated, V~1 means uniform."""
     if not angles:
         return 0.0
@@ -64,8 +65,8 @@ def circular_variance(angles: List[float], weights: Optional[List[float]] = None
     total = sum(weights)
     if total < EPSILON:
         return 0.0
-    sin_sum = sum(w * math.sin(a) for a, w in zip(angles, weights))
-    cos_sum = sum(w * math.cos(a) for a, w in zip(angles, weights))
+    sin_sum = sum(w * math.sin(a) for a, w in zip(angles, weights, strict=True))
+    cos_sum = sum(w * math.cos(a) for a, w in zip(angles, weights, strict=True))
     r_bar = math.sqrt(sin_sum**2 + cos_sum**2) / total
     return 1.0 - r_bar
 
@@ -79,18 +80,18 @@ def slerp(p1: SphericalPoint, p2: SphericalPoint, t: float) -> SphericalPoint:
            math.sin(p1.phi) * math.sin(p1.theta), math.cos(p1.phi))
     c2 = (math.sin(p2.phi) * math.cos(p2.theta),
            math.sin(p2.phi) * math.sin(p2.theta), math.cos(p2.phi))
-    dot = max(-1.0, min(1.0, sum(a * b for a, b in zip(c1, c2))))
+    dot = max(-1.0, min(1.0, sum(a * b for a, b in zip(c1, c2, strict=True))))
     omega = math.acos(dot)
     r_lerp = (1 - t) * p1.r + t * p2.r
     if omega < EPSILON:
-        return SphericalPoint(p1.theta, p1.phi, r_lerp)
+        return SphericalPoint(r=r_lerp, theta=p1.theta, phi=p1.phi)
     sin_omega = math.sin(omega)
     if sin_omega < EPSILON:
         # Antipodal (or near-antipodal): the geodesic is degenerate.
         # Pick a deterministic orthogonal tangent to c1 and trace
         # cos(omega*t)*c1 + sin(omega*t)*tangent along that great circle.
         basis = (0.0, 0.0, 1.0) if abs(c1[2]) < 0.9 else (1.0, 0.0, 0.0)
-        proj = sum(b * a for b, a in zip(basis, c1))
+        proj = sum(b * a for b, a in zip(basis, c1, strict=True))
         ux, uy, uz = (basis[0] - proj * c1[0],
                       basis[1] - proj * c1[1],
                       basis[2] - proj * c1[2])
@@ -114,18 +115,18 @@ def slerp(p1: SphericalPoint, p2: SphericalPoint, t: float) -> SphericalPoint:
 
 
 def geodesic_path(p1: SphericalPoint, p2: SphericalPoint,
-                  n_points: int = 50) -> List[SphericalPoint]:
+                  n_points: int = 50) -> list[SphericalPoint]:
     """Discrete geodesic path: n_points uniformly spaced on the great circle."""
     if n_points < 2:
         raise ValueError("n_points must be >= 2")
     return [slerp(p1, p2, i / (n_points - 1)) for i in range(n_points)]
 
 
-def spherical_centroid(points: List[SphericalPoint],
-                       weights: Optional[List[float]] = None) -> SphericalPoint:
+def spherical_centroid(points: list[SphericalPoint],
+                       weights: list[float] | None = None) -> SphericalPoint:
     """Frechet mean on S2: Cartesian mean then re-project."""
     if not points:
-        return SphericalPoint(0.0, HALF_PI, 0.5)
+        return SphericalPoint(r=0.5, theta=0.0, phi=HALF_PI)
     if weights is None:
         weights = [1.0] * len(points)
     elif len(points) != len(weights):
@@ -134,7 +135,7 @@ def spherical_centroid(points: List[SphericalPoint],
     if total_w < EPSILON:
         total_w = 1.0
     cx, cy, cz, cr = 0.0, 0.0, 0.0, 0.0
-    for p, w in zip(points, weights):
+    for p, w in zip(points, weights, strict=True):
         x, y, z = p.to_cartesian()
         norm = math.sqrt(x*x + y*y + z*z)
         if norm > EPSILON:

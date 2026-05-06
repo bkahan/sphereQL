@@ -7,6 +7,15 @@ use crate::error::VectorStoreError;
 use crate::store::VectorStore;
 use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 
+/// Per-record bookkeeping kept inside [`InMemoryState`]. Caches the
+/// vector's L2 norm at insert time so the brute-force `search` loop
+/// does not recompute `||v||` on every query.
+struct StoredRecord {
+    record: VectorRecord,
+    /// Cached `||vector||`; `0.0` for the zero vector.
+    norm: f64,
+}
+
 /// Interior state of [`InMemoryStore`]. Kept behind a single `RwLock`
 /// so `records` and `order` can never drift out of sync.
 ///
@@ -17,7 +26,7 @@ use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 /// the map also mutates the order list.
 #[derive(Default)]
 struct InMemoryState {
-    records: HashMap<String, VectorRecord>,
+    records: HashMap<String, StoredRecord>,
     /// Insertion-order index for deterministic scroll pagination.
     order: Vec<String>,
 }
@@ -56,7 +65,14 @@ impl VectorStore for InMemoryStore {
             if !state.records.contains_key(&record.id) {
                 state.order.push(record.id.clone());
             }
-            state.records.insert(record.id.clone(), record.clone());
+            let norm = magnitude(&record.vector);
+            state.records.insert(
+                record.id.clone(),
+                StoredRecord {
+                    record: record.clone(),
+                    norm,
+                },
+            );
         }
         Ok(())
     }
@@ -65,7 +81,7 @@ impl VectorStore for InMemoryStore {
         let state = self.state.read().await;
         Ok(ids
             .iter()
-            .filter_map(|id| state.records.get(id).cloned())
+            .filter_map(|id| state.records.get(id).map(|s| s.record.clone()))
             .collect())
     }
 
@@ -93,19 +109,29 @@ impl VectorStore for InMemoryStore {
         let state = self.state.read().await;
         let query_mag = magnitude(vector);
 
-        let mut scored: Vec<SearchResult> = state
-            .records
-            .values()
-            .map(|record| {
-                let score = cosine_similarity(vector, &record.vector, query_mag);
-                SearchResult {
-                    id: record.id.clone(),
-                    score,
-                    vector: Some(record.vector.clone()),
-                    metadata: record.metadata.clone(),
-                }
-            })
-            .collect();
+        // Brute-force scoring runs in parallel above a small threshold.
+        // Each record's `||v||` was cached at insert time, so the inner
+        // loop is just a dot-product followed by two divisions.
+        use rayon::prelude::*;
+        const PARALLEL_THRESHOLD: usize = 256;
+
+        let scoring_inputs: Vec<(&String, &StoredRecord)> = state.records.iter().collect();
+
+        let score_one = |(id, sr): &(&String, &StoredRecord)| -> SearchResult {
+            let score = cosine_similarity(vector, &sr.record.vector, query_mag, sr.norm);
+            SearchResult {
+                id: (*id).clone(),
+                score,
+                vector: Some(sr.record.vector.clone()),
+                metadata: sr.record.metadata.clone(),
+            }
+        };
+
+        let mut scored: Vec<SearchResult> = if scoring_inputs.len() < PARALLEL_THRESHOLD {
+            scoring_inputs.iter().map(score_one).collect()
+        } else {
+            scoring_inputs.par_iter().map(score_one).collect()
+        };
 
         scored.sort_by(|a, b| b.score.total_cmp(&a.score));
         scored.truncate(k);
@@ -131,7 +157,7 @@ impl VectorStore for InMemoryStore {
             .iter()
             .skip(start)
             .take(limit)
-            .filter_map(|id| state.records.get(id).cloned())
+            .filter_map(|id| state.records.get(id).map(|s| s.record.clone()))
             .collect();
 
         let next_start = start + records.len();
@@ -154,9 +180,9 @@ impl VectorStore for InMemoryStore {
     async fn set_payload(&self, updates: &[PayloadUpdate]) -> Result<(), VectorStoreError> {
         let mut state = self.state.write().await;
         for update in updates {
-            if let Some(record) = state.records.get_mut(&update.id) {
+            if let Some(stored) = state.records.get_mut(&update.id) {
                 for (key, value) in &update.metadata {
-                    record.metadata.insert(key.clone(), value.clone());
+                    stored.record.metadata.insert(key.clone(), value.clone());
                 }
             }
         }
@@ -176,8 +202,7 @@ fn magnitude(v: &[f64]) -> f64 {
     v.iter().map(|x| x * x).sum::<f64>().sqrt()
 }
 
-fn cosine_similarity(a: &[f64], b: &[f64], a_mag: f64) -> f64 {
-    let b_mag = magnitude(b);
+fn cosine_similarity(a: &[f64], b: &[f64], a_mag: f64, b_mag: f64) -> f64 {
     if a_mag < f64::EPSILON || b_mag < f64::EPSILON {
         return 0.0;
     }
@@ -376,15 +401,15 @@ mod tests {
     async fn cosine_similarity_basic() {
         let a = [1.0, 0.0, 0.0];
         let b = [1.0, 0.0, 0.0];
-        let sim = cosine_similarity(&a, &b, magnitude(&a));
+        let sim = cosine_similarity(&a, &b, magnitude(&a), magnitude(&b));
         assert!((sim - 1.0).abs() < 1e-12);
 
         let c = [0.0, 1.0, 0.0];
-        let sim2 = cosine_similarity(&a, &c, magnitude(&a));
+        let sim2 = cosine_similarity(&a, &c, magnitude(&a), magnitude(&c));
         assert!(sim2.abs() < 1e-12);
 
         let d = [-1.0, 0.0, 0.0];
-        let sim3 = cosine_similarity(&a, &d, magnitude(&a));
+        let sim3 = cosine_similarity(&a, &d, magnitude(&a), magnitude(&d));
         assert!((sim3 + 1.0).abs() < 1e-12);
     }
 }

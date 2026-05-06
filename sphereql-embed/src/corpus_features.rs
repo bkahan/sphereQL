@@ -269,7 +269,8 @@ fn pairwise_similarity(
         for i in 0..n {
             for j in (i + 1)..n {
                 if pair_matches(mode, &categories[i], &categories[j]) {
-                    sum += cosine_similarity(&embeddings[i], &embeddings[j]);
+                    sum += cosine_similarity(&embeddings[i], &embeddings[j])
+                        .expect("corpus embeddings share fixed dimensionality");
                     count += 1;
                 }
             }
@@ -284,7 +285,8 @@ fn pairwise_similarity(
             let mut c = 0usize;
             for j in (i + 1)..n {
                 if pair_matches(mode, &categories[i], &categories[j]) {
-                    s += cosine_similarity(&embeddings[i], &embeddings[j]);
+                    s += cosine_similarity(&embeddings[i], &embeddings[j])
+                        .expect("corpus embeddings share fixed dimensionality");
                     c += 1;
                 }
             }

@@ -3,6 +3,7 @@ use sphereql_core::{Contains, Shell};
 use std::collections::HashMap;
 
 /// Builder for constructing a [`ShellIndex`] with custom radial boundaries.
+#[must_use = "builders must be terminated with `.build()` to construct the index"]
 pub struct ShellIndexBuilder {
     boundaries: Vec<f64>,
 }

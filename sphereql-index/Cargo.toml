@@ -10,6 +10,11 @@ readme = "README.md"
 [dependencies]
 sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
 thiserror = "2"
+# O(1) move-to-back for the LRU cache. `IndexMap` keeps insertion
+# order and supports `shift_remove` + re-insert at tail in amortized
+# constant time, replacing the previous `HashMap + VecDeque` pair
+# whose `touch_lru` was O(capacity) per hit.
+indexmap = "2"
 
 [dev-dependencies]
 proptest = "1"

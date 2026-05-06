@@ -59,6 +59,7 @@ pub struct SpatialIndex<T: SpatialItem> {
 ///
 /// assert!(idx.is_empty());
 /// ```
+#[must_use = "builders must be terminated with `.build()` to construct the index"]
 pub struct SpatialIndexBuilder {
     shell_boundaries: Vec<f64>,
     theta_divisions: usize,

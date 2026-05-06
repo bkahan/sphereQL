@@ -37,15 +37,43 @@ impl UniformLayout {
 
         let ideal_spacing = (4.0 * PI / n as f64).sqrt();
 
-        let mut min_dist = f64::MAX;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let d = angular_distance(&entries[i].position, &entries[j].position);
-                if d < min_dist {
-                    min_dist = d;
+        // Extracting the positions up front lets the parallel scan
+        // share a `&[SphericalPoint]` (Copy + Sync) without forcing the
+        // generic `T` to be `Sync`. The pair scan is O(n²) and
+        // embarrassingly parallel — each outer index reduces to a
+        // local min over its tail. Stay serial under SERIAL_THRESHOLD
+        // so small layouts don't pay the thread-pool startup cost.
+        use rayon::prelude::*;
+        const SERIAL_THRESHOLD: usize = 128;
+
+        let positions: Vec<SphericalPoint> = entries.iter().map(|e| e.position).collect();
+
+        let min_dist = if n < SERIAL_THRESHOLD {
+            let mut m = f64::MAX;
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    let d = angular_distance(&positions[i], &positions[j]);
+                    if d < m {
+                        m = d;
+                    }
                 }
             }
-        }
+            m
+        } else {
+            (0..n)
+                .into_par_iter()
+                .map(|i| {
+                    let mut m = f64::MAX;
+                    for j in (i + 1)..n {
+                        let d = angular_distance(&positions[i], &positions[j]);
+                        if d < m {
+                            m = d;
+                        }
+                    }
+                    m
+                })
+                .reduce(|| f64::MAX, f64::min)
+        };
 
         let dispersion = (min_dist / ideal_spacing).clamp(0.0, 1.0);
 

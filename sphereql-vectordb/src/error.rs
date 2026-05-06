@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum VectorStoreError {
     #[error("connection failed: {0}")]
     Connection(String),

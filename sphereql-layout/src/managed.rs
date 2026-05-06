@@ -99,6 +99,13 @@ impl<T: Clone + Send + Sync> ManagedLayout<T> {
         // position updates for the dirty subset to preserve incremental
         // semantics.
         let result = strategy.layout(&self.items, mapper);
+        debug_assert_eq!(
+            result.entries.len(),
+            self.items.len(),
+            "layout strategy returned {} entries for {} items",
+            result.entries.len(),
+            self.items.len()
+        );
         for &i in &dirty_indices {
             if let Some(entry) = result.entries.get(i) {
                 self.positions[i] = entry.position;

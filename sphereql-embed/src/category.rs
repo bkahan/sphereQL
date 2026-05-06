@@ -505,7 +505,8 @@ impl CategoryLayer {
 
             for &mi in &summary.member_indices {
                 let item_emb = &embeddings[mi];
-                let sim_to_own = cosine_similarity(&item_emb.values, centroid_a);
+                let sim_to_own = cosine_similarity(&item_emb.values, centroid_a)
+                    .expect("centroid and member share fixed embedding dimensionality");
 
                 for (cj, other_summary) in summaries.iter().enumerate() {
                     if ci == cj {
@@ -513,7 +514,8 @@ impl CategoryLayer {
                     }
 
                     let sim_to_other =
-                        cosine_similarity(&item_emb.values, &other_summary.centroid_embedding);
+                        cosine_similarity(&item_emb.values, &other_summary.centroid_embedding)
+                            .expect("centroid and member share fixed embedding dimensionality");
 
                     // EVR-adaptive threshold: stricter when projection is lossy.
                     // Require positive own-affinity too; otherwise the harmonic-mean
@@ -1468,22 +1470,36 @@ mod tests {
 
     #[test]
     fn cosine_similarity_identical() {
-        assert!((cosine_similarity(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]) - 1.0).abs() < 1e-12);
+        assert!(
+            (cosine_similarity(&[1.0, 0.0, 0.0], &[1.0, 0.0, 0.0]).unwrap() - 1.0).abs() < 1e-12
+        );
     }
 
     #[test]
     fn cosine_similarity_orthogonal() {
-        assert!(cosine_similarity(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0]).abs() < 1e-12);
+        assert!(
+            cosine_similarity(&[1.0, 0.0, 0.0], &[0.0, 1.0, 0.0])
+                .unwrap()
+                .abs()
+                < 1e-12
+        );
     }
 
     #[test]
     fn cosine_similarity_opposite() {
-        assert!((cosine_similarity(&[1.0, 0.0, 0.0], &[-1.0, 0.0, 0.0]) + 1.0).abs() < 1e-12);
+        assert!(
+            (cosine_similarity(&[1.0, 0.0, 0.0], &[-1.0, 0.0, 0.0]).unwrap() + 1.0).abs() < 1e-12
+        );
     }
 
     #[test]
     fn cosine_similarity_zero_vector() {
-        assert!(cosine_similarity(&[0.0, 0.0, 0.0], &[1.0, 0.0, 0.0]).abs() < 1e-12);
+        assert!(
+            cosine_similarity(&[0.0, 0.0, 0.0], &[1.0, 0.0, 0.0])
+                .unwrap()
+                .abs()
+                < 1e-12
+        );
     }
 
     // ======== Phase 2 tests (inner spheres) ========
