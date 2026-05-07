@@ -360,24 +360,34 @@ impl LaplacianEigenmapProjection {
 impl Projection for LaplacianEigenmapProjection {
     fn project(&self, embedding: &Embedding) -> SphericalPoint {
         let (x, y, z) = self.project_to_3d(embedding);
-        let r = self.radial.compute(embedding.magnitude());
+        let proj_mag = (x * x + y * y + z * z).sqrt();
+        let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+            embedding.magnitude(),
+            proj_mag,
+            proj_mag.tanh(),
+        ));
         project_xyz_to_spherical(x, y, z, r)
     }
 
     fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
         let (x, y, z) = self.project_to_3d(embedding);
-        let r = self.radial.compute(embedding.magnitude());
-        let position = project_xyz_to_spherical(x, y, z, r);
         let proj_mag = (x * x + y * y + z * z).sqrt();
         // Certainty reflects whether the Nyström extension produced a
         // non-degenerate coordinate. A zero-magnitude projection means the
         // query had no active axes in common with the corpus — the placement
         // is effectively arbitrary, so certainty should be low.
         let certainty = proj_mag.tanh();
+        let intensity = embedding.magnitude();
+        let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+            intensity,
+            proj_mag,
+            certainty,
+        ));
+        let position = project_xyz_to_spherical(x, y, z, r);
         ProjectedPoint {
             position,
             certainty,
-            intensity: embedding.magnitude(),
+            intensity,
             projection_magnitude: proj_mag,
         }
     }

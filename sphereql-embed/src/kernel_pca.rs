@@ -333,7 +333,7 @@ impl Projection for KernelPcaProjection {
         );
 
         let normalized = embedding.normalized();
-        let (x, y, z, _) = self.kernel_project(&normalized);
+        let (x, y, z, spherical_potential) = self.kernel_project(&normalized);
 
         if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
@@ -342,7 +342,18 @@ impl Projection for KernelPcaProjection {
             }
             SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
         } else {
-            let r = self.radial.compute(embedding.magnitude());
+            let projection_sq = x * x + y * y + z * z;
+            let projection_magnitude = projection_sq.sqrt();
+            let certainty = if spherical_potential > f64::EPSILON {
+                (projection_sq / spherical_potential).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+                embedding.magnitude(),
+                projection_magnitude,
+                certainty,
+            ));
             project_xyz_to_spherical(x, y, z, r)
         }
     }
@@ -380,7 +391,11 @@ impl Projection for KernelPcaProjection {
                 SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
             }
         } else {
-            let r = self.radial.compute(intensity);
+            let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+                intensity,
+                projection_magnitude,
+                certainty,
+            ));
             project_xyz_to_spherical(x, y, z, r)
         };
 
