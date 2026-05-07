@@ -7,6 +7,7 @@
 pub mod bridge;
 pub mod error;
 pub mod memory;
+pub mod pq;
 pub mod redacted;
 pub mod store;
 pub mod types;
@@ -15,10 +16,13 @@ pub mod types;
 pub mod pinecone;
 #[cfg(feature = "qdrant")]
 pub mod qdrant;
+#[cfg(feature = "pq-lmdb")]
+pub mod pq_lmdb;
 
 pub use bridge::*;
 pub use error::*;
 pub use memory::*;
+pub use pq::*;
 pub use redacted::Redacted;
 pub use store::*;
 pub use types::*;
