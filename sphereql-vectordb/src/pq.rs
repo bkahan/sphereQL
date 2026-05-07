@@ -129,10 +129,7 @@ impl PqCodebook {
         }
         let k = config.k();
         if corpus.len() < k {
-            return Err(PqError::NotEnoughPoints {
-                n: corpus.len(),
-                k,
-            });
+            return Err(PqError::NotEnoughPoints { n: corpus.len(), k });
         }
 
         let sub_dim = dim / config.m;
@@ -279,11 +276,7 @@ impl PqIndex {
 
     /// Convenience: train a codebook and pre-load the same corpus into
     /// an in-memory store.
-    pub fn build(
-        ids: &[String],
-        corpus: &[Vec<f32>],
-        config: &PqConfig,
-    ) -> Result<Self, PqError> {
+    pub fn build(ids: &[String], corpus: &[Vec<f32>], config: &PqConfig) -> Result<Self, PqError> {
         if ids.len() != corpus.len() {
             return Err(PqError::Store(format!(
                 "ids len {} != corpus len {}",

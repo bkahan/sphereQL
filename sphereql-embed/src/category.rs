@@ -778,8 +778,10 @@ impl CategoryLayer {
                 continue;
             }
 
-            let member_embs: Vec<Embedding> =
-                member_indices.iter().map(|&i| embeddings[i].clone()).collect();
+            let member_embs: Vec<Embedding> = member_indices
+                .iter()
+                .map(|&i| embeddings[i].clone())
+                .collect();
 
             let global_subset_evr: f64 = member_embs
                 .iter()

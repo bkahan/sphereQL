@@ -379,9 +379,7 @@ impl Projection for LaplacianEigenmapProjection {
         let certainty = proj_mag.tanh();
         let intensity = embedding.magnitude();
         let r = self.radial.compute_rich(&crate::types::RadialContext::full(
-            intensity,
-            proj_mag,
-            certainty,
+            intensity, proj_mag, certainty,
         ));
         let position = project_xyz_to_spherical(x, y, z, r);
         ProjectedPoint {

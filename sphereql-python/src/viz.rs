@@ -48,7 +48,10 @@ fn build_data_json(
             theta: sph.1,
             phi: sph.2,
             cat: cat.as_str(),
-            label: labels.and_then(|l| l.get(i)).map(String::as_str).unwrap_or(""),
+            label: labels
+                .and_then(|l| l.get(i))
+                .map(String::as_str)
+                .unwrap_or(""),
         })
         .collect();
     let data = VizData {

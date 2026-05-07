@@ -14,10 +14,10 @@ pub mod types;
 
 #[cfg(feature = "pinecone")]
 pub mod pinecone;
-#[cfg(feature = "qdrant")]
-pub mod qdrant;
 #[cfg(feature = "pq-lmdb")]
 pub mod pq_lmdb;
+#[cfg(feature = "qdrant")]
+pub mod qdrant;
 
 pub use bridge::*;
 pub use error::*;

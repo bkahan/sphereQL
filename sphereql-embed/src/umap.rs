@@ -551,7 +551,10 @@ mod tests {
         let small = vec![emb(&[1.0, 2.0, 3.0, 4.0]); 3];
         assert!(matches!(
             UmapSphereProjection::fit_default(&small),
-            Err(ProjectionError::TooFewEmbeddings { got: 3, required: 4 })
+            Err(ProjectionError::TooFewEmbeddings {
+                got: 3,
+                required: 4
+            })
         ));
     }
 
@@ -603,12 +606,16 @@ mod tests {
                 if cats[i] == cats[j] {
                     let pi = SphericalPoint::new_unchecked(
                         1.0,
-                        points[i][1].atan2(points[i][0]).rem_euclid(std::f64::consts::TAU),
+                        points[i][1]
+                            .atan2(points[i][0])
+                            .rem_euclid(std::f64::consts::TAU),
                         points[i][2].clamp(-1.0, 1.0).acos(),
                     );
                     let pj = SphericalPoint::new_unchecked(
                         1.0,
-                        points[j][1].atan2(points[j][0]).rem_euclid(std::f64::consts::TAU),
+                        points[j][1]
+                            .atan2(points[j][0])
+                            .rem_euclid(std::f64::consts::TAU),
                         points[j][2].clamp(-1.0, 1.0).acos(),
                     );
                     total += angular_distance(&pi, &pj);
@@ -616,7 +623,11 @@ mod tests {
                 }
             }
         }
-        if count == 0 { 0.0 } else { total / count as f64 }
+        if count == 0 {
+            0.0
+        } else {
+            total / count as f64
+        }
     }
 
     #[test]

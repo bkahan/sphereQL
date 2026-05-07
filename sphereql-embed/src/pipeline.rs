@@ -899,9 +899,7 @@ impl SphereQLPipeline {
             self.category_layer
                 .nearest_group(&pos)
                 .filter(|(gi, d_near, d_second)| {
-                    self.category_layer
-                        .group_inner_spheres
-                        .contains_key(gi)
+                    self.category_layer.group_inner_spheres.contains_key(gi)
                         && (*d_second == f64::INFINITY || d_near / d_second < alpha)
                 })
                 .map(|(gi, _, _)| gi)
@@ -1737,8 +1735,7 @@ mod tests {
         )
         .unwrap();
 
-        let results = pipeline
-            .default_nearest(&Embedding::new(query.embedding.clone()), 5);
+        let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
         assert!(!results.is_empty());
         // Query is closest to cluster-a; routed results should all be a's.
         for r in &results {
@@ -1764,8 +1761,7 @@ mod tests {
             },
         )
         .unwrap();
-        let results = pipeline
-            .default_nearest(&Embedding::new(query.embedding.clone()), 5);
+        let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
         assert!(!results.is_empty());
     }
 
