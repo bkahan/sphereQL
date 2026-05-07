@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lingua-spherica"
+version = "0.2.0a0"
+description = "Spherical-geometry primitives for the sphereQL coordinate system (Python sibling of sphereql-core)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Ben Kahan" }]
+keywords = ["spherical-geometry", "vector-search", "sphereql", "embeddings"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/bkahan/sphereQL"
+Repository = "https://github.com/bkahan/sphereQL"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lingua_spherica"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
