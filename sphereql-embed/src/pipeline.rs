@@ -1016,6 +1016,14 @@ pub fn fit_projection_for_config(
                 )?,
             ))
         }
+        ProjectionKind::UmapSphere => Ok(ConfiguredProjection::UmapSphere(
+            crate::umap::UmapSphereProjection::fit(
+                embeddings,
+                None,
+                RadialStrategy::Magnitude,
+                crate::umap::UmapConfig::default(),
+            )?,
+        )),
     }
 }
 

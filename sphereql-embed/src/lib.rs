@@ -54,6 +54,7 @@ pub mod spatial_quality;
 pub mod text_embedder;
 pub mod tuner;
 pub mod types;
+pub mod umap;
 pub mod util;
 
 pub use category::*;
@@ -76,4 +77,5 @@ pub use spatial_quality::*;
 pub use text_embedder::*;
 pub use tuner::*;
 pub use types::*;
+pub use umap::*;
 pub use util::*;

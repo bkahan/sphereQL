@@ -60,6 +60,13 @@ pub enum ProjectionKind {
     /// coordinate variance (the typical failure mode of PCA on 128-dim
     /// noise-heavy corpora).
     LaplacianEigenmap,
+    /// UMAP-on-sphere via Adam in the tangent bundle of S². PCA warm
+    /// start, kNN attractive + uniform-negative repulsive, optional
+    /// supervised category term. Preferred when angular ordering on the
+    /// sphere matters more than raw variance preservation, and when a
+    /// modest fit cost (O(n²·epochs) for the kNN graph + iterations) is
+    /// acceptable.
+    UmapSphere,
 }
 
 impl ProjectionKind {
@@ -69,6 +76,7 @@ impl ProjectionKind {
             Self::Pca => "pca",
             Self::KernelPca => "kernel_pca",
             Self::LaplacianEigenmap => "laplacian_eigenmap",
+            Self::UmapSphere => "umap_sphere",
         }
     }
 
@@ -78,6 +86,7 @@ impl ProjectionKind {
             ProjectionKind::Pca,
             ProjectionKind::KernelPca,
             ProjectionKind::LaplacianEigenmap,
+            ProjectionKind::UmapSphere,
         ]
     }
 }
@@ -275,6 +284,7 @@ mod tests {
             ProjectionKind::LaplacianEigenmap.name(),
             "laplacian_eigenmap"
         );
-        assert_eq!(ProjectionKind::all().len(), 3);
+        assert_eq!(ProjectionKind::UmapSphere.name(), "umap_sphere");
+        assert_eq!(ProjectionKind::all().len(), 4);
     }
 }

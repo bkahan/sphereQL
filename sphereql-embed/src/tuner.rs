@@ -211,7 +211,7 @@ impl SearchSpace {
             ProjectionKind::LaplacianEigenmap => {
                 common * self.laplacian_k_neighbors.len() * self.laplacian_active_threshold.len()
             }
-            ProjectionKind::Pca | ProjectionKind::KernelPca => common,
+            ProjectionKind::Pca | ProjectionKind::KernelPca | ProjectionKind::UmapSphere => common,
         }
     }
 
@@ -352,6 +352,7 @@ enum ProjectionFitKey {
     Pca,
     KernelPca,
     Laplacian { k: usize, threshold_bits: u64 },
+    UmapSphere,
 }
 
 impl ProjectionFitKey {
@@ -363,6 +364,7 @@ impl ProjectionFitKey {
                 k: cfg.laplacian.k_neighbors,
                 threshold_bits: cfg.laplacian.active_threshold.to_bits(),
             },
+            ProjectionKind::UmapSphere => Self::UmapSphere,
         }
     }
 }
