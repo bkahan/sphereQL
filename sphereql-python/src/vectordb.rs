@@ -761,12 +761,14 @@ fn json_to_py(py: Python<'_>, v: &serde_json::Value) -> PyResult<Py<PyAny>> {
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 i.into_pyobject(py)?.into_any().unbind()
+            } else if let Some(u) = n.as_u64() {
+                u.into_pyobject(py)?.into_any().unbind()
+            } else if let Some(f) = n.as_f64() {
+                f.into_pyobject(py)?.into_any().unbind()
             } else {
-                n.as_f64()
-                    .unwrap_or(0.0)
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind()
+                return Err(PyValueError::new_err(format!(
+                    "unrepresentable JSON number: {n}"
+                )));
             }
         }
         serde_json::Value::String(s) => s.into_pyobject(py)?.into_any().unbind(),

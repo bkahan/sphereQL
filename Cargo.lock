@@ -2789,6 +2789,7 @@ dependencies = [
  "pyo3",
  "pyo3-stub-gen",
  "pythonize",
+ "serde",
  "serde_json",
  "sphereql-core",
  "sphereql-embed",

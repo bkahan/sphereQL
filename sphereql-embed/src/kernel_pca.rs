@@ -82,6 +82,11 @@ pub struct KernelPcaProjection {
     volumetric: bool,
 }
 
+/// At or above this corpus size, [`KernelPcaProjection::fit`] emits a
+/// stderr warning. Power iteration on the n×n centered kernel matrix
+/// becomes an interactive-development hazard around this scale.
+const KPCA_FIT_WARN_THRESHOLD: usize = 2_000;
+
 impl KernelPcaProjection {
     /// Fit kernel PCA with automatic σ selection.
     ///
@@ -168,6 +173,16 @@ impl KernelPcaProjection {
                 got: dim,
                 required: 3,
             });
+        }
+        // O(n²·d) kernel matrix + O(n²·q·iters) power iteration. At
+        // n ≈ 10k this approaches an hour; warn callers who didn't
+        // see the doc comment so they can switch to PCA or downsample.
+        let n = embeddings.len();
+        if n >= KPCA_FIT_WARN_THRESHOLD {
+            eprintln!(
+                "sphereql-embed: KernelPcaProjection::fit on n={n} (dim={dim}) — \
+                 O(n²·d) cost, expect minutes-to-hours. Consider PCA or downsampling."
+            );
         }
         for (i, e) in embeddings.iter().enumerate() {
             if e.dimension() != dim {

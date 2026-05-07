@@ -111,6 +111,10 @@ impl CacheKey {
                     Self::hash_region(r, hasher);
                 }
             }
+            // `Region` is `#[non_exhaustive]`; future variants hash on
+            // their discriminant alone (already hashed above) until this
+            // arm is updated to include their fields.
+            _ => {}
         }
     }
 }
