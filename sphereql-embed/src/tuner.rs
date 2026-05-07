@@ -267,6 +267,7 @@ impl SearchSpace {
         let mut cfg = base.clone();
         cfg.projection_kind = kind;
         cfg.routing = RoutingConfig {
+            group_routing_alpha: 0.8,
             num_domain_groups: self.num_domain_groups[i_ndg],
             low_evr_threshold: self.low_evr_threshold[i_let],
         };
@@ -314,6 +315,7 @@ impl SearchSpace {
             "SearchSpace::sample called without prior validate()"
         );
         cfg.routing = RoutingConfig {
+            group_routing_alpha: 0.8,
             num_domain_groups: pick_uniform(rng, &self.num_domain_groups),
             low_evr_threshold: pick_uniform(rng, &self.low_evr_threshold),
         };
@@ -705,6 +707,7 @@ fn tpe_propose(
     let mut cfg = base.clone();
     cfg.projection_kind = kind;
     cfg.routing = RoutingConfig {
+        group_routing_alpha: 0.8,
         num_domain_groups: space.num_domain_groups[pick_idx(rng, &ndg_g, &ndg_b)],
         low_evr_threshold: space.low_evr_threshold[pick_idx(rng, &let_g, &let_b)],
     };

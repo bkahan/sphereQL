@@ -165,8 +165,21 @@ pub struct RoutingConfig {
     /// Number of domain groups detected at build time by
     /// [`detect_domain_groups`](crate::domain_groups::detect_domain_groups).
     pub num_domain_groups: usize,
-    /// EVR below which `hierarchical_nearest` routes through domain
-    /// groups and inner spheres instead of the outer sphere.
+    /// Distance-ratio gate for the default `nearest()` path. A query
+    /// drills into the nearest group's inner sphere when
+    /// `d_to_nearest / d_to_second_nearest < group_routing_alpha`. A
+    /// smaller α is stricter (only routes when one group is clearly
+    /// closer). Default `0.8` matches the routing interview decision;
+    /// set to `0.0` to disable the default-route behavior entirely
+    /// (falls back to outer-sphere k-NN).
+    pub group_routing_alpha: f64,
+    /// EVR below which `hierarchical_nearest` historically routed
+    /// through domain groups instead of the outer sphere.
+    ///
+    /// Retained for backward-compatibility and debugging — the default
+    /// `nearest()` path now uses [`Self::group_routing_alpha`] instead.
+    /// `hierarchical_nearest()` still consults this for its EVR-gated
+    /// branch.
     pub low_evr_threshold: f64,
 }
 
@@ -174,6 +187,7 @@ impl Default for RoutingConfig {
     fn default() -> Self {
         Self {
             num_domain_groups: 5,
+            group_routing_alpha: 0.8,
             low_evr_threshold: 0.35,
         }
     }

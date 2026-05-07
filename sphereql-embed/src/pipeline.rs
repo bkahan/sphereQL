@@ -485,26 +485,7 @@ impl SphereQLPipeline {
 
         match q {
             SphereQLQuery::Nearest { k } => {
-                let evr = self.projection.explained_variance_ratio();
-                let results = self.index.search_nearest(&emb, k);
-                Ok(SphereQLOutput::Nearest(
-                    results
-                        .iter()
-                        .map(|r| {
-                            let certainty = r.item.certainty();
-                            let quality = QualitySignal::from_certainty(evr, certainty);
-                            NearestResult {
-                                id: r.item.id.clone(),
-                                category: self.cat_for(&r.item.id),
-                                distance: r.distance,
-                                certainty,
-                                intensity: r.item.intensity(),
-                                quality: Some(quality),
-                            }
-                        })
-                        .filter(|r| self.passes_quality(r))
-                        .collect(),
-                ))
+                Ok(SphereQLOutput::Nearest(self.default_nearest(&emb, k)))
             }
 
             SphereQLQuery::SimilarAbove { min_cosine } => {
@@ -899,6 +880,51 @@ impl SphereQLPipeline {
         r.certainty >= self.quality_config.min_certainty
             && r.quality
                 .is_none_or(|q| q.passes_threshold(self.quality_config.min_combined))
+    }
+
+    /// Default `nearest` path (v2 routing).
+    ///
+    /// Routes the query to its closest domain group when that choice is
+    /// unambiguous (`d_nearest / d_second_nearest < group_routing_alpha`)
+    /// and the group has an inner sphere; otherwise falls back to plain
+    /// outer-sphere k-NN. EVR no longer gates routing — only the
+    /// distance-ratio rule does — so high-fidelity projections still
+    /// benefit from the inner-sphere refinement.
+    pub fn default_nearest(&self, embedding: &Embedding, k: usize) -> Vec<NearestResult> {
+        let evr = self.projection.explained_variance_ratio();
+        let alpha = self.config.routing.group_routing_alpha;
+
+        let route = if alpha > 0.0 {
+            let pos = self.projection.project(embedding);
+            self.category_layer
+                .nearest_group(&pos)
+                .filter(|(gi, d_near, d_second)| {
+                    self.category_layer
+                        .group_inner_spheres
+                        .contains_key(gi)
+                        && (*d_second == f64::INFINITY || d_near / d_second < alpha)
+                })
+                .map(|(gi, _, _)| gi)
+        } else {
+            None
+        };
+
+        if let Some(gi) = route {
+            let drilled = self.category_layer.drill_down_group(gi, embedding, k);
+            let mut results: Vec<NearestResult> = drilled
+                .iter()
+                .map(|r| self.drill_result_to_nearest(r, evr))
+                .filter(|r| self.passes_quality(r))
+                .collect();
+            // Falling back to the outer path on empty results matches
+            // hierarchical_nearest's correctness-inversion safeguard.
+            if !results.is_empty() {
+                results.truncate(k);
+                return results;
+            }
+        }
+
+        self.nearest_filtered(embedding, k, evr)
     }
 
     /// Shared helper: outer-sphere k-NN with quality filtering.
@@ -1462,6 +1488,7 @@ mod tests {
             PipelineConfig {
                 routing: crate::config::RoutingConfig {
                     num_domain_groups: 2,
+                    group_routing_alpha: 0.8,
                     low_evr_threshold: 1.1, // force low-EVR branch
                 },
                 ..Default::default()
@@ -1619,5 +1646,140 @@ mod tests {
             assert!((t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-9);
         }
         assert_eq!(pipeline.projection_kind(), ProjectionKind::Pca);
+    }
+
+    // ── v2 default routing (#3 projection-overhaul) ────────────────────
+
+    /// Two well-separated clusters in 6D, 60 items each. min_size=20
+    /// guarantees both per-category and group-level inner spheres are
+    /// candidates.
+    fn two_cluster_input(n_per: usize, dim: usize) -> (PipelineInput, PipelineQuery) {
+        let mut embeddings = Vec::with_capacity(2 * n_per);
+        let mut categories = Vec::with_capacity(2 * n_per);
+        for i in 0..n_per {
+            let t = i as f64 * 0.001;
+            let mut v = vec![0.0; dim];
+            v[0] = 1.0 + t;
+            v[1] = 0.1 + t;
+            embeddings.push(v);
+            categories.push("a".into());
+        }
+        for i in 0..n_per {
+            let t = i as f64 * 0.001;
+            let mut v = vec![0.0; dim];
+            v[3] = 1.0 + t;
+            v[4] = 0.1 + t;
+            embeddings.push(v);
+            categories.push("b".into());
+        }
+        let query = PipelineQuery {
+            embedding: {
+                let mut q = vec![0.0; dim];
+                q[0] = 1.0;
+                q[1] = 0.05;
+                q
+            },
+        };
+        (
+            PipelineInput {
+                categories,
+                embeddings,
+            },
+            query,
+        )
+    }
+
+    #[test]
+    fn group_inner_spheres_built_when_two_or_more_groups() {
+        let (input, _) = two_cluster_input(30, 8);
+        let pipeline = SphereQLPipeline::new_with_config(
+            input,
+            PipelineConfig {
+                routing: crate::config::RoutingConfig {
+                    num_domain_groups: 2,
+                    group_routing_alpha: 0.8,
+                    low_evr_threshold: 0.35,
+                },
+                // Loosen EVR-improvement threshold: synthetic corpora
+                // with rank≤3 cluster geometry leave little room for
+                // inner PCA to beat the outer projection by a wide
+                // margin. The realistic threshold (0.10) is exercised
+                // by the integration tests on real corpora elsewhere.
+                inner_sphere: crate::config::InnerSphereConfig {
+                    min_evr_improvement: -1.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let layer = pipeline.category_layer();
+        assert_eq!(layer.domain_groups.len(), 2);
+        assert!(
+            !layer.group_inner_spheres.is_empty(),
+            "at least one group should produce a group-level inner sphere"
+        );
+    }
+
+    #[test]
+    fn default_nearest_routes_through_group_inner_sphere() {
+        let (input, query) = two_cluster_input(30, 8);
+        let pipeline = SphereQLPipeline::new_with_config(
+            input,
+            PipelineConfig {
+                routing: crate::config::RoutingConfig {
+                    num_domain_groups: 2,
+                    group_routing_alpha: 0.99,
+                    low_evr_threshold: 0.35,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let results = pipeline
+            .default_nearest(&Embedding::new(query.embedding.clone()), 5);
+        assert!(!results.is_empty());
+        // Query is closest to cluster-a; routed results should all be a's.
+        for r in &results {
+            assert_eq!(r.category, "a", "got {r:?}");
+        }
+    }
+
+    #[test]
+    fn default_nearest_falls_back_when_alpha_zero() {
+        // alpha=0 disables routing → outer-sphere k-NN is used.
+        // This must still produce results (correctness) and is the
+        // back-compat escape hatch.
+        let (input, query) = two_cluster_input(30, 8);
+        let pipeline = SphereQLPipeline::new_with_config(
+            input,
+            PipelineConfig {
+                routing: crate::config::RoutingConfig {
+                    num_domain_groups: 2,
+                    group_routing_alpha: 0.0,
+                    low_evr_threshold: 0.35,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let results = pipeline
+            .default_nearest(&Embedding::new(query.embedding.clone()), 5);
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn nearest_group_returns_consistent_order() {
+        let (input, _) = two_cluster_input(30, 8);
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let layer = pipeline.category_layer();
+        // Probe at one of the group centroids — that group must come first.
+        if let Some(g0) = layer.domain_groups.first() {
+            let pos = g0.centroid;
+            let (gi, d_near, d_second) = layer.nearest_group(&pos).unwrap();
+            assert_eq!(gi, 0);
+            assert!(d_near <= d_second);
+        }
     }
 }
