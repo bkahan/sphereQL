@@ -241,6 +241,10 @@ pub struct SphereQLPipeline {
     projection_warnings: Vec<ProjectionWarning>,
     /// Full tunable configuration used at build time.
     config: PipelineConfig,
+    /// Original embeddings retained for downstream consumers that need
+    /// full-dimensional similarity (e.g., priming, concept extraction).
+    /// Only populated when the `retain-embeddings` feature is active.
+    raw_embeddings: Option<Vec<Vec<f64>>>,
 }
 
 impl SphereQLPipeline {
@@ -260,6 +264,11 @@ impl SphereQLPipeline {
         input: PipelineInput,
         config: PipelineConfig,
     ) -> Result<Self, PipelineError> {
+        #[cfg(feature = "retain-embeddings")]
+        let raw = Some(input.embeddings.clone());
+        #[cfg(not(feature = "retain-embeddings"))]
+        let raw: Option<Vec<Vec<f64>>> = None;
+
         let embeddings: Vec<Embedding> = input
             .embeddings
             .iter()
@@ -267,12 +276,14 @@ impl SphereQLPipeline {
             .collect();
 
         let projection = fit_projection_for_config(&embeddings, &config)?;
-        Self::with_configured_projection_and_config(
+        let mut pipeline = Self::with_configured_projection_and_config(
             input.categories,
             embeddings,
             projection,
             config,
-        )
+        )?;
+        pipeline.raw_embeddings = raw;
+        Ok(pipeline)
     }
 
     /// Build a pipeline using a config predicted by a [`MetaModel`].
@@ -437,6 +448,7 @@ impl SphereQLPipeline {
             quality_config,
             projection_warnings,
             config,
+            raw_embeddings: None,
         })
     }
 
@@ -776,6 +788,96 @@ impl SphereQLPipeline {
     /// Projection quality warnings. Empty if EVR is above threshold.
     pub fn projection_warnings(&self) -> &[ProjectionWarning] {
         &self.projection_warnings
+    }
+
+    // ── Raw-embedding accessors (retain-embeddings feature) ────────────
+
+    /// Returns the original high-dimensional embeddings if the `retain-embeddings`
+    /// feature was active at construction time. The returned slice is aligned with
+    /// `ids()`, `categories()`, and `projected_points()`.
+    ///
+    /// Returns `None` if the feature was not active or embeddings were not retained.
+    pub fn raw_embeddings(&self) -> Option<&[Vec<f64>]> {
+        self.raw_embeddings.as_deref()
+    }
+
+    /// Embedding dimensionality (length of each embedding vector), or 0 if
+    /// embeddings are not retained.
+    pub fn embedding_dim(&self) -> usize {
+        self.raw_embeddings
+            .as_ref()
+            .and_then(|e| e.first())
+            .map(|v| v.len())
+            .unwrap_or(0)
+    }
+
+    /// Compute the pairwise cosine similarity matrix from the retained raw
+    /// embeddings. Returns the upper triangle as a flat vector aligned with
+    /// `ids()` ordering.
+    ///
+    /// Returns `None` if embeddings were not retained (feature `retain-embeddings`
+    /// not active at construction).
+    ///
+    /// Returns `Err` if the stored embeddings have mismatched dimensions
+    /// (should not happen if the pipeline was constructed correctly).
+    pub fn pairwise_similarities(&self) -> Option<Result<Vec<f64>, sphereql_core::SphereQlError>> {
+        self.raw_embeddings
+            .as_ref()
+            .map(|embeddings| sphereql_core::pairwise_cosine_similarities(embeddings))
+    }
+
+    /// Find the k concepts most similar to `query_embedding` by cosine
+    /// similarity in the original embedding space (not the projected space).
+    ///
+    /// Returns `(index, similarity)` pairs sorted by descending similarity,
+    /// where `index` aligns with `ids()`, `categories()`, and `projected_points()`.
+    ///
+    /// Returns `None` if embeddings were not retained.
+    /// Returns `Err(DimensionMismatch)` if `query_embedding.len()` differs from
+    /// the stored embedding dimensionality.
+    pub fn nearest_by_embedding(
+        &self,
+        query_embedding: &[f64],
+        k: usize,
+    ) -> Option<Result<Vec<(usize, f64)>, sphereql_core::SphereQlError>> {
+        let embeddings = self.raw_embeddings.as_ref()?;
+        let dim = embeddings.first().map(|v| v.len()).unwrap_or(0);
+
+        if query_embedding.len() != dim {
+            return Some(Err(sphereql_core::SphereQlError::DimensionMismatch {
+                expected: dim,
+                actual: query_embedding.len(),
+            }));
+        }
+
+        let query_norm: f64 = query_embedding.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if query_norm < f64::EPSILON {
+            return Some(Ok(Vec::new()));
+        }
+
+        let mut scored: Vec<(usize, f64)> = embeddings
+            .iter()
+            .enumerate()
+            .map(|(i, emb)| {
+                let emb_norm: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let dot: f64 = query_embedding
+                    .iter()
+                    .zip(emb.iter())
+                    .map(|(a, b)| a * b)
+                    .sum();
+                let sim = if emb_norm < f64::EPSILON {
+                    0.0
+                } else {
+                    (dot / (query_norm * emb_norm)).clamp(-1.0, 1.0)
+                };
+                (i, sim)
+            })
+            .collect();
+
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(k);
+
+        Some(Ok(scored))
     }
 
     // ── Phase 5: hierarchical domain groups ────────────────────────────
@@ -1759,6 +1861,86 @@ mod tests {
         .unwrap();
         let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
         assert!(!results.is_empty());
+    }
+
+    // ── retain-embeddings tests ──────────────────────────────────────────
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn raw_embeddings_retained() {
+        let input = PipelineInput {
+            categories: vec!["a".into(), "a".into(), "b".into()],
+            embeddings: vec![
+                vec![1.0, 0.0, 0.0, 0.0],
+                vec![0.9, 0.1, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+            ],
+        };
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let raw = pipeline
+            .raw_embeddings()
+            .expect("should be Some with feature");
+        assert_eq!(raw.len(), 3);
+        assert_eq!(raw[0], vec![1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn pairwise_similarities_bounded() {
+        let input = PipelineInput {
+            categories: vec!["a".into(), "b".into(), "c".into()],
+            embeddings: vec![
+                vec![1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0],
+                vec![1.0, 1.0, 0.0],
+            ],
+        };
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let sims = pipeline.pairwise_similarities().unwrap().unwrap();
+        assert_eq!(sims.len(), 3);
+        for &s in &sims {
+            assert!((-1.0..=1.0).contains(&s));
+        }
+        let sim_01 = sims[sphereql_core::upper_triangle_index(0, 1, 3)];
+        let sim_02 = sims[sphereql_core::upper_triangle_index(0, 2, 3)];
+        assert!(sim_02 > sim_01);
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn nearest_by_embedding_finds_closest() {
+        let input = PipelineInput {
+            categories: vec!["a".into(), "b".into(), "c".into()],
+            embeddings: vec![
+                vec![1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0],
+            ],
+        };
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let results = pipeline
+            .nearest_by_embedding(&[0.9, 0.1, 0.0], 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].0, 0);
+        assert!(results[0].1 > results[1].1);
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn nearest_by_embedding_dimension_mismatch() {
+        let input = PipelineInput {
+            categories: vec!["a".into(), "b".into(), "c".into()],
+            embeddings: vec![
+                vec![1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0],
+            ],
+        };
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let result = pipeline.nearest_by_embedding(&[1.0, 0.0], 1).unwrap();
+        assert!(result.is_err());
     }
 
     #[test]

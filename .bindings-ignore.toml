@@ -389,3 +389,29 @@ reason = "internal filesystem helper"
 [[exempt]]
 name = "voronoi_analysis"
 reason = "internal navigator helper"
+
+# ── Raw-embedding methods (Rust-only consumer: sphereql-globetrot) ──
+
+[[exempt]]
+name = "raw_embeddings"
+reason = "Rust-only downstream consumer (sphereql-globetrot); not bound in Python/WASM"
+
+[[exempt]]
+name = "embedding_dim"
+reason = "companion to raw_embeddings; Rust-only downstream consumer"
+
+[[exempt]]
+name = "pairwise_similarities"
+reason = "returns SphereQlError which doesn't map cleanly to bindings; Rust-only consumer"
+
+[[exempt]]
+name = "nearest_by_embedding"
+reason = "Rust-only downstream consumer (sphereql-globetrot); returns (usize, f64) pairs"
+
+[[exempt]]
+name = "pairwise_cosine_similarities"
+reason = "core free function; called via pairwise_similarities on the pipeline binding"
+
+[[exempt]]
+name = "upper_triangle_index"
+reason = "index helper for pairwise_cosine_similarities; Rust-only utility"

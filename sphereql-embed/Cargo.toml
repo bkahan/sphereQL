@@ -7,6 +7,9 @@ license.workspace = true
 repository.workspace = true
 readme = "README.md"
 
+[features]
+retain-embeddings = []
+
 [dependencies]
 sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
 sphereql-index = { version = "0.2.0-alpha", path = "../sphereql-index" }

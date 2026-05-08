@@ -1,4 +1,4 @@
-use sphereql_core::{angular_distance, SphericalPoint};
+use sphereql_core::{SphericalPoint, angular_distance};
 use sphereql_embed::{Embedding, LaplacianEigenmapProjection, Projection, RadialStrategy};
 
 fn main() {
@@ -16,7 +16,8 @@ fn main() {
         .collect();
     let min_a = *active_sizes.iter().min().unwrap();
     let max_a = *active_sizes.iter().max().unwrap();
-    let mean_a: f64 = active_sizes.iter().map(|&x| x as f64).sum::<f64>() / active_sizes.len() as f64;
+    let mean_a: f64 =
+        active_sizes.iter().map(|&x| x as f64).sum::<f64>() / active_sizes.len() as f64;
     println!("active set size: min={min_a} mean={mean_a:.1} max={max_a} (of 128)");
 
     let lap = LaplacianEigenmapProjection::fit(&embeddings, RadialStrategy::Magnitude).unwrap();
@@ -27,8 +28,15 @@ fn main() {
     let unique_thetas: std::collections::BTreeSet<i64> =
         coords.iter().map(|p| (p.theta * 1e6) as i64).collect();
     println!("unique theta buckets (×1e6): {}", unique_thetas.len());
-    let max_d = coords.iter().enumerate().flat_map(|(i, p)| {
-        coords.iter().skip(i + 1).map(move |q| angular_distance(p, q))
-    }).fold(0.0_f64, f64::max);
+    let max_d = coords
+        .iter()
+        .enumerate()
+        .flat_map(|(i, p)| {
+            coords
+                .iter()
+                .skip(i + 1)
+                .map(move |q| angular_distance(p, q))
+        })
+        .fold(0.0_f64, f64::max);
     println!("max pairwise angular distance among coords: {max_d:.6}");
 }
