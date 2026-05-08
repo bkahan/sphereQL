@@ -106,13 +106,23 @@ class TestSlerp:
         s0 = slerp(a, b, 0.0)
         s1 = slerp(a, b, 1.0)
         assert s0.theta == pytest.approx(a.theta, abs=1e-9)
+        assert s0.phi == pytest.approx(a.phi, abs=1e-9)
+        assert s0.r == pytest.approx(a.r, abs=1e-9)
         assert s1.theta == pytest.approx(b.theta, abs=1e-9)
+        assert s1.phi == pytest.approx(b.phi, abs=1e-9)
+        assert s1.r == pytest.approx(b.r, abs=1e-9)
 
     def test_clamps_t_to_unit_interval(self):
         a = _sp(theta=0.0, phi=math.pi / 2)
         b = _sp(theta=1.0, phi=math.pi / 2)
-        assert slerp(a, b, -0.5).theta == pytest.approx(a.theta, abs=1e-9)
-        assert slerp(a, b, 1.5).theta == pytest.approx(b.theta, abs=1e-9)
+        below = slerp(a, b, -0.5)
+        above = slerp(a, b, 1.5)
+        assert below.theta == pytest.approx(a.theta, abs=1e-9)
+        assert below.phi == pytest.approx(a.phi, abs=1e-9)
+        assert below.r == pytest.approx(a.r, abs=1e-9)
+        assert above.theta == pytest.approx(b.theta, abs=1e-9)
+        assert above.phi == pytest.approx(b.phi, abs=1e-9)
+        assert above.r == pytest.approx(b.r, abs=1e-9)
 
     def test_midpoint_lies_between(self):
         a = _sp(theta=0.0, phi=math.pi / 2)

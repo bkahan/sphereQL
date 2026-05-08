@@ -946,22 +946,22 @@ impl SphereQLPipeline {
                 .partial_cmp(&b.distance)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        let filtered: Vec<NearestResult> = candidates
-            .into_iter()
-            .filter(|r| self.passes_quality(r))
-            .take(k)
-            .collect();
 
-        // If the quality filter discards every routed-group candidate,
-        // fall back to the outer-sphere path. The low-EVR branch exists
-        // *because* the outer sphere is unreliable, and the drill-down
-        // certainty scores come from that same unreliable projection —
-        // returning an empty Vec in exactly this regime would be a
-        // correctness inversion.
-        if filtered.is_empty() {
+        // Don't apply the outer-sphere `passes_quality` filter here:
+        // drill_result_to_nearest synthesizes certainty from the *outer*
+        // projection's per-item record, but the ranking distance came
+        // from the *inner* sphere. Filtering with a threshold calibrated
+        // on the outer sphere mixes coordinate systems and would either
+        // discard valid inner-sphere matches or admit cross-projection
+        // false positives. The low-EVR branch exists precisely because
+        // outer-sphere certainty is unreliable in this regime; trust the
+        // routing + drill-down ranking instead.
+        let truncated: Vec<NearestResult> = candidates.into_iter().take(k).collect();
+
+        if truncated.is_empty() {
             self.nearest_filtered(embedding, k, evr)
         } else {
-            filtered
+            truncated
         }
     }
 

@@ -113,12 +113,17 @@ impl CacheKey {
             }
             // `Region` is `#[non_exhaustive]`. Loud-fail in debug/test
             // builds so a new variant doesn't silently collapse into a
-            // discriminant-only hash and produce false cache hits.
-            _ => {
+            // discriminant-only hash and produce false cache hits. In
+            // release, fall back to hashing the Debug representation —
+            // not free, but it differentiates instances within the same
+            // unhandled variant so two distinct regions can't share a
+            // cache key purely from missing match arms.
+            other => {
                 debug_assert!(
                     false,
                     "CacheKey::Region: unhandled Region variant — update hash_region"
                 );
+                format!("{other:?}").hash(hasher);
             }
         }
     }

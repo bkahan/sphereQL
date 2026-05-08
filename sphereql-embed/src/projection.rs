@@ -377,14 +377,20 @@ impl Projection for RandomProjection {
 /// Returns 0.0 for inputs whose centered norm is below `f64::EPSILON`
 /// (otherwise we'd divide by zero) and clamps to `[0, 1]`.
 fn pca_certainty(embedding: &Embedding, mean: &[f64], intensity: f64, residual_sq: f64) -> f64 {
-    let inv_mag = if intensity < f64::EPSILON {
-        0.0
-    } else {
-        1.0 / intensity
-    };
+    // Mirror Embedding::normalized()'s fallback: when the input has no
+    // magnitude, the rest of the pipeline treats it as [1, 0, 0, ...].
+    // Computing total_sq off the same vector keeps certainty consistent
+    // with the projection coordinates the caller will actually see.
+    let zero_intensity = intensity < f64::EPSILON;
+    let inv_mag = if zero_intensity { 0.0 } else { 1.0 / intensity };
     let total_sq: f64 = (0..mean.len())
         .map(|i| {
-            let c = embedding.values[i] * inv_mag - mean[i];
+            let normalized_i = if zero_intensity {
+                if i == 0 { 1.0 } else { 0.0 }
+            } else {
+                embedding.values[i] * inv_mag
+            };
+            let c = normalized_i - mean[i];
             c * c
         })
         .sum();

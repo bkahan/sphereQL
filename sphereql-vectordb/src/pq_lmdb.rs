@@ -23,7 +23,6 @@ pub struct LmdbPqStore {
     env: Env,
     codes: Database<Str, Bytes>,
     order: Database<U32<heed::byteorder::BigEndian>, Str>,
-    next_index: u32,
 }
 
 impl LmdbPqStore {
@@ -49,26 +48,7 @@ impl LmdbPqStore {
             .map_err(|e| PqError::Store(e.to_string()))?;
         wtxn.commit().map_err(|e| PqError::Store(e.to_string()))?;
 
-        // Seed `next_index` from the highest existing entry so reopens
-        // resume the order monotonically.
-        let rtxn = env.read_txn().map_err(|e| PqError::Store(e.to_string()))?;
-        let mut next_index: u32 = 0;
-        if let Some((max_idx, _)) = order
-            .last(&rtxn)
-            .map_err(|e| PqError::Store(e.to_string()))?
-        {
-            next_index = max_idx
-                .checked_add(1)
-                .ok_or_else(|| PqError::Store("order index overflowed u32::MAX".into()))?;
-        }
-        drop(rtxn);
-
-        Ok(Self {
-            env,
-            codes,
-            order,
-            next_index,
-        })
+        Ok(Self { env, codes, order })
     }
 }
 
@@ -87,13 +67,24 @@ impl PqStore for LmdbPqStore {
             .put(&mut wtxn, id, codes)
             .map_err(|e| PqError::Store(e.to_string()))?;
         if !existed {
-            let idx = self.next_index;
+            // Allocate the next order index inside this same write
+            // transaction so concurrent handles on the same path can't
+            // both observe the same `next_index` and clobber each other.
+            // LMDB serializes write transactions, so `order.last()` here
+            // sees every committed insert.
+            let next_index = match self
+                .order
+                .last(&wtxn)
+                .map_err(|e| PqError::Store(e.to_string()))?
+            {
+                Some((max_idx, _)) => max_idx
+                    .checked_add(1)
+                    .ok_or_else(|| PqError::Store("order index overflowed u32::MAX".into()))?,
+                None => 0,
+            };
             self.order
-                .put(&mut wtxn, &idx, id)
+                .put(&mut wtxn, &next_index, id)
                 .map_err(|e| PqError::Store(e.to_string()))?;
-            self.next_index = idx
-                .checked_add(1)
-                .ok_or_else(|| PqError::Store("order index overflowed u32::MAX".into()))?;
         }
         wtxn.commit().map_err(|e| PqError::Store(e.to_string()))?;
         Ok(())

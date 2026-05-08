@@ -421,20 +421,27 @@ fn pca_warm_start(
     let pca = PcaProjection::fit(embeddings, RadialStrategy::Fixed(1.0))?;
     let mut out: Vec<[f64; 3]> = Vec::with_capacity(embeddings.len());
     for (i, e) in embeddings.iter().enumerate() {
-        let sp = pca.project(e);
-        let cart = spherical_to_cartesian(&sp);
-        let mut v = [cart.x, cart.y, cart.z];
-        let mag = normalize_vec(&mut v);
-        if mag < f64::EPSILON {
-            // Degenerate PCA position (input near corpus mean).
-            // Fall back to using the first three normalized coords as a
-            // direction — anything stable and deterministic.
-            let row = &normalized[i];
-            v = [row[0], row[1], row[2]];
-            normalize_vec(&mut v);
-            if v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0 {
-                v = [1.0, 0.0, 0.0];
-            }
+        // `project_rich` exposes `projection_magnitude` — the raw 3D
+        // magnitude before the radial-strategy override. With
+        // `Fixed(1.0)` the SphericalPoint always has r=1, so checking
+        // the *spherical* point's cartesian magnitude is meaningless
+        // (it's always 1). The pre-radial magnitude is the real signal
+        // for "input near corpus mean → degenerate placement."
+        let pp = pca.project_rich(e);
+        if pp.projection_magnitude > f64::EPSILON {
+            let cart = spherical_to_cartesian(&pp.position);
+            out.push([cart.x, cart.y, cart.z]);
+            continue;
+        }
+        // Degenerate PCA position (input near corpus mean). Fall back
+        // to the first three normalized coords as a direction —
+        // stable, deterministic, and independent of any noise that
+        // pushed the PCA coordinate to zero.
+        let row = &normalized[i];
+        let mut v = [row[0], row[1], row[2]];
+        normalize_vec(&mut v);
+        if v[0] == 0.0 && v[1] == 0.0 && v[2] == 0.0 {
+            v = [1.0, 0.0, 0.0];
         }
         out.push(v);
     }

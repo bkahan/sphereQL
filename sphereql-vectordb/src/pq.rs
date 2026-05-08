@@ -161,7 +161,14 @@ impl PqCodebook {
     /// Encode an embedding to `m` codes (one per subspace). The code is
     /// the index of the nearest centroid in that subspace.
     pub fn encode(&self, embedding: &[f32]) -> Vec<u8> {
-        debug_assert_eq!(embedding.len(), self.m * self.sub_dim);
+        let expected = self.m * self.sub_dim;
+        assert_eq!(
+            embedding.len(),
+            expected,
+            "Pq::encode: embedding length {} does not match codebook dimensionality {}",
+            embedding.len(),
+            expected
+        );
         let mut out = vec![0u8; self.m];
         for m_idx in 0..self.m {
             let sub = &embedding[m_idx * self.sub_dim..(m_idx + 1) * self.sub_dim];
@@ -184,7 +191,14 @@ impl PqCodebook {
     /// Build the asymmetric query → centroids LUT: `lut[m][k]` is the
     /// squared distance from the query's subspace-m to centroid k.
     pub fn asymmetric_lut(&self, query: &[f32]) -> Vec<Vec<f32>> {
-        debug_assert_eq!(query.len(), self.m * self.sub_dim);
+        let expected = self.m * self.sub_dim;
+        assert_eq!(
+            query.len(),
+            expected,
+            "Pq::asymmetric_lut: query length {} does not match codebook dimensionality {}",
+            query.len(),
+            expected
+        );
         let mut lut = Vec::with_capacity(self.m);
         for m_idx in 0..self.m {
             let q = &query[m_idx * self.sub_dim..(m_idx + 1) * self.sub_dim];
@@ -325,7 +339,14 @@ impl PqIndex {
         let m = self.codebook.m;
         let mut heap: Vec<(String, f32)> = Vec::with_capacity(k + 1);
         self.store.for_each(&mut |id, codes| {
-            debug_assert_eq!(codes.len(), m);
+            // Defense against corrupted store entries: skip items whose
+            // code length doesn't match the codebook. The store should
+            // never contain these (insert validates), but a stale on-disk
+            // sidecar from an older codebook would otherwise panic here.
+            if codes.len() != m {
+                debug_assert_eq!(codes.len(), m, "store returned malformed code");
+                return;
+            }
             let mut d = 0f32;
             for mi in 0..m {
                 d += lut[mi][codes[mi] as usize];
@@ -360,7 +381,10 @@ impl PqIndex {
             let Some(codes) = self.store.get(id) else {
                 continue;
             };
-            debug_assert_eq!(codes.len(), m);
+            if codes.len() != m {
+                debug_assert_eq!(codes.len(), m, "store returned malformed code");
+                continue;
+            }
             let mut d = 0f32;
             for mi in 0..m {
                 d += lut[mi][codes[mi] as usize];

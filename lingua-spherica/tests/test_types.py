@@ -45,6 +45,8 @@ class TestSphericalPoint:
             SphericalPoint(r=float("nan"), theta=0.0, phi=0.0)
         with pytest.raises(ValueError, match="theta must be finite"):
             SphericalPoint(r=1.0, theta=float("inf"), phi=0.0)
+        with pytest.raises(ValueError, match="phi must be finite"):
+            SphericalPoint(r=1.0, theta=0.0, phi=float("nan"))
 
     def test_cartesian_roundtrip_preserves_direction(self):
         original = SphericalPoint(r=1.7, theta=1.3, phi=0.7)

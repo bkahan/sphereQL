@@ -415,3 +415,21 @@ reason = "core free function; called via pairwise_similarities on the pipeline b
 [[exempt]]
 name = "upper_triangle_index"
 reason = "index helper for pairwise_cosine_similarities; Rust-only utility"
+
+# ── Projection-overhaul additions ──
+
+[[exempt]]
+name = "UmapSphereProjection"
+reason = "selected via projection_kind=\"umap_sphere\" string in PipelineConfig; UMAP knobs surfaced through UmapConfig dict"
+
+[[exempt]]
+name = "UmapConfig"
+reason = "passed as dict inside PipelineConfig.umap; not a standalone class"
+
+[[exempt]]
+name = "RadialContext"
+reason = "internal struct passed to RadialStrategy::compute_rich during projection; not user-facing"
+
+[[exempt]]
+name = "UnimplementedLogicalConfidence"
+reason = "placeholder skeleton for the future logical-confidence metric; no scorer to bind yet"
