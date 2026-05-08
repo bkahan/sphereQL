@@ -2824,6 +2824,10 @@ dependencies = [
 [[package]]
 name = "sphereql-corpus"
 version = "0.2.0-alpha"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "sphereql-embed"
