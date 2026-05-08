@@ -34,7 +34,7 @@ use sphereql::embed::{
     category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
 };
 use sphereql_corpus::axes::*;
-use sphereql_corpus::{DIM, build_corpus, embed};
+use sphereql_corpus::{Concept, DIM, build_corpus, build_extended_corpus, embed};
 
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
@@ -42,11 +42,26 @@ fn main() {
     println!("║      Auto-tune → Meta-learn → Embed → Analyze → Query     ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
+    for (label, corpus) in [
+        ("hand_crafted_775", build_corpus()),
+        ("extended_5k", build_extended_corpus()),
+    ] {
+        println!(
+            "\n████████████████████████████████████████████████████████████████"
+        );
+        println!("  Corpus: {label}");
+        println!(
+            "████████████████████████████████████████████████████████████████\n"
+        );
+        run_demo(corpus);
+    }
+}
+
+fn run_demo(corpus: Vec<Concept>) {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // BUILD CORPUS
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    let corpus = build_corpus();
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let embeddings: Vec<Vec<f64>> = corpus
