@@ -2,12 +2,62 @@
 
 Shared test corpora for examples in the [sphereQL](https://github.com/bkahan/sphereQL) project.
 
-`build_corpus()` provides 775 concepts across 31 academic domains (physics, mathematics, biology, medicine, neuroscience, computer science, data science, chemistry, engineering, architecture, astronomy, earth science, environmental science, psychology, philosophy, religion, linguistics, literature, history, sociology, anthropology, political science, law, economics, education, visual arts, music, film studies, performing arts, culinary arts, nanotechnology) with hand-crafted 128-dimensional sparse embeddings. Every semantic axis receives mass and bridge concepts deliberately straddle category boundaries.
+## Corpora
 
-`build_stress_corpus()` provides a second 300-concept synthetic corpus: 10 categories, 30 concepts each, exactly 2 authored signal axes per concept, `0.2` noise amplitude (5× the built-in default of `0.04`). A controlled A/B probe for projection families — variance-maximizing projections (PCA) degrade in this regime while connectivity-preserving ones (Laplacian eigenmap) recover the authored signature.
+### Hand-crafted (775 concepts)
 
-Both corpora use the same embedding format. Use `embed(features, seed)` for the default noise amplitude or `embed_with_noise(features, seed, amplitude)` for explicit control; `DEFAULT_NOISE_AMPLITUDE` and `STRESS_NOISE_AMPLITUDE` are exposed as constants.
+`build_corpus()` provides 775 concepts across 31 academic domains with
+hand-crafted 128-dimensional sparse embeddings. Every semantic axis receives
+mass and bridge concepts deliberately straddle category boundaries.
 
-This is a dev/examples support crate — it is not part of the core sphereQL library and sphereQL users do not need to depend on it. It exists so examples like `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, `meta_learn`, and `meta_warm_start` can share meaningful corpora without inlining thousands of lines of concept data.
+### Extended (~5,000+ concepts)
 
-See the [main repository](https://github.com/bkahan/sphereQL) for full documentation, examples, and architecture overview.
+`build_extended_corpus()` provides ~5,000+ concepts across the same 31
+domains, sourced from:
+
+- **OpenAlex Topics** — academic research topics with keyword-derived
+  axis mappings. [OpenAlex](https://openalex.org) data is CC0 licensed.
+- **OpenAlex Subfields** promoted to standalone concepts.
+- **Gap-fill concepts** for categories underrepresented in OpenAlex
+  (culinary arts, architecture, performing arts, film studies, visual arts,
+  music, religion, law, linguistics, literature, astronomy, data science).
+
+`build_full_corpus()` returns the union of both (~5,775+ concepts).
+
+### Stress (300 concepts)
+
+`build_stress_corpus()` provides a 300-concept synthetic corpus: 10
+categories, 30 concepts each, exactly 2 authored signal axes per concept,
+`0.2` noise amplitude (5× the built-in default of `0.04`). A controlled
+A/B probe for projection families.
+
+## Embedding format
+
+All corpora use the same embedding format. Use `embed(features, seed)` for
+the default noise amplitude or `embed_with_noise(features, seed, amplitude)`
+for explicit control; `DEFAULT_NOISE_AMPLITUDE` and `STRESS_NOISE_AMPLITUDE`
+are exposed as constants.
+
+## Regenerating the extended corpus
+
+The extended corpus data file (`data/extended_corpus.json`) is checked into
+the repository. To regenerate from the OpenAlex API:
+
+```bash
+cd sphereql-corpus/tools
+pip install -r requirements.txt
+OPENALEX_API_KEY=your_email_or_api_key python3 generate_extended.py
+python3 validate_corpus.py  # verify invariants
+```
+
+The `OPENALEX_API_KEY` may be either a Premium API key or your contact email
+address (auto-detected) for the free polite pool. See
+<https://openalex.org/settings/api>.
+
+## Note
+
+This is a dev/examples support crate — it is not part of the core sphereQL
+library and sphereQL users do not need to depend on it.
+
+See the [main repository](https://github.com/bkahan/sphereQL) for full
+documentation, examples, and architecture overview.
