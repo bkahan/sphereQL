@@ -8,7 +8,7 @@ use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
 use crate::config::{PipelineConfig, ProjectionKind};
 use crate::configured_projection::ConfiguredProjection;
 use crate::corpus_features::CorpusFeatures;
-use crate::domain_groups::{DomainGroup, detect_domain_groups};
+use crate::domain_groups::DomainGroup;
 use crate::kernel_pca::KernelPcaProjection;
 use crate::laplacian::LaplacianEigenmapProjection;
 use crate::meta_model::MetaModel;
@@ -239,10 +239,6 @@ pub struct SphereQLPipeline {
     quality_config: QualityConfig,
     /// Projection quality warnings (empty if EVR is above threshold).
     projection_warnings: Vec<ProjectionWarning>,
-    /// Hierarchical domain groups detected from Voronoi adjacency + cap overlap.
-    /// Used by [`SphereQLPipeline::route_to_group`] and
-    /// [`SphereQLPipeline::hierarchical_nearest`] for coarse routing when EVR is low.
-    domain_groups: Vec<DomainGroup>,
     /// Full tunable configuration used at build time.
     config: PipelineConfig,
 }
@@ -431,8 +427,6 @@ impl SphereQLPipeline {
             .into_iter()
             .collect();
 
-        let domain_groups = detect_domain_groups(&category_layer, config.routing.num_domain_groups);
-
         Ok(Self {
             projection,
             index,
@@ -442,7 +436,6 @@ impl SphereQLPipeline {
             category_layer,
             quality_config,
             projection_warnings,
-            domain_groups,
             config,
         })
     }
@@ -788,18 +781,21 @@ impl SphereQLPipeline {
     // ── Phase 5: hierarchical domain groups ────────────────────────────
 
     /// Coarse-grained domain groups detected from Voronoi adjacency + cap overlap.
+    /// Single source of truth: the same vector used by `default_nearest`'s
+    /// inner-sphere routing and `hierarchical_nearest`'s drill-down.
     pub fn domain_groups(&self) -> &[DomainGroup] {
-        &self.domain_groups
+        &self.category_layer.domain_groups
     }
 
     /// Coarse routing: find the domain group whose centroid is angularly
     /// nearest to the query's projected position.
     pub fn route_to_group(&self, embedding: &Embedding) -> Option<&DomainGroup> {
-        if self.domain_groups.is_empty() {
+        let groups = &self.category_layer.domain_groups;
+        if groups.is_empty() {
             return None;
         }
         let pos = self.projection.project(embedding);
-        self.domain_groups.iter().min_by(|a, b| {
+        groups.iter().min_by(|a, b| {
             let da = angular_distance(&pos, &a.centroid);
             let db = angular_distance(&pos, &b.centroid);
             da.total_cmp(&db)

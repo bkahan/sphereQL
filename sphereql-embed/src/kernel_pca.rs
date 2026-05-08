@@ -179,9 +179,11 @@ impl KernelPcaProjection {
         // see the doc comment so they can switch to PCA or downsample.
         let n = embeddings.len();
         if n >= KPCA_FIT_WARN_THRESHOLD {
-            eprintln!(
-                "sphereql-embed: KernelPcaProjection::fit on n={n} (dim={dim}) — \
-                 O(n²·d) cost, expect minutes-to-hours. Consider PCA or downsampling."
+            tracing::warn!(
+                n,
+                dim,
+                "KernelPcaProjection::fit: O(n²·d) cost, expect minutes-to-hours. \
+                 Consider PCA or downsampling."
             );
         }
         for (i, e) in embeddings.iter().enumerate() {

@@ -13,7 +13,7 @@ from lingua_spherica.types import (
 )
 
 
-def _sp(r=1.0, theta=0.0, phi=math.pi / 2):
+def _sp(r: float = 1.0, theta: float = 0.0, phi: float = math.pi / 2) -> SphericalPoint:
     return SphericalPoint(r=r, theta=theta, phi=phi)
 
 
@@ -35,15 +35,15 @@ class TestSphericalPoint:
         assert SphericalPoint(r=1.0, theta=0.0, phi=4.0).phi == math.pi
 
     def test_nonpositive_radius_rejected(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="r must be positive"):
             SphericalPoint(r=0.0, theta=0.0, phi=0.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="r must be positive"):
             SphericalPoint(r=-1.0, theta=0.0, phi=0.0)
 
     def test_nonfinite_inputs_rejected(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="r must be finite"):
             SphericalPoint(r=float("nan"), theta=0.0, phi=0.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="theta must be finite"):
             SphericalPoint(r=1.0, theta=float("inf"), phi=0.0)
 
     def test_cartesian_roundtrip_preserves_direction(self):
@@ -134,7 +134,7 @@ class TestConceptGraph:
 
     def test_centroid_weights_by_radius(self):
         # Two equator points at θ=0 and θ=π/2. With equal weights the
-        # centroid lies at θ=π/4. Weighting the second 9× heavier should
+        # centroid lies at theta=pi/4. Weighting the second 9x heavier should
         # pull the centroid toward π/2.
         a = _sp(r=1.0, theta=0.0, phi=math.pi / 2)
         b = _sp(r=9.0, theta=math.pi / 2, phi=math.pi / 2)
@@ -167,13 +167,13 @@ class TestConceptGraph:
 
 class TestDomainAnchor:
     def test_zero_or_negative_width_rejected(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"angular_width must be > 0"):
             DomainAnchor(name="x", theta=0.0, angular_width=0.0)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"angular_width must be > 0"):
             DomainAnchor(name="x", theta=0.0, angular_width=-0.1)
 
     def test_full_circle_width_rejected(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"angular_width must be <"):
             DomainAnchor(name="x", theta=0.0, angular_width=2 * math.pi)
 
     def test_theta_range_normalized(self):

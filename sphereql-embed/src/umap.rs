@@ -163,25 +163,26 @@ impl UmapSphereProjection {
             let lr = config.learning_rate * (1.0 - (epoch as f64 / config.n_epochs as f64));
             let mut grads = vec![[0.0f64; 3]; n];
 
-            // Attractive term over kNN edges.
+            // Attractive + repulsive in one pass: each kNN edge
+            // contributes its own attractive force AND draws
+            // `negative_sample_rate` repulsive samples for the source
+            // endpoint (UMAP's standard per-edge negative sampling, not
+            // per-point).
             for (i, neighbors) in knn.iter().enumerate() {
                 for &j in neighbors {
                     let (gi, gj) = attractive_grad(&points[i], &points[j]);
                     add3(&mut grads[i], &gi);
                     add3(&mut grads[j], &gj);
-                }
-            }
 
-            // Repulsive term: random negatives per attractive edge.
-            for i in 0..n {
-                for _ in 0..config.negative_sample_rate {
-                    let j = (rng.next_u64() as usize) % n;
-                    if j == i {
-                        continue;
+                    for _ in 0..config.negative_sample_rate {
+                        let nj = (rng.next_u64() as usize) % n;
+                        if nj == i {
+                            continue;
+                        }
+                        let (gi_r, gj_r) = repulsive_grad(&points[i], &points[nj]);
+                        add3(&mut grads[i], &gi_r);
+                        add3(&mut grads[nj], &gj_r);
                     }
-                    let (gi, gj) = repulsive_grad(&points[i], &points[j]);
-                    add3(&mut grads[i], &gi);
-                    add3(&mut grads[j], &gj);
                 }
             }
 

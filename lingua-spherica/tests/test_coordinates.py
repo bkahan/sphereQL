@@ -17,7 +17,7 @@ from lingua_spherica.coordinates import (
 from lingua_spherica.types import SphericalPoint
 
 
-def _sp(r=1.0, theta=0.0, phi=math.pi / 2):
+def _sp(r: float = 1.0, theta: float = 0.0, phi: float = math.pi / 2) -> SphericalPoint:
     return SphericalPoint(r=r, theta=theta, phi=phi)
 
 
@@ -61,7 +61,7 @@ class TestCircularWeightedMean:
         assert circular_weighted_mean([], []) == 0.0
 
     def test_length_mismatch_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="same length"):
             circular_weighted_mean([0.1, 0.2], [1.0])
 
     def test_handles_seam_wraparound(self):
@@ -95,7 +95,7 @@ class TestCircularVariance:
         assert v == pytest.approx(1.0, abs=1e-12)
 
     def test_length_mismatch_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="same length"):
             circular_variance([0.0, 1.0], [1.0])
 
 
@@ -132,15 +132,16 @@ class TestSlerp:
         north = SphericalPoint(r=1.0, theta=0.0, phi=0.0)
         south = SphericalPoint(r=1.0, theta=0.0, phi=math.pi)
         m = slerp(north, south, 0.5)
-        # Must be finite and lie on the unit sphere.
         x, y, z = m.to_cartesian()
-        assert math.isfinite(x) and math.isfinite(y) and math.isfinite(z)
+        assert math.isfinite(x)
+        assert math.isfinite(y)
+        assert math.isfinite(z)
         assert math.sqrt(x * x + y * y + z * z) == pytest.approx(1.0, abs=1e-9)
 
 
 class TestGeodesicPath:
     def test_minimum_two_points(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"n_points.*>=\s*2"):
             geodesic_path(_sp(), _sp(theta=1.0), n_points=1)
 
     def test_endpoints_match(self):
@@ -178,7 +179,7 @@ class TestSphericalCentroid:
         assert c1.phi == pytest.approx(c2.phi, abs=1e-9)
 
     def test_length_mismatch_raises(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="same length"):
             spherical_centroid([_sp()], weights=[1.0, 1.0])
 
 

@@ -35,7 +35,7 @@ reqwest = { version = "0.12", features = ["json"], optional = true }
 # set_payload. Pulling in just the `futures-util` fragments we need
 # (StreamExt's `buffer_unordered`) keeps the default build lean.
 futures = { version = "0.3", optional = true, default-features = false, features = ["std", "async-await"] }
-heed = { version = "0.20", optional = true }
+heed = { version = "0.22", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

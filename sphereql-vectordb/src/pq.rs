@@ -75,6 +75,10 @@ pub enum PqError {
     EmptyCorpus,
     #[error("embedding dim {dim} not divisible by m={m}")]
     NonDivisibleDim { dim: usize, m: usize },
+    #[error("PqConfig.m must be > 0")]
+    InvalidM,
+    #[error("vector dim {got} != codebook dim {expected}")]
+    DimensionMismatch { expected: usize, got: usize },
     #[error("embedding {index} has dim {got}, expected {expected}")]
     InconsistentDim {
         index: usize,
@@ -110,6 +114,9 @@ impl PqCodebook {
     pub fn train(corpus: &[Vec<f32>], config: &PqConfig) -> Result<Self, PqError> {
         if config.bits_per_code > 8 {
             return Err(PqError::BitsTooLarge(config.bits_per_code));
+        }
+        if config.m == 0 {
+            return Err(PqError::InvalidM);
         }
         if corpus.is_empty() {
             return Err(PqError::EmptyCorpus);
@@ -295,14 +302,23 @@ impl PqIndex {
 
     /// Insert (or overwrite) one item.
     pub fn insert(&mut self, id: &str, embedding: &[f32]) -> Result<(), PqError> {
+        let expected = self.codebook.m * self.codebook.sub_dim;
+        if embedding.len() != expected {
+            return Err(PqError::DimensionMismatch {
+                expected,
+                got: embedding.len(),
+            });
+        }
         let codes = self.codebook.encode(embedding);
         self.store.insert(id, &codes)
     }
 
     /// Brute-force PQ search over every coded item. `O(N · M)` per query
     /// with the per-query LUT amortizing the expensive distance work.
+    /// Returns an empty `Vec` if `query.len()` does not match the
+    /// codebook dimensionality.
     pub fn search(&self, query: &[f32], k: usize) -> Vec<(String, f32)> {
-        if k == 0 {
+        if k == 0 || query.len() != self.codebook.m * self.codebook.sub_dim {
             return Vec::new();
         }
         let lut = self.codebook.asymmetric_lut(query);
@@ -331,7 +347,12 @@ impl PqIndex {
     /// Returns a slice of size `min(k, candidates.len())` ranked
     /// ascending by asymmetric distance. Items missing from the store
     /// are dropped silently — they're either un-indexed or stale.
+    /// Returns an empty `Vec` if `query.len()` does not match the
+    /// codebook dimensionality.
     pub fn rerank(&self, query: &[f32], candidates: &[String], k: usize) -> Vec<(String, f32)> {
+        if query.len() != self.codebook.m * self.codebook.sub_dim {
+            return Vec::new();
+        }
         let lut = self.codebook.asymmetric_lut(query);
         let m = self.codebook.m;
         let mut scored: Vec<(String, f32)> = Vec::with_capacity(candidates.len());

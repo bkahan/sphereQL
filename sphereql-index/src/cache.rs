@@ -111,10 +111,15 @@ impl CacheKey {
                     Self::hash_region(r, hasher);
                 }
             }
-            // `Region` is `#[non_exhaustive]`; future variants hash on
-            // their discriminant alone (already hashed above) until this
-            // arm is updated to include their fields.
-            _ => {}
+            // `Region` is `#[non_exhaustive]`. Loud-fail in debug/test
+            // builds so a new variant doesn't silently collapse into a
+            // discriminant-only hash and produce false cache hits.
+            _ => {
+                debug_assert!(
+                    false,
+                    "CacheKey::Region: unhandled Region variant — update hash_region"
+                );
+            }
         }
     }
 }

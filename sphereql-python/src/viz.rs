@@ -58,8 +58,18 @@ fn build_data_json(
         evr: explained_variance,
         points,
     };
-    // Infallible: every field is a finite f64 or a borrowed &str.
-    serde_json::to_string(&data).unwrap_or_else(|_| "{}".into())
+    // Infallible in practice: every field is a finite f64 or a borrowed
+    // &str. On the unreachable error path, fall back to a shape-valid
+    // VizData so the JS template still has defined `evr` and `points`.
+    let serialized = serde_json::to_string(&data).unwrap_or_else(|err| {
+        // Unreachable in practice (every field is finite f64 or &str),
+        // but guard the JS template against a malformed payload.
+        eprintln!("viz: VizData serialization failed: {err}");
+        r#"{"evr":0.0,"points":[]}"#.to_string()
+    });
+    // The payload is interpolated into a <script> block. Escape "</" so a
+    // crafted category/label can't terminate the script tag (XSS).
+    serialized.replace("</", "<\\/")
 }
 
 fn render_html(data_json: &str, title: &str) -> String {

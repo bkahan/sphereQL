@@ -57,7 +57,9 @@ impl LmdbPqStore {
             .last(&rtxn)
             .map_err(|e| PqError::Store(e.to_string()))?
         {
-            next_index = max_idx.saturating_add(1);
+            next_index = max_idx
+                .checked_add(1)
+                .ok_or_else(|| PqError::Store("order index overflowed u32::MAX".into()))?;
         }
         drop(rtxn);
 
@@ -89,7 +91,9 @@ impl PqStore for LmdbPqStore {
             self.order
                 .put(&mut wtxn, &idx, id)
                 .map_err(|e| PqError::Store(e.to_string()))?;
-            self.next_index = idx.saturating_add(1);
+            self.next_index = idx
+                .checked_add(1)
+                .ok_or_else(|| PqError::Store("order index overflowed u32::MAX".into()))?;
         }
         wtxn.commit().map_err(|e| PqError::Store(e.to_string()))?;
         Ok(())
