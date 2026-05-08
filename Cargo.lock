@@ -2835,6 +2835,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sphereql-core",
+ "sphereql-corpus",
  "sphereql-index",
  "sphereql-layout",
  "tempfile",

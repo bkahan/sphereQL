@@ -21,3 +21,4 @@ tracing = "0.1"
 
 [dev-dependencies]
 approx = "0.5"
+sphereql-corpus = { path = "../sphereql-corpus" }
