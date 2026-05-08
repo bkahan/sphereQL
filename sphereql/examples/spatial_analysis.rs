@@ -30,7 +30,7 @@ use sphereql::embed::{
     SphereQLOutput, SphereQLPipeline, SphereQLQuery, category_geodesic_sweep,
     category_path_deviation, gap_confidence, run_full_analysis,
 };
-use sphereql_corpus::{build_corpus, embed};
+use sphereql_corpus::{Concept, build_corpus, build_extended_corpus, embed};
 
 fn main() {
     println!("================================================================");
@@ -38,8 +38,23 @@ fn main() {
     println!("  Every geometric primitive — raw and navigator-wrapped");
     println!("================================================================\n");
 
+    for (label, corpus) in [
+        ("hand_crafted_775", build_corpus()),
+        ("extended_5k", build_extended_corpus()),
+    ] {
+        println!(
+            "\n████████████████████████████████████████████████████████████████"
+        );
+        println!("  Corpus: {label}");
+        println!(
+            "████████████████████████████████████████████████████████████████\n"
+        );
+        run_demo(corpus);
+    }
+}
+
+fn run_demo(corpus: Vec<Concept>) {
     // ── Build corpus and pipeline ────────────────────────────────────────
-    let corpus = build_corpus();
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let embeddings: Vec<Vec<f64>> = corpus
