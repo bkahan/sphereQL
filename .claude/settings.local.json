@@ -13,7 +13,9 @@
       "Bash(coderabbit auth *)",
       "Bash(coderabbit review *)",
       "Read(./.cr_review/**)",
-      "Bash(gh pr *)"
+      "Bash(gh pr *)",
+      "Bash(maturin develop *)",
+      "Bash(python3.11 -m pytest tests/)"
     ]
   }
 }
