@@ -1,8 +1,9 @@
 #![allow(clippy::uninlined_format_args)]
 //! End-to-end validation of the L2 metalearning layer.
 //!
-//! Tunes on both the 775-concept built-in corpus (favors PCA) and the
-//! 300-concept stress corpus (favors Laplacian), accumulates both
+//! Tunes on three regimes — the 775-concept built-in corpus (favors PCA),
+//! the ~5,000-concept extended corpus (a larger, denser regime), and the
+//! 300-concept stress corpus (favors Laplacian) — accumulates the three
 //! winning configs into a MetaTrainingRecord store, fits two meta-models
 //! (NearestNeighbor + DistanceWeighted) on those records, and verifies
 //! that querying the store with a "built-in-like" feature profile
@@ -28,7 +29,8 @@ use sphereql::embed::{
     SearchSpace, SearchStrategy, auto_tune,
 };
 use sphereql_corpus::{
-    Concept, STRESS_NOISE_AMPLITUDE, build_corpus, build_stress_corpus, embed, embed_with_noise,
+    Concept, STRESS_NOISE_AMPLITUDE, build_corpus, build_extended_corpus, build_stress_corpus,
+    embed, embed_with_noise,
 };
 
 const BUDGET: usize = 12;
@@ -42,35 +44,40 @@ fn main() {
     let metric = CompositeMetric::default_composite();
     let space = SearchSpace::default();
 
-    // ── 1. Tune on BOTH corpora, emit one training record each ─────────
+    // ── 1. Tune on ALL THREE corpora, emit one training record each ────
     let (built_in_record, built_in_features) =
         tune_and_record("built_in_775", build_corpus(), false, &space, &metric);
+    let (extended_record, _extended_features) =
+        tune_and_record("extended_5k", build_extended_corpus(), false, &space, &metric);
     let (stress_record, stress_features) =
         tune_and_record("stress_300", build_stress_corpus(), true, &space, &metric);
 
-    println!("\nTraining store: 2 records");
-    println!(
-        "  {:<16}  projection={:<20}  score={:.4}",
-        built_in_record.corpus_id,
-        built_in_record.best_config.projection_kind.name(),
-        built_in_record.best_score,
-    );
-    println!(
-        "  {:<16}  projection={:<20}  score={:.4}",
-        stress_record.corpus_id,
-        stress_record.best_config.projection_kind.name(),
-        stress_record.best_score,
-    );
+    println!("\nTraining store: 3 records");
+    for r in [&built_in_record, &extended_record, &stress_record] {
+        println!(
+            "  {:<16}  projection={:<20}  score={:.4}",
+            r.corpus_id,
+            r.best_config.projection_kind.name(),
+            r.best_score,
+        );
+    }
 
     // ── 2. Save to scratch, reload ────────────────────────────────────
     let store = std::env::current_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("target")
         .join("meta_records.json");
-    MetaTrainingRecord::save_list(&[built_in_record.clone(), stress_record.clone()], &store)
-        .expect("save failed");
+    MetaTrainingRecord::save_list(
+        &[
+            built_in_record.clone(),
+            extended_record.clone(),
+            stress_record.clone(),
+        ],
+        &store,
+    )
+    .expect("save failed");
     let loaded = MetaTrainingRecord::load_list(&store).expect("load failed");
-    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded.len(), 3);
     println!("\nStore round-tripped to {}", store.display());
 
     // ── 3. Fit both meta-models ───────────────────────────────────────
