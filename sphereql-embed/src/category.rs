@@ -600,11 +600,29 @@ impl CategoryLayer {
             all_strengths[all_strengths.len() / 2]
         };
 
-        let overlap_threshold = config.bridges.overlap_artifact_territorial;
+        // Dense corpora drive all exclusivities toward zero, so a fixed
+        // absolute threshold classifies every bridge as OverlapArtifact.
+        // Treat the config value as a percentile of the observed territorial
+        // factor distribution so the cutoff scales with corpus density.
+        let effective_overlap_threshold = {
+            let mut tfs: Vec<f64> = bridges
+                .keys()
+                .map(|&(ci, cj)| spatial.territorial_factor(ci, cj))
+                .collect();
+            if tfs.is_empty() {
+                config.bridges.overlap_artifact_territorial
+            } else {
+                tfs.sort_by(|a, b| a.total_cmp(b));
+                let idx = ((tfs.len() as f64 * config.bridges.overlap_artifact_territorial)
+                    as usize)
+                    .min(tfs.len() - 1);
+                tfs[idx]
+            }
+        };
         for list in bridges.values_mut() {
             for b in list.iter_mut() {
                 let tf = spatial.territorial_factor(b.source_category, b.target_category);
-                b.classification = if tf < overlap_threshold {
+                b.classification = if tf < effective_overlap_threshold {
                     BridgeClassification::OverlapArtifact
                 } else if b.bridge_strength >= median_strength {
                     BridgeClassification::Genuine

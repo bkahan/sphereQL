@@ -130,8 +130,12 @@ pub struct BridgeConfig {
     pub threshold_base: f64,
     /// EVR-penalty coefficient in the bridge threshold formula.
     pub threshold_evr_penalty: f64,
-    /// Territorial factor below which a bridge is classified as an
-    /// `OverlapArtifact` rather than `Genuine` or `Weak`.
+    /// Percentile of the observed territorial factor distribution below
+    /// which a bridge is classified as `OverlapArtifact` rather than
+    /// `Genuine` or `Weak`.  0.3 = the bottom 30 % of bridge pairs by
+    /// territorial separation are labeled artifacts.  Expressed as a
+    /// percentile so that dense corpora (where all exclusivities collapse
+    /// toward zero) do not classify every bridge as an artifact.
     pub overlap_artifact_territorial: f64,
 }
 

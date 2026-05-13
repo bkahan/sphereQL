@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use sphereql_core::spatial::*;
 use sphereql_core::{SphericalPoint, angular_distance};
 
-use crate::category::CategoryLayer;
+use crate::category::{BridgeItem, CategoryLayer};
 
 // ── §1: Antipodal Analysis ───────────────────────────────────────────
 
@@ -490,7 +490,7 @@ pub struct LuneReport {
     pub bisector_voronoi_divergence: f64,
 }
 
-pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) -> Vec<LuneReport> {
+pub fn lune_analysis(layer: &CategoryLayer, _all_positions: &[SphericalPoint]) -> Vec<LuneReport> {
     let n = layer.summaries.len();
     let mut reports = Vec::new();
 
@@ -499,13 +499,10 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let bridges_ij = layer.graph.bridges.get(&(i, j));
             let bridges_ji = layer.graph.bridges.get(&(j, i));
 
-            let all_bridge_indices: Vec<usize> = bridges_ij
-                .into_iter()
-                .chain(bridges_ji)
-                .flat_map(|list| list.iter().map(|b| b.item_index))
-                .collect();
+            let ij_items: &[BridgeItem] = bridges_ij.map(|v| v.as_slice()).unwrap_or(&[]);
+            let ji_items: &[BridgeItem] = bridges_ji.map(|v| v.as_slice()).unwrap_or(&[]);
 
-            if all_bridge_indices.is_empty() {
+            if ij_items.is_empty() && ji_items.is_empty() {
                 continue;
             }
 
@@ -513,11 +510,20 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let cb = &layer.summaries[j].centroid_position;
 
             let (mut a_count, mut b_count, mut on_count) = (0usize, 0usize, 0usize);
-            for &idx in &all_bridge_indices {
-                match lune_classify(ca, cb, &all_positions[idx]) {
-                    LuneSide::CloserToA => a_count += 1,
-                    LuneSide::CloserToB => b_count += 1,
-                    LuneSide::OnBisector => on_count += 1,
+            // (i,j) bridges: source=i=A, target=j=B
+            for b in ij_items {
+                match b.affinity_to_source.partial_cmp(&b.affinity_to_target) {
+                    Some(std::cmp::Ordering::Greater) => a_count += 1,
+                    Some(std::cmp::Ordering::Less) => b_count += 1,
+                    _ => on_count += 1,
+                }
+            }
+            // (j,i) bridges: source=j=B, target=i=A — home wins when source > target
+            for b in ji_items {
+                match b.affinity_to_source.partial_cmp(&b.affinity_to_target) {
+                    Some(std::cmp::Ordering::Greater) => b_count += 1,
+                    Some(std::cmp::Ordering::Less) => a_count += 1,
+                    _ => on_count += 1,
                 }
             }
 
