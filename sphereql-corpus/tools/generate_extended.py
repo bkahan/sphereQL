@@ -218,12 +218,15 @@ def generate_features(topic: dict, category: str) -> list[tuple[int, float]]:
 
     hits: Counter = _scan_keywords(text)
 
-    # Seed the top two category-primary axes with weak hits if absent —
-    # ensures every concept anchors to its category.
+    # Force the top two category-primary axes into the feature set.
+    # Without this, high-frequency cross-cutting keywords (e.g., "analysis",
+    # "system", "data") can push the category anchor out of the top-N
+    # ranking, leaving concepts with zero overlap with their category's
+    # primaries — i.e., misrouted in the spatial sense.
     primaries = CATEGORY_PRIMARY_AXES.get(category, [])
+    PRIMARY_SEED_HITS = 100
     for axis in primaries[:2]:
-        if axis not in hits:
-            hits[axis] = 0.5  # type: ignore[assignment]
+        hits[axis] = max(hits.get(axis, 0), PRIMARY_SEED_HITS)  # type: ignore[assignment]
 
     label_hash = _hash_int(label)
     n_features = 5 + (label_hash % 3)  # 5, 6, or 7
