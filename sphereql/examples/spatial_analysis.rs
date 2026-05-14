@@ -562,23 +562,31 @@ fn run_demo(corpus: Vec<Concept>) {
 
     println!("\n  Per-category curvature signatures:");
     println!(
-        "  {:<20} {:>10} {:>10} {:>10}",
-        "Category", "Mean E", "Min E", "Max E"
+        "  {:<20} {:>10} {:>10} {:>10} {:>8} {:>10}",
+        "Category", "Mean E", "Min E", "Max E", "z", "Rel.Spread"
     );
-    println!("  {}", "─".repeat(53));
+    println!("  {}", "─".repeat(74));
+    // Sort by z-score: when raw mean_excess values cluster near 2π (large
+    // corpora with spread centroids), the z-score is what's discriminative.
     let mut sigs = curv.signatures.clone();
-    sigs.sort_by(|a, b| b.mean_excess.partial_cmp(&a.mean_excess).unwrap());
+    sigs.sort_by(|a, b| b.mean_excess_z.partial_cmp(&a.mean_excess_z).unwrap());
     for sig in sigs.iter().take(15) {
         println!(
-            "  {:<20} {:>10.6} {:>10.6} {:>10.6}",
-            sig.category_name, sig.mean_excess, sig.min_excess, sig.max_excess
+            "  {:<20} {:>10.6} {:>10.6} {:>10.6} {:>+8.3} {:>10.4}",
+            sig.category_name,
+            sig.mean_excess,
+            sig.min_excess,
+            sig.max_excess,
+            sig.mean_excess_z,
+            sig.relative_spread
         );
     }
 
     if let Some(high) = sigs.first() {
         println!(
-            "\n  Highest mean curvature: {} — deeply embedded in S² geometry.",
-            high.category_name
+            "\n  Most positively-curved (z = {:+.2}): {} — sits in larger-area triangles \
+             than the corpus average.",
+            high.mean_excess_z, high.category_name
         );
     }
 
