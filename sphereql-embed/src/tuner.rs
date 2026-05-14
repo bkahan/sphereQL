@@ -275,6 +275,7 @@ impl SearchSpace {
             threshold_base: self.threshold_base[i_tb],
             threshold_evr_penalty: self.threshold_evr_penalty[i_tep],
             overlap_artifact_territorial: self.overlap_artifact_territorial[i_oat],
+            balanced_affinity_min: base.bridges.balanced_affinity_min,
         };
         cfg.inner_sphere = InnerSphereConfig {
             min_evr_improvement: self.min_evr_improvement[i_mei],
@@ -323,6 +324,7 @@ impl SearchSpace {
             threshold_base: pick_uniform(rng, &self.threshold_base),
             threshold_evr_penalty: pick_uniform(rng, &self.threshold_evr_penalty),
             overlap_artifact_territorial: pick_uniform(rng, &self.overlap_artifact_territorial),
+            balanced_affinity_min: base.bridges.balanced_affinity_min,
         };
         cfg.inner_sphere = InnerSphereConfig {
             min_evr_improvement: pick_uniform(rng, &self.min_evr_improvement),
@@ -727,6 +729,7 @@ fn tpe_propose(
         threshold_evr_penalty: space.threshold_evr_penalty[pick_idx(rng, &tep_g, &tep_b)],
         overlap_artifact_territorial: space.overlap_artifact_territorial
             [pick_idx(rng, &oat_g, &oat_b)],
+        balanced_affinity_min: base.bridges.balanced_affinity_min,
     };
     cfg.inner_sphere = InnerSphereConfig {
         min_evr_improvement: space.min_evr_improvement[pick_idx(rng, &mei_g, &mei_b)],

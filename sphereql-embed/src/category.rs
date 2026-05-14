@@ -52,19 +52,23 @@ pub struct CategorySummary {
 
 /// Quality classification for a bridge item.
 ///
-/// Assigned after all bridges are collected, comparing each bridge's
-/// strength against the corpus-wide median and the pair's territorial
-/// separation on S².
+/// Assigned after all bridges are collected. Combines a spatial check
+/// (do the two categories occupy distinct regions on S²?) with a
+/// semantic check (does the bridge concept have real affinity to BOTH
+/// domains, not just one?).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeClassification {
-    /// Strength at or above the median and the source/target caps are
-    /// spatially distinct — a real cross-domain connector.
+    /// `min(affinity_to_source, affinity_to_target)` clears
+    /// [`BridgeConfig::balanced_affinity_min`](crate::config::BridgeConfig)
+    /// and the source/target territories are spatially distinct — the
+    /// concept genuinely spans both domains, not just one.
     Genuine,
     /// The two categories overlap heavily on S² (low territorial factor).
     /// This bridge is more shared-territory noise than a genuine connector.
     OverlapArtifact,
-    /// Strength below median in a territorially clean pair — a real
-    /// connection but not a strong one.
+    /// Spatially clean pair, but the concept's affinity is unbalanced —
+    /// strong on one side and weak on the other. A real connection but
+    /// not a balanced one.
     Weak,
 }
 
@@ -587,18 +591,14 @@ impl CategoryLayer {
             }
         }
 
-        // Classification pass: compare each bridge against the corpus-wide
-        // median strength and the pair's territorial separation on S².
-        let mut all_strengths: Vec<f64> = bridges
-            .values()
-            .flat_map(|list| list.iter().map(|b| b.bridge_strength))
-            .collect();
-        let median_strength = if all_strengths.is_empty() {
-            0.0
-        } else {
-            all_strengths.sort_by(|a, b| a.total_cmp(b));
-            all_strengths[all_strengths.len() / 2]
-        };
+        // Classification pass: a bridge is `Genuine` when it has real
+        // affinity to BOTH source AND target — not just when its strength
+        // happens to rank above some statistical midpoint. The prior
+        // median-split assigned 50% Genuine / 50% Weak by construction,
+        // independent of bridge quality. Replaced with an absolute floor
+        // on min(affinity_to_source, affinity_to_target) — a concept
+        // anchored to one side and barely touching the other is `Weak`.
+        let min_affinity_floor = config.bridges.balanced_affinity_min;
 
         // Dense corpora drive all exclusivities toward zero, so a fixed
         // absolute threshold classifies every bridge as OverlapArtifact.
@@ -622,9 +622,10 @@ impl CategoryLayer {
         for list in bridges.values_mut() {
             for b in list.iter_mut() {
                 let tf = spatial.territorial_factor(b.source_category, b.target_category);
+                let min_aff = b.affinity_to_source.min(b.affinity_to_target);
                 b.classification = if tf < effective_overlap_threshold {
                     BridgeClassification::OverlapArtifact
-                } else if b.bridge_strength >= median_strength {
+                } else if min_aff >= min_affinity_floor {
                     BridgeClassification::Genuine
                 } else {
                     BridgeClassification::Weak
@@ -1586,6 +1587,40 @@ mod tests {
         for list in layer.graph.bridges.values() {
             for b in list {
                 assert!(b.bridge_strength >= 0.0 && b.bridge_strength <= 1.0);
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_classification_uses_min_affinity_not_median() {
+        // Genuine bridges must have min(aff_source, aff_target) ≥
+        // balanced_affinity_min. Weak bridges in clean territory must
+        // have min(aff_source, aff_target) < the threshold. This catches
+        // a regression to the prior median-split logic where Genuine vs
+        // Weak was determined by corpus-wide ranking rather than the
+        // bridge's own balance.
+        let (layer, _, _) = build_test_layer();
+        let floor = PipelineConfig::default().bridges.balanced_affinity_min;
+        for list in layer.graph.bridges.values() {
+            for b in list {
+                let min_aff = b.affinity_to_source.min(b.affinity_to_target);
+                match b.classification {
+                    BridgeClassification::Genuine => {
+                        assert!(
+                            min_aff >= floor,
+                            "Genuine bridge has min_affinity {min_aff:.3} below floor {floor:.3}"
+                        );
+                    }
+                    BridgeClassification::Weak => {
+                        assert!(
+                            min_aff < floor,
+                            "Weak bridge has min_affinity {min_aff:.3} at-or-above floor {floor:.3}"
+                        );
+                    }
+                    BridgeClassification::OverlapArtifact => {
+                        // Spatial check wins independent of affinity balance.
+                    }
+                }
             }
         }
     }

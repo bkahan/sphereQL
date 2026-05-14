@@ -137,6 +137,16 @@ pub struct BridgeConfig {
     /// percentile so that dense corpora (where all exclusivities collapse
     /// toward zero) do not classify every bridge as an artifact.
     pub overlap_artifact_territorial: f64,
+    /// Minimum affinity (cosine similarity to centroid) a bridge must hit
+    /// against BOTH its source AND target categories to qualify as
+    /// `Genuine`. A concept barely above the source/target centroid for
+    /// one side and strongly aligned on the other is `Weak` — it doesn't
+    /// genuinely span both domains.
+    ///
+    /// Replaces the prior corpus-wide median-strength split, which split
+    /// non-overlap bridges 50/50 by definition regardless of how strong
+    /// the corpus's bridges actually were.
+    pub balanced_affinity_min: f64,
 }
 
 impl Default for BridgeConfig {
@@ -145,6 +155,7 @@ impl Default for BridgeConfig {
             threshold_base: 0.5,
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
+            balanced_affinity_min: 0.5,
         }
     }
 }
