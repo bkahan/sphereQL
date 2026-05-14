@@ -420,6 +420,16 @@ pub struct TuneReport {
     pub metric_name: String,
     pub best_score: f64,
     pub best_config: PipelineConfig,
+    /// Actual domain-group count in the winning pipeline.
+    ///
+    /// May be less than `best_config.routing.num_domain_groups` when the
+    /// corpus has fewer distinct category labels than the requested count —
+    /// `detect_domain_groups` silently clamps to `n_categories`. Compare
+    /// this against `best_config.routing.num_domain_groups` to detect the
+    /// mismatch; when they differ, the trial scores for every
+    /// `num_domain_groups > n_categories` value were identical (same
+    /// realized pipeline), so the winning config's label is arbitrary.
+    pub effective_num_domain_groups: usize,
     pub trials: Vec<TrialRecord>,
     /// Trials that failed to build (e.g., too few embeddings, config
     /// combination rejected by a downstream validator). Each entry is
@@ -609,6 +619,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         metric_name: metric.name().to_string(),
         best_score,
         best_config,
+        effective_num_domain_groups: best_pipeline.domain_groups().len(),
         trials,
         failures,
     };

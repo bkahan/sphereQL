@@ -154,6 +154,7 @@ fn mock_report(cfg: PipelineConfig, score: f64, metric_name: &str) -> sphereql::
         metric_name: metric_name.to_string(),
         best_score: score,
         best_config: cfg,
+        effective_num_domain_groups: 0,
         trials: Vec::new(),
         failures: Vec::new(),
     }

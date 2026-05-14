@@ -713,6 +713,7 @@ mod tests {
             metric_name: "connectivity_composite".to_string(),
             best_score: 0.42,
             best_config: cfg.clone(),
+            effective_num_domain_groups: 0,
             trials: Vec::new(),
             failures: Vec::new(),
         };
@@ -741,6 +742,7 @@ mod tests {
             metric_name: "m".to_string(),
             best_score: 0.5,
             best_config: PipelineConfig::default(),
+            effective_num_domain_groups: 0,
             trials: Vec::new(),
             failures: Vec::new(),
         };
