@@ -1731,6 +1731,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         };
 
         let metric = TerritorialHealth;

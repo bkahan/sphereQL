@@ -58,10 +58,12 @@ pub struct CategorySummary {
 /// domains, not just one?).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeClassification {
-    /// `min(affinity_to_source, affinity_to_target)` clears
-    /// [`BridgeConfig::balanced_affinity_min`](crate::config::BridgeConfig)
-    /// and the source/target territories are spatially distinct — the
-    /// concept genuinely spans both domains, not just one.
+    /// `min(affinity_to_source, affinity_to_target)` clears the
+    /// corpus-derived floor at
+    /// [`BridgeConfig::balanced_affinity_quantile`](crate::config::BridgeConfig)
+    /// of the home-affinity distribution, and the source/target
+    /// territories are spatially distinct — the concept genuinely spans
+    /// both domains, not just one.
     Genuine,
     /// The two categories overlap heavily on S² (low territorial factor).
     /// This bridge is more shared-territory noise than a genuine connector.
@@ -595,10 +597,37 @@ impl CategoryLayer {
         // affinity to BOTH source AND target — not just when its strength
         // happens to rank above some statistical midpoint. The prior
         // median-split assigned 50% Genuine / 50% Weak by construction,
-        // independent of bridge quality. Replaced with an absolute floor
-        // on min(affinity_to_source, affinity_to_target) — a concept
-        // anchored to one side and barely touching the other is `Weak`.
-        let min_affinity_floor = config.bridges.balanced_affinity_min;
+        // independent of bridge quality. That was replaced with an
+        // absolute floor; this in turn fails on layouts where home
+        // affinities span a different range than the floor expected
+        // (e.g. post-stratified PCA on imbalanced corpora pushes them
+        // into the 0.3–0.6 band, where a fixed 0.5 cosine filters almost
+        // every cross-domain item out).
+        //
+        // The floor here is derived from the corpus itself: take each
+        // item's affinity to its own category centroid, sort, and pick
+        // the configured quantile. A bridge is `Genuine` when it has
+        // at least that much affinity to both sides — the same standard
+        // the bottom-q% of items achieve toward their own category.
+        let min_affinity_floor = {
+            let mut home_affs: Vec<f64> = Vec::with_capacity(embeddings.len());
+            for summary in summaries.iter() {
+                let centroid = &summary.centroid_embedding;
+                for &mi in &summary.member_indices {
+                    if let Ok(sim) = cosine_similarity(&embeddings[mi].values, centroid) {
+                        home_affs.push(sim);
+                    }
+                }
+            }
+            if home_affs.is_empty() {
+                0.0
+            } else {
+                home_affs.sort_by(f64::total_cmp);
+                let q = config.bridges.balanced_affinity_quantile.clamp(0.0, 1.0);
+                let idx = ((home_affs.len() as f64 * q) as usize).min(home_affs.len() - 1);
+                home_affs[idx]
+            }
+        };
 
         // Dense corpora drive all exclusivities toward zero, so a fixed
         // absolute threshold classifies every bridge as OverlapArtifact.
@@ -1593,14 +1622,28 @@ mod tests {
 
     #[test]
     fn bridge_classification_uses_min_affinity_not_median() {
-        // Genuine bridges must have min(aff_source, aff_target) ≥
-        // balanced_affinity_min. Weak bridges in clean territory must
-        // have min(aff_source, aff_target) < the threshold. This catches
-        // a regression to the prior median-split logic where Genuine vs
-        // Weak was determined by corpus-wide ranking rather than the
-        // bridge's own balance.
-        let (layer, _, _) = build_test_layer();
-        let floor = PipelineConfig::default().bridges.balanced_affinity_min;
+        // Genuine bridges must have min(aff_source, aff_target) at-or-above
+        // the home-affinity quantile floor; Weak bridges in clean territory
+        // must fall below it. The floor here is derived from the test
+        // layer's own home affinities (not a hardcoded cosine) so this
+        // test exercises both the median-split regression guard and the
+        // corpus-derived quantile mechanism.
+        let (layer, embeddings, _) = build_test_layer();
+        let q = PipelineConfig::default().bridges.balanced_affinity_quantile;
+
+        let mut home_affs: Vec<f64> = Vec::new();
+        for summary in layer.summaries.iter() {
+            let centroid = &summary.centroid_embedding;
+            for &mi in &summary.member_indices {
+                if let Ok(sim) = cosine_similarity(&embeddings[mi].values, centroid) {
+                    home_affs.push(sim);
+                }
+            }
+        }
+        home_affs.sort_by(f64::total_cmp);
+        let idx = ((home_affs.len() as f64 * q) as usize).min(home_affs.len() - 1);
+        let floor = home_affs[idx];
+
         for list in layer.graph.bridges.values() {
             for b in list {
                 let min_aff = b.affinity_to_source.min(b.affinity_to_target);
