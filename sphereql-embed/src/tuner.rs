@@ -505,7 +505,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         let key = ProjectionFitKey::from_config(&cfg);
         let projection = match prefit.get(&key) {
             Some(p) => p.clone(),
-            None => match fit_projection_for_config(&embeddings, &cfg) {
+            None => match fit_projection_for_config(&embeddings, &categories, &cfg) {
                 Ok(p) => {
                     prefit.insert(key, p.clone());
                     p
@@ -608,7 +608,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let best_key = ProjectionFitKey::from_config(&best_config);
     let best_projection = match prefit.get(&best_key).cloned() {
         Some(p) => p,
-        None => fit_projection_for_config(&embeddings, &best_config)?,
+        None => fit_projection_for_config(&embeddings, &categories, &best_config)?,
     };
     let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
         categories,

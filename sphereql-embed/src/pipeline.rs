@@ -275,7 +275,7 @@ impl SphereQLPipeline {
             .map(|v| Embedding::new(v.clone()))
             .collect();
 
-        let projection = fit_projection_for_config(&embeddings, &config)?;
+        let projection = fit_projection_for_config(&embeddings, &input.categories, &config)?;
         let mut pipeline = Self::with_configured_projection_and_config(
             input.categories,
             embeddings,
@@ -1115,14 +1115,25 @@ impl SphereQLPipeline {
 /// given corpus. Called by [`SphereQLPipeline::new_with_config`] and the
 /// auto-tuner prefit step. Default radial strategy mirrors
 /// [`SphereQLPipeline::new`]'s legacy behavior (magnitude + volumetric).
+///
+/// `categories` is the per-embedding category label. For
+/// [`ProjectionKind::Pca`] it routes to [`PcaProjection::fit_stratified`]
+/// so that imbalanced corpora (e.g. medicine at 1018 vs music at 54)
+/// don't let the largest category dominate the covariance. Other
+/// projection kinds currently ignore it.
 pub fn fit_projection_for_config(
     embeddings: &[Embedding],
+    categories: &[String],
     config: &PipelineConfig,
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
     match config.projection_kind {
-        ProjectionKind::Pca => Ok(ConfiguredProjection::Pca(
-            PcaProjection::fit(embeddings, RadialStrategy::Magnitude)?.with_volumetric(true),
-        )),
+        ProjectionKind::Pca => {
+            let labels: Vec<&str> = categories.iter().map(String::as_str).collect();
+            Ok(ConfiguredProjection::Pca(
+                PcaProjection::fit_stratified(embeddings, &labels, None, RadialStrategy::Magnitude)?
+                    .with_volumetric(true),
+            ))
+        }
         ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
             embeddings,
             RadialStrategy::Magnitude,
