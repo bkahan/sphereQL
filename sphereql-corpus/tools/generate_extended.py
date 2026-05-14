@@ -29,6 +29,7 @@ import requests
 from gap_fill_data import GAP_FILL_CONCEPTS
 from mappings import (
     CATEGORY_PRIMARY_AXES,
+    CONTENT_OVERRIDES,
     DOMAIN_AXIS_RANGES,
     FIELD_MULTI_MAP,
     FIELD_TO_CATEGORY,
@@ -129,33 +130,53 @@ def _extract_field_id(field_obj: Any) -> int | None:
         return None
 
 
+def _topic_text(topic: dict) -> str:
+    """Lowercase concat of display_name + description + subfield_name."""
+    parts: list[str] = []
+    if dn := topic.get("display_name"):
+        parts.append(str(dn))
+    if desc := topic.get("description"):
+        parts.append(str(desc))
+    sub = topic.get("subfield")
+    if isinstance(sub, dict) and (sdn := sub.get("display_name")):
+        parts.append(str(sdn))
+    return " ".join(parts).lower()
+
+
+def _apply_content_override(category: str, text: str) -> str:
+    """Override the field-resolved category when topic text strongly indicates
+    a different domain. Targets OpenAlex misfilings (e.g., Geochemistry under
+    Computer Science, Superconducting Materials under Medicine)."""
+    for kw, target, exclude in CONTENT_OVERRIDES:
+        if kw in text and category != target:
+            if exclude and exclude in text:
+                continue
+            return target
+    return category
+
+
 def resolve_category(topic: dict) -> str | None:
     """Map an OpenAlex topic/subfield to a SphereQL category, or None to skip."""
     field_id = _extract_field_id(topic.get("field"))
     if field_id is None:
         return None
 
+    text = _topic_text(topic)
+
     if field_id in FIELD_TO_CATEGORY:
-        return FIELD_TO_CATEGORY[field_id]
+        return _apply_content_override(FIELD_TO_CATEGORY[field_id], text)
 
     if field_id in FIELD_MULTI_MAP:
         rules = FIELD_MULTI_MAP[field_id]
-        text_parts: list[str] = []
-        if dn := topic.get("display_name"):
-            text_parts.append(str(dn))
-        if desc := topic.get("description"):
-            text_parts.append(str(desc))
-        sub = topic.get("subfield")
-        if isinstance(sub, dict) and (sdn := sub.get("display_name")):
-            text_parts.append(str(sdn))
-        text = " ".join(text_parts).lower()
-
         for kw, cat in rules.items():
             if kw == "default":
                 continue
             if kw in text:
-                return cat
-        return rules.get("default")
+                return _apply_content_override(cat, text)
+        default_cat = rules.get("default")
+        if default_cat is None:
+            return None
+        return _apply_content_override(default_cat, text)
 
     return None
 

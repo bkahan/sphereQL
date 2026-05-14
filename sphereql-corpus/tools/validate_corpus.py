@@ -46,6 +46,9 @@ WEIGHT_MIN = 0.2
 WEIGHT_MAX = 1.0
 NUM_AXES = 128
 MIN_BRIDGE_RATIO = 0.75
+# Fraction of concepts allowed to have zero overlap with their category's
+# primary axes. Concepts above this threshold are misrouted (Critical #3).
+MAX_MISROUTED_RATIO = 0.05
 
 
 class Report:
@@ -215,6 +218,47 @@ def main(argv: list[str]) -> int:
         f"all {NUM_AXES} axes used at least once",
         f"unused: {missing_axes}" if missing_axes else "",
     )
+
+    # Check 11.5: category-axis alignment (misroute detection)
+    # A concept is "misrouted" if NONE of its feature axes match the primary
+    # axes for its assigned category. This catches OpenAlex topics dumped
+    # into wrong SphereQL categories by FIELD_MULTI_MAP defaults.
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from mappings import CATEGORY_PRIMARY_AXES  # type: ignore
+    except ImportError:
+        CATEGORY_PRIMARY_AXES = {}
+
+    misrouted: list[tuple[str, str, list[int]]] = []
+    for c in concepts:
+        cat = c.get("category", "")
+        primaries = set(CATEGORY_PRIMARY_AXES.get(cat, []))
+        if not primaries:
+            continue
+        feat_axes: set[int] = set()
+        for pair in c.get("features") or []:
+            try:
+                feat_axes.add(int(pair[0]))
+            except (TypeError, ValueError, IndexError):
+                pass
+        if not (feat_axes & primaries):
+            misrouted.append((cat, str(c.get("label", "?")), sorted(feat_axes)))
+
+    misrouted_ratio = len(misrouted) / len(concepts) if concepts else 0.0
+    ok = rep.check(
+        misrouted_ratio <= MAX_MISROUTED_RATIO,
+        f"misrouted concepts ≤ {MAX_MISROUTED_RATIO:.0%}",
+        f"{len(misrouted)}/{len(concepts)} ({misrouted_ratio:.1%}) have zero overlap "
+        f"with their category's primary axes",
+    )
+    if not ok and misrouted:
+        by_cat: Counter = Counter(m[0] for m in misrouted)
+        print(f"    Misroutes by category (top 5):")
+        for c, n in by_cat.most_common(5):
+            print(f"      {c}: {n}")
+        print(f"    Sample (3):")
+        for cat, lbl, axes in misrouted[:3]:
+            print(f"      [{cat}] {lbl[:60]} axes={axes}")
 
     # Check 12: bridge ratio
     bridge_count = 0

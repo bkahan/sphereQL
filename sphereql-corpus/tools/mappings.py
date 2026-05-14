@@ -7,6 +7,8 @@ Three core tables:
 - CATEGORY_PRIMARY_AXES: SphereQL category → list of primary axis indices
 """
 
+from __future__ import annotations
+
 # ═══════════════════════════════════════════════════════════════════════
 #  KEYWORD → AXIS INDEX
 #
@@ -424,14 +426,18 @@ FIELD_MULTI_MAP: dict[int, dict[str, str]] = {
     },
     12: {  # Arts and Humanities
         "default": "philosophy",
+        # Linguistics first — "philosophy of language" descriptions otherwise
+        # steal linguistics-coded concepts to philosophy.
+        "linguistic": "linguistics", "phonet": "linguistics", "phonolog": "linguistics",
+        "morpholog": "linguistics", "semiot": "linguistics", "syntax": "linguistics",
+        "translat": "linguistics", "discourse analys": "linguistics",
         "history": "history", "histor": "history", "archeolog": "history",
         "archiv": "history", "classical": "history", "medieval": "history", "ancient": "history",
-        "philoso": "philosophy", "ethic": "philosophy", "logic": "philosophy",
+        "philoso": "philosophy", "ethic": "philosophy",
         "metaphys": "philosophy", "epistemol": "philosophy",
         "liter": "literature", "poetry": "literature", "fiction": "literature",
         "narrative": "literature", "novel": "literature", "drama": "literature", "writing": "literature",
-        "linguistic": "linguistics", "language": "linguistics", "phonet": "linguistics",
-        "morpholog": "linguistics", "semiot": "linguistics", "syntax": "linguistics", "translat": "linguistics",
+        "language": "linguistics",
         "relig": "religion", "theolog": "religion", "spiritual": "religion",
         "sacred": "religion", "islam": "religion", "christian": "religion",
         "buddhis": "religion", "judais": "religion", "hindu": "religion",
@@ -523,6 +529,45 @@ CATEGORY_PRIMARY_AXES: dict[str, list[int]] = {
     "culinary_arts":        [16, 106, 110, 114, 115, 105, 104],
     "architecture":         [111, 95, 94, 113, 92, 108, 36],
 }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  CONTENT OVERRIDES
+#
+#  Applied AFTER field-based routing. OpenAlex sometimes files topics in
+#  the wrong field for our taxonomy (e.g., "Superconducting Materials"
+#  in Field 27/29/35 defaults to medicine; "Geochemistry and Geologic
+#  Mapping" in Field 17 lands in computer_science). Each rule overrides
+#  the resolved category when the topic text strongly matches a keyword
+#  and does NOT contain an excluded term.
+#
+#  Order matters: first matching rule wins. Use very specific keywords —
+#  these overrides bypass the field signal and can introduce new bugs
+#  if too broad.
+# ═══════════════════════════════════════════════════════════════════════
+
+CONTENT_OVERRIDES: list[tuple[str, str, str | None]] = [
+    # geological concepts misrouted into engineering/CS via fields 17/22
+    ("geolog", "earth_science", None),
+    ("geochem", "earth_science", None),
+    ("petrolog", "earth_science", None),
+    ("stratigraph", "earth_science", None),
+    # superconductivity / nanophysics defaulted to medicine via 27/29/35/36
+    ("supercond", "physics", None),
+    ("photocathod", "physics", None),
+    ("microchannel plate", "physics", None),
+    ("plasma physic", "physics", None),
+    # legal content misrouted via field 27 (Medicine) defaults
+    ("legal cases", "law", None),
+    ("legal commentar", "law", None),
+    ("constitutional law", "law", None),
+    ("contract law", "law", None),
+    # linguistics misrouted into philosophy/sociology; exclude computational
+    # linguistics which legitimately belongs in CS/data_science.
+    ("linguistics and discourse", "linguistics", "computational"),
+    ("phonological", "linguistics", None),
+    ("morphosyntactic", "linguistics", None),
+]
 
 
 # ═══════════════════════════════════════════════════════════════════════
