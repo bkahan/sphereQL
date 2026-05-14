@@ -1161,7 +1161,8 @@ fn run_demo(corpus: Vec<Concept>) {
             }
         }
 
-        // Step 7: Synthesize
+        // Step 7: Synthesize from path data — every claim below traces back
+        // to a value computed above (no hardcoded prose about the domains).
         let closeness = if path.total_distance < 0.5 {
             "surprisingly close"
         } else if path.total_distance < 1.0 {
@@ -1172,29 +1173,118 @@ fn run_demo(corpus: Vec<Concept>) {
             "quite distant"
         };
 
-        println!("\n  ┌──────────────────────────────────────────────────────────┐");
-        println!("  │  SYNTHESIZED ANSWER                                      │");
-        println!("  │                                                          │");
+        let src_name = path
+            .steps
+            .first()
+            .map(|s| s.category_name.as_str())
+            .unwrap_or("source");
+        let tgt_name = path
+            .steps
+            .last()
+            .map(|s| s.category_name.as_str())
+            .unwrap_or("target");
+        let n_hops = path.steps.len().saturating_sub(1);
+
+        let mut best_bridge: Option<(String, f64, String, String)> = None;
+        for (i, step) in path.steps.iter().enumerate() {
+            if i + 1 >= path.steps.len() {
+                break;
+            }
+            let next = &path.steps[i + 1];
+            let fwd: Vec<(usize, f64)> = pipeline
+                .bridge_items(&step.category_name, &next.category_name, 1)
+                .into_iter()
+                .map(|b| (b.item_index, b.bridge_strength))
+                .collect();
+            let rev: Vec<(usize, f64)> = pipeline
+                .bridge_items(&next.category_name, &step.category_name, 1)
+                .into_iter()
+                .map(|b| (b.item_index, b.bridge_strength))
+                .collect();
+            let top = fwd
+                .into_iter()
+                .chain(rev)
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+            if let Some((idx, strength)) = top {
+                if best_bridge
+                    .as_ref()
+                    .map_or(true, |x| strength > x.1)
+                {
+                    best_bridge = Some((
+                        labels[idx].to_string(),
+                        strength,
+                        step.category_name.clone(),
+                        next.category_name.clone(),
+                    ));
+                }
+            }
+        }
+
+        let confidence_note = if path.path_confidence > 0.5 {
+            "solid"
+        } else if path.path_confidence > 0.1 {
+            "moderate"
+        } else {
+            "tenuous"
+        };
+
+        println!("\n  ┌─ SYNTHESIZED ANSWER ─────────────────────────────────────");
+        println!("  │");
         println!(
-            "  │  Music and physics are {} on the semantic  │",
-            closeness
+            "  │  {} and {} are {} on the semantic sphere",
+            src_name, tgt_name, closeness
         );
         println!(
-            "  │  sphere (distance {:.3} / π). The connection runs     │",
-            path.total_distance / std::f64::consts::PI
+            "  │  (geodesic distance {:.3} rad / {:.3}π, {} hop{}).",
+            path.total_distance,
+            path.total_distance / std::f64::consts::PI,
+            n_hops,
+            if n_hops == 1 { "" } else { "s" }
         );
-        println!("  │  through shared mathematical structure — waves,        │");
-        println!("  │  harmonics, and resonance are native to both fields.   │");
-        println!("  │                                                          │");
-        println!("  │  Bridge concepts at each transition provide specific    │");
-        println!("  │  jumping-off points for cross-domain reasoning. The    │");
+        println!("  │");
+        if n_hops <= 1 {
+            println!(
+                "  │  The two categories are direct neighbors — no intermediate"
+            );
+            println!("  │  domains are needed to bridge them.");
+        } else {
+            let chain: Vec<&str> = path
+                .steps
+                .iter()
+                .map(|s| s.category_name.as_str())
+                .collect();
+            println!(
+                "  │  Path routes through {} intermediate categor{}:",
+                n_hops - 1,
+                if n_hops - 1 == 1 { "y" } else { "ies" }
+            );
+            println!("  │    {}", chain.join(" → "));
+        }
+        println!("  │");
+        match best_bridge {
+            Some((label, strength, from, to)) => {
+                println!("  │  Strongest bridge concept along the path:");
+                println!(
+                    "  │    \"{}\" (strength {:.3}) at the {} → {} hop",
+                    label, strength, from, to
+                );
+            }
+            None => {
+                println!(
+                    "  │  No item-level bridges span the hops — the path uses pure"
+                );
+                println!("  │  category adjacency rather than concrete connectors.");
+            }
+        }
+        println!("  │");
         println!(
-            "  │  projection preserves {:.1}% of the original semantic    │",
+            "  │  Path confidence: {:.3} ({}). Projection retains {:.1}%",
+            path.path_confidence,
+            confidence_note,
             evr * 100.0
         );
-        println!("  │  structure, giving confidence that these spatial        │");
-        println!("  │  relationships reflect genuine conceptual affinity.     │");
-        println!("  └──────────────────────────────────────────────────────────┘");
+        println!("  │  of the original high-dimensional structure.");
+        println!("  └──────────────────────────────────────────────────────────");
     }
 
     // ════════════════════════════════════════════════════════════════════════
