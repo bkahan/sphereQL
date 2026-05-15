@@ -18,6 +18,7 @@ use crate::kernel_pca::KernelPcaProjection;
 use crate::laplacian::LaplacianEigenmapProjection;
 use crate::projection::{PcaProjection, Projection};
 use crate::types::{Embedding, ProjectedPoint};
+use crate::umap::UmapSphereProjection;
 
 /// A projection chosen at pipeline build time.
 ///
@@ -29,6 +30,7 @@ pub enum ConfiguredProjection {
     Pca(PcaProjection),
     KernelPca(KernelPcaProjection),
     Laplacian(LaplacianEigenmapProjection),
+    UmapSphere(UmapSphereProjection),
 }
 
 impl std::fmt::Debug for ConfiguredProjection {
@@ -37,6 +39,7 @@ impl std::fmt::Debug for ConfiguredProjection {
             Self::Pca(_) => write!(f, "ConfiguredProjection::Pca"),
             Self::KernelPca(_) => write!(f, "ConfiguredProjection::KernelPca"),
             Self::Laplacian(_) => write!(f, "ConfiguredProjection::Laplacian"),
+            Self::UmapSphere(_) => write!(f, "ConfiguredProjection::UmapSphere"),
         }
     }
 }
@@ -47,6 +50,7 @@ impl Projection for ConfiguredProjection {
             Self::Pca(p) => p.project(embedding),
             Self::KernelPca(p) => p.project(embedding),
             Self::Laplacian(p) => p.project(embedding),
+            Self::UmapSphere(p) => p.project(embedding),
         }
     }
 
@@ -55,6 +59,7 @@ impl Projection for ConfiguredProjection {
             Self::Pca(p) => p.project_rich(embedding),
             Self::KernelPca(p) => p.project_rich(embedding),
             Self::Laplacian(p) => p.project_rich(embedding),
+            Self::UmapSphere(p) => p.project_rich(embedding),
         }
     }
 
@@ -63,6 +68,7 @@ impl Projection for ConfiguredProjection {
             Self::Pca(p) => p.dimensionality(),
             Self::KernelPca(p) => p.dimensionality(),
             Self::Laplacian(p) => p.dimensionality(),
+            Self::UmapSphere(p) => p.dimensionality(),
         }
     }
 }
@@ -74,6 +80,7 @@ impl ConfiguredProjection {
             Self::Pca(_) => ProjectionKind::Pca,
             Self::KernelPca(_) => ProjectionKind::KernelPca,
             Self::Laplacian(_) => ProjectionKind::LaplacianEigenmap,
+            Self::UmapSphere(_) => ProjectionKind::UmapSphere,
         }
     }
 
@@ -87,6 +94,15 @@ impl ConfiguredProjection {
             Self::Pca(p) => p.explained_variance_ratio(),
             Self::KernelPca(p) => p.explained_variance_ratio(),
             Self::Laplacian(p) => p.explained_variance_ratio(),
+            Self::UmapSphere(p) => p.explained_variance_ratio(),
+        }
+    }
+
+    /// Borrow the inner [`UmapSphereProjection`] if that is the active variant.
+    pub fn as_umap_sphere(&self) -> Option<&UmapSphereProjection> {
+        match self {
+            Self::UmapSphere(p) => Some(p),
+            _ => None,
         }
     }
 
@@ -131,6 +147,12 @@ impl From<KernelPcaProjection> for ConfiguredProjection {
 impl From<LaplacianEigenmapProjection> for ConfiguredProjection {
     fn from(p: LaplacianEigenmapProjection) -> Self {
         Self::Laplacian(p)
+    }
+}
+
+impl From<UmapSphereProjection> for ConfiguredProjection {
+    fn from(p: UmapSphereProjection) -> Self {
+        Self::UmapSphere(p)
     }
 }
 

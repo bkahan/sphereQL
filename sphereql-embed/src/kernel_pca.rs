@@ -82,6 +82,11 @@ pub struct KernelPcaProjection {
     volumetric: bool,
 }
 
+/// At or above this corpus size, [`KernelPcaProjection::fit`] emits a
+/// stderr warning. Power iteration on the n×n centered kernel matrix
+/// becomes an interactive-development hazard around this scale.
+const KPCA_FIT_WARN_THRESHOLD: usize = 2_000;
+
 impl KernelPcaProjection {
     /// Fit kernel PCA with automatic σ selection.
     ///
@@ -168,6 +173,18 @@ impl KernelPcaProjection {
                 got: dim,
                 required: 3,
             });
+        }
+        // O(n²·d) kernel matrix + O(n²·q·iters) power iteration. At
+        // n ≈ 10k this approaches an hour; warn callers who didn't
+        // see the doc comment so they can switch to PCA or downsample.
+        let n = embeddings.len();
+        if n >= KPCA_FIT_WARN_THRESHOLD {
+            tracing::warn!(
+                n,
+                dim,
+                "KernelPcaProjection::fit: O(n²·d) cost, expect minutes-to-hours. \
+                 Consider PCA or downsampling."
+            );
         }
         for (i, e) in embeddings.iter().enumerate() {
             if e.dimension() != dim {
@@ -318,7 +335,7 @@ impl Projection for KernelPcaProjection {
         );
 
         let normalized = embedding.normalized();
-        let (x, y, z, _) = self.kernel_project(&normalized);
+        let (x, y, z, spherical_potential) = self.kernel_project(&normalized);
 
         if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
@@ -327,7 +344,18 @@ impl Projection for KernelPcaProjection {
             }
             SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
         } else {
-            let r = self.radial.compute(embedding.magnitude());
+            let projection_sq = x * x + y * y + z * z;
+            let projection_magnitude = projection_sq.sqrt();
+            let certainty = if spherical_potential > f64::EPSILON {
+                (projection_sq / spherical_potential).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+                embedding.magnitude(),
+                projection_magnitude,
+                certainty,
+            ));
             project_xyz_to_spherical(x, y, z, r)
         }
     }
@@ -365,7 +393,11 @@ impl Projection for KernelPcaProjection {
                 SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
             }
         } else {
-            let r = self.radial.compute(intensity);
+            let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+                intensity,
+                projection_magnitude,
+                certainty,
+            ));
             project_xyz_to_spherical(x, y, z, r)
         };
 

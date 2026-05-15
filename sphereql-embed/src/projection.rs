@@ -245,7 +245,7 @@ impl Projection for PcaProjection {
             embedding.dimension()
         );
 
-        let (x, y, z, _) = self.project_xyz_residual(embedding);
+        let (x, y, z, residual_sq) = self.project_xyz_residual(embedding);
 
         if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
@@ -254,7 +254,14 @@ impl Projection for PcaProjection {
             }
             SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
         } else {
-            let r = self.radial.compute(embedding.magnitude());
+            let projection_magnitude = (x * x + y * y + z * z).sqrt();
+            let intensity = embedding.magnitude();
+            let certainty = pca_certainty(embedding, &self.mean, intensity, residual_sq);
+            let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+                intensity,
+                projection_magnitude,
+                certainty,
+            ));
             project_xyz_to_spherical(x, y, z, r)
         }
     }
@@ -271,26 +278,7 @@ impl Projection for PcaProjection {
         let intensity = embedding.magnitude();
         let (x, y, z, residual_sq) = self.project_xyz_residual(embedding);
         let projection_magnitude = (x * x + y * y + z * z).sqrt();
-
-        // Per-point certainty: fraction of this point's variance captured
-        // by the 3 components. The fold below also drops the separate
-        // centered-vec allocation the old version materialized.
-        let inv_mag = if intensity < f64::EPSILON {
-            0.0
-        } else {
-            1.0 / intensity
-        };
-        let total_sq: f64 = (0..self.dim)
-            .map(|i| {
-                let c = embedding.values[i] * inv_mag - self.mean[i];
-                c * c
-            })
-            .sum();
-        let certainty = if total_sq < f64::EPSILON {
-            0.0
-        } else {
-            (1.0 - residual_sq / total_sq).clamp(0.0, 1.0)
-        };
+        let certainty = pca_certainty(embedding, &self.mean, intensity, residual_sq);
 
         let position = if self.volumetric {
             let sp = cartesian_to_spherical(&CartesianPoint::new(x, y, z));
@@ -300,7 +288,11 @@ impl Projection for PcaProjection {
                 SphericalPoint::new_unchecked(sp.r, sp.theta, sp.phi)
             }
         } else {
-            let r = self.radial.compute(intensity);
+            let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+                intensity,
+                projection_magnitude,
+                certainty,
+            ));
             project_xyz_to_spherical(x, y, z, r)
         };
 
@@ -355,12 +347,21 @@ impl Projection for RandomProjection {
         );
 
         let magnitude = embedding.magnitude();
-        let r = self.radial.compute(magnitude);
         let normalized = embedding.normalized();
 
         let x = dot(&normalized, &self.matrix[0]);
         let y = dot(&normalized, &self.matrix[1]);
         let z = dot(&normalized, &self.matrix[2]);
+
+        // Random projection has no fidelity signal; report certainty = 1.0
+        // so `Certainty { scale }` reduces to a constant for callers who
+        // pick this strategy here (a meaningful warning, not a silent zero).
+        let projection_magnitude = (x * x + y * y + z * z).sqrt();
+        let r = self.radial.compute_rich(&crate::types::RadialContext::full(
+            magnitude,
+            projection_magnitude,
+            1.0,
+        ));
 
         project_xyz_to_spherical(x, y, z, r)
     }
@@ -371,6 +372,34 @@ impl Projection for RandomProjection {
 }
 
 // --- Shared projection math (pub(crate) for reuse by kernel_pca) ---
+
+/// Per-point variance-captured ratio for PCA: `1 − residual_sq / total_sq`.
+/// Returns 0.0 for inputs whose centered norm is below `f64::EPSILON`
+/// (otherwise we'd divide by zero) and clamps to `[0, 1]`.
+fn pca_certainty(embedding: &Embedding, mean: &[f64], intensity: f64, residual_sq: f64) -> f64 {
+    // Mirror Embedding::normalized()'s fallback: when the input has no
+    // magnitude, the rest of the pipeline treats it as [1, 0, 0, ...].
+    // Computing total_sq off the same vector keeps certainty consistent
+    // with the projection coordinates the caller will actually see.
+    let zero_intensity = intensity < f64::EPSILON;
+    let inv_mag = if zero_intensity { 0.0 } else { 1.0 / intensity };
+    let total_sq: f64 = (0..mean.len())
+        .map(|i| {
+            let normalized_i = if zero_intensity {
+                if i == 0 { 1.0 } else { 0.0 }
+            } else {
+                embedding.values[i] * inv_mag
+            };
+            let c = normalized_i - mean[i];
+            c * c
+        })
+        .sum();
+    if total_sq < f64::EPSILON {
+        0.0
+    } else {
+        (1.0 - residual_sq / total_sq).clamp(0.0, 1.0)
+    }
+}
 
 pub(crate) fn project_xyz_to_spherical(x: f64, y: f64, z: f64, r: f64) -> SphericalPoint {
     let cart = CartesianPoint::new(x, y, z).normalize();

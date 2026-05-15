@@ -16,7 +16,8 @@ embed = ["layout", "dep:sphereql-embed"]
 graphql = ["index", "dep:sphereql-graphql"]
 vectordb = ["embed", "dep:sphereql-vectordb"]
 pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
-full = ["core", "index", "layout", "embed", "graphql", "vectordb"]
+retain-embeddings = ["sphereql-embed/retain-embeddings"]
+full = ["core", "index", "layout", "embed", "graphql", "vectordb", "retain-embeddings"]
 
 [dependencies]
 sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core", optional = true }

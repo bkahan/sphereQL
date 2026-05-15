@@ -8,6 +8,14 @@ versions.
 
 ### Added
 
+- **`SphereQLPipeline::raw_embeddings()`** — returns the original high-dimensional embeddings when the `retain-embeddings` feature is active; `None` otherwise. Aligned with `ids()`, `categories()`, and `projected_points()`.
+- **`SphereQLPipeline::embedding_dim()`** — returns the dimensionality of retained embeddings, or 0 if not retained.
+- **`SphereQLPipeline::pairwise_similarities()`** — computes the upper-triangle pairwise cosine similarity matrix from retained embeddings. Returns `None` without the feature.
+- **`SphereQLPipeline::nearest_by_embedding()`** — finds the k nearest corpus concepts to a query embedding by cosine similarity in the original embedding space. Returns `None` without the feature.
+- **`sphereql_core::pairwise_cosine_similarities()`** — batch upper-triangle pairwise cosine similarity with precomputed norms.
+- **`sphereql_core::upper_triangle_index()`** — index helper for the flat upper-triangle vector returned by `pairwise_cosine_similarities`.
+- **`retain-embeddings`** feature flag in `sphereql-embed` and `sphereql`; included in the `full` feature aggregate.
+
 - **`sphereql-lingua`** — six-stage pipeline crate that turns free-form
   text into a `ConceptGraph` with every node placed at a SphereQL
   `(r, θ, φ)` position (concept extraction → θ domain assignment → φ

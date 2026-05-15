@@ -146,6 +146,66 @@ pub fn cosine_similarity(a: &[f64], b: &[f64]) -> Result<f64, SphereQlError> {
     Ok((dot / denom).clamp(-1.0, 1.0))
 }
 
+/// Compute pairwise cosine similarities for a set of vectors.
+///
+/// Returns a flat `Vec<f64>` containing the upper triangle of the n×n
+/// similarity matrix in row-major order: `[sim(0,1), sim(0,2), ..., sim(0,n-1), sim(1,2), ...]`.
+/// Length is `n * (n - 1) / 2`.
+///
+/// All vectors must have the same dimensionality. Returns
+/// `Err(DimensionMismatch)` if any vector differs in length from the first.
+pub fn pairwise_cosine_similarities(vectors: &[Vec<f64>]) -> Result<Vec<f64>, SphereQlError> {
+    if vectors.is_empty() {
+        return Ok(Vec::new());
+    }
+    let dim = vectors[0].len();
+    let n = vectors.len();
+
+    for v in vectors.iter() {
+        if v.len() != dim {
+            return Err(SphereQlError::DimensionMismatch {
+                expected: dim,
+                actual: v.len(),
+            });
+        }
+    }
+
+    let norms: Vec<f64> = vectors
+        .iter()
+        .map(|v| v.iter().map(|x| x * x).sum::<f64>().sqrt())
+        .collect();
+
+    let mut result = Vec::with_capacity(n * (n - 1) / 2);
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let dot: f64 = vectors[i]
+                .iter()
+                .zip(vectors[j].iter())
+                .map(|(a, b)| a * b)
+                .sum();
+            let denom = norms[i] * norms[j];
+            let sim = if denom < f64::EPSILON {
+                0.0
+            } else {
+                dot / denom
+            };
+            result.push(sim.clamp(-1.0, 1.0));
+        }
+    }
+
+    Ok(result)
+}
+
+/// Index into the upper-triangle flat array returned by [`pairwise_cosine_similarities`].
+/// Given `i < j`, returns the index into the flat vector.
+///
+/// Panics in debug builds if `i >= j` or `j >= n`.
+#[inline]
+pub fn upper_triangle_index(i: usize, j: usize, n: usize) -> usize {
+    debug_assert!(i < j && j < n);
+    i * n - i * (i + 1) / 2 + j - i - 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,5 +393,37 @@ mod tests {
                 actual: 2
             }
         ));
+    }
+
+    #[test]
+    fn pairwise_cosine_similarities_basic() {
+        let vecs = vec![vec![1.0, 0.0], vec![0.0, 1.0], vec![1.0, 1.0]];
+        let sims = pairwise_cosine_similarities(&vecs).unwrap();
+        assert_eq!(sims.len(), 3);
+        assert!((sims[upper_triangle_index(0, 1, 3)] - 0.0).abs() < 1e-10);
+        assert!(
+            (sims[upper_triangle_index(0, 2, 3)] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-10
+        );
+        assert!(
+            (sims[upper_triangle_index(1, 2, 3)] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-10
+        );
+    }
+
+    #[test]
+    fn pairwise_cosine_similarities_empty() {
+        let sims = pairwise_cosine_similarities(&[]).unwrap();
+        assert!(sims.is_empty());
+    }
+
+    #[test]
+    fn pairwise_cosine_similarities_single() {
+        let sims = pairwise_cosine_similarities(&[vec![1.0, 2.0]]).unwrap();
+        assert!(sims.is_empty());
+    }
+
+    #[test]
+    fn pairwise_cosine_similarities_dimension_mismatch() {
+        let vecs = vec![vec![1.0, 0.0], vec![1.0, 0.0, 0.0]];
+        assert!(pairwise_cosine_similarities(&vecs).is_err());
     }
 }

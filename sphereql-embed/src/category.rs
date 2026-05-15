@@ -286,6 +286,14 @@ pub struct CategoryLayer {
     /// Inner spheres keyed by category index. Only present for categories
     /// that meet the size and EVR-improvement thresholds.
     pub inner_spheres: HashMap<usize, InnerSphere>,
+    /// Domain groups discovered from category geometry. Default
+    /// `nearest()` routing chooses the closest group via these centroids.
+    pub domain_groups: Vec<crate::domain_groups::DomainGroup>,
+    /// Inner spheres keyed by domain-group index. Built only when the
+    /// group's union of members beats the EVR threshold versus the
+    /// outer projection — the realistic-grouping unit per the v2 routing
+    /// design (replaces the previous one-per-category default).
+    pub group_inner_spheres: HashMap<usize, InnerSphere>,
     /// Pre-computed spatial properties of the category layout on S².
     /// Used for bridge quality scoring, confidence signals, and routing.
     pub spatial_quality: SpatialQuality,
@@ -462,12 +470,39 @@ impl CategoryLayer {
         // 5. Build inner spheres for qualifying categories
         let inner_spheres = Self::build_inner_spheres(&summaries, embeddings, projection, config);
 
+        // 6. Detect domain groups + build group-level inner spheres
+        // (the v2 default-routing unit). Both are no-ops when fewer than
+        // two groups exist.
+        let pre_layer = CategoryLayer {
+            summaries: summaries.clone(),
+            name_to_index: name_to_index.clone(),
+            graph: graph.clone(),
+            outer_positions: projected_positions.to_vec(),
+            inner_spheres: inner_spheres.clone(),
+            domain_groups: Vec::new(),
+            group_inner_spheres: HashMap::new(),
+            spatial_quality: spatial_quality.clone(),
+        };
+        let domain_groups = crate::domain_groups::detect_domain_groups(
+            &pre_layer,
+            config.routing.num_domain_groups,
+        );
+        let group_inner_spheres = Self::build_group_inner_spheres(
+            &domain_groups,
+            &summaries,
+            embeddings,
+            projection,
+            config,
+        );
+
         CategoryLayer {
             summaries,
             name_to_index,
             graph,
             outer_positions: projected_positions.to_vec(),
             inner_spheres,
+            domain_groups,
+            group_inner_spheres,
             spatial_quality,
         }
     }
@@ -703,6 +738,90 @@ impl CategoryLayer {
                     projection: inner_proj,
                     inner_positions,
                     member_indices: summary.member_indices.clone(),
+                    explained_variance_ratio: inner_evr,
+                    global_subset_evr,
+                    evr_improvement: inner_evr - global_subset_evr,
+                },
+            );
+        }
+
+        result
+    }
+
+    /// Fit one inner sphere per domain group. Each group's inner
+    /// projection sees the union of its member categories' embeddings.
+    ///
+    /// Built only when (a) ≥ 2 groups exist, (b) the union has at
+    /// least [`InnerSphereConfig::min_size`] members, and (c) the
+    /// inner-vs-outer EVR improvement clears the same threshold the
+    /// per-category builder uses. Kernel PCA is attempted at the same
+    /// `kernel_pca_min_size` cutoff as the per-category path.
+    fn build_group_inner_spheres<P: Projection>(
+        groups: &[crate::domain_groups::DomainGroup],
+        summaries: &[CategorySummary],
+        embeddings: &[Embedding],
+        projection: &P,
+        config: &PipelineConfig,
+    ) -> HashMap<usize, InnerSphere> {
+        let mut result = HashMap::new();
+        if groups.len() < 2 {
+            return result;
+        }
+        let cfg = &config.inner_sphere;
+
+        for (gi, group) in groups.iter().enumerate() {
+            let mut member_indices: Vec<usize> = Vec::new();
+            for &ci in &group.member_categories {
+                member_indices.extend(summaries[ci].member_indices.iter().copied());
+            }
+            if member_indices.len() < cfg.min_size {
+                continue;
+            }
+
+            let member_embs: Vec<Embedding> = member_indices
+                .iter()
+                .map(|&i| embeddings[i].clone())
+                .collect();
+
+            let global_subset_evr: f64 = member_embs
+                .iter()
+                .map(|e| projection.project_rich(e).certainty)
+                .sum::<f64>()
+                / member_embs.len() as f64;
+
+            let Ok(inner_pca) = PcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0)) else {
+                continue;
+            };
+            let inner_linear_evr = inner_pca.explained_variance_ratio();
+            if inner_linear_evr - global_subset_evr < cfg.min_evr_improvement {
+                continue;
+            }
+
+            let (inner_proj, inner_evr) = if member_indices.len() >= cfg.kernel_pca_min_size {
+                match KernelPcaProjection::fit(&member_embs, RadialStrategy::Fixed(1.0)) {
+                    Ok(inner_kpca) => {
+                        let kernel_evr = inner_kpca.explained_variance_ratio();
+                        if kernel_evr > inner_linear_evr + cfg.min_kernel_improvement {
+                            (InnerProjection::KernelPca(inner_kpca), kernel_evr)
+                        } else {
+                            (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+                        }
+                    }
+                    Err(_) => (InnerProjection::LinearPca(inner_pca), inner_linear_evr),
+                }
+            } else {
+                (InnerProjection::LinearPca(inner_pca), inner_linear_evr)
+            };
+
+            let inner_positions: Vec<SphericalPoint> =
+                member_embs.iter().map(|e| inner_proj.project(e)).collect();
+
+            result.insert(
+                gi,
+                InnerSphere {
+                    projection: inner_proj,
+                    inner_positions,
+                    member_indices,
                     explained_variance_ratio: inner_evr,
                     global_subset_evr,
                     evr_improvement: inner_evr - global_subset_evr,
@@ -1015,6 +1134,68 @@ impl CategoryLayer {
             results.truncate(k);
             results
         }
+    }
+
+    /// Drill down into a domain group's inner sphere. Returns an empty
+    /// vec if the group index is unknown or has no inner sphere.
+    ///
+    /// Used by the v2 default `nearest()` path: route to the closest
+    /// group, then run k-NN against the group-level inner positions.
+    pub fn drill_down_group(
+        &self,
+        group_index: usize,
+        embedding: &Embedding,
+        k: usize,
+    ) -> Vec<DrillDownResult> {
+        let Some(inner) = self.group_inner_spheres.get(&group_index) else {
+            return Vec::new();
+        };
+        let query_pos = inner.projection.project(embedding);
+        let mut results: Vec<DrillDownResult> = inner
+            .inner_positions
+            .iter()
+            .enumerate()
+            .map(|(local_idx, pos)| DrillDownResult {
+                item_index: inner.member_indices[local_idx],
+                distance: angular_distance(&query_pos, pos),
+                used_inner_sphere: true,
+            })
+            .collect();
+        results.sort_by(|a, b| {
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        results.truncate(k);
+        results
+    }
+
+    /// Index of the domain group whose centroid is nearest to `pos`,
+    /// along with the angular distance to the *second*-nearest group's
+    /// centroid (or `f64::INFINITY` if there is only one group).
+    ///
+    /// The default `nearest()` routing in
+    /// [`SphereQLPipeline`](crate::pipeline::SphereQLPipeline) drills
+    /// into the nearest group's inner sphere only when
+    /// `nearest_dist / second_dist < group_routing_alpha`; the second
+    /// distance is returned alongside so the caller can apply that
+    /// gate without recomputing.
+    pub fn nearest_group(&self, pos: &SphericalPoint) -> Option<(usize, f64, f64)> {
+        if self.domain_groups.is_empty() {
+            return None;
+        }
+        let mut best = (0usize, f64::INFINITY);
+        let mut second = f64::INFINITY;
+        for (gi, g) in self.domain_groups.iter().enumerate() {
+            let d = angular_distance(pos, &g.centroid);
+            if d < best.1 {
+                second = best.1;
+                best = (gi, d);
+            } else if d < second {
+                second = d;
+            }
+        }
+        Some((best.0, best.1, second))
     }
 
     /// Report which categories have inner spheres, their projection type,

@@ -211,7 +211,7 @@ impl SearchSpace {
             ProjectionKind::LaplacianEigenmap => {
                 common * self.laplacian_k_neighbors.len() * self.laplacian_active_threshold.len()
             }
-            ProjectionKind::Pca | ProjectionKind::KernelPca => common,
+            ProjectionKind::Pca | ProjectionKind::KernelPca | ProjectionKind::UmapSphere => common,
         }
     }
 
@@ -269,6 +269,7 @@ impl SearchSpace {
         cfg.routing = RoutingConfig {
             num_domain_groups: self.num_domain_groups[i_ndg],
             low_evr_threshold: self.low_evr_threshold[i_let],
+            ..base.routing.clone()
         };
         cfg.bridges = BridgeConfig {
             threshold_base: self.threshold_base[i_tb],
@@ -316,6 +317,7 @@ impl SearchSpace {
         cfg.routing = RoutingConfig {
             num_domain_groups: pick_uniform(rng, &self.num_domain_groups),
             low_evr_threshold: pick_uniform(rng, &self.low_evr_threshold),
+            ..base.routing.clone()
         };
         cfg.bridges = BridgeConfig {
             threshold_base: pick_uniform(rng, &self.threshold_base),
@@ -352,6 +354,7 @@ enum ProjectionFitKey {
     Pca,
     KernelPca,
     Laplacian { k: usize, threshold_bits: u64 },
+    UmapSphere,
 }
 
 impl ProjectionFitKey {
@@ -363,6 +366,7 @@ impl ProjectionFitKey {
                 k: cfg.laplacian.k_neighbors,
                 threshold_bits: cfg.laplacian.active_threshold.to_bits(),
             },
+            ProjectionKind::UmapSphere => Self::UmapSphere,
         }
     }
 }
@@ -705,6 +709,7 @@ fn tpe_propose(
     cfg.routing = RoutingConfig {
         num_domain_groups: space.num_domain_groups[pick_idx(rng, &ndg_g, &ndg_b)],
         low_evr_threshold: space.low_evr_threshold[pick_idx(rng, &let_g, &let_b)],
+        ..base.routing.clone()
     };
     cfg.bridges = BridgeConfig {
         threshold_base: space.threshold_base[pick_idx(rng, &tb_g, &tb_b)],

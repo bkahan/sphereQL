@@ -60,6 +60,13 @@ pub enum ProjectionKind {
     /// coordinate variance (the typical failure mode of PCA on 128-dim
     /// noise-heavy corpora).
     LaplacianEigenmap,
+    /// UMAP-on-sphere via Adam in the tangent bundle of S². PCA warm
+    /// start, kNN attractive + uniform-negative repulsive, optional
+    /// supervised category term. Preferred when angular ordering on the
+    /// sphere matters more than raw variance preservation, and when a
+    /// modest fit cost (O(n²·epochs) for the kNN graph + iterations) is
+    /// acceptable.
+    UmapSphere,
 }
 
 impl ProjectionKind {
@@ -69,6 +76,7 @@ impl ProjectionKind {
             Self::Pca => "pca",
             Self::KernelPca => "kernel_pca",
             Self::LaplacianEigenmap => "laplacian_eigenmap",
+            Self::UmapSphere => "umap_sphere",
         }
     }
 
@@ -78,6 +86,7 @@ impl ProjectionKind {
             ProjectionKind::Pca,
             ProjectionKind::KernelPca,
             ProjectionKind::LaplacianEigenmap,
+            ProjectionKind::UmapSphere,
         ]
     }
 }
@@ -156,8 +165,21 @@ pub struct RoutingConfig {
     /// Number of domain groups detected at build time by
     /// [`detect_domain_groups`](crate::domain_groups::detect_domain_groups).
     pub num_domain_groups: usize,
-    /// EVR below which `hierarchical_nearest` routes through domain
-    /// groups and inner spheres instead of the outer sphere.
+    /// Distance-ratio gate for the default `nearest()` path. A query
+    /// drills into the nearest group's inner sphere when
+    /// `d_to_nearest / d_to_second_nearest < group_routing_alpha`. A
+    /// smaller α is stricter (only routes when one group is clearly
+    /// closer). Default `0.8` matches the routing interview decision;
+    /// set to `0.0` to disable the default-route behavior entirely
+    /// (falls back to outer-sphere k-NN).
+    pub group_routing_alpha: f64,
+    /// EVR below which `hierarchical_nearest` historically routed
+    /// through domain groups instead of the outer sphere.
+    ///
+    /// Retained for backward-compatibility and debugging — the default
+    /// `nearest()` path now uses [`Self::group_routing_alpha`] instead.
+    /// `hierarchical_nearest()` still consults this for its EVR-gated
+    /// branch.
     pub low_evr_threshold: f64,
 }
 
@@ -165,6 +187,7 @@ impl Default for RoutingConfig {
     fn default() -> Self {
         Self {
             num_domain_groups: 5,
+            group_routing_alpha: 0.8,
             low_evr_threshold: 0.35,
         }
     }
@@ -275,6 +298,7 @@ mod tests {
             ProjectionKind::LaplacianEigenmap.name(),
             "laplacian_eigenmap"
         );
-        assert_eq!(ProjectionKind::all().len(), 3);
+        assert_eq!(ProjectionKind::UmapSphere.name(), "umap_sphere");
+        assert_eq!(ProjectionKind::all().len(), 4);
     }
 }

@@ -149,6 +149,7 @@ impl Contains for Wedge {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub enum Region {
     Cone(Cone),
     Cap(Cap),

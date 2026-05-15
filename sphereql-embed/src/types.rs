@@ -95,21 +95,80 @@ impl From<&[f64]> for Embedding {
     }
 }
 
+/// Per-point information available when resolving the radial coordinate.
+///
+/// Modern L2-normalized embeddings make `embedding_magnitude` a constant
+/// 1.0, wasting the radial axis. This struct exposes the additional
+/// signals the projection naturally produces (post-projection magnitude,
+/// per-point certainty) so a [`RadialStrategy`] can encode something
+/// useful in `r` instead.
+#[derive(Debug, Clone, Copy)]
+pub struct RadialContext {
+    /// L2 norm of the raw input embedding (pre-normalization).
+    pub embedding_magnitude: f64,
+    /// L2 norm of the (x, y, z) projected vector before re-scaling.
+    /// High values mean the 3 components captured most of the input's
+    /// variance; low values mean the input fell mostly into the residual.
+    pub projection_magnitude: f64,
+    /// Fraction of input variance retained by the projection, in `[0, 1]`.
+    /// Source depends on the projection family — PCA uses captured-variance
+    /// ratio; KPCA uses Hoffmann's reconstruction-error formula;
+    /// Laplacian uses tanh(projection_magnitude); Random reports 1.0.
+    pub certainty: f64,
+}
+
+impl RadialContext {
+    /// Construct from just the embedding magnitude. Other fields default
+    /// to neutral values; use [`Self::full`] when projection-side
+    /// information is available.
+    pub fn from_magnitude(embedding_magnitude: f64) -> Self {
+        Self {
+            embedding_magnitude,
+            projection_magnitude: embedding_magnitude,
+            certainty: 1.0,
+        }
+    }
+
+    /// Construct with all three signals populated.
+    pub fn full(embedding_magnitude: f64, projection_magnitude: f64, certainty: f64) -> Self {
+        Self {
+            embedding_magnitude,
+            projection_magnitude,
+            certainty,
+        }
+    }
+}
+
 /// Controls how the radial coordinate r is computed from an embedding.
 ///
 /// The angular coordinates (theta, phi) always encode semantic direction.
-/// The radial coordinate is free to encode magnitude, metadata, or a fixed value.
+/// The radial coordinate is free to encode magnitude, fidelity, or a
+/// caller-defined function of any per-point signal the projection exposes
+/// via [`RadialContext`].
 #[derive(Default)]
 pub enum RadialStrategy {
     /// Constant radius for all projections.
     Fixed(f64),
     /// r = L2 magnitude of the raw (pre-normalization) embedding.
-    /// Encodes embedding "confidence" or specificity.
+    /// Encodes embedding "confidence" or specificity. Degenerates to a
+    /// constant when inputs are L2-normalized — pick one of the
+    /// projection-side variants below in that case.
     #[default]
     Magnitude,
-    /// r = f(magnitude). Apply a custom transform to the pre-normalization magnitude.
-    /// Useful for log-scaling, clamping, or mapping metadata that correlates with magnitude.
+    /// r = f(embedding_magnitude). Apply a custom transform to the
+    /// pre-normalization magnitude (e.g. log scaling, clamping).
     MagnitudeTransform(Arc<dyn Fn(f64) -> f64 + Send + Sync>),
+    /// r = ‖(x, y, z)‖ — how much of the input variance landed in the
+    /// projected 3-vector. Universal across all four projection families.
+    /// Recommended starting point for normalized embeddings.
+    ProjectionMagnitude,
+    /// r = `scale * certainty`, where `certainty ∈ [0, 1]` is the
+    /// projection-supplied per-point fidelity score. Higher r ⇒ this
+    /// point is well-explained by the 3D projection.
+    Certainty { scale: f64 },
+    /// r = f(&context). Escape hatch for arbitrary per-point logic over
+    /// any combination of the [`RadialContext`] signals.
+    Custom(Arc<dyn Fn(&RadialContext) -> f64 + Send + Sync>),
 }
 
 impl Clone for RadialStrategy {
@@ -118,6 +177,9 @@ impl Clone for RadialStrategy {
             Self::Fixed(r) => Self::Fixed(*r),
             Self::Magnitude => Self::Magnitude,
             Self::MagnitudeTransform(f) => Self::MagnitudeTransform(Arc::clone(f)),
+            Self::ProjectionMagnitude => Self::ProjectionMagnitude,
+            Self::Certainty { scale } => Self::Certainty { scale: *scale },
+            Self::Custom(f) => Self::Custom(Arc::clone(f)),
         }
     }
 }
@@ -128,17 +190,32 @@ impl std::fmt::Debug for RadialStrategy {
             Self::Fixed(r) => write!(f, "Fixed({r})"),
             Self::Magnitude => write!(f, "Magnitude"),
             Self::MagnitudeTransform(_) => write!(f, "MagnitudeTransform(<fn>)"),
+            Self::ProjectionMagnitude => write!(f, "ProjectionMagnitude"),
+            Self::Certainty { scale } => write!(f, "Certainty {{ scale: {scale} }}"),
+            Self::Custom(_) => write!(f, "Custom(<fn>)"),
         }
     }
 }
 
 impl RadialStrategy {
-    pub fn compute(&self, magnitude: f64) -> f64 {
+    /// Resolve `r` against the full per-point context. All four projection
+    /// families construct a [`RadialContext`] inline and call this.
+    pub fn compute_rich(&self, ctx: &RadialContext) -> f64 {
         match self {
             Self::Fixed(r) => *r,
-            Self::Magnitude => magnitude,
-            Self::MagnitudeTransform(f) => f(magnitude),
+            Self::Magnitude => ctx.embedding_magnitude,
+            Self::MagnitudeTransform(f) => f(ctx.embedding_magnitude),
+            Self::ProjectionMagnitude => ctx.projection_magnitude,
+            Self::Certainty { scale } => scale * ctx.certainty,
+            Self::Custom(f) => f(ctx),
         }
+    }
+
+    /// Backward-compatible shim. Use [`Self::compute_rich`] when
+    /// projection-side context is available — the new `ProjectionMagnitude`,
+    /// `Certainty`, and `Custom` variants only do something useful there.
+    pub fn compute(&self, magnitude: f64) -> f64 {
+        self.compute_rich(&RadialContext::from_magnitude(magnitude))
     }
 }
 
@@ -206,6 +283,39 @@ mod tests {
         let r = RadialStrategy::MagnitudeTransform(Arc::new(|m| m * 2.0));
         let r2 = r.clone();
         assert!((r.compute(3.0) - r2.compute(3.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn radial_projection_magnitude_uses_context() {
+        let r = RadialStrategy::ProjectionMagnitude;
+        let ctx = RadialContext::full(99.0, 0.42, 0.5);
+        assert!((r.compute_rich(&ctx) - 0.42).abs() < 1e-12);
+    }
+
+    #[test]
+    fn radial_certainty_scales() {
+        let r = RadialStrategy::Certainty { scale: 2.0 };
+        let ctx = RadialContext::full(99.0, 0.42, 0.3);
+        assert!((r.compute_rich(&ctx) - 0.6).abs() < 1e-12);
+    }
+
+    #[test]
+    fn radial_custom_sees_full_context() {
+        let r = RadialStrategy::Custom(Arc::new(|c| {
+            c.embedding_magnitude + c.projection_magnitude + c.certainty
+        }));
+        let ctx = RadialContext::full(1.0, 2.0, 0.5);
+        assert!((r.compute_rich(&ctx) - 3.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn radial_compute_shim_is_backward_compatible() {
+        // The deprecated `compute(magnitude)` shim must still produce the
+        // same value as before for the original three variants.
+        assert!((RadialStrategy::Fixed(7.0).compute(123.0) - 7.0).abs() < 1e-12);
+        assert!((RadialStrategy::Magnitude.compute(7.0) - 7.0).abs() < 1e-12);
+        let xform = RadialStrategy::MagnitudeTransform(Arc::new(|m| m * m));
+        assert!((xform.compute(3.0) - 9.0).abs() < 1e-12);
     }
 
     #[test]

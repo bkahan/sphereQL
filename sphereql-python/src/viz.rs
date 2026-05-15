@@ -10,6 +10,24 @@ use crate::pipeline::Pipeline;
 
 const TEMPLATE: &str = include_str!("viz_template.html");
 
+#[derive(serde::Serialize)]
+struct VizPoint<'a> {
+    x: f64,
+    y: f64,
+    z: f64,
+    r: f64,
+    theta: f64,
+    phi: f64,
+    cat: &'a str,
+    label: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct VizData<'a> {
+    evr: f64,
+    points: Vec<VizPoint<'a>>,
+}
+
 fn build_data_json(
     categories: &[String],
     cart_points: &[[f64; 3]],
@@ -17,33 +35,41 @@ fn build_data_json(
     labels: Option<&[String]>,
     explained_variance: f64,
 ) -> String {
-    let mut buf = String::with_capacity(cart_points.len() * 120 + 256);
-    buf.push_str("{\"evr\":");
-    buf.push_str(&format!("{explained_variance:.6}"));
-    buf.push_str(",\"points\":[");
-    for (i, ((xyz, sph), cat)) in cart_points
+    let points = cart_points
         .iter()
         .zip(spherical.iter())
         .zip(categories.iter())
         .enumerate()
-    {
-        if i > 0 {
-            buf.push(',');
-        }
-        let label = labels
-            .and_then(|l| l.get(i))
-            .map(|s| s.as_str())
-            .unwrap_or("");
-        buf.push_str(&format!(
-            "{{\"x\":{:.6},\"y\":{:.6},\"z\":{:.6},\"r\":{:.4},\"theta\":{:.4},\"phi\":{:.4},\"cat\":{},\"label\":{}}}",
-            xyz[0], xyz[1], xyz[2],
-            sph.0, sph.1, sph.2,
-            serde_json::to_string(cat).unwrap_or_else(|_| "\"\"".into()),
-            serde_json::to_string(label).unwrap_or_else(|_| "\"\"".into()),
-        ));
-    }
-    buf.push_str("]}");
-    buf
+        .map(|(i, ((xyz, sph), cat))| VizPoint {
+            x: xyz[0],
+            y: xyz[1],
+            z: xyz[2],
+            r: sph.0,
+            theta: sph.1,
+            phi: sph.2,
+            cat: cat.as_str(),
+            label: labels
+                .and_then(|l| l.get(i))
+                .map(String::as_str)
+                .unwrap_or(""),
+        })
+        .collect();
+    let data = VizData {
+        evr: explained_variance,
+        points,
+    };
+    // Infallible in practice: every field is a finite f64 or a borrowed
+    // &str. On the unreachable error path, fall back to a shape-valid
+    // VizData so the JS template still has defined `evr` and `points`.
+    let serialized = serde_json::to_string(&data).unwrap_or_else(|err| {
+        // Unreachable in practice (every field is finite f64 or &str),
+        // but guard the JS template against a malformed payload.
+        eprintln!("viz: VizData serialization failed: {err}");
+        r#"{"evr":0.0,"points":[]}"#.to_string()
+    });
+    // The payload is interpolated into a <script> block. Escape "</" so a
+    // crafted category/label can't terminate the script tag (XSS).
+    serialized.replace("</", "<\\/")
 }
 
 fn render_html(data_json: &str, title: &str) -> String {

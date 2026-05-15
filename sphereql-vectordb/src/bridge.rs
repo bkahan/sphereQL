@@ -494,11 +494,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     /// Projection family name ("pca", "kernel_pca", "laplacian_eigenmap"),
     /// or None if the pipeline has not been built.
     pub fn projection_kind(&self) -> Option<ProjectionKind> {
-        self.projection.as_ref().map(|p| match p {
-            ConfiguredProjection::Pca(_) => ProjectionKind::Pca,
-            ConfiguredProjection::KernelPca(_) => ProjectionKind::KernelPca,
-            ConfiguredProjection::Laplacian(_) => ProjectionKind::LaplacianEigenmap,
-        })
+        self.projection.as_ref().map(|p| p.kind())
     }
 
     /// Number of records loaded into the pipeline.
