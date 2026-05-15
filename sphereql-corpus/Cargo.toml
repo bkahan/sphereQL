@@ -13,10 +13,25 @@ serde_json = "1"
 arrow = { version = "58", default-features = false, features = ["ipc"] }
 parquet = { version = "58", default-features = false, features = ["arrow", "snap"] }
 memmap2 = "0.9"
+# Phase 7: streaming sources. ureq is sync + tokio-free; flate2 is for
+# OpenAlex Works snapshot shards (.jsonl.gz); bzip2 is pure-Rust and
+# only compiled when the dump source feature is on (requires a local
+# `latest-all.json.bz2` — 150 GB compressed — which most users won't
+# have).
+ureq = { version = "2", default-features = false, features = ["tls"], optional = true }
+flate2 = { version = "1", optional = true }
+bzip2-rs = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
-default = ["json-fallback"]
+default = ["json-fallback", "bulk-http", "bulk-gzip"]
 json-fallback = []
+# Phase 7 source features:
+# - bulk-http: WikidataSparqlSource + OpenAlexApiSource (network).
+# - bulk-gzip: OpenAlexShardSource (local .jsonl.gz shards).
+# - bulk-dump: WikidataDumpSource (local latest-all.json.bz2 stream).
+bulk-http = ["ureq"]
+bulk-gzip = ["flate2"]
+bulk-dump = ["bzip2-rs"]

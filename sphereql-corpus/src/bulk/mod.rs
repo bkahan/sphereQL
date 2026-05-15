@@ -27,10 +27,18 @@
 use std::fmt;
 
 pub mod axis;
+pub mod openalex_shard;
 pub mod sink;
+pub mod wikidata_sparql;
+#[cfg(feature = "bulk-dump")]
+pub mod wikidata_dump;
 
 pub use axis::HashedClaimAxisExtractor;
+pub use openalex_shard::{OpenAlexShardConfig, OpenAlexShardSource};
 pub use sink::{ParquetSink, SinkCheckpoint};
+pub use wikidata_sparql::{SparqlConfig, WikidataSparqlSource};
+#[cfg(feature = "bulk-dump")]
+pub use wikidata_dump::{WikidataDumpConfig, WikidataDumpSource};
 
 /// One raw item streamed from a `BulkSource` — source-agnostic.
 ///
