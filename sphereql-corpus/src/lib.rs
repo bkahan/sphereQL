@@ -29,6 +29,7 @@
 pub mod axes;
 pub mod concept;
 pub mod corpus;
+pub mod derived;
 pub mod embed;
 pub mod extended;
 pub mod loader;

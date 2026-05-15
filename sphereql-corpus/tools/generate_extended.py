@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -332,6 +333,80 @@ def _topic_from_gap_fill(label: str, keywords: list[str], category: str) -> dict
     }
 
 
+# ─── Derived signals (mirrors sphereql-corpus/src/derived.rs) ────────────
+#
+# These five helpers compute the Phase 2 quality signal fields. They are
+# deliberately a one-to-one port of `src/derived.rs` so the generator and
+# the Rust loader/validator agree byte-for-byte. Any change here must be
+# mirrored in derived.rs and vice versa; the round-trip test in
+# extended.rs::phase2_tests::bridge_degree_matches_authored_features will
+# fail otherwise.
+
+
+def _bridge_degree(features: list[tuple[int, float]]) -> int:
+    """Count distinct domain ranges activated by feature axes (0..=30)."""
+    hit = [False] * len(DOMAIN_AXIS_RANGES)
+    for axis, _ in features:
+        for i, r in enumerate(DOMAIN_AXIS_RANGES):
+            if axis in r:
+                hit[i] = True
+                break
+    return sum(hit)
+
+
+def _axis_coherence(
+    features: list[tuple[int, float]], primaries: list[int]
+) -> float:
+    """Fraction of total feature mass placed on `primaries`, in [0, 1]."""
+    total = sum(abs(w) for _, w in features)
+    if total == 0:
+        return 0.0
+    primary_set = set(primaries)
+    on = sum(abs(w) for a, w in features if a in primary_set)
+    return max(0.0, min(1.0, on / total))
+
+
+def _home_affinity(
+    features: list[tuple[int, float]], primaries: list[int]
+) -> float:
+    """Cosine of feature mass vs. uniform mass over `primaries`, in [0, 1]."""
+    if not features or not primaries:
+        return 0.0
+    a = [0.0] * 128
+    b = [0.0] * 128
+    for axis, w in features:
+        if 0 <= axis < 128:
+            a[axis] = w
+    for axis in primaries:
+        if 0 <= axis < 128:
+            b[axis] = 1.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return max(0.0, min(1.0, dot / (na * nb)))
+
+
+def _source_confidence(topic: dict, source: str) -> float:
+    """OpenAlex: log10(1+works_count)/6 clamped. gap_fill: 0.5."""
+    if source == "gap_fill":
+        return 0.5
+    works = topic.get("works_count") or 0
+    try:
+        works = int(works)
+    except (TypeError, ValueError):
+        works = 0
+    return max(0.0, min(1.0, math.log10(1.0 + works) / 6.0))
+
+
+def _composite_quality(ha: float, ac: float, sc: float, bd: int) -> float:
+    """0.4*home + 0.3*coherence + 0.2*source + 0.1*min(1, bd/3.0)."""
+    bridge_score = min(1.0, bd / 3.0)
+    q = 0.4 * ha + 0.3 * ac + 0.2 * sc + 0.1 * bridge_score
+    return max(0.0, min(1.0, q))
+
+
 # ─── Main ───────────────────────────────────────────────────────────────
 
 def _openalex_id_tail(raw: Any) -> str | None:
@@ -358,10 +433,26 @@ def _emit_concept(
     seen_labels.add(final_label)
 
     features = generate_features(topic, category, config)
+    int_features = [(int(a), float(w)) for a, w in features]
+    primaries = list(CATEGORY_PRIMARY_AXES.get(category, []))
+
+    bridge_degree = _bridge_degree(int_features)
+    axis_coherence = _axis_coherence(int_features, primaries)
+    home_affinity = _home_affinity(int_features, primaries)
+    source_confidence = _source_confidence(topic, source)
+    quality = _composite_quality(
+        home_affinity, axis_coherence, source_confidence, bridge_degree
+    )
+
     record: dict[str, Any] = {
         "label": final_label,
         "category": category,
-        "features": [[int(a), float(w)] for a, w in features],
+        "features": [[a, w] for a, w in int_features],
+        "quality": quality,
+        "axis_coherence": axis_coherence,
+        "bridge_degree": bridge_degree,
+        "source_confidence": source_confidence,
+        "home_affinity": home_affinity,
         "source": source,
     }
     if oa_id := _openalex_id_tail(topic.get("id")):

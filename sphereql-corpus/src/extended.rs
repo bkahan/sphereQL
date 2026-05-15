@@ -258,3 +258,82 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod phase2_tests {
+    use super::*;
+    use crate::derived::bridge_degree;
+
+    /// `>=90%` of concepts must carry a non-neutral `quality` — proves
+    /// the generator actually populated Phase 2 fields and the loader
+    /// read them through correctly.
+    #[test]
+    fn signals_populated_in_committed_corpus() {
+        let corpus = build_extended_corpus();
+        let neutral = corpus
+            .iter()
+            .filter(|c| (c.quality - Concept::NEUTRAL_QUALITY).abs() < 1e-9)
+            .count();
+        let pct_neutral = neutral as f64 / corpus.len() as f64;
+        assert!(
+            pct_neutral < 0.10,
+            "expected <10% concepts at neutral default quality, got {:.2}%",
+            pct_neutral * 100.0
+        );
+    }
+
+    /// Stored `bridge_degree` must match recomputed value from `features`
+    /// for the first 100 concepts. Catches drift between generator and
+    /// `derived.rs` Rust port.
+    #[test]
+    fn bridge_degree_matches_authored_features() {
+        let corpus = build_extended_corpus();
+        for c in corpus.iter().take(100) {
+            let computed = bridge_degree(&c.features);
+            assert_eq!(
+                c.bridge_degree, computed,
+                "bridge_degree mismatch on {}: stored={}, computed={}",
+                c.label, c.bridge_degree, computed
+            );
+        }
+    }
+
+    /// All five Phase 2 signals must be in their documented ranges across
+    /// the entire committed corpus.
+    #[test]
+    fn signals_are_in_documented_ranges() {
+        let corpus = build_extended_corpus();
+        for c in &corpus {
+            assert!(
+                (0.0..=1.0).contains(&c.quality),
+                "{} quality out of range: {}",
+                c.label,
+                c.quality
+            );
+            assert!(
+                (0.0..=1.0).contains(&c.axis_coherence),
+                "{} axis_coherence out of range: {}",
+                c.label,
+                c.axis_coherence
+            );
+            assert!(
+                c.bridge_degree <= 30,
+                "{} bridge_degree > 30: {}",
+                c.label,
+                c.bridge_degree
+            );
+            assert!(
+                (0.0..=1.0).contains(&c.source_confidence),
+                "{} source_confidence out of range: {}",
+                c.label,
+                c.source_confidence
+            );
+            assert!(
+                (0.0..=1.0).contains(&c.home_affinity),
+                "{} home_affinity out of range: {}",
+                c.label,
+                c.home_affinity
+            );
+        }
+    }
+}

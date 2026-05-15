@@ -6,6 +6,14 @@
 //! a single thread for this shape), so callers don't need to cache the
 //! result for a single embedding pass — but see the memory warning on
 //! [`load_extended_corpus`] before calling repeatedly.
+//!
+//! ## Phase 2 backwards-compatibility
+//!
+//! Old JSON (pre-Phase 2) had only `label`, `category`, `features`.
+//! New JSON adds `quality`, `axis_coherence`, `bridge_degree`,
+//! `source_confidence`, `home_affinity`. Missing fields fall back to
+//! [`Concept`]'s `NEUTRAL_*` constants via `#[serde(default = "...")]`,
+//! so legacy corpora load unchanged.
 
 use serde::Deserialize;
 
@@ -18,6 +26,38 @@ struct RawConcept {
     label: String,
     category: String,
     features: Vec<[f64; 2]>,
+    #[serde(default = "default_quality")]
+    quality: f64,
+    #[serde(default = "default_axis_coherence")]
+    axis_coherence: f64,
+    #[serde(default = "default_bridge_degree")]
+    bridge_degree: u8,
+    #[serde(default = "default_source_confidence")]
+    source_confidence: f64,
+    #[serde(default = "default_home_affinity")]
+    home_affinity: f64,
+    #[serde(default)]
+    #[allow(dead_code)]
+    source: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    openalex_id: Option<String>,
+}
+
+fn default_quality() -> f64 {
+    Concept::NEUTRAL_QUALITY
+}
+fn default_axis_coherence() -> f64 {
+    Concept::NEUTRAL_AXIS_COHERENCE
+}
+fn default_bridge_degree() -> u8 {
+    Concept::NEUTRAL_BRIDGE_DEGREE
+}
+fn default_source_confidence() -> f64 {
+    Concept::NEUTRAL_SOURCE_CONFIDENCE
+}
+fn default_home_affinity() -> f64 {
+    Concept::NEUTRAL_HOME_AFFINITY
 }
 
 #[derive(Deserialize)]
@@ -65,6 +105,11 @@ pub fn load_extended_corpus() -> Vec<Concept> {
                 .into_iter()
                 .map(|pair| (pair[0] as usize, pair[1]))
                 .collect(),
+            quality: rc.quality,
+            axis_coherence: rc.axis_coherence,
+            bridge_degree: rc.bridge_degree,
+            source_confidence: rc.source_confidence,
+            home_affinity: rc.home_affinity,
         })
         .collect()
 }
