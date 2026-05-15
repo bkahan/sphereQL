@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Generate the extended SphereQL corpus (~8,000+ concepts) from OpenAlex Topics.
+Generate the extended SphereQL corpus from one or more pluggable sources.
 
 Usage:
-    OPENALEX_API_KEY=your_key python3 generate_extended.py [--config PATH] [--set k=v]
+    OPENALEX_API_KEY=your_key python3 generate_extended.py \
+        [--source openalex] [--source wikidata] [--config PATH] [--set k=v]
 
 The OPENALEX_API_KEY may be either an OpenAlex Premium API key or a
 contact email address for the free "polite pool" (auto-detected by '@').
@@ -11,8 +12,13 @@ contact email address for the free "polite pool" (auto-detected by '@').
 Generation knobs live in corpus_config.toml. Override at the CLI with
 --config /path/to/other.toml or per-key --set generation.min_features=3.
 
+Phase 4: this module is a pure orchestrator. All external fetching
+lives in `sources/*.py`. To add a source, implement the `Source`
+Protocol in `sources/<name>.py` and register it in `sources/__init__.py`.
+
 Output:
     ../data/extended_corpus.json (path configurable via [output].path)
+    ../data/extended_corpus.parquet (configurable via [output].parquet_path)
 """
 
 from __future__ import annotations
@@ -23,15 +29,13 @@ import json
 import math
 import os
 import sys
-import time
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-import requests
 
 from corpus_config import CorpusConfig, add_config_args, load_config
 from gap_fill_data import GAP_FILL_CONCEPTS
@@ -43,79 +47,41 @@ from mappings import (
     FIELD_TO_CATEGORY,
     KEYWORD_TO_AXIS,
 )
-
-OPENALEX_BASE = "https://api.openalex.org"
-TOPIC_SELECT = "id,display_name,description,keywords,subfield,field,domain,works_count"
-SUBFIELD_SELECT = "id,display_name,field,domain,works_count"
+from sources import SOURCE_REGISTRY, RawTopic, SourceConfig, make_source
 
 
-# ─── HTTP helpers ────────────────────────────────────────────────────────
+# ─── Source orchestration ───────────────────────────────────────────────
 
-def _auth_params(api_key: str) -> dict[str, str]:
-    """Auto-detect whether the key is an email (polite pool) or a Premium key."""
-    if "@" in api_key:
-        return {"mailto": api_key}
-    return {"api_key": api_key}
+def gather_raw_topics(
+    source_names: list[str], config: CorpusConfig
+) -> Iterator[RawTopic]:
+    """Drain every configured source in declaration order.
 
-
-def _get_with_retry(url: str, params: dict[str, Any], config: CorpusConfig) -> dict:
-    """GET with exponential backoff sourced from config.http."""
-    delay = config.http.backoff_base
-    retries = config.http.retries
-    for attempt in range(retries + 1):
-        try:
-            resp = requests.get(url, params=params, timeout=config.http.timeout_seconds)
-            resp.raise_for_status()
-            return resp.json()
-        except (requests.RequestException, ValueError) as exc:
-            if attempt == retries:
-                raise
-            print(
-                f"  retry {attempt + 1}/{retries} after {delay:.1f}s: {exc}",
-                file=sys.stderr,
-            )
-            time.sleep(delay)
-            delay *= config.http.backoff_multiplier
-    raise RuntimeError("unreachable")
+    Topics from earlier sources arrive first; the de-dup step in
+    `_emit_concept_from_raw` resolves label collisions by skipping the
+    second (later) occurrence, with one exception: an openalex_subfield
+    label that collides with an earlier openalex topic gets the
+    " (subfield)" suffix instead.
+    """
+    for name in source_names:
+        source = make_source(name)
+        source_cfg = _per_source_config(name, config)
+        print(f"== fetching from {name} ==", file=sys.stderr)
+        n = 0
+        for raw in source.fetch(source_cfg):
+            yield raw
+            n += 1
+        print(f"== {name}: yielded {n} raw topics ==", file=sys.stderr)
 
 
-def _paginate(endpoint: str, select: str, api_key: str, config: CorpusConfig) -> list[dict]:
-    """Cursor-paginate an OpenAlex endpoint until exhaustion."""
-    out: list[dict] = []
-    cursor = "*"
-    page = 0
-    while cursor:
-        params = {
-            "per_page": config.http.per_page,
-            "cursor": cursor,
-            "select": select,
-            **_auth_params(api_key),
-        }
-        data = _get_with_retry(f"{OPENALEX_BASE}/{endpoint}", params, config)
-        results = data.get("results", [])
-        out.extend(results)
-        cursor = data.get("meta", {}).get("next_cursor")
-        page += 1
-        print(
-            f"  {endpoint} page {page}: +{len(results)} (total {len(out)})",
-            file=sys.stderr,
-        )
-        time.sleep(config.http.inter_page_sleep_seconds)
-        if not results:
-            break
-    return out
-
-
-def fetch_all_topics(api_key: str, config: CorpusConfig) -> list[dict]:
-    """Fetch every OpenAlex Topic record (~4,500 as of 2026)."""
-    print("Fetching topics from OpenAlex…", file=sys.stderr)
-    return _paginate("topics", TOPIC_SELECT, api_key, config)
-
-
-def fetch_all_subfields(api_key: str, config: CorpusConfig) -> list[dict]:
-    """Fetch every OpenAlex Subfield record (~254 as of 2026)."""
-    print("Fetching subfields from OpenAlex…", file=sys.stderr)
-    return _paginate("subfields", SUBFIELD_SELECT, api_key, config)
+def _per_source_config(name: str, cfg: CorpusConfig) -> SourceConfig:
+    """Per-source overrides. API keys come from `<NAME>_API_KEY` env vars."""
+    return SourceConfig(
+        api_key=os.environ.get(f"{name.upper()}_API_KEY"),
+        max_items=None,
+        cache_dir=None,
+        http=cfg.http,
+    )
 
 
 # ─── Category resolution ────────────────────────────────────────────────
@@ -135,19 +101,6 @@ def _extract_field_id(field_obj: Any) -> int | None:
         return None
 
 
-def _topic_text(topic: dict) -> str:
-    """Lowercase concat of display_name + description + subfield_name."""
-    parts: list[str] = []
-    if dn := topic.get("display_name"):
-        parts.append(str(dn))
-    if desc := topic.get("description"):
-        parts.append(str(desc))
-    sub = topic.get("subfield")
-    if isinstance(sub, dict) and (sdn := sub.get("display_name")):
-        parts.append(str(sdn))
-    return " ".join(parts).lower()
-
-
 def _apply_content_override(category: str, text: str) -> str:
     """Override the field-resolved category when topic text strongly indicates
     a different domain. Targets OpenAlex misfilings (e.g., Geochemistry under
@@ -160,13 +113,47 @@ def _apply_content_override(category: str, text: str) -> str:
     return category
 
 
-def resolve_category(topic: dict) -> str | None:
-    """Map an OpenAlex topic/subfield to a SphereQL category, or None to skip."""
-    field_id = _extract_field_id(topic.get("field"))
+def _resolve_category(raw: RawTopic) -> str | None:
+    """Map a `RawTopic` to a SphereQL category, or `None` to skip.
+
+    Routing precedence:
+      1. `gap_fill` items carry the category in `raw_category_hint`.
+      2. `openalex*` items route via OpenAlex field ID (preserves
+         pre-Phase-4 bit-identity).
+      3. All other sources prefer the source's `category_hints()`,
+         then fall back to keyword scan against `KEYWORD_TO_AXIS` +
+         `CATEGORY_PRIMARY_AXES`.
+    """
+    if raw.source_name == "gap_fill":
+        return raw.raw_category_hint
+
+    if raw.source_name.startswith("openalex"):
+        return _resolve_openalex_category(raw)
+
+    provider = raw.source_name.split("_")[0]
+    if provider in SOURCE_REGISTRY:
+        hints = make_source(provider).category_hints(raw)
+        if hints:
+            return max(hints, key=lambda kv: kv[1])[0]
+
+    return _keyword_to_category(raw)
+
+
+def _resolve_openalex_category(raw: RawTopic) -> str | None:
+    """Bit-identical port of pre-Phase-4 `resolve_category` for OpenAlex rows."""
+    field_id = _extract_field_id(raw.metadata.get("field"))
     if field_id is None:
         return None
 
-    text = _topic_text(topic)
+    parts: list[str] = []
+    if raw.label:
+        parts.append(raw.label)
+    if raw.description:
+        parts.append(raw.description)
+    sub_display = raw.metadata.get("subfield_display")
+    if sub_display:
+        parts.append(str(sub_display))
+    text = " ".join(parts).lower()
 
     if field_id in FIELD_TO_CATEGORY:
         return _apply_content_override(FIELD_TO_CATEGORY[field_id], text)
@@ -184,6 +171,36 @@ def resolve_category(topic: dict) -> str | None:
         return _apply_content_override(default_cat, text)
 
     return None
+
+
+def _keyword_to_category(raw: RawTopic) -> str | None:
+    """Fallback for sources without a field-ID taxonomy.
+
+    Scans `raw` text for `KEYWORD_TO_AXIS` hits, then picks the category
+    whose `CATEGORY_PRIMARY_AXES` capture the most hits. Returns `None`
+    when no keyword matches.
+    """
+    parts = [raw.label, raw.description, *raw.keywords]
+    sub = raw.metadata.get("subfield_display")
+    if sub:
+        parts.append(str(sub))
+    text = " ".join(p for p in parts if p).lower()
+
+    hits: Counter[int] = Counter()
+    for kw, axis in KEYWORD_TO_AXIS.items():
+        if kw in text:
+            hits[axis] += 1
+    if not hits:
+        return None
+
+    best_cat: str | None = None
+    best_score = 0
+    for cat, primaries in CATEGORY_PRIMARY_AXES.items():
+        score = sum(hits.get(a, 0) for a in primaries)
+        if score > best_score:
+            best_score = score
+            best_cat = cat
+    return best_cat
 
 
 # ─── Feature generation ─────────────────────────────────────────────────
@@ -204,43 +221,41 @@ def _scan_keywords(text: str) -> Counter:
 
 
 def _weight_for_rank(rank: int, hits: int, config: CorpusConfig) -> float:
-    """Look up base + divisor from config; clamp + apply jitter happens at call site.
-
-    The 0.2 multiplier is intentionally retained as a literal — it is the
-    fixed "weight delta" in the original formula and is not in scope for
-    this phase.
-    """
-    # TODO(phase-5): make 0.2 configurable if quality metric needs it
+    """Look up base + divisor from config; clamp + apply jitter happens at call site."""
     curve = config.generation.weight_curve
     entry = curve[rank] if rank < len(curve) else curve[-1]
     return entry.base + 0.2 * min(hits / entry.divisor, 1.0)
 
 
-def generate_features(topic: dict, category: str, config: CorpusConfig) -> list[tuple[int, float]]:
-    """
-    Produce a sparse feature vector matching the hand-crafted corpus
-    distribution: 4–8 features, weights in [0.2, 1.0].
-    """
-    label = str(topic.get("display_name") or "").strip()
+def generate_features_from_raw(
+    raw: RawTopic, category: str, config: CorpusConfig
+) -> list[tuple[int, float]]:
+    """Produce the sparse feature vector for a single `RawTopic`.
 
+    Bit-identical to the pre-Phase-4 `generate_features(topic, category, config)`
+    when the inputs are constructed from the same OpenAlex JSON: text
+    is `label + description + keywords + subfield_display` lowercased,
+    and `_hash_int` keys off the stripped label.
+    """
+    # Bit-identical text construction: always seed parts with the
+    # stripped label (matching pre-Phase-4 `parts: list[str] = [label]`),
+    # then conditionally append description / keywords / subfield_display.
+    label = (raw.label or "").strip()
     parts: list[str] = [label]
-    if desc := topic.get("description"):
-        parts.append(str(desc))
-    keywords = topic.get("keywords") or []
-    if isinstance(keywords, list):
-        parts.extend(str(k) for k in keywords)
-    sub = topic.get("subfield")
-    if isinstance(sub, dict) and (sdn := sub.get("display_name")):
-        parts.append(str(sdn))
+    if raw.description:
+        parts.append(raw.description)
+    parts.extend(raw.keywords)
+    sub_display = raw.metadata.get("subfield_display")
+    if sub_display:
+        parts.append(str(sub_display))
     text = " ".join(parts).lower()
 
     hits: Counter = _scan_keywords(text)
 
     # Force the top two category-primary axes into the feature set.
-    # Without this, high-frequency cross-cutting keywords (e.g., "analysis",
-    # "system", "data") can push the category anchor out of the top-N
-    # ranking, leaving concepts with zero overlap with their category's
-    # primaries — i.e., misrouted in the spatial sense.
+    # Without this, high-frequency cross-cutting keywords can push the
+    # category anchor out of the top-N ranking, leaving concepts with
+    # zero overlap with their category's primaries.
     primaries = CATEGORY_PRIMARY_AXES.get(category, [])
     primary_seed_hits = config.generation.primary_seed_hits
     for axis in primaries[:2]:
@@ -263,8 +278,6 @@ def generate_features(topic: dict, category: str, config: CorpusConfig) -> list[
     weighted: list[tuple[int, float]] = []
     for rank, (axis, h) in enumerate(chosen):
         base = _weight_for_rank(rank, h, config)
-
-        # Deterministic micro-variation centered on zero with width jitter_range.
         jitter_byte = (label_hash >> (rank * 8)) & 0xFF
         jitter = (jitter_byte / 255.0 - 0.5) * jitter_range
         w = max(weight_floor, min(weight_ceiling, base + jitter))
@@ -274,9 +287,6 @@ def generate_features(topic: dict, category: str, config: CorpusConfig) -> list[
     min_features = config.generation.min_features
     max_features = config.generation.max_features
     if len(weighted) < min_features:
-        # Fill with a weight one tenth above the floor, rounded the same
-        # way main-path weights are. Matches pre-Phase-1 literal `0.3`
-        # exactly when floor=0.2, round_decimals=1.
         fill_weight = round(weight_floor + 0.1, round_decimals)
         used = {a for a, _ in weighted}
         for axis in primaries:
@@ -292,7 +302,7 @@ def generate_features(topic: dict, category: str, config: CorpusConfig) -> list[
     return weighted
 
 
-# ─── Bridge metric ──────────────────────────────────────────────────────
+# ─── Bridge metric (aggregate stats) ────────────────────────────────────
 
 def count_bridges(concepts: list[dict]) -> int:
     """How many concepts activate axes from 2+ domain groups (ranges 0..107)."""
@@ -309,35 +319,9 @@ def count_bridges(concepts: list[dict]) -> int:
     return count
 
 
-# ─── Pseudo-topic helpers for subfields and gap-fill ────────────────────
-
-def _topic_from_subfield(sf: dict) -> dict:
-    """Wrap a subfield record so it flows through the topic pipeline."""
-    return {
-        "id": sf.get("id"),
-        "display_name": sf.get("display_name"),
-        "description": "",
-        "keywords": [],
-        "field": sf.get("field"),
-        "subfield": {"display_name": sf.get("display_name")},
-    }
-
-
-def _topic_from_gap_fill(label: str, keywords: list[str], category: str) -> dict:
-    return {
-        "id": f"gapfill:{category}:{label}",
-        "display_name": label,
-        "description": " ".join(keywords),
-        "keywords": list(keywords),
-        "field": None,
-        "subfield": None,
-        "_gap_fill_category": category,
-    }
-
-
 # ─── Derived signals (mirrors sphereql-corpus/src/derived.rs) ────────────
 #
-# These five helpers compute the Phase 2 quality signal fields. They are
+# These four helpers compute the Phase 2 quality signal fields. They are
 # deliberately a one-to-one port of `src/derived.rs` so the generator and
 # the Rust loader/validator agree byte-for-byte. Any change here must be
 # mirrored in derived.rs and vice versa; the round-trip test in
@@ -390,18 +374,6 @@ def _home_affinity(
     return max(0.0, min(1.0, dot / (na * nb)))
 
 
-def _source_confidence(topic: dict, source: str) -> float:
-    """OpenAlex: log10(1+works_count)/6 clamped. gap_fill: 0.5."""
-    if source == "gap_fill":
-        return 0.5
-    works = topic.get("works_count") or 0
-    try:
-        works = int(works)
-    except (TypeError, ValueError):
-        works = 0
-    return max(0.0, min(1.0, math.log10(1.0 + works) / 6.0))
-
-
 def _composite_quality(ha: float, ac: float, sc: float, bd: int) -> float:
     """0.4*home + 0.3*coherence + 0.2*source + 0.1*min(1, bd/3.0)."""
     bridge_score = min(1.0, bd / 3.0)
@@ -409,39 +381,59 @@ def _composite_quality(ha: float, ac: float, sc: float, bd: int) -> float:
     return max(0.0, min(1.0, q))
 
 
-# ─── Main ───────────────────────────────────────────────────────────────
+# ─── Concept emission ───────────────────────────────────────────────────
 
-def _openalex_id_tail(raw: Any) -> str | None:
-    if not isinstance(raw, str):
-        return None
-    return raw.rstrip("/").rsplit("/", 1)[-1] or None
+def _gap_fill_to_raw(label: str, keywords: list[str], category: str) -> RawTopic:
+    """Wrap a hand-curated gap-fill row as a `RawTopic` so it flows through
+    the same orchestration pipeline as fetched sources."""
+    return RawTopic(
+        external_id=f"gapfill:{category}:{label}",
+        label=label,
+        description=" ".join(keywords),
+        keywords=list(keywords),
+        raw_category_hint=category,
+        source_name="gap_fill",
+        metadata={},
+    )
 
 
-def _emit_concept(
-    topic: dict,
+def _emit_concept_from_raw(
+    raw: RawTopic,
     category: str,
-    source: str,
     seen_labels: set[str],
     config: CorpusConfig,
 ) -> dict | None:
-    label = str(topic.get("display_name") or "").strip()
+    """Build the emitted concept dict from a `RawTopic`. Returns `None` if
+    the label is empty or has already been seen (with `openalex_subfield`
+    receiving a " (subfield)" disambiguation suffix on first collision).
+    """
+    label = (raw.label or "").strip()
     if not label:
         return None
     final_label = label
-    if final_label in seen_labels and source == "openalex_subfield":
+    if final_label in seen_labels and raw.source_name == "openalex_subfield":
         final_label = f"{label} (subfield)"
     if final_label in seen_labels:
         return None
     seen_labels.add(final_label)
 
-    features = generate_features(topic, category, config)
+    features = generate_features_from_raw(raw, category, config)
     int_features = [(int(a), float(w)) for a, w in features]
     primaries = list(CATEGORY_PRIMARY_AXES.get(category, []))
 
     bridge_degree = _bridge_degree(int_features)
     axis_coherence = _axis_coherence(int_features, primaries)
     home_affinity = _home_affinity(int_features, primaries)
-    source_confidence = _source_confidence(topic, source)
+
+    if raw.source_name == "gap_fill":
+        source_confidence = 0.5
+    else:
+        provider = raw.source_name.split("_")[0]
+        if provider in SOURCE_REGISTRY:
+            source_confidence = make_source(provider).confidence(raw)
+        else:
+            source_confidence = 0.0
+
     quality = _composite_quality(
         home_affinity, axis_coherence, source_confidence, bridge_degree
     )
@@ -455,54 +447,40 @@ def _emit_concept(
         "bridge_degree": bridge_degree,
         "source_confidence": source_confidence,
         "home_affinity": home_affinity,
-        "source": source,
+        "source": raw.source_name,
     }
-    if oa_id := _openalex_id_tail(topic.get("id")):
-        record["openalex_id"] = oa_id
+    if raw.external_id:
+        if raw.source_name.startswith("openalex"):
+            record["openalex_id"] = raw.external_id
+        elif raw.source_name == "wikidata":
+            record["wikidata_id"] = raw.external_id
     return record
 
 
-def main(config: CorpusConfig, output_override: Path | None) -> int:
-    api_key = os.environ.get("OPENALEX_API_KEY")
-    if not api_key:
-        print(
-            "ERROR: OPENALEX_API_KEY env var is required. "
-            "Set it to a Premium API key or your contact email "
-            "(see https://openalex.org/settings/api).",
-            file=sys.stderr,
-        )
-        return 1
+# ─── Main ───────────────────────────────────────────────────────────────
 
-    topics = fetch_all_topics(api_key, config)
-    subfields = fetch_all_subfields(api_key, config)
-
+def main(
+    config: CorpusConfig,
+    source_names: list[str],
+    output_override: Path | None,
+) -> int:
     seen_labels: set[str] = set()
     concepts: list[dict] = []
     skipped = 0
 
-    for t in topics:
-        cat = resolve_category(t)
+    for raw in gather_raw_topics(source_names, config):
+        cat = _resolve_category(raw)
         if cat is None:
             skipped += 1
             continue
-        rec = _emit_concept(t, cat, "openalex", seen_labels, config)
-        if rec is not None:
-            concepts.append(rec)
-
-    for sf in subfields:
-        wrapped = _topic_from_subfield(sf)
-        cat = resolve_category(wrapped)
-        if cat is None:
-            skipped += 1
-            continue
-        rec = _emit_concept(wrapped, cat, "openalex_subfield", seen_labels, config)
+        rec = _emit_concept_from_raw(raw, cat, seen_labels, config)
         if rec is not None:
             concepts.append(rec)
 
     for category, entries in GAP_FILL_CONCEPTS.items():
         for label, kws in entries:
-            wrapped = _topic_from_gap_fill(label, list(kws), category)
-            rec = _emit_concept(wrapped, category, "gap_fill", seen_labels, config)
+            wrapped = _gap_fill_to_raw(label, list(kws), category)
+            rec = _emit_concept_from_raw(wrapped, category, seen_labels, config)
             if rec is not None:
                 concepts.append(rec)
 
@@ -518,21 +496,23 @@ def main(config: CorpusConfig, output_override: Path | None) -> int:
         f"across {len(by_cat)} categories",
         file=sys.stderr,
     )
-    print(
-        f"Features/concept: mean={sum(feat_lens) / len(feat_lens):.2f}, "
-        f"min={min(feat_lens)}, max={max(feat_lens)}",
-        file=sys.stderr,
-    )
-    print(
-        f"Bridge concepts: {bridge_count} "
-        f"({100 * bridge_count / len(concepts):.1f}%)",
-        file=sys.stderr,
-    )
+    if feat_lens:
+        print(
+            f"Features/concept: mean={sum(feat_lens) / len(feat_lens):.2f}, "
+            f"min={min(feat_lens)}, max={max(feat_lens)}",
+            file=sys.stderr,
+        )
+    if concepts:
+        print(
+            f"Bridge concepts: {bridge_count} "
+            f"({100 * bridge_count / len(concepts):.1f}%)",
+            file=sys.stderr,
+        )
 
     output = {
         "version": "1.0.0",
         "generator": "generate_extended.py",
-        "source": "OpenAlex Topics API + gap fill",
+        "source": " + ".join(source_names) + " + gap fill",
         "generated_at": datetime.now(timezone.utc).isoformat().replace(
             "+00:00", "Z"
         ),
@@ -566,15 +546,11 @@ def main(config: CorpusConfig, output_override: Path | None) -> int:
     # Phase 3: emit Parquet alongside JSON. The Rust loader prefers the
     # Parquet path; the JSON file remains for diffability and as a
     # `json-fallback`-gated emergency path.
-    parquet_path = (
-        (out_path.parent / config.output.parquet_path).resolve()
-        if not Path(config.output.parquet_path).is_absolute()
-        else Path(config.output.parquet_path)
-    )
-    # Resolve relative to tools/ dir for symmetry with the JSON path,
-    # but only if the configured value is relative.
-    if not Path(config.output.parquet_path).is_absolute():
-        parquet_path = (Path(__file__).resolve().parent / config.output.parquet_path).resolve()
+    parquet_cfg = Path(config.output.parquet_path)
+    if parquet_cfg.is_absolute():
+        parquet_path = parquet_cfg
+    else:
+        parquet_path = (Path(__file__).resolve().parent / parquet_cfg).resolve()
     parquet_path.parent.mkdir(parents=True, exist_ok=True)
     write_parquet(concepts, parquet_path)
     pq_size_mb = parquet_path.stat().st_size / (1024 * 1024)
@@ -658,9 +634,19 @@ def write_parquet(concepts: list[dict], path: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Generate the extended corpus from OpenAlex + gap-fill data."
+        description="Generate the extended corpus from one or more sources."
     )
     add_config_args(parser)
+    parser.add_argument(
+        "--source",
+        action="append",
+        default=None,
+        choices=sorted(SOURCE_REGISTRY),
+        help=(
+            "Source to fetch from. Repeatable. "
+            f"Registered: {sorted(SOURCE_REGISTRY)}. Default: openalex."
+        ),
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -669,4 +655,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     config = load_config(args.config, args.set)
-    raise SystemExit(main(config, args.output))
+    source_names = args.source or ["openalex"]
+    raise SystemExit(main(config, source_names, args.output))
