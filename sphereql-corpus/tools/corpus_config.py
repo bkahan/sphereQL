@@ -85,12 +85,34 @@ class QualityMetricConfig:
 
 
 @dataclass(frozen=True)
+class SelfTuneConfig:
+    """Inputs to sphereql_embed::run_self_tune (Phase 6).
+
+    Mirror of the `[self_tune]` TOML table. Defaults match
+    `SelfTuneConfig::default()` in Rust; keep them in sync if either
+    side moves.
+    """
+
+    max_iterations: int
+    plateau_epsilon: float
+    min_quality_to_keep: float
+    min_concepts_per_category: int
+    bridge_genuine_boost: float
+    bridge_artifact_penalty: float
+    curvature_outlier_penalty: float
+    curvature_z_threshold: float
+    home_affinity_smoothing: float
+    source_confidence_smoothing: float
+
+
+@dataclass(frozen=True)
 class CorpusConfig:
     generation: GenerationConfig
     validation: ValidationConfig
     http: HttpConfig
     output: OutputConfig
     quality_metric: QualityMetricConfig
+    self_tune: SelfTuneConfig
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "corpus_config.toml"
@@ -155,6 +177,28 @@ def load_config(
             w_bridge=float(raw["quality_metric"]["w_bridge"]),
             w_curvature=float(raw["quality_metric"]["w_curvature"]),
             w_balance=float(raw["quality_metric"]["w_balance"]),
+        ),
+        self_tune=SelfTuneConfig(
+            max_iterations=int(raw["self_tune"]["max_iterations"]),
+            plateau_epsilon=float(raw["self_tune"]["plateau_epsilon"]),
+            min_quality_to_keep=float(raw["self_tune"]["min_quality_to_keep"]),
+            min_concepts_per_category=int(
+                raw["self_tune"]["min_concepts_per_category"]
+            ),
+            bridge_genuine_boost=float(raw["self_tune"]["bridge_genuine_boost"]),
+            bridge_artifact_penalty=float(
+                raw["self_tune"]["bridge_artifact_penalty"]
+            ),
+            curvature_outlier_penalty=float(
+                raw["self_tune"]["curvature_outlier_penalty"]
+            ),
+            curvature_z_threshold=float(raw["self_tune"]["curvature_z_threshold"]),
+            home_affinity_smoothing=float(
+                raw["self_tune"]["home_affinity_smoothing"]
+            ),
+            source_confidence_smoothing=float(
+                raw["self_tune"]["source_confidence_smoothing"]
+            ),
         ),
     )
 

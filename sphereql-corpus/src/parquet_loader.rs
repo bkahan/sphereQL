@@ -117,6 +117,73 @@ pub fn load_concepts<P: AsRef<Path>>(path: P) -> Result<Vec<Concept>, ParquetLoa
     Ok(concepts)
 }
 
+/// One row's provenance metadata. Phase 6's self-tune writes the corpus
+/// back to Parquet and needs to preserve `source` / `openalex_id`, which
+/// [`Concept`] does not carry.
+#[derive(Debug, Clone, Default)]
+pub struct ConceptMetadata {
+    pub source: Option<String>,
+    pub openalex_id: Option<String>,
+}
+
+/// Eager loader that also returns the optional metadata columns
+/// (`source`, `openalex_id`). Pairs every loaded [`Concept`] with its
+/// row metadata, in row order, so callers can round-trip the corpus
+/// through a transformation pass without losing provenance.
+pub fn load_concepts_with_metadata<P: AsRef<Path>>(
+    path: P,
+) -> Result<Vec<(Concept, ConceptMetadata)>, ParquetLoadError> {
+    let file = File::open(path.as_ref())?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
+    let reader = builder.build()?;
+    let mut out = Vec::new();
+    for batch_result in reader {
+        let batch = batch_result?;
+        let concepts = batch_to_concepts(&batch)?;
+        let metadata = batch_to_metadata(&batch)?;
+        if concepts.len() != metadata.len() {
+            return Err(ParquetLoadError::Schema(format!(
+                "concepts/metadata length mismatch: {} vs {}",
+                concepts.len(),
+                metadata.len()
+            )));
+        }
+        out.extend(concepts.into_iter().zip(metadata));
+    }
+    Ok(out)
+}
+
+fn batch_to_metadata(batch: &RecordBatch) -> Result<Vec<ConceptMetadata>, ParquetLoadError> {
+    let source = optional_str(batch, "source");
+    let openalex_id = optional_str(batch, "openalex_id");
+    let mut out = Vec::with_capacity(batch.num_rows());
+    for i in 0..batch.num_rows() {
+        out.push(ConceptMetadata {
+            source: source.and_then(|a| {
+                if a.is_null(i) {
+                    None
+                } else {
+                    Some(a.value(i).to_string())
+                }
+            }),
+            openalex_id: openalex_id.and_then(|a| {
+                if a.is_null(i) {
+                    None
+                } else {
+                    Some(a.value(i).to_string())
+                }
+            }),
+        });
+    }
+    Ok(out)
+}
+
+fn optional_str<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a StringArray> {
+    batch
+        .column_by_name(name)
+        .and_then(|c| c.as_any().downcast_ref::<StringArray>())
+}
+
 /// Streaming iterator: yields concepts in row-group order without
 /// materializing the full corpus.
 ///

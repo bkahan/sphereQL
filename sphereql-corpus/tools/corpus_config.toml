@@ -75,3 +75,27 @@ w_evr = 0.30
 w_bridge = 0.30
 w_curvature = 0.20
 w_balance = 0.20
+
+# Phase 6: self-tuning loop parameters. The Rust binary
+# `cargo run -p sphereql-embed --example corpus_self_tune` reads the
+# canonical corpus, runs `run_self_tune` with these defaults, and writes
+# back to `*.tuned.parquet` (or in-place with --commit --commit-confirm).
+#
+# Reweight multipliers compose as
+#   quality *= bridge_factor
+#            * curvature_factor
+#            * (home_smooth + (1 - home_smooth) * home_affinity)
+#            * (source_smooth + (1 - source_smooth) * source_confidence)
+# clamped to [0, 1]. Pruning is greedy below `min_quality_to_keep` and
+# never drops a category below `min_concepts_per_category`.
+[self_tune]
+max_iterations = 10
+plateau_epsilon = 0.001
+min_quality_to_keep = 0.3
+min_concepts_per_category = 50
+bridge_genuine_boost = 1.05
+bridge_artifact_penalty = 0.85
+curvature_outlier_penalty = 0.9
+curvature_z_threshold = 1.5
+home_affinity_smoothing = 0.5
+source_confidence_smoothing = 0.8
