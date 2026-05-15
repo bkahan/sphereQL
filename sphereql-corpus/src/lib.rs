@@ -27,6 +27,7 @@
 //! extended corpora (~5,775+ concepts total).
 
 pub mod axes;
+pub mod bulk;
 pub mod concept;
 pub mod corpus;
 pub mod derived;

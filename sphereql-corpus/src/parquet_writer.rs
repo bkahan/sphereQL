@@ -110,7 +110,7 @@ where
     Ok(())
 }
 
-fn build_schema() -> Schema {
+pub(crate) fn build_schema() -> Schema {
     let feat_struct = DataType::Struct(Fields::from(vec![
         Field::new("axis", DataType::UInt32, false),
         Field::new("weight", DataType::Float64, false),
@@ -136,7 +136,10 @@ fn build_schema() -> Schema {
     ])
 }
 
-fn build_batch(schema: Arc<Schema>, rows: &[ConceptRow<'_>]) -> Result<RecordBatch, ParquetLoadError> {
+pub(crate) fn build_batch(
+    schema: Arc<Schema>,
+    rows: &[ConceptRow<'_>],
+) -> Result<RecordBatch, ParquetLoadError> {
     let labels = StringArray::from(rows.iter().map(|r| r.label).collect::<Vec<_>>());
     let cats = StringArray::from(rows.iter().map(|r| r.category).collect::<Vec<_>>());
 
