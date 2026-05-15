@@ -59,3 +59,19 @@ backoff_multiplier = 2.0
 path = "../data/extended_corpus.json"
 # Phase 3: Parquet artifact is the primary read path in Rust.
 parquet_path = "../data/extended_corpus.parquet"
+
+# Phase 5: weights for sphereql_embed::CorpusQuality. The metric fuses
+# four sub-scores into a single tuner objective:
+#   composite = (w_evr * EVR
+#              + w_bridge * bridge_coherence
+#              + w_curvature * curvature_health
+#              + w_balance * category_balance) / sum(weights)
+# Weights must be non-negative and not all zero; they do NOT need to
+# sum to 1 — the metric normalizes by their sum at score time. Phase 6
+# is the consumer that wires these into the Rust tuner; Phase 5 only
+# requires the config schema to exist.
+[quality_metric]
+w_evr = 0.30
+w_bridge = 0.30
+w_curvature = 0.20
+w_balance = 0.20

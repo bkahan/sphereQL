@@ -70,11 +70,27 @@ class OutputConfig:
 
 
 @dataclass(frozen=True)
+class QualityMetricConfig:
+    """Weights for sphereql_embed::CorpusQuality (Phase 5).
+
+    Mirror of the `[quality_metric]` TOML table. Phase 6 consumes these
+    when constructing the Rust metric from Python; Phase 5 only requires
+    the schema to round-trip cleanly.
+    """
+
+    w_evr: float
+    w_bridge: float
+    w_curvature: float
+    w_balance: float
+
+
+@dataclass(frozen=True)
 class CorpusConfig:
     generation: GenerationConfig
     validation: ValidationConfig
     http: HttpConfig
     output: OutputConfig
+    quality_metric: QualityMetricConfig
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "corpus_config.toml"
@@ -133,6 +149,12 @@ def load_config(
         output=OutputConfig(
             path=str(raw["output"]["path"]),
             parquet_path=str(raw["output"]["parquet_path"]),
+        ),
+        quality_metric=QualityMetricConfig(
+            w_evr=float(raw["quality_metric"]["w_evr"]),
+            w_bridge=float(raw["quality_metric"]["w_bridge"]),
+            w_curvature=float(raw["quality_metric"]["w_curvature"]),
+            w_balance=float(raw["quality_metric"]["w_balance"]),
         ),
     )
 
