@@ -66,6 +66,7 @@ class HttpConfig:
 @dataclass(frozen=True)
 class OutputConfig:
     path: str
+    parquet_path: str
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,10 @@ def load_config(
             backoff_base=float(raw["http"]["backoff_base"]),
             backoff_multiplier=float(raw["http"]["backoff_multiplier"]),
         ),
-        output=OutputConfig(path=str(raw["output"]["path"])),
+        output=OutputConfig(
+            path=str(raw["output"]["path"]),
+            parquet_path=str(raw["output"]["parquet_path"]),
+        ),
     )
 
 

@@ -57,3 +57,5 @@ backoff_multiplier = 2.0
 
 [output]
 path = "../data/extended_corpus.json"
+# Phase 3: Parquet artifact is the primary read path in Rust.
+parquet_path = "../data/extended_corpus.parquet"

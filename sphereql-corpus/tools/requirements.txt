@@ -1,2 +1,5 @@
 requests>=2.31.0
 tomli>=2.0; python_version < "3.11"
+# Phase 3: Parquet emit alongside JSON. The Rust loader reads the
+# Parquet artifact first.
+pyarrow>=15.0

@@ -9,3 +9,11 @@ repository.workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Phase 3: Parquet/Arrow read path for scale beyond ~10K concepts.
+arrow = { version = "58", default-features = false, features = ["ipc"] }
+parquet = { version = "58", default-features = false, features = ["arrow", "snap"] }
+memmap2 = "0.9"
+
+[features]
+default = ["json-fallback"]
+json-fallback = []

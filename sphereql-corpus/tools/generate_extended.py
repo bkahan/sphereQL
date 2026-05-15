@@ -29,6 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import requests
 
 from corpus_config import CorpusConfig, add_config_args, load_config
@@ -560,7 +562,98 @@ def main(config: CorpusConfig, output_override: Path | None) -> int:
 
     size_mb = out_path.stat().st_size / (1024 * 1024)
     print(f"\nWrote {out_path} ({size_mb:.2f} MB)", file=sys.stderr)
+
+    # Phase 3: emit Parquet alongside JSON. The Rust loader prefers the
+    # Parquet path; the JSON file remains for diffability and as a
+    # `json-fallback`-gated emergency path.
+    parquet_path = (
+        (out_path.parent / config.output.parquet_path).resolve()
+        if not Path(config.output.parquet_path).is_absolute()
+        else Path(config.output.parquet_path)
+    )
+    # Resolve relative to tools/ dir for symmetry with the JSON path,
+    # but only if the configured value is relative.
+    if not Path(config.output.parquet_path).is_absolute():
+        parquet_path = (Path(__file__).resolve().parent / config.output.parquet_path).resolve()
+    parquet_path.parent.mkdir(parents=True, exist_ok=True)
+    write_parquet(concepts, parquet_path)
+    pq_size_mb = parquet_path.stat().st_size / (1024 * 1024)
+    print(f"Wrote {parquet_path} ({pq_size_mb:.2f} MB)", file=sys.stderr)
     return 0
+
+
+# ─── Parquet emit ────────────────────────────────────────────────────────
+
+
+def write_parquet(concepts: list[dict], path: Path) -> None:
+    """Emit the corpus as a Parquet file matching `parquet_loader.rs`'s schema.
+
+    Columns:
+      label (string, non-null), category (string, non-null),
+      features (list<struct<axis:u32, weight:f64>>, non-null),
+      quality / axis_coherence / source_confidence / home_affinity (f64),
+      bridge_degree (u8),
+      source (string, nullable), openalex_id (string, nullable).
+
+    Compression SNAPPY, row group size 4096, dictionary encoding on for
+    repeated string columns. Any drift between this writer and the Rust
+    reader will be caught by the parquet_matches_json round-trip test.
+    """
+    feature_struct = pa.struct([
+        pa.field("axis", pa.uint32(), nullable=False),
+        pa.field("weight", pa.float64(), nullable=False),
+    ])
+    schema = pa.schema([
+        pa.field("label", pa.string(), nullable=False),
+        pa.field("category", pa.string(), nullable=False),
+        pa.field("features", pa.list_(feature_struct), nullable=False),
+        pa.field("quality", pa.float64(), nullable=False),
+        pa.field("axis_coherence", pa.float64(), nullable=False),
+        pa.field("bridge_degree", pa.uint8(), nullable=False),
+        pa.field("source_confidence", pa.float64(), nullable=False),
+        pa.field("home_affinity", pa.float64(), nullable=False),
+        pa.field("source", pa.string(), nullable=True),
+        pa.field("openalex_id", pa.string(), nullable=True),
+    ])
+
+    arrays = {
+        "label": pa.array([c["label"] for c in concepts], type=pa.string()),
+        "category": pa.array([c["category"] for c in concepts], type=pa.string()),
+        "features": pa.array(
+            [
+                [{"axis": int(a), "weight": float(w)} for a, w in c["features"]]
+                for c in concepts
+            ],
+            type=pa.list_(feature_struct),
+        ),
+        "quality": pa.array([c["quality"] for c in concepts], type=pa.float64()),
+        "axis_coherence": pa.array(
+            [c["axis_coherence"] for c in concepts], type=pa.float64()
+        ),
+        "bridge_degree": pa.array(
+            [c["bridge_degree"] for c in concepts], type=pa.uint8()
+        ),
+        "source_confidence": pa.array(
+            [c["source_confidence"] for c in concepts], type=pa.float64()
+        ),
+        "home_affinity": pa.array(
+            [c["home_affinity"] for c in concepts], type=pa.float64()
+        ),
+        "source": pa.array(
+            [c.get("source") for c in concepts], type=pa.string()
+        ),
+        "openalex_id": pa.array(
+            [c.get("openalex_id") for c in concepts], type=pa.string()
+        ),
+    }
+    table = pa.Table.from_pydict(arrays, schema=schema)
+    pq.write_table(
+        table,
+        path,
+        compression="snappy",
+        row_group_size=4096,
+        use_dictionary=["label", "category", "source"],
+    )
 
 
 if __name__ == "__main__":
