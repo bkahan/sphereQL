@@ -147,3 +147,28 @@ min_year = 2010
 dump_path = "/tmp/latest-all.json.bz2"
 only_items = true
 require_english_label = true
+
+# Phase 7: emergent clustering. After a bulk ingest writes raw
+# (uncategorized) concepts, `tools/cluster_bulk.py` runs
+# MiniBatchKMeans on the sparse 128-axis feature vectors and
+# overwrites the `category` column with the assigned cluster label.
+# This replaces the fixed 31-category whitelist with categories that
+# fall out of the actual data — same shape, but the boundaries are
+# learned not authored.
+[cluster]
+k = 64                       # initial cluster count; below
+                             # `min_size_per_cluster` triggers shrink
+                             # (see `auto_merge`).
+batch_size = 4_096           # MiniBatchKMeans batch
+max_iter = 200
+n_init = 3                   # restarts for best-inertia selection
+random_seed = 42             # determinism across runs
+min_size_per_cluster = 50    # any smaller and we merge into nearest
+auto_merge = true            # post-cluster fold of underweight bins
+# Sampling for the centroid fit at very large scale. The full corpus
+# is still assigned to centroids; only the *fit* uses a sample. 0 =
+# fit on full corpus (default ≤ 5M; raise for 50M+).
+sample_size = 0
+# Top axes / concepts to surface per cluster in the JSON sidecar.
+top_axes_per_cluster = 6
+top_concepts_per_cluster = 5

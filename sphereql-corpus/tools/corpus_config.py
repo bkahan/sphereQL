@@ -150,6 +150,27 @@ class BulkConfig:
 
 
 @dataclass(frozen=True)
+class ClusterConfig:
+    """MiniBatchKMeans parameters for `tools/cluster_bulk.py` (Phase 7).
+
+    Mirror of the `[cluster]` TOML table. The clusterer runs after a
+    bulk ingest and overwrites each row's `category` column with the
+    assigned cluster label.
+    """
+
+    k: int
+    batch_size: int
+    max_iter: int
+    n_init: int
+    random_seed: int
+    min_size_per_cluster: int
+    auto_merge: bool
+    sample_size: int
+    top_axes_per_cluster: int
+    top_concepts_per_cluster: int
+
+
+@dataclass(frozen=True)
 class CorpusConfig:
     generation: GenerationConfig
     validation: ValidationConfig
@@ -158,6 +179,7 @@ class CorpusConfig:
     quality_metric: QualityMetricConfig
     self_tune: SelfTuneConfig
     bulk: BulkConfig
+    cluster: ClusterConfig
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "corpus_config.toml"
@@ -276,6 +298,18 @@ def load_config(
                     raw["bulk"]["wikidata_dump"]["require_english_label"]
                 ),
             ),
+        ),
+        cluster=ClusterConfig(
+            k=int(raw["cluster"]["k"]),
+            batch_size=int(raw["cluster"]["batch_size"]),
+            max_iter=int(raw["cluster"]["max_iter"]),
+            n_init=int(raw["cluster"]["n_init"]),
+            random_seed=int(raw["cluster"]["random_seed"]),
+            min_size_per_cluster=int(raw["cluster"]["min_size_per_cluster"]),
+            auto_merge=bool(raw["cluster"]["auto_merge"]),
+            sample_size=int(raw["cluster"]["sample_size"]),
+            top_axes_per_cluster=int(raw["cluster"]["top_axes_per_cluster"]),
+            top_concepts_per_cluster=int(raw["cluster"]["top_concepts_per_cluster"]),
         ),
     )
 

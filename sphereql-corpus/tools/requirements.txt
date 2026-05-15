@@ -3,3 +3,10 @@ tomli>=2.0; python_version < "3.11"
 # Phase 3: Parquet emit alongside JSON. The Rust loader reads the
 # Parquet artifact first.
 pyarrow>=15.0
+# Phase 7: emergent clustering for bulk-ingested corpora.
+# `cluster_bulk.py` runs MiniBatchKMeans on the sparse 128-axis feature
+# vectors written by the Rust `bulk_ingest` binary. scipy is required
+# for the sparse CSR matrix the clusterer fits against.
+numpy>=1.26
+scipy>=1.11
+scikit-learn>=1.4
