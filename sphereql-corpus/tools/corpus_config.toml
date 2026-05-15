@@ -1,0 +1,59 @@
+# Single source of truth for corpus generation + validation parameters.
+# Every value here was a hardcoded constant in tools/*.py before Phase 1.
+# Override at the CLI with --config /path/to/override.toml or per-key
+# --set generation.min_features=3.
+
+[generation]
+num_axes = 128
+min_features = 4
+max_features = 8
+n_features_min = 5         # generate_extended.py: "5 + (label_hash % 3)" → min 5
+n_features_max = 7         # generate_extended.py: → max 7 (5+2)
+weight_floor = 0.2
+weight_ceiling = 1.0
+weight_jitter_range = 0.1  # ±0.05 about base
+weight_round_decimals = 1
+primary_seed_hits = 100    # generate_extended.py:227
+
+# Per-rank weight curve. Index 0..N-1 corresponds to rank 0..N-1.
+# The last entry applies to all ranks ≥ N-1 (current behavior: rank 4+).
+# weight = base + 0.2 * min(hit_count / divisor, 1.0) + jitter
+[[generation.weight_curve]]
+base = 0.8
+divisor = 4.0
+
+[[generation.weight_curve]]
+base = 0.6
+divisor = 3.0
+
+[[generation.weight_curve]]
+base = 0.4
+divisor = 2.0
+
+[[generation.weight_curve]]
+base = 0.4
+divisor = 2.0
+
+[[generation.weight_curve]]
+base = 0.3
+divisor = 2.0
+
+[validation]
+min_total_concepts = 5000
+min_per_category = 50
+warn_thin_category = 80
+min_mean_features = 4.5
+max_mean_features = 7.0
+min_bridge_ratio = 0.75
+max_misrouted_ratio = 0.05
+
+[http]
+timeout_seconds = 60
+per_page = 100
+inter_page_sleep_seconds = 0.1
+retries = 3
+backoff_base = 1.0
+backoff_multiplier = 2.0
+
+[output]
+path = "../data/extended_corpus.json"

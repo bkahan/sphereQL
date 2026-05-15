@@ -2,17 +2,23 @@
 """Validate extended_corpus.json against SphereQL corpus invariants.
 
 Usage:
-    python3 validate_corpus.py [path/to/extended_corpus.json]
+    python3 validate_corpus.py [path/to/extended_corpus.json] [--config PATH] [--set k=v]
 
 Exit code 0 = all checks pass, 1 = any check fails.
+
+Thresholds are loaded from tools/corpus_config.toml (see [validation] +
+[generation] sections). Override at the CLI with --config or --set.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections import Counter
 from pathlib import Path
+
+from corpus_config import CorpusConfig, add_config_args, load_config
 
 EXPECTED_CATEGORIES = {
     "physics", "mathematics", "biology", "chemistry", "medicine", "neuroscience",
@@ -35,21 +41,6 @@ DOMAIN_AXIS_RANGES: list[range] = [
     range(102, 104), range(104, 107),
 ]
 
-MIN_TOTAL_CONCEPTS = 5000
-MIN_PER_CATEGORY = 50
-WARN_THIN_CATEGORY = 80
-MIN_FEATURES = 4
-MAX_FEATURES = 8
-MIN_MEAN_FEATURES = 4.5
-MAX_MEAN_FEATURES = 7.0
-WEIGHT_MIN = 0.2
-WEIGHT_MAX = 1.0
-NUM_AXES = 128
-MIN_BRIDGE_RATIO = 0.75
-# Fraction of concepts allowed to have zero overlap with their category's
-# primary axes. Concepts above this threshold are misrouted (Critical #3).
-MAX_MISROUTED_RATIO = 0.05
-
 
 class Report:
     def __init__(self) -> None:
@@ -69,12 +60,6 @@ class Report:
         self.warnings += 1
 
 
-def _resolve_path(argv: list[str]) -> Path:
-    if len(argv) > 1:
-        return Path(argv[1]).resolve()
-    return (Path(__file__).resolve().parent.parent / "data" / "extended_corpus.json").resolve()
-
-
 def _bar(count: int, max_count: int, width: int = 30) -> str:
     if max_count <= 0:
         return ""
@@ -82,15 +67,27 @@ def _bar(count: int, max_count: int, width: int = 30) -> str:
     return "█" * fill + "·" * (width - fill)
 
 
-def main(argv: list[str]) -> int:
-    path = _resolve_path(argv)
-    print(f"Validating {path}\n")
+def main(corpus_path: Path, config: CorpusConfig) -> int:
+    print(f"Validating {corpus_path}\n")
 
     rep = Report()
 
+    min_total_concepts = config.validation.min_total_concepts
+    min_per_category = config.validation.min_per_category
+    warn_thin_category = config.validation.warn_thin_category
+    min_features = config.generation.min_features
+    max_features = config.generation.max_features
+    min_mean_features = config.validation.min_mean_features
+    max_mean_features = config.validation.max_mean_features
+    weight_min = config.generation.weight_floor
+    weight_max = config.generation.weight_ceiling
+    num_axes = config.generation.num_axes
+    min_bridge_ratio = config.validation.min_bridge_ratio
+    max_misrouted_ratio = config.validation.max_misrouted_ratio
+
     # Check 1: parse
     try:
-        with path.open("r", encoding="utf-8") as fh:
+        with corpus_path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, json.JSONDecodeError) as exc:
         rep.check(False, "JSON parses", str(exc))
@@ -105,8 +102,8 @@ def main(argv: list[str]) -> int:
 
     # Check 2: total size
     rep.check(
-        len(concepts) >= MIN_TOTAL_CONCEPTS,
-        f"total concepts ≥ {MIN_TOTAL_CONCEPTS}",
+        len(concepts) >= min_total_concepts,
+        f"total concepts ≥ {min_total_concepts}",
         f"got {len(concepts)}",
     )
 
@@ -122,15 +119,15 @@ def main(argv: list[str]) -> int:
     )
 
     # Check 4: per-category minimums
-    under = [(c, n) for c, n in cats.items() if n < MIN_PER_CATEGORY]
+    under = [(c, n) for c, n in cats.items() if n < min_per_category]
     rep.check(
         not under,
-        f"every category has ≥{MIN_PER_CATEGORY} concepts",
+        f"every category has ≥{min_per_category} concepts",
         f"under-floor: {under}" if under else "",
     )
     for cat, n in cats.items():
-        if MIN_PER_CATEGORY <= n < WARN_THIN_CATEGORY:
-            rep.warn(f"thin category '{cat}' has {n} concepts (<{WARN_THIN_CATEGORY})")
+        if min_per_category <= n < warn_thin_category:
+            rep.warn(f"thin category '{cat}' has {n} concepts (<{warn_thin_category})")
 
     # Checks 5–9: feature shape, weights, axis bounds, dup axes
     feat_lens: list[int] = []
@@ -147,7 +144,7 @@ def main(argv: list[str]) -> int:
         label_counter[label] += 1
         feats = c.get("features") or []
         feat_lens.append(len(feats))
-        if not (MIN_FEATURES <= len(feats) <= MAX_FEATURES):
+        if not (min_features <= len(feats) <= max_features):
             bad_len.append(label)
 
         seen_axes: set[int] = set()
@@ -161,7 +158,7 @@ def main(argv: list[str]) -> int:
             except (TypeError, ValueError):
                 bad_axis.append((label, -1))
                 continue
-            if not (0 <= axis < NUM_AXES):
+            if not (0 <= axis < num_axes):
                 bad_axis.append((label, axis))
                 continue
             if axis in seen_axes:
@@ -173,28 +170,28 @@ def main(argv: list[str]) -> int:
             except (TypeError, ValueError):
                 bad_weight.append((label, float("nan")))
                 continue
-            if not (WEIGHT_MIN - 1e-9 <= w <= WEIGHT_MAX + 1e-9):
+            if not (weight_min - 1e-9 <= w <= weight_max + 1e-9):
                 bad_weight.append((label, w))
 
     rep.check(
         not bad_len,
-        f"every concept has {MIN_FEATURES}–{MAX_FEATURES} features",
+        f"every concept has {min_features}–{max_features} features",
         f"{len(bad_len)} violations" if bad_len else "",
     )
     mean_feats = sum(feat_lens) / len(feat_lens) if feat_lens else 0.0
     rep.check(
-        MIN_MEAN_FEATURES <= mean_feats <= MAX_MEAN_FEATURES,
-        f"mean features/concept in [{MIN_MEAN_FEATURES}, {MAX_MEAN_FEATURES}]",
+        min_mean_features <= mean_feats <= max_mean_features,
+        f"mean features/concept in [{min_mean_features}, {max_mean_features}]",
         f"got {mean_feats:.2f}",
     )
     rep.check(
         not bad_weight,
-        f"all weights in [{WEIGHT_MIN}, {WEIGHT_MAX}]",
+        f"all weights in [{weight_min}, {weight_max}]",
         f"{len(bad_weight)} violations" if bad_weight else "",
     )
     rep.check(
         not bad_axis,
-        f"all axis indices in [0, {NUM_AXES - 1}]",
+        f"all axis indices in [0, {num_axes - 1}]",
         f"{len(bad_axis)} violations" if bad_axis else "",
     )
     rep.check(
@@ -211,11 +208,11 @@ def main(argv: list[str]) -> int:
         f"{len(dups)} duplicates" if dups else "",
     )
 
-    # Check 11: all 128 axes used
-    missing_axes = [a for a in range(NUM_AXES) if a not in used_axes]
+    # Check 11: all axes used
+    missing_axes = [a for a in range(num_axes) if a not in used_axes]
     rep.check(
         not missing_axes,
-        f"all {NUM_AXES} axes used at least once",
+        f"all {num_axes} axes used at least once",
         f"unused: {missing_axes}" if missing_axes else "",
     )
 
@@ -246,8 +243,8 @@ def main(argv: list[str]) -> int:
 
     misrouted_ratio = len(misrouted) / len(concepts) if concepts else 0.0
     ok = rep.check(
-        misrouted_ratio <= MAX_MISROUTED_RATIO,
-        f"misrouted concepts ≤ {MAX_MISROUTED_RATIO:.0%}",
+        misrouted_ratio <= max_misrouted_ratio,
+        f"misrouted concepts ≤ {max_misrouted_ratio:.0%}",
         f"{len(misrouted)}/{len(concepts)} ({misrouted_ratio:.1%}) have zero overlap "
         f"with their category's primary axes",
     )
@@ -279,8 +276,8 @@ def main(argv: list[str]) -> int:
             bridge_count += 1
     bridge_ratio = bridge_count / len(concepts) if concepts else 0.0
     rep.check(
-        bridge_ratio >= MIN_BRIDGE_RATIO,
-        f"bridge ratio ≥ {MIN_BRIDGE_RATIO:.0%}",
+        bridge_ratio >= min_bridge_ratio,
+        f"bridge ratio ≥ {min_bridge_ratio:.0%}",
         f"got {bridge_ratio:.1%} ({bridge_count}/{len(concepts)})",
     )
 
@@ -301,4 +298,22 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    parser = argparse.ArgumentParser(
+        description="Validate the extended corpus JSON against configured invariants."
+    )
+    add_config_args(parser)
+    parser.add_argument(
+        "corpus_path",
+        nargs="?",
+        type=Path,
+        default=None,
+        help="Path to corpus JSON (default: from config.output.path).",
+    )
+    args = parser.parse_args()
+    config = load_config(args.config, args.set)
+    corpus_path = (
+        args.corpus_path.resolve()
+        if args.corpus_path is not None
+        else (Path(__file__).resolve().parent / config.output.path).resolve()
+    )
+    raise SystemExit(main(corpus_path, config))
