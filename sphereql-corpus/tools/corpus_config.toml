@@ -99,3 +99,51 @@ curvature_outlier_penalty = 0.9
 curvature_z_threshold = 1.5
 home_affinity_smoothing = 0.5
 source_confidence_smoothing = 0.8
+
+# Phase 7: streaming bulk ingest. The Rust binary
+# `cargo run -p sphereql-corpus --example bulk_ingest` reads its CLI
+# args from this table via `tools/run_bulk_ingest.py`, then streams a
+# BulkSource through HashedClaimAxisExtractor and writes a Parquet
+# corpus at `target_size`. Defaults target ~500K Wikidata items; switch
+# `source` to scale up.
+[bulk]
+# Active source. One of "wikidata_sparql" (5K–1M), "openalex_shard"
+# (1M–50M), "wikidata_dump" (50M–500M).
+source = "wikidata_sparql"
+# Where the streamed Parquet lands. `*.checkpoint.json` sits next to it.
+output = "../data/bulk_corpus.parquet"
+# Number of items the source should yield before stopping.
+target_size = 500_000
+# Hashed claim axes. 128 matches `sphereql_corpus::DIM` — leave alone
+# unless you're experimenting with a smaller embedding spectrum.
+num_axes = 128
+# FNV-1a seed for axis hashing. Hold this stable so the same
+# (predicate, object) pair lands on the same axis across runs.
+axis_seed = 0xDEADBEEF
+# Rows per Parquet flush. Matches the non-streaming writer; raise for
+# fewer row groups on fat boxes, lower if memory is tight.
+batch_size = 10_000
+# Resume from the sibling checkpoint sidecar if present (skip the
+# source's first `source_offset` items). The output Parquet is
+# rewritten from scratch — checkpointed resume is for the *source*
+# pointer, not the output file.
+resume = false
+
+[bulk.wikidata_sparql]
+endpoint = "https://query.wikidata.org/sparql"
+page_size = 500
+inter_page_sleep_ms = 250
+timeout_seconds = 60
+retries = 3
+
+[bulk.openalex_shard]
+# Directory the user populated via `aws s3 sync s3://openalex/data/works/`.
+shard_dir = "/tmp/openalex_shards"
+min_cited_by = 5
+min_year = 2010
+
+[bulk.wikidata_dump]
+# Local path to the bz2-compressed JSON dump.
+dump_path = "/tmp/latest-all.json.bz2"
+only_items = true
+require_english_label = true

@@ -106,6 +106,50 @@ class SelfTuneConfig:
 
 
 @dataclass(frozen=True)
+class BulkSparqlConfig:
+    endpoint: str
+    page_size: int
+    inter_page_sleep_ms: int
+    timeout_seconds: int
+    retries: int
+
+
+@dataclass(frozen=True)
+class BulkOpenalexShardConfig:
+    shard_dir: str
+    min_cited_by: int
+    min_year: int
+
+
+@dataclass(frozen=True)
+class BulkWikidataDumpConfig:
+    dump_path: str
+    only_items: bool
+    require_english_label: bool
+
+
+@dataclass(frozen=True)
+class BulkConfig:
+    """Inputs to the Rust streaming ingest binary (Phase 7).
+
+    Mirror of the `[bulk]` TOML table plus its per-source subtables.
+    `source` selects which subtable's options actually get passed to
+    the binary at run time.
+    """
+
+    source: str
+    output: str
+    target_size: int
+    num_axes: int
+    axis_seed: int
+    batch_size: int
+    resume: bool
+    wikidata_sparql: BulkSparqlConfig
+    openalex_shard: BulkOpenalexShardConfig
+    wikidata_dump: BulkWikidataDumpConfig
+
+
+@dataclass(frozen=True)
 class CorpusConfig:
     generation: GenerationConfig
     validation: ValidationConfig
@@ -113,6 +157,7 @@ class CorpusConfig:
     output: OutputConfig
     quality_metric: QualityMetricConfig
     self_tune: SelfTuneConfig
+    bulk: BulkConfig
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "corpus_config.toml"
@@ -198,6 +243,38 @@ def load_config(
             ),
             source_confidence_smoothing=float(
                 raw["self_tune"]["source_confidence_smoothing"]
+            ),
+        ),
+        bulk=BulkConfig(
+            source=str(raw["bulk"]["source"]),
+            output=str(raw["bulk"]["output"]),
+            target_size=int(raw["bulk"]["target_size"]),
+            num_axes=int(raw["bulk"]["num_axes"]),
+            axis_seed=int(raw["bulk"]["axis_seed"]),
+            batch_size=int(raw["bulk"]["batch_size"]),
+            resume=bool(raw["bulk"]["resume"]),
+            wikidata_sparql=BulkSparqlConfig(
+                endpoint=str(raw["bulk"]["wikidata_sparql"]["endpoint"]),
+                page_size=int(raw["bulk"]["wikidata_sparql"]["page_size"]),
+                inter_page_sleep_ms=int(
+                    raw["bulk"]["wikidata_sparql"]["inter_page_sleep_ms"]
+                ),
+                timeout_seconds=int(
+                    raw["bulk"]["wikidata_sparql"]["timeout_seconds"]
+                ),
+                retries=int(raw["bulk"]["wikidata_sparql"]["retries"]),
+            ),
+            openalex_shard=BulkOpenalexShardConfig(
+                shard_dir=str(raw["bulk"]["openalex_shard"]["shard_dir"]),
+                min_cited_by=int(raw["bulk"]["openalex_shard"]["min_cited_by"]),
+                min_year=int(raw["bulk"]["openalex_shard"]["min_year"]),
+            ),
+            wikidata_dump=BulkWikidataDumpConfig(
+                dump_path=str(raw["bulk"]["wikidata_dump"]["dump_path"]),
+                only_items=bool(raw["bulk"]["wikidata_dump"]["only_items"]),
+                require_english_label=bool(
+                    raw["bulk"]["wikidata_dump"]["require_english_label"]
+                ),
             ),
         ),
     )
