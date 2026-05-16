@@ -150,6 +150,21 @@ class BulkConfig:
 
 
 @dataclass(frozen=True)
+class SelfTuneBulkConfig:
+    """Softened self-tune overrides for bulk corpora (Phase 7).
+
+    Mirror of the `[self_tune_bulk]` TOML table. The bulk pipeline
+    runs `corpus_self_tune` with these CLI overrides; the four-key
+    subset is all the binary accepts to override at runtime today.
+    """
+
+    max_iterations: int
+    plateau_epsilon: float
+    min_quality_to_keep: float
+    min_concepts_per_category: int
+
+
+@dataclass(frozen=True)
 class ClusterConfig:
     """MiniBatchKMeans parameters for `tools/cluster_bulk.py` (Phase 7).
 
@@ -178,6 +193,7 @@ class CorpusConfig:
     output: OutputConfig
     quality_metric: QualityMetricConfig
     self_tune: SelfTuneConfig
+    self_tune_bulk: SelfTuneBulkConfig
     bulk: BulkConfig
     cluster: ClusterConfig
 
@@ -265,6 +281,14 @@ def load_config(
             ),
             source_confidence_smoothing=float(
                 raw["self_tune"]["source_confidence_smoothing"]
+            ),
+        ),
+        self_tune_bulk=SelfTuneBulkConfig(
+            max_iterations=int(raw["self_tune_bulk"]["max_iterations"]),
+            plateau_epsilon=float(raw["self_tune_bulk"]["plateau_epsilon"]),
+            min_quality_to_keep=float(raw["self_tune_bulk"]["min_quality_to_keep"]),
+            min_concepts_per_category=int(
+                raw["self_tune_bulk"]["min_concepts_per_category"]
             ),
         ),
         bulk=BulkConfig(

@@ -34,12 +34,28 @@ const DEFAULT_CORPUS: &str = "sphereql-corpus/data/extended_corpus.parquet";
 const TUNED_SUFFIX: &str = ".tuned.parquet";
 const EMBED_SEED: u64 = 0xDEAD_BEEF;
 
+const HELP: &str = "\
+usage: corpus_self_tune [OPTIONS]
+
+  --corpus PATH               input parquet (default extended_corpus.parquet)
+  --out PATH                  output parquet (default <corpus>.tuned.parquet)
+  --commit                    write back to --corpus (requires --commit-confirm)
+  --commit-confirm            second-factor for --commit
+  --max-iters N               cap on tuner iterations
+  --min-quality-to-keep F     prune rows below this composite (bulk: ~0.15)
+  --min-per-category N        floor for per-category survivors (bulk: ~30)
+  --plateau-eps F             stop when |Δcomposite| < eps (bulk: ~0.0005)
+";
+
 struct Args {
     corpus: PathBuf,
     out: Option<PathBuf>,
     commit: bool,
     commit_confirm: bool,
     max_iters: Option<usize>,
+    min_quality_to_keep: Option<f64>,
+    min_per_category: Option<usize>,
+    plateau_eps: Option<f64>,
 }
 
 impl Args {
@@ -50,6 +66,9 @@ impl Args {
         let mut commit = false;
         let mut commit_confirm = false;
         let mut max_iters: Option<usize> = None;
+        let mut min_quality_to_keep: Option<f64> = None;
+        let mut min_per_category: Option<usize> = None;
+        let mut plateau_eps: Option<f64> = None;
         while let Some(a) = args.next() {
             match a.as_str() {
                 "--corpus" => {
@@ -68,10 +87,32 @@ impl Args {
                             .expect("--max-iters must be a positive integer"),
                     );
                 }
-                "--help" | "-h" => {
-                    eprintln!(
-                        "usage: corpus_self_tune [--corpus PATH] [--out PATH] [--commit --commit-confirm] [--max-iters N]"
+                "--min-quality-to-keep" => {
+                    min_quality_to_keep = Some(
+                        args.next()
+                            .expect("--min-quality-to-keep needs a value")
+                            .parse()
+                            .expect("--min-quality-to-keep must be a float"),
                     );
+                }
+                "--min-per-category" => {
+                    min_per_category = Some(
+                        args.next()
+                            .expect("--min-per-category needs a value")
+                            .parse()
+                            .expect("--min-per-category must be a non-negative integer"),
+                    );
+                }
+                "--plateau-eps" => {
+                    plateau_eps = Some(
+                        args.next()
+                            .expect("--plateau-eps needs a value")
+                            .parse()
+                            .expect("--plateau-eps must be a float"),
+                    );
+                }
+                "--help" | "-h" => {
+                    eprintln!("{HELP}");
                     std::process::exit(0);
                 }
                 other => panic!("unknown arg: {other}"),
@@ -83,6 +124,9 @@ impl Args {
             commit,
             commit_confirm,
             max_iters,
+            min_quality_to_keep,
+            min_per_category,
+            plateau_eps,
         }
     }
 
@@ -129,6 +173,15 @@ fn main() {
     let mut cfg = SelfTuneConfig::default();
     if let Some(n) = args.max_iters {
         cfg.max_iterations = n;
+    }
+    if let Some(q) = args.min_quality_to_keep {
+        cfg.min_quality_to_keep = q;
+    }
+    if let Some(n) = args.min_per_category {
+        cfg.min_concepts_per_category = n;
+    }
+    if let Some(eps) = args.plateau_eps {
+        cfg.plateau_epsilon = eps;
     }
     println!(
         "→ running self-tune: max_iter={} plateau_eps={:.4} min_q={:.2} min_per_cat={}",
