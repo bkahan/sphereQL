@@ -294,8 +294,9 @@ fn run(mut args: Args) {
 
     let cp = sink.close().expect("close parquet sink");
     let elapsed = started.elapsed();
+    let prefix = if cp.n_written == 0 { "✗" } else { "✓" };
     println!(
-        "\n✓ ingest done in {:.1}s — consumed {} source items, wrote {} rows ({} soft errors)",
+        "\n{prefix} ingest done in {:.1}s — consumed {} source items, wrote {} rows ({} soft errors)",
         elapsed.as_secs_f64(),
         cp.source_offset,
         cp.n_written,
@@ -309,6 +310,13 @@ fn run(mut args: Args) {
         "  checkpoint: {}",
         SinkCheckpoint::sidecar_for(&args.out).display()
     );
+    if cp.n_written == 0 {
+        eprintln!(
+            "error: 0 rows written. Source produced no items (likely network / rate-limit / \
+             query timeout); refusing to leave an empty Parquet for downstream stages."
+        );
+        std::process::exit(2);
+    }
 }
 
 fn build_source(args: &Args) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkSourceError>>> {

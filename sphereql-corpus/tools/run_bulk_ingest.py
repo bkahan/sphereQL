@@ -35,6 +35,15 @@ from corpus_config import BulkConfig, CorpusConfig, add_config_args, load_config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CRATE_DIR = Path(__file__).resolve().parent.parent
+TOOLS_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_output(raw: str) -> Path:
+    """[bulk].output is relative to tools/ by convention. The Rust
+    binary runs from REPO_ROOT, so relative paths must be anchored
+    here, not handed through verbatim."""
+    p = Path(raw)
+    return p if p.is_absolute() else (TOOLS_DIR / p).resolve()
 
 
 def render_args(bulk: BulkConfig) -> list[str]:
@@ -43,7 +52,7 @@ def render_args(bulk: BulkConfig) -> list[str]:
         "--source",
         bulk.source,
         "--out",
-        bulk.output,
+        str(_resolve_output(bulk.output)),
         "--target-size",
         str(bulk.target_size),
         "--num-axes",
@@ -151,7 +160,7 @@ def main() -> None:
     if ns.print_only:
         return
 
-    out_dir = Path(bulk.output).resolve().parent
+    out_dir = _resolve_output(bulk.output).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rc = subprocess.call(cmd, cwd=REPO_ROOT, env=os.environ.copy())
