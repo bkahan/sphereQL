@@ -48,6 +48,8 @@ use sphereql_corpus::bulk::{
     BulkItem, BulkSource, BulkSourceError, HashedClaimAxisExtractor, OpenAlexShardConfig,
     OpenAlexShardSource, ParquetSink, SinkCheckpoint,
 };
+#[cfg(feature = "bulk-dbpedia")]
+use sphereql_corpus::bulk::{DBpediaConfig, DBpediaTtlSource};
 #[cfg(feature = "bulk-dump")]
 use sphereql_corpus::bulk::{WikidataDumpConfig, WikidataDumpSource};
 use sphereql_corpus::bulk::{SparqlConfig, WikidataSparqlSource};
@@ -78,6 +80,8 @@ struct Args {
     dump_path: Option<PathBuf>,
     dump_only_items: bool,
     dump_require_english_label: bool,
+    dbpedia_dir: Option<PathBuf>,
+    dbpedia_oversample: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -85,6 +89,7 @@ enum SourceKind {
     WikidataSparql,
     OpenAlexShard,
     WikidataDump,
+    DBpedia,
 }
 
 impl SourceKind {
@@ -93,8 +98,9 @@ impl SourceKind {
             "wikidata_sparql" | "sparql" => SourceKind::WikidataSparql,
             "openalex_shard" | "openalex" => SourceKind::OpenAlexShard,
             "wikidata_dump" | "dump" => SourceKind::WikidataDump,
+            "dbpedia" => SourceKind::DBpedia,
             other => panic!(
-                "unknown --source {other:?}; expected wikidata_sparql | openalex_shard | wikidata_dump"
+                "unknown --source {other:?}; expected wikidata_sparql | openalex_shard | wikidata_dump | dbpedia"
             ),
         }
     }
@@ -138,6 +144,13 @@ impl Args {
                 "--dump" => a.dump_path = Some(PathBuf::from(need(&mut args, "--dump"))),
                 "--dump-all-types" => a.dump_only_items = false,
                 "--dump-allow-missing-label" => a.dump_require_english_label = false,
+                // DBpedia
+                "--dbpedia-dir" => {
+                    a.dbpedia_dir = Some(PathBuf::from(need(&mut args, "--dbpedia-dir")));
+                }
+                "--dbpedia-oversample" => {
+                    a.dbpedia_oversample = parse_usize(&need(&mut args, "--dbpedia-oversample"));
+                }
                 "--help" | "-h" => {
                     eprintln!("{HELP}");
                     std::process::exit(0);
@@ -167,6 +180,8 @@ impl Args {
             dump_path: None,
             dump_only_items: true,
             dump_require_english_label: true,
+            dbpedia_dir: None,
+            dbpedia_oversample: 4,
         }
     }
 }
@@ -220,6 +235,10 @@ wikidata_dump (requires --features bulk-dump):
   --dump PATH             latest-all.json.bz2 (required)
   --dump-all-types        include properties + lexemes (default items only)
   --dump-allow-missing-label  keep items without an English label
+
+dbpedia (requires --features bulk-dbpedia):
+  --dbpedia-dir PATH      directory with instance-types/mappingbased-objects/labels .ttl.bz2
+  --dbpedia-oversample N  working-set multiplier on --target-size (default 4)
 ";
 
 fn main() {
@@ -343,6 +362,7 @@ fn build_source(args: &Args) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkS
             Box::new(OpenAlexShardSource::new(cfg))
         }
         SourceKind::WikidataDump => build_dump_source(args),
+        SourceKind::DBpedia => build_dbpedia_source(args),
     }
 }
 
@@ -369,5 +389,30 @@ fn build_dump_source(
     panic!(
         "wikidata_dump source requires the `bulk-dump` feature. Rebuild with \
          --features bulk-dump"
+    );
+}
+
+#[cfg(feature = "bulk-dbpedia")]
+fn build_dbpedia_source(
+    args: &Args,
+) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkSourceError>>> {
+    let dir = args
+        .dbpedia_dir
+        .clone()
+        .expect("dbpedia source requires --dbpedia-dir PATH");
+    let mut cfg = DBpediaConfig::new(dir);
+    cfg.start_offset = args.start_offset;
+    cfg.max_items = args.target_size;
+    cfg.oversample = args.dbpedia_oversample.max(1);
+    Box::new(DBpediaTtlSource::new(cfg))
+}
+
+#[cfg(not(feature = "bulk-dbpedia"))]
+fn build_dbpedia_source(
+    _args: &Args,
+) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkSourceError>>> {
+    panic!(
+        "dbpedia source requires the `bulk-dbpedia` feature. Rebuild with \
+         --features bulk-dbpedia"
     );
 }

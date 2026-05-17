@@ -129,6 +129,12 @@ class BulkWikidataDumpConfig:
 
 
 @dataclass(frozen=True)
+class BulkDBpediaConfig:
+    dir: str
+    oversample: int
+
+
+@dataclass(frozen=True)
 class BulkConfig:
     """Inputs to the Rust streaming ingest binary (Phase 7).
 
@@ -147,6 +153,7 @@ class BulkConfig:
     wikidata_sparql: BulkSparqlConfig
     openalex_shard: BulkOpenalexShardConfig
     wikidata_dump: BulkWikidataDumpConfig
+    dbpedia: BulkDBpediaConfig
 
 
 @dataclass(frozen=True)
@@ -321,6 +328,10 @@ def load_config(
                 require_english_label=bool(
                     raw["bulk"]["wikidata_dump"]["require_english_label"]
                 ),
+            ),
+            dbpedia=BulkDBpediaConfig(
+                dir=str(raw["bulk"]["dbpedia"]["dir"]),
+                oversample=int(raw["bulk"]["dbpedia"]["oversample"]),
             ),
         ),
         cluster=ClusterConfig(

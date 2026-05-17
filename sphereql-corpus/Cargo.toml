@@ -29,9 +29,11 @@ tempfile = "3"
 default = ["json-fallback", "bulk-http", "bulk-gzip"]
 json-fallback = []
 # Phase 7 source features:
-# - bulk-http: WikidataSparqlSource + OpenAlexApiSource (network).
-# - bulk-gzip: OpenAlexShardSource (local .jsonl.gz shards).
-# - bulk-dump: WikidataDumpSource (local latest-all.json.bz2 stream).
+# - bulk-http:    WikidataSparqlSource + OpenAlexApiSource (network).
+# - bulk-gzip:    OpenAlexShardSource (local .jsonl.gz shards).
+# - bulk-dump:    WikidataDumpSource (local latest-all.json.bz2 stream).
+# - bulk-dbpedia: DBpediaTtlSource (three .ttl.bz2 files, ~1 GB total).
 bulk-http = ["ureq"]
 bulk-gzip = ["flate2"]
 bulk-dump = ["bzip2-rs"]
+bulk-dbpedia = ["bzip2-rs"]

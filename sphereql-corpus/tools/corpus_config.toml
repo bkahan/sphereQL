@@ -159,6 +159,16 @@ dump_path = "/tmp/latest-all.json.bz2"
 only_items = true
 require_english_label = true
 
+[bulk.dbpedia]
+# Directory holding the three DBpedia .ttl.bz2 files
+# (instance-types_lang=en, mappingbased-objects_lang=en, labels_lang=en).
+# Total compressed size ~1 GB — the right source when you want
+# Wikipedia-breadth coverage without the 140 GB Wikidata dump.
+dir = "/tmp/dbpedia"
+# Working-set multiplier on bulk.target_size; we keep this many
+# entities in memory before filtering for label + non-empty claims.
+oversample = 4
+
 # Phase 7: emergent clustering. After a bulk ingest writes raw
 # (uncategorized) concepts, `tools/cluster_bulk.py` runs
 # MiniBatchKMeans on the sparse 128-axis feature vectors and

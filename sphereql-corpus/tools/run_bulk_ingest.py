@@ -92,10 +92,18 @@ def render_args(bulk: BulkConfig) -> list[str]:
             args.append("--dump-all-types")
         if not s.require_english_label:
             args.append("--dump-allow-missing-label")
+    elif bulk.source == "dbpedia":
+        d = bulk.dbpedia
+        args += [
+            "--dbpedia-dir",
+            d.dir,
+            "--dbpedia-oversample",
+            str(d.oversample),
+        ]
     else:
         raise SystemExit(
             f"unknown bulk.source {bulk.source!r}; "
-            "expected wikidata_sparql | openalex_shard | wikidata_dump"
+            "expected wikidata_sparql | openalex_shard | wikidata_dump | dbpedia"
         )
     return args
 
@@ -108,6 +116,8 @@ def required_features(bulk: BulkConfig) -> list[str]:
         return ["bulk-gzip"]
     if bulk.source == "wikidata_dump":
         return ["bulk-dump"]
+    if bulk.source == "dbpedia":
+        return ["bulk-dbpedia"]
     return []
 
 
