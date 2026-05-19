@@ -517,11 +517,16 @@ impl PyFeedbackAggregator {
         }
     }
 
-    /// Summarize every corpus that has events.
-    fn summarize_all<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    /// Summarize every corpus that has events. Returns a dict keyed by corpus_id.
+    fn summarize_all<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let all = self.inner.summarize_all();
-        pythonize::pythonize(py, &all)
-            .map_err(|e| PyValueError::new_err(format!("failed to serialize summaries: {e}")))
+        let d = PyDict::new(py);
+        for summary in all {
+            let v = pythonize::pythonize(py, &summary)
+                .map_err(|e| PyValueError::new_err(format!("failed to serialize summary: {e}")))?;
+            d.set_item(&summary.corpus_id, v)?;
+        }
+        Ok(d)
     }
 
     fn __repr__(&self) -> String {

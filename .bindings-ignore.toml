@@ -479,3 +479,29 @@ reason = "internal corpus reweighting helper called inside run_self_tune; not a 
 [[exempt]]
 name = "run_self_tune"
 reason = "corpus-level batch operation; not yet exposed in Python/WASM bindings"
+
+# ── Rust traits (no 1:1 binding concept in Python/WASM) ──
+
+[[exempt]]
+name = "DimensionMapper"
+reason = "Rust trait from sphereql-layout; implemented internally by EmbeddingMapper, not user-facing"
+
+[[exempt]]
+name = "LayoutStrategy"
+reason = "Rust trait from sphereql-layout; concrete impls (ClusteredLayout etc.) are allowlisted above"
+
+[[exempt]]
+name = "LogicalConfidence"
+reason = "Rust trait; currently only UnimplementedLogicalConfidence exists — no scorer to bind yet"
+
+[[exempt]]
+name = "MetaModel"
+reason = "Rust trait; concrete impls NearestNeighborMetaModel / DistanceWeightedMetaModel are bound directly"
+
+[[exempt]]
+name = "Projection"
+reason = "Rust trait; concrete projections (PcaProjection, LaplacianEigenmapProjection) are bound directly"
+
+[[exempt]]
+name = "QualityMetric"
+reason = "Rust trait; concrete impls (CompositeMetric, TerritorialHealth, etc.) are bound via metric-name string in auto_tune"
