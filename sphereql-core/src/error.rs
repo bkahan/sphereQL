@@ -1,3 +1,7 @@
+/// All errors that `sphereql-core` can surface.
+///
+/// `#[non_exhaustive]` — new variants can be added in minor releases.
+/// Match with a `_ => …` arm when handling exhaustively.
 #[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum SphereQlError {
@@ -29,4 +33,40 @@ pub enum SphereQlError {
     ZeroVector,
     #[error("vector length mismatch: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_messages_are_human_readable() {
+        assert!(
+            SphereQlError::InvalidRadius(-1.0)
+                .to_string()
+                .contains("-1")
+        );
+        assert!(
+            SphereQlError::DimensionMismatch {
+                expected: 3,
+                actual: 2
+            }
+            .to_string()
+            .contains("3")
+        );
+        assert!(
+            SphereQlError::InvalidShellBounds {
+                inner: 5.0,
+                outer: 1.0
+            }
+            .to_string()
+            .contains("5")
+        );
+    }
+
+    #[test]
+    fn zero_vector_error_formats() {
+        let msg = SphereQlError::ZeroVector.to_string();
+        assert!(!msg.is_empty());
+    }
 }

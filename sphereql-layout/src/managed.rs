@@ -5,6 +5,10 @@ use sphereql_core::SphericalPoint;
 use crate::traits::{DimensionMapper, LayoutStrategy};
 use crate::types::LayoutEntry;
 
+/// An incrementally updated layout that tracks which items have changed.
+///
+/// Supports add / remove / mark-dirty operations with two reflow modes:
+/// [`Self::reflow`] (full) and [`Self::reflow_incremental`] (only dirty items).
 pub struct ManagedLayout<T> {
     items: Vec<T>,
     positions: Vec<SphericalPoint>,

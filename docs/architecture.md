@@ -46,7 +46,7 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-wasm` | WebAssembly bindings via `wasm-bindgen`. Typed return values via `tsify` — every pipeline / category / metalearning method returns a TypeScript-typed value, no `JSON.parse` required on the JS side. |
 | `scripts/check-drift` | CI tool that `syn`-parses `sphereql-embed` + `sphereql-layout` public APIs and fails when a new public item isn't bound in Python/WASM and isn't in `.bindings-ignore.toml`. |
 | `sphereql` | Umbrella crate with feature flags for selective imports. |
-| `sphereql-corpus` | Shared test corpora for examples: 775-concept built-in across 31 academic domains, plus a 300-concept low-SNR stress corpus (via `build_stress_corpus` / `embed_with_noise`). Used by `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, and the meta-learning examples. |
+| `sphereql-corpus` | Shared test corpora for examples: 775-concept built-in across 31 academic domains, plus a 300-concept low-SNR stress corpus (via `build_stress_corpus` / `embed_with_noise`). Bulk-ingested parquet corpora (DBpedia 500K, Wikidata 50K) live in `sphereql-corpus/data/` and are produced by the `tools/bulk_ingest` pipeline. Used by `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, `meta_learn`, and the full_e2e example. |
 
 ## Feature flags
 

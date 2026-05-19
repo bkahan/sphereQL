@@ -124,6 +124,7 @@ pub struct CartesianPoint {
 }
 
 impl CartesianPoint {
+    /// Creates a new `CartesianPoint` from raw coordinates.
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
@@ -137,6 +138,7 @@ impl CartesianPoint {
         }
     }
 
+    /// Returns the L2 (Euclidean) magnitude of this vector.
     pub fn magnitude(&self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
@@ -264,5 +266,73 @@ impl approx::RelativeEq for GeoPoint {
         f64::relative_eq(&self.lat, &other.lat, epsilon, max_relative)
             && f64::relative_eq(&self.lon, &other.lon, epsilon, max_relative)
             && f64::relative_eq(&self.alt, &other.alt, epsilon, max_relative)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spherical_point_new_rejects_negative_radius() {
+        assert!(SphericalPoint::new(-1.0, 0.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn spherical_point_new_rejects_theta_out_of_range() {
+        assert!(SphericalPoint::new(1.0, -0.1, 0.0).is_err());
+        assert!(SphericalPoint::new(1.0, std::f64::consts::TAU, 0.0).is_err());
+    }
+
+    #[test]
+    fn spherical_point_new_rejects_phi_out_of_range() {
+        assert!(SphericalPoint::new(1.0, 0.0, -0.1).is_err());
+        assert!(SphericalPoint::new(1.0, 0.0, std::f64::consts::PI + 0.1).is_err());
+    }
+
+    #[test]
+    fn spherical_point_zero_radius_is_valid() {
+        assert!(SphericalPoint::new(0.0, 0.0, 0.0).is_ok());
+    }
+
+    #[test]
+    fn cartesian_normalize_unit_vector_unchanged() {
+        let p = CartesianPoint::new(1.0, 0.0, 0.0);
+        let n = p.normalize();
+        assert!((n.x - 1.0).abs() < 1e-15);
+        assert!(n.y.abs() < 1e-15);
+        assert!(n.z.abs() < 1e-15);
+    }
+
+    #[test]
+    fn cartesian_normalize_zero_returns_origin() {
+        let p = CartesianPoint::new(0.0, 0.0, 0.0);
+        let n = p.normalize();
+        assert_eq!(n.x, 0.0);
+        assert_eq!(n.y, 0.0);
+        assert_eq!(n.z, 0.0);
+    }
+
+    #[test]
+    fn cartesian_magnitude_pythagoras() {
+        let p = CartesianPoint::new(3.0, 4.0, 0.0);
+        assert!((p.magnitude() - 5.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn geo_point_new_rejects_out_of_range() {
+        assert!(GeoPoint::new(91.0, 0.0, 0.0).is_err());
+        assert!(GeoPoint::new(-91.0, 0.0, 0.0).is_err());
+        assert!(GeoPoint::new(0.0, 181.0, 0.0).is_err());
+        assert!(GeoPoint::new(0.0, -181.0, 0.0).is_err());
+        assert!(GeoPoint::new(0.0, 0.0, -0.1).is_err());
+    }
+
+    #[test]
+    fn spherical_point_unit_cartesian_is_normalized() {
+        let p = SphericalPoint::new_unchecked(5.0, 1.0, 1.0);
+        let [x, y, z] = p.unit_cartesian();
+        let mag = (x * x + y * y + z * z).sqrt();
+        assert!((mag - 1.0).abs() < 1e-15);
     }
 }

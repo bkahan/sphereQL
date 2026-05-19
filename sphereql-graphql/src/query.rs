@@ -68,6 +68,7 @@ where
     })
 }
 
+#[derive(Default)]
 pub struct SphericalQueryRoot;
 
 #[Object]

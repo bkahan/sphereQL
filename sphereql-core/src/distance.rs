@@ -16,13 +16,9 @@ use crate::types::{CartesianPoint, SphericalPoint};
 /// ```
 #[must_use]
 pub fn angular_distance(a: &SphericalPoint, b: &SphericalPoint) -> f64 {
-    // Call the `unit_cartesian` accessor directly instead of going
-    // through `spherical_to_cartesian(&SphericalPoint::new_unchecked(1.0, ...))`.
-    // The accessor is `#[inline]`, unit-radius by construction, and
-    // skips the `SphericalPoint::new_unchecked` + `CartesianPoint::new`
-    // temporaries this function used to build per call. This is the
-    // hottest call in the workspace — every layout, index, and spatial
-    // op routes through it.
+    // Hottest call in the workspace. `unit_cartesian` is #[inline] and avoids
+    // allocating SphericalPoint/CartesianPoint temporaries that the old
+    // spherical_to_cartesian path produced per call.
     let [ax, ay, az] = a.unit_cartesian();
     let [bx, by, bz] = b.unit_cartesian();
 
@@ -161,7 +157,7 @@ pub fn pairwise_cosine_similarities(vectors: &[Vec<f64>]) -> Result<Vec<f64>, Sp
     let dim = vectors[0].len();
     let n = vectors.len();
 
-    for v in vectors.iter() {
+    for v in vectors.iter().skip(1) {
         if v.len() != dim {
             return Err(SphereQlError::DimensionMismatch {
                 expected: dim,

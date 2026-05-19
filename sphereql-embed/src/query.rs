@@ -535,9 +535,12 @@ pub struct SlicingManifold {
 impl SlicingManifold {
     /// Fit the optimal slicing plane to a set of 3D points.
     /// Each point is (x, y, z) in Cartesian coordinates.
+    ///
+    /// Callers must supply at least 3 points; `fit_local` guarantees this via
+    /// `k.max(3)`. Passing fewer is a programming error, not a runtime failure.
     pub fn fit(points: &[[f64; 3]]) -> Self {
         let n = points.len() as f64;
-        assert!(n >= 3.0, "need at least 3 points to fit a plane");
+        debug_assert!(n >= 3.0, "need at least 3 points to fit a plane");
 
         // Centroid
         let mut c = [0.0; 3];
@@ -702,9 +705,11 @@ fn eigen_symmetric_3x3(m: &[[f64; 3]; 3]) -> ([f64; 3], [[f64; 3]; 3]) {
 
     let eigenvalues = [a[0][0], a[1][1], a[2][2]];
 
-    // Sort by descending eigenvalue
+    // Sort by descending eigenvalue. Jacobi on a real symmetric matrix
+    // never produces NaN eigenvalues, so total_cmp and partial_cmp are
+    // equivalent here; total_cmp is used to satisfy clippy.
     let mut order = [0usize, 1, 2];
-    order.sort_by(|&a, &b| eigenvalues[b].partial_cmp(&eigenvalues[a]).unwrap());
+    order.sort_by(|&a, &b| eigenvalues[b].total_cmp(&eigenvalues[a]));
 
     let sorted_vals = [
         eigenvalues[order[0]],
@@ -748,8 +753,10 @@ impl GlobResult {
     /// If `None`, auto-selects k ∈ [2, max_k] by maximizing the silhouette score.
     pub fn detect(points: &[[f64; 3]], ids: &[String], k: Option<usize>, max_k: usize) -> Self {
         let n = points.len();
-        assert_eq!(n, ids.len());
-        assert!(n >= 2, "need at least 2 points for clustering");
+        // Both slices are built from the same pipeline corpus, so
+        // mismatched lengths or an empty corpus are caller bugs.
+        debug_assert_eq!(n, ids.len());
+        debug_assert!(n >= 2, "need at least 2 points for clustering");
 
         // Silhouette-driven auto-search needs at least k = 2 to be well-defined.
         // Clamping here means callers can pass any non-negative max_k without
@@ -1026,13 +1033,15 @@ impl SemanticQuery {
         max_angular_distance: f64,
     ) -> Region {
         let point = projection.project(query);
+        // Clamp to (0, π] so Cap::new never sees an out-of-range angle.
         let half_angle = max_angular_distance.clamp(1e-10, std::f64::consts::PI);
         Region::Cap(
             Cap::new(
                 SphericalPoint::new_unchecked(1.0, point.theta, point.phi),
                 half_angle,
             )
-            .unwrap(),
+            // Invariant: half_angle is in (0, π] after the clamp above.
+            .expect("clamped half_angle is always a valid Cap angle"),
         )
     }
 
@@ -1048,8 +1057,15 @@ impl SemanticQuery {
     }
 
     /// Radial shell: embeddings whose projected radius falls in [inner, outer].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `inner > outer` or either bound is negative. Both are
+    /// caller contracts; use `Shell::new` directly if you need a `Result`.
     pub fn in_shell(inner: f64, outer: f64) -> Region {
-        Region::Shell(Shell::new(inner, outer).expect("invalid shell bounds"))
+        Region::Shell(
+            Shell::new(inner, outer).expect("inner must be <= outer and both non-negative"),
+        )
     }
 
     /// Intersection of a similarity cap with a radial shell.

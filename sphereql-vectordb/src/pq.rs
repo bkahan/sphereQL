@@ -162,7 +162,9 @@ impl PqCodebook {
     /// the index of the nearest centroid in that subspace.
     pub fn encode(&self, embedding: &[f32]) -> Vec<u8> {
         let expected = self.m * self.sub_dim;
-        assert_eq!(
+        // Callers must validate dimension before encoding; this is an
+        // internal invariant, not a user-input check.
+        debug_assert_eq!(
             embedding.len(),
             expected,
             "Pq::encode: embedding length {} does not match codebook dimensionality {}",
@@ -192,7 +194,9 @@ impl PqCodebook {
     /// squared distance from the query's subspace-m to centroid k.
     pub fn asymmetric_lut(&self, query: &[f32]) -> Vec<Vec<f32>> {
         let expected = self.m * self.sub_dim;
-        assert_eq!(
+        // Callers guard dimension before building the LUT; this is an
+        // internal invariant, not a user-input check.
+        debug_assert_eq!(
             query.len(),
             expected,
             "Pq::asymmetric_lut: query length {} does not match codebook dimensionality {}",

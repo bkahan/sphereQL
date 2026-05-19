@@ -50,10 +50,7 @@ impl<T: SpatialItem> SectorIndex<T> {
         }
 
         let total = theta_divisions * phi_divisions;
-        let mut sectors = Vec::with_capacity(total);
-        for _ in 0..total {
-            sectors.push(Vec::new());
-        }
+        let sectors = (0..total).map(|_| Vec::new()).collect();
 
         Ok(Self {
             theta_divisions,

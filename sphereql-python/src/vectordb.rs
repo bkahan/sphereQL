@@ -93,8 +93,8 @@ fn parse_record(dict: &Bound<'_, PyDict>) -> PyResult<VectorRecord> {
     let mut record = VectorRecord::new(id, vector);
 
     if let Some(meta_obj) = dict.get_item("metadata")? {
-        let meta: &Bound<'_, PyDict> = meta_obj
-            .cast()
+        let meta: Bound<'_, PyDict> = meta_obj
+            .extract()
             .map_err(|_| PyValueError::new_err("'metadata' must be a dict"))?;
         for (k, v) in meta.iter() {
             let key: String = k.extract()?;

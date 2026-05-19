@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 use crate::distance::angular_distance;
 use crate::types::SphericalPoint;
 
-// ── §1  Antipodal geometry ─────────────────────────────────────────────
+// ── §1  Antipodal geometry ────────────────────────────────────────────
 
 /// Returns the antipodal point of `p` on S² (angular distance π).
 ///
@@ -49,7 +49,7 @@ pub fn region_coherence(center: &SphericalPoint, radius: f64, points: &[Spherica
     observed / expected
 }
 
-// ── §2 / §5  Spherical cap areas and coverage ─────────────────────────
+// ── §2  Spherical cap areas and intersections ─────────────────────────
 
 /// Solid angle of a spherical cap with half-angle `alpha` (radians).
 ///
@@ -287,15 +287,13 @@ pub fn geodesic_density_profile(
 // ── §4  Spherical Voronoi tessellation ─────────────────────────────────
 
 /// A cell in the spherical Voronoi diagram.
-///
-/// NOTE: item-level Voronoi (beyond category centroids) may be explored
-/// in a future version. For now, the input is expected to be O(10–100)
-/// category centroids.
 #[derive(Debug, Clone)]
 pub struct VoronoiCell {
+    /// Index into the `generators` slice passed to [`spherical_voronoi`].
     pub generator_index: usize,
+    /// Indices of adjacent cells (sharing a Voronoi boundary).
     pub neighbor_indices: Vec<usize>,
-    /// Approximate cell area in steradians, estimated via Monte Carlo.
+    /// Approximate cell area in steradians (Monte Carlo estimate).
     pub area: f64,
 }
 
@@ -306,8 +304,6 @@ pub struct VoronoiCell {
 ///
 /// `num_samples` controls precision: 100_000 gives ~1% relative error
 /// for 31 cells; 1_000_000 gives ~0.3%.
-///
-/// NOTE: exact Delaunay-on-S² via convex hull may be added later.
 pub fn spherical_voronoi(generators: &[SphericalPoint], num_samples: usize) -> Vec<VoronoiCell> {
     let n = generators.len();
     if n == 0 {
@@ -374,14 +370,14 @@ pub fn spherical_voronoi(generators: &[SphericalPoint], num_samples: usize) -> V
         .collect()
 }
 
-// ── §2  Coverage and void detection (Monte Carlo) ──────────────────────
+// ── §5  Coverage and void detection (Monte Carlo) ──────────────────────
 
 /// Result of a sphere coverage analysis.
 #[derive(Debug, Clone)]
 pub struct CoverageReport {
     pub coverage_fraction: f64,
     pub covered_area: f64,
-    /// NOTE: exact inclusion-exclusion may be added in a future version.
+    /// Estimated area covered by two or more caps (Monte Carlo approximation).
     pub overlap_area: f64,
     pub void_count: usize,
     pub total_samples: usize,
@@ -396,7 +392,11 @@ pub fn estimate_coverage(
     half_angles: &[f64],
     num_samples: usize,
 ) -> CoverageReport {
-    assert_eq!(centers.len(), half_angles.len());
+    debug_assert_eq!(
+        centers.len(),
+        half_angles.len(),
+        "centers and half_angles must have the same length"
+    );
     let n = centers.len();
 
     let cap_carts: Vec<[f64; 3]> = centers.iter().map(|c| c.unit_cartesian()).collect();
@@ -425,8 +425,19 @@ pub fn estimate_coverage(
         }
     }
 
-    let total = num_samples as f64;
     let total_area = 4.0 * PI;
+
+    if num_samples == 0 {
+        return CoverageReport {
+            coverage_fraction: 0.0,
+            covered_area: 0.0,
+            overlap_area: 0.0,
+            void_count: 0,
+            total_samples: 0,
+        };
+    }
+
+    let total = num_samples as f64;
     let coverage_fraction = covered as f64 / total;
 
     CoverageReport {
@@ -447,7 +458,11 @@ pub fn void_distance(
     centers: &[SphericalPoint],
     half_angles: &[f64],
 ) -> f64 {
-    assert_eq!(centers.len(), half_angles.len());
+    debug_assert_eq!(
+        centers.len(),
+        half_angles.len(),
+        "centers and half_angles must have the same length"
+    );
     let mut min_gap = f64::INFINITY;
     for (center, &alpha) in centers.iter().zip(half_angles.iter()) {
         let d = angular_distance(point, center);
@@ -459,7 +474,7 @@ pub fn void_distance(
     min_gap
 }
 
-// ── §5  Pairwise overlap and exclusivity ───────────────────────────────
+// ── §6  Pairwise overlap and exclusivity ──────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
 pub struct PairwiseOverlap {
@@ -475,7 +490,11 @@ pub struct PairwiseOverlap {
 /// its own sub-vector and the results are flattened in deterministic
 /// `(i, j)` order before the final sort.
 pub fn pairwise_overlaps(centers: &[SphericalPoint], half_angles: &[f64]) -> Vec<PairwiseOverlap> {
-    assert_eq!(centers.len(), half_angles.len());
+    debug_assert_eq!(
+        centers.len(),
+        half_angles.len(),
+        "centers and half_angles must have the same length"
+    );
     let n = centers.len();
     if n < 2 {
         return Vec::new();
@@ -543,7 +562,15 @@ pub fn cap_exclusivity(
     num_samples: usize,
 ) -> f64 {
     let n = centers.len();
-    assert!(cap_index < n);
+    assert!(
+        cap_index < n,
+        "cap_index {cap_index} out of bounds for {n} caps"
+    );
+    debug_assert_eq!(
+        centers.len(),
+        half_angles.len(),
+        "centers and half_angles must have the same length"
+    );
 
     let cap_carts: Vec<[f64; 3]> = centers.iter().map(|c| c.unit_cartesian()).collect();
     let cos_alphas: Vec<f64> = half_angles.iter().map(|a| a.cos()).collect();
@@ -585,7 +612,7 @@ pub fn cap_exclusivity(
     exclusive as f64 / in_cap as f64
 }
 
-// ── §6  Spherical excess and curvature signatures ──────────────────────
+// ── §7  Spherical excess and curvature signatures ─────────────────────
 
 /// Spherical excess (= area) of a triangle on S² with vertices a, b, c.
 ///
@@ -668,7 +695,7 @@ pub fn curvature_signature(target: usize, all_points: &[SphericalPoint]) -> Vec<
     excesses
 }
 
-// ── §3  Geodesic deviation ─────────────────────────────────────────────
+// ── §8  Geodesic deviation ────────────────────────────────────────────
 
 /// Max angular distance from any interior path waypoint to the direct
 /// great circle arc between first and last waypoints.
@@ -677,8 +704,9 @@ pub fn geodesic_deviation(path: &[SphericalPoint]) -> f64 {
     if path.len() < 3 {
         return 0.0;
     }
-    let start = path.first().unwrap();
-    let end = path.last().unwrap();
+    // len >= 3 guaranteed by the check above.
+    let start = path.first().expect("path len >= 3");
+    let end = path.last().expect("path len >= 3");
     path[1..path.len() - 1]
         .iter()
         .map(|p| distance_to_great_circle_arc(p, start, end))
@@ -1025,5 +1053,54 @@ mod tests {
         let a = unit(0.0, FRAC_PI_2);
         let exc = cap_exclusivity(0, &[a, a], &[0.5, 0.5], 50_000);
         assert!(exc < 0.05, "got {exc}");
+    }
+
+    #[test]
+    fn pairwise_overlaps_empty() {
+        let result = pairwise_overlaps(&[], &[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn pairwise_overlaps_single_cap() {
+        let c = unit(0.0, FRAC_PI_2);
+        let result = pairwise_overlaps(&[c], &[0.5]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn void_distance_empty_caps() {
+        let p = unit(0.0, FRAC_PI_2);
+        // With no caps, min_gap stays at INFINITY.
+        let d = void_distance(&p, &[], &[]);
+        assert!(d.is_infinite() && d > 0.0);
+    }
+
+    #[test]
+    fn geodesic_deviation_two_point_path() {
+        let a = unit(0.0, FRAC_PI_2);
+        let b = unit(FRAC_PI_2, FRAC_PI_2);
+        assert_eq!(geodesic_deviation(&[a, b]), 0.0);
+    }
+
+    #[test]
+    fn geodesic_density_profile_degenerate_arc() {
+        let p = unit(0.0, FRAC_PI_2);
+        let profile = geodesic_density_profile(&p, &p, &[p], 0.1, 5);
+        assert_eq!(profile.len(), 5);
+        assert!(profile.iter().all(|&c| c == 0));
+    }
+
+    #[test]
+    fn voronoi_empty_generators() {
+        let cells = spherical_voronoi(&[], 1000);
+        assert!(cells.is_empty());
+    }
+
+    #[test]
+    fn region_coherence_zero_radius() {
+        let c = unit(0.0, FRAC_PI_2);
+        let points = vec![c; 10];
+        assert_eq!(region_coherence(&c, 0.0, &points), 0.0);
     }
 }

@@ -5,12 +5,12 @@ use sphereql_core::{
     spherical_to_cartesian,
 };
 
+use crate::quality::{MAX_QUALITY_N, OVERLAP_THRESHOLD};
 use crate::traits::{DimensionMapper, LayoutStrategy};
 use crate::types::{LayoutEntry, LayoutQuality, LayoutResult};
 
 const EPSILON: f64 = 1e-6;
 const STEP_SIZE_FACTOR: f64 = 0.1;
-const OVERLAP_THRESHOLD: f64 = 0.01;
 
 pub struct ForceDirectedLayout {
     pub iterations: usize,
@@ -61,8 +61,6 @@ impl ForceDirectedLayout {
         spherical_to_cartesian(&unit)
     }
 
-    const MAX_QUALITY_N: usize = 5000;
-
     fn compute_quality(positions: &[SphericalPoint], n: usize) -> LayoutQuality {
         if n <= 1 {
             return LayoutQuality {
@@ -72,12 +70,12 @@ impl ForceDirectedLayout {
             };
         }
 
-        let (positions, n) = if n > Self::MAX_QUALITY_N {
-            let step = n / Self::MAX_QUALITY_N;
+        let (positions, n) = if n > MAX_QUALITY_N {
+            let step = n / MAX_QUALITY_N;
             let sampled: Vec<_> = positions
                 .iter()
                 .step_by(step)
-                .take(Self::MAX_QUALITY_N)
+                .take(MAX_QUALITY_N)
                 .copied()
                 .collect();
             let len = sampled.len();

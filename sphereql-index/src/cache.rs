@@ -339,7 +339,12 @@ impl<T: SpatialItem> CachedIndex<T> {
         self.cache_hits += 1;
         // shift_remove + insert is the IndexMap LRU-touch idiom: it
         // moves the entry to the tail in O(1) amortized.
-        let entry = self.cache.shift_remove(key).expect("just observed");
+        // The key was confirmed present by `get` above and no other thread
+        // can interleave (&mut self), so this shift_remove is infallible.
+        let entry = self
+            .cache
+            .shift_remove(key)
+            .expect("key confirmed present above");
         let result = entry.result.clone();
         self.cache.insert(key.clone(), entry);
         Some(result)

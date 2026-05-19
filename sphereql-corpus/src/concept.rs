@@ -19,6 +19,16 @@
 /// concepts without scanning the full feature vector. They are
 /// derivable from `(category, features)` plus generation-time source
 /// metadata; see [`derived`](crate::derived).
+///
+/// ## Memory note
+///
+/// `label` and `category` are `&'static str`. For the hand-crafted
+/// corpus this is natural (string literals). For Parquet-loaded
+/// corpora the loader uses `Box::leak` to promote heap-allocated
+/// strings to `'static`. This is intentional: the corpus is loaded
+/// once per process and lives for the entire program lifetime, so the
+/// leak is bounded and the simplicity is worth it. Migrating
+/// `Concept` to owned `String` fields is tracked for a future phase.
 #[derive(Debug, Clone)]
 pub struct Concept {
     pub label: &'static str,

@@ -326,6 +326,7 @@ impl KernelPcaProjection {
 
 impl Projection for KernelPcaProjection {
     fn project(&self, embedding: &Embedding) -> SphericalPoint {
+        // Caller contract: dimension must match the fitted projection.
         assert_eq!(
             embedding.dimension(),
             self.dim,
@@ -361,6 +362,7 @@ impl Projection for KernelPcaProjection {
     }
 
     fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
+        // Caller contract: dimension must match the fitted projection.
         assert_eq!(
             embedding.dimension(),
             self.dim,

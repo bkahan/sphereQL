@@ -30,6 +30,7 @@ use crate::category_types::{
 };
 use crate::context::{CategoryPipelineHandle, EmbedderHandle};
 
+#[derive(Default)]
 pub struct CategoryQueryRoot;
 
 #[Object]

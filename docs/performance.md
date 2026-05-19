@@ -16,16 +16,21 @@ The spatial index uses a two-tier partitioning scheme:
 | Method | k | Precision@k | nDCG@k | Mean latency |
 |---|---|---|---|---|
 | Brute-force ANN | 5 | 1.000 | 1.000 | 154 ms |
-| SphereQL PCA | 1 | 1.000 | 1.000 | 1.7 ms |
-| SphereQL PCA | 5 | 0.205 | 0.745 | 1.6 ms |
+| SphereQL PCA | 1 | 1.000 | 1.000 | 1.9 ms |
+| SphereQL PCA | 5 | 0.205 | 0.745 | 2.1 ms |
 | SphereQL KPCA | 5 | 0.204 | 0.746 | 84 ms |
-| Hybrid (r = k × 2) | 5 | 1.000 | 1.000 | 155 ms |
+| Hybrid (r = k × 2) | 5 | 0.574 | 0.982 | 159 ms |
 
 SphereQL PCA queries run **~90× faster** than brute-force with perfect
 precision at k=1. Precision degrades at higher k due to the lossy
-384-d → 3-d projection (~2.8% explained variance). The hybrid approach
-recovers full precision via cosine re-ranking in the original space,
-at near-brute-force latency.
+384-d → 3-d projection (~2.8% explained variance).
+
+The hybrid approach re-ranks by spherical distance after ANN retrieval,
+which at low EVR can demote correct results. See
+[benchmark-analysis.md](benchmark-analysis.md) for the detailed analysis
+and [search-precision-roadmap.md](search-precision-roadmap.md) for the
+planned fix (invert the hybrid: use angular projection as a pre-filter,
+then score survivors by full cosine similarity).
 
 Improving the speed/precision tradeoff at higher k is an active
 development priority. For the full results see

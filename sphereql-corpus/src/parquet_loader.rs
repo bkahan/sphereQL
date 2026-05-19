@@ -211,14 +211,21 @@ pub fn stream_concepts<P: AsRef<Path>>(
 }
 
 fn batch_to_concepts(batch: &RecordBatch) -> Result<Vec<Concept>, ParquetLoadError> {
+    // `label`, `category`, and `features` are required — their absence is a
+    // hard schema error.
     let labels = col_str(batch, "label")?;
     let categories = col_str(batch, "category")?;
     let features = col_list(batch, "features")?;
-    let quality = col_f64(batch, "quality")?;
-    let axis_coherence = col_f64(batch, "axis_coherence")?;
-    let bridge_degree = col_u8(batch, "bridge_degree")?;
-    let source_confidence = col_f64(batch, "source_confidence")?;
-    let home_affinity = col_f64(batch, "home_affinity")?;
+
+    // Signal columns were added in Phase 2. Files written by older tooling
+    // may lack them; fall back to neutral defaults so old corpora load
+    // without error and behave identically under any downstream weighting
+    // scheme that respects the NEUTRAL_* constants.
+    let quality = optional_col_f64(batch, "quality");
+    let axis_coherence = optional_col_f64(batch, "axis_coherence");
+    let bridge_degree = optional_col_u8(batch, "bridge_degree");
+    let source_confidence = optional_col_f64(batch, "source_confidence");
+    let home_affinity = optional_col_f64(batch, "home_affinity");
 
     let mut out = Vec::with_capacity(batch.num_rows());
     for i in 0..batch.num_rows() {
@@ -227,14 +234,32 @@ fn batch_to_concepts(batch: &RecordBatch) -> Result<Vec<Concept>, ParquetLoadErr
             label: leak_str(labels.value(i)),
             category: leak_str(categories.value(i)),
             features: feats,
-            quality: quality.value(i),
-            axis_coherence: axis_coherence.value(i),
-            bridge_degree: bridge_degree.value(i),
-            source_confidence: source_confidence.value(i),
-            home_affinity: home_affinity.value(i),
+            quality: quality.map_or(Concept::NEUTRAL_QUALITY, |a| a.value(i)),
+            axis_coherence: axis_coherence.map_or(Concept::NEUTRAL_AXIS_COHERENCE, |a| a.value(i)),
+            bridge_degree: bridge_degree.map_or(Concept::NEUTRAL_BRIDGE_DEGREE, |a| a.value(i)),
+            source_confidence: source_confidence
+                .map_or(Concept::NEUTRAL_SOURCE_CONFIDENCE, |a| a.value(i)),
+            home_affinity: home_affinity.map_or(Concept::NEUTRAL_HOME_AFFINITY, |a| a.value(i)),
         });
     }
     Ok(out)
+}
+
+/// Try to read a Float64 column, returning `None` if the column is absent.
+/// Type mismatches (column present but wrong type) still surface as `Schema`
+/// errors so callers can detect corrupt files.
+fn optional_col_f64<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a Float64Array> {
+    batch
+        .column_by_name(name)?
+        .as_any()
+        .downcast_ref::<Float64Array>()
+}
+
+fn optional_col_u8<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a UInt8Array> {
+    batch
+        .column_by_name(name)?
+        .as_any()
+        .downcast_ref::<UInt8Array>()
 }
 
 fn col_str<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a StringArray, ParquetLoadError> {
@@ -244,24 +269,6 @@ fn col_str<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a StringArray, Pa
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| ParquetLoadError::Schema(format!("{name}: not Utf8")))
-}
-
-fn col_f64<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a Float64Array, ParquetLoadError> {
-    batch
-        .column_by_name(name)
-        .ok_or_else(|| ParquetLoadError::Schema(format!("missing column: {name}")))?
-        .as_any()
-        .downcast_ref::<Float64Array>()
-        .ok_or_else(|| ParquetLoadError::Schema(format!("{name}: not Float64")))
-}
-
-fn col_u8<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a UInt8Array, ParquetLoadError> {
-    batch
-        .column_by_name(name)
-        .ok_or_else(|| ParquetLoadError::Schema(format!("missing column: {name}")))?
-        .as_any()
-        .downcast_ref::<UInt8Array>()
-        .ok_or_else(|| ParquetLoadError::Schema(format!("{name}: not UInt8")))
 }
 
 fn col_list<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a ListArray, ParquetLoadError> {

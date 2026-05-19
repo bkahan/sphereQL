@@ -125,8 +125,7 @@ impl UmapSphereProjection {
         if let Some(cats) = categories
             && cats.len() != n
         {
-            return Err(ProjectionError::InconsistentDimension {
-                index: cats.len(),
+            return Err(ProjectionError::SliceLengthMismatch {
                 expected: n,
                 got: cats.len(),
             });
@@ -188,6 +187,7 @@ impl UmapSphereProjection {
 
             // Optional category term: pull same-cat together, push others apart.
             if cat_active {
+                // cat_active is only true when categories.is_some(), so this is safe.
                 let cats = categories.unwrap();
                 for i in 0..n {
                     let j = (rng.next_u64() as usize) % n;
@@ -313,7 +313,14 @@ impl UmapSphereProjection {
 
 impl Projection for UmapSphereProjection {
     fn project(&self, embedding: &Embedding) -> SphericalPoint {
-        assert_eq!(embedding.dimension(), self.dim);
+        // Caller contract: dimension must match the fitted projection.
+        assert_eq!(
+            embedding.dimension(),
+            self.dim,
+            "expected dimension {}, got {}",
+            self.dim,
+            embedding.dimension()
+        );
         let (xyz, certainty) = self.project_xyz(embedding);
         let projection_magnitude = (xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]).sqrt();
         let intensity = embedding.magnitude();
@@ -326,7 +333,14 @@ impl Projection for UmapSphereProjection {
     }
 
     fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
-        assert_eq!(embedding.dimension(), self.dim);
+        // Caller contract: dimension must match the fitted projection.
+        assert_eq!(
+            embedding.dimension(),
+            self.dim,
+            "expected dimension {}, got {}",
+            self.dim,
+            embedding.dimension()
+        );
         let (xyz, certainty) = self.project_xyz(embedding);
         let projection_magnitude = (xyz[0] * xyz[0] + xyz[1] * xyz[1] + xyz[2] * xyz[2]).sqrt();
         let intensity = embedding.magnitude();

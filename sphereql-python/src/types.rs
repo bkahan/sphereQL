@@ -304,23 +304,44 @@ impl Glob {
     fn from_json(json: &str) -> PyResult<Self> {
         let v: serde_json::Value =
             serde_json::from_str(json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let id = v["id"]
+            .as_u64()
+            .ok_or_else(|| PyValueError::new_err("missing or non-integer field: id"))?
+            as usize;
+        let member_count = v["member_count"]
+            .as_u64()
+            .ok_or_else(|| PyValueError::new_err("missing or non-integer field: member_count"))?
+            as usize;
+        let radius = v["radius"]
+            .as_f64()
+            .ok_or_else(|| PyValueError::new_err("missing or non-numeric field: radius"))?;
         let top_categories = v["top_categories"]
             .as_array()
-            .unwrap_or(&vec![])
+            .ok_or_else(|| PyValueError::new_err("missing 'top_categories' array"))?
             .iter()
-            .filter_map(|pair| {
-                let arr = pair.as_array()?;
-                Some((
-                    arr.first()?.as_str()?.to_string(),
-                    arr.get(1)?.as_u64()? as usize,
-                ))
+            .enumerate()
+            .map(|(i, pair)| {
+                let arr = pair.as_array().ok_or_else(|| {
+                    PyValueError::new_err(format!("top_categories[{i}] must be an array"))
+                })?;
+                let name = arr
+                    .first()
+                    .and_then(|x| x.as_str())
+                    .ok_or_else(|| {
+                        PyValueError::new_err(format!("top_categories[{i}][0] must be a string"))
+                    })?
+                    .to_string();
+                let count = arr.get(1).and_then(|x| x.as_u64()).ok_or_else(|| {
+                    PyValueError::new_err(format!("top_categories[{i}][1] must be an integer"))
+                })? as usize;
+                Ok((name, count))
             })
-            .collect();
+            .collect::<PyResult<Vec<_>>>()?;
         Ok(Self {
-            id: v["id"].as_u64().unwrap_or(0) as usize,
+            id,
             centroid: parse_f64_3(&v["centroid"]),
-            member_count: v["member_count"].as_u64().unwrap_or(0) as usize,
-            radius: v["radius"].as_f64().unwrap_or(0.0),
+            member_count,
+            radius,
             top_categories,
         })
     }
@@ -376,10 +397,13 @@ impl Manifold {
     fn from_json(json: &str) -> PyResult<Self> {
         let v: serde_json::Value =
             serde_json::from_str(json).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let variance_ratio = v["variance_ratio"]
+            .as_f64()
+            .ok_or_else(|| PyValueError::new_err("missing or non-numeric field: variance_ratio"))?;
         Ok(Self {
             centroid: parse_f64_3(&v["centroid"]),
             normal: parse_f64_3(&v["normal"]),
-            variance_ratio: v["variance_ratio"].as_f64().unwrap_or(0.0),
+            variance_ratio,
         })
     }
 }

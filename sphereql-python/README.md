@@ -43,8 +43,8 @@ for hit in results:
 ```python
 import sphereql
 
-sphereql.visualize(categories, embeddings, title="My Embeddings")
-# Opens an interactive 3D sphere in your browser
+sphereql.visualize(categories, embeddings, title="My Embeddings", open_browser=True)
+# Opens an interactive 3D sphere in your browser; set open_browser=False to only write the file
 ```
 
 ## Quick Start: Vector DB Bridge

@@ -31,7 +31,7 @@ use sphereql::embed::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
 };
 use sphereql_corpus::axes::*;
-use sphereql_corpus::{Concept, DIM, build_corpus, build_extended_corpus, embed};
+use sphereql_corpus::{DIM, build_corpus, embed};
 
 fn main() {
     println!("================================================================");
@@ -39,19 +39,8 @@ fn main() {
     println!("  Category Enrichment Layer — Full Capability Demo");
     println!("================================================================\n");
 
-    for (label, corpus) in [
-        ("hand_crafted_775", build_corpus()),
-        ("extended_5k", build_extended_corpus()),
-    ] {
-        println!("\n████████████████████████████████████████████████████████████████");
-        println!("  Corpus: {label}");
-        println!("████████████████████████████████████████████████████████████████\n");
-        run_demo(corpus);
-    }
-}
-
-fn run_demo(corpus: Vec<Concept>) {
     // ── Build corpus ──────────────────────────────────────────────────
+    let corpus = build_corpus();
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let embeddings: Vec<Vec<f64>> = corpus
@@ -534,47 +523,33 @@ fn run_demo(corpus: Vec<Concept>) {
     println!("     Tracing concept-to-concept paths through semantic space");
     println!("────────────────────────────────────────────────────────────────");
 
-    // Pick item-pair endpoints by category instead of hardcoded indices —
-    // the same demo runs on any corpus that has these 31 categories,
-    // including the larger extended corpus.
-    let pick_id_by_category = |target: &str| -> Option<String> {
-        pipeline
-            .ids()
-            .iter()
-            .zip(pipeline.categories().iter())
-            .find_map(|(id, cat)| (cat == target).then(|| id.clone()))
-    };
-    let item_paths: &[(&str, &str)] = &[
-        ("physics", "music"),
-        ("physics", "computer_science"),
-        ("biology", "economics"),
+    let item_paths: Vec<(usize, usize, &str)> = vec![
+        (10, 125, "Acoustics (physics) -> Harmonic theory (music)"),
+        (
+            24,
+            70,
+            "Quantum information (physics) -> Quantum computing (CS)",
+        ),
+        (
+            30,
+            100,
+            "Bioinformatics (biology) -> Microeconomics (economics)",
+        ),
     ];
 
     let dummy_q = PipelineQuery {
         embedding: vec![0.0; DIM],
     };
 
-    for (src_cat, tgt_cat) in item_paths {
-        let Some(src_id) = pick_id_by_category(src_cat) else {
-            println!(
-                "\n  ({} → {}: no source item found, skipping)",
-                src_cat, tgt_cat
-            );
-            continue;
-        };
-        let Some(tgt_id) = pick_id_by_category(tgt_cat) else {
-            println!(
-                "\n  ({} → {}: no target item found, skipping)",
-                src_cat, tgt_cat
-            );
-            continue;
-        };
-        let src_idx: usize = src_id.strip_prefix("s-").unwrap().parse().unwrap();
-        let tgt_idx: usize = tgt_id.strip_prefix("s-").unwrap().parse().unwrap();
-        println!(
-            "\n  \"{}\" ({}) -> \"{}\" ({})",
-            labels[src_idx], src_cat, labels[tgt_idx], tgt_cat
-        );
+    // The pipeline assigns ids in insertion order as "s-NNNN". Because
+    // build_corpus() returns a fixed, deterministic list, the numeric
+    // suffix equals the index in the corpus slice. See full_e2e.rs for the
+    // robust id-lookup approach (pipeline.ids() zipped with labels) when
+    // you don't control corpus order.
+    for (src_idx, tgt_idx, desc) in &item_paths {
+        let src_id = format!("s-{:04}", src_idx);
+        let tgt_id = format!("s-{:04}", tgt_idx);
+        println!("\n  {}", desc);
         println!("  {} -> {}\n", src_id, tgt_id);
 
         let result = pipeline
@@ -590,6 +565,7 @@ fn run_demo(corpus: Vec<Concept>) {
 
         if let SphereQLOutput::ConceptPath(Some(path)) = result {
             for (i, step) in path.steps.iter().enumerate() {
+                // Parse the numeric suffix from the pipeline-assigned "s-NNNN" id.
                 let item_idx: usize = step.id.strip_prefix("s-").unwrap().parse().unwrap();
                 let hop_str = if step.hop_distance > 0.0 {
                     format!(" hop={:.4}", step.hop_distance)

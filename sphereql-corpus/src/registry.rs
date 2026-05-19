@@ -156,12 +156,25 @@ impl CorpusId {
             Self::Stress => Ok(crate::stress_corpus::build_stress_corpus()),
             Self::Full => {
                 let mut v = crate::corpus::build_corpus();
+                // Extended always has a parquet path; the unwrap is an
+                // invariant — the match above exhausted all in-memory
+                // variants and Extended is never in-memory.
                 v.extend(parquet_loader::load_concepts(
-                    CorpusId::Extended.parquet_path().unwrap(),
+                    CorpusId::Extended
+                        .parquet_path()
+                        .expect("Extended always has a parquet path"),
                 )?);
                 Ok(v)
             }
-            other => parquet_loader::load_concepts(other.parquet_path().unwrap()),
+            other => {
+                let path = other.parquet_path().ok_or_else(|| {
+                    ParquetLoadError::Schema(format!(
+                        "corpus {:?} has no parquet path",
+                        other.name()
+                    ))
+                })?;
+                parquet_loader::load_concepts(path)
+            }
         }
     }
 
@@ -192,11 +205,21 @@ impl CorpusId {
             Self::Full => {
                 let mut v = crate::corpus::build_corpus();
                 v.extend(parquet_loader::load_concepts(
-                    CorpusId::Extended.parquet_path().unwrap(),
+                    CorpusId::Extended
+                        .parquet_path()
+                        .expect("Extended always has a parquet path"),
                 )?);
                 Ok(Box::new(v.into_iter().map(Ok)))
             }
-            other => parquet_loader::stream_concepts(other.parquet_path().unwrap()),
+            other => {
+                let path = other.parquet_path().ok_or_else(|| {
+                    ParquetLoadError::Schema(format!(
+                        "corpus {:?} has no parquet path",
+                        other.name()
+                    ))
+                })?;
+                parquet_loader::stream_concepts(path)
+            }
         }
     }
 }

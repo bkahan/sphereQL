@@ -31,6 +31,50 @@ categories, 30 concepts each, exactly 2 authored signal axes per concept,
 `0.2` noise amplitude (5× the built-in default of `0.04`). A controlled
 A/B probe for projection families.
 
+### Bulk / large-scale corpora
+
+`CorpusId` is a registry enum that names every corpus the crate knows about,
+including bulk-ingested parquets:
+
+| Variant | Source file |
+|---|---|
+| `HandCrafted` | in-memory |
+| `Extended` | `data/extended_corpus.parquet` |
+| `Full` | HandCrafted + Extended |
+| `Stress` | in-memory |
+| `DBpedia50k` | `data/dbpedia_50k.parquet` |
+| `DBpedia50kClustered` | `data/dbpedia_50k.clustered.parquet` |
+| `DBpedia50kTuned` | `data/dbpedia_50k.clustered.tuned.parquet` |
+| `DBpedia500k` | `data/dbpedia_500k.parquet` |
+| `DBpedia500kClustered` | `data/dbpedia_500k.clustered.parquet` |
+| `DBpedia500kTuned` | `data/dbpedia_500k.clustered.tuned.parquet` |
+| `Wikidata50k` | `data/wikidata_50k.parquet` |
+| `Parquet(path)` | any Parquet file |
+
+```rust
+use sphereql_corpus::CorpusId;
+
+// Eagerly load one corpus.
+let concepts = CorpusId::DBpedia500kClustered.load()?;
+
+// Stream a large corpus without materializing the full Vec.
+for concept in CorpusId::DBpedia500k.stream()? {
+    let c = concept?;
+    // ...
+}
+
+// Iterate all named corpora.
+for id in CorpusId::all() {
+    println!("{}: {:?}", id.name(), id.parquet_path());
+}
+
+// Any parquet file.
+let custom = CorpusId::Parquet("/tmp/my_corpus.parquet".into()).load()?;
+```
+
+Bulk parquet files are produced by the `bulk_ingest` example — see
+`examples/bulk_ingest.rs` for usage.
+
 ## Embedding format
 
 All corpora use the same embedding format. Use `embed(features, seed)` for

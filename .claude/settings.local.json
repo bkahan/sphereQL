@@ -21,7 +21,8 @@
       "Bash(python3.11 -m pip install pyarrow requests)",
       "Bash(python3 -m pytest tests/ -q)",
       "Bash(curl -sL -o labels_lang=en.ttl.bz2 \"https://databus.dbpedia.org/dbpedia/snapshot/2022.12.01/labels_lang=en.ttl.bz2\")",
-      "Bash(file /tmp/dbpedia/*.bz2)"
+      "Bash(file /tmp/dbpedia/*.bz2)",
+      "Bash(gh run *)"
     ]
   }
 }

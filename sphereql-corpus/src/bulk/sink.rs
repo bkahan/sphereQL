@@ -235,6 +235,12 @@ impl ParquetSink {
 
     /// Finalize the Parquet footer. Calls `flush()` first so any
     /// trailing partial batch lands in the file. Drops the writer.
+    ///
+    /// On error the output file at `path` is left in a partial state —
+    /// the Parquet footer was not written so it is unreadable. The
+    /// checkpoint sidecar may or may not reflect the last successful
+    /// flush. Callers that need atomic writes should write to a
+    /// temporary path and rename on success.
     pub fn close(mut self) -> Result<SinkCheckpoint, ParquetLoadError> {
         self.flush()?;
         if let Some(w) = self.writer.take() {
