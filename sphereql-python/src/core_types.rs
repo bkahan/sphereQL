@@ -256,7 +256,6 @@ impl PyProjectedPoint {
 
 #[cfg(feature = "embed")]
 impl PyProjectedPoint {
-    #[allow(dead_code)] // used by projection module (prompt 03)
     pub(crate) fn from_inner(inner: sphereql_embed::ProjectedPoint) -> Self {
         Self { inner }
     }

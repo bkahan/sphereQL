@@ -183,7 +183,8 @@ fn tune_and_record(
     .expect("auto_tune failed");
     let elapsed = start.elapsed();
 
-    let features = CorpusFeatures::extract(&categories, &embeddings);
+    let features = CorpusFeatures::extract(&categories, &embeddings)
+        .expect("failed to extract corpus features");
     let record = MetaTrainingRecord::from_tune_result(
         corpus_id,
         features.clone(),

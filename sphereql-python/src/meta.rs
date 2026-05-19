@@ -218,7 +218,9 @@ pub fn corpus_features<'py>(
         )));
     }
     let raw: Vec<Vec<f64>> = embs.iter().map(|e| e.values.clone()).collect();
-    let features = py.detach(|| CorpusFeatures::extract(&categories, &raw));
+    let features = py
+        .detach(|| CorpusFeatures::extract(&categories, &raw))
+        .map_err(PyValueError::new_err)?;
     pythonize::pythonize(py, &features)
         .map_err(|e| PyValueError::new_err(format!("failed to serialize CorpusFeatures: {e}")))
 }

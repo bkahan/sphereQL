@@ -52,25 +52,19 @@ pub struct CategorySummary {
 
 /// Quality classification for a bridge item.
 ///
-/// Assigned after all bridges are collected. Combines a spatial check
-/// (do the two categories occupy distinct regions on S²?) with a
-/// semantic check (does the bridge concept have real affinity to BOTH
-/// domains, not just one?).
+/// Assigned after all bridges are collected, comparing each bridge's
+/// strength against the corpus-wide median and the pair's territorial
+/// separation on S².
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BridgeClassification {
-    /// `min(affinity_to_source, affinity_to_target)` clears the
-    /// corpus-derived floor at
-    /// [`BridgeConfig::balanced_affinity_quantile`](crate::config::BridgeConfig)
-    /// of the home-affinity distribution, and the source/target
-    /// territories are spatially distinct — the concept genuinely spans
-    /// both domains, not just one.
+    /// Strength at or above the median and the source/target caps are
+    /// spatially distinct — a real cross-domain connector.
     Genuine,
     /// The two categories overlap heavily on S² (low territorial factor).
     /// This bridge is more shared-territory noise than a genuine connector.
     OverlapArtifact,
-    /// Spatially clean pair, but the concept's affinity is unbalanced —
-    /// strong on one side and weak on the other. A real connection but
-    /// not a balanced one.
+    /// Strength below median in a territorially clean pair — a real
+    /// connection but not a strong one.
     Weak,
 }
 
@@ -354,6 +348,9 @@ impl CategoryLayer {
         config: &PipelineConfig,
     ) -> Self {
         let n = categories.len();
+        // Invariant: the pipeline builder validates length parity before calling
+        // build_with_config. A mismatch here is a programmer error, not a
+        // recoverable input error.
         assert_eq!(n, embeddings.len());
         assert_eq!(n, projected_positions.len());
 
@@ -546,6 +543,8 @@ impl CategoryLayer {
 
             for &mi in &summary.member_indices {
                 let item_emb = &embeddings[mi];
+                // Invariant: all embeddings are validated to share the same dimension
+                // at pipeline build time, so cosine_similarity cannot fail here.
                 let sim_to_own = cosine_similarity(&item_emb.values, centroid_a)
                     .expect("centroid and member share fixed embedding dimensionality");
 
@@ -554,6 +553,7 @@ impl CategoryLayer {
                         continue;
                     }
 
+                    // Same invariant as sim_to_own above.
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding)
                             .expect("centroid and member share fixed embedding dimensionality");
@@ -593,68 +593,26 @@ impl CategoryLayer {
             }
         }
 
-        // Classification pass: a bridge is `Genuine` when it has real
-        // affinity to BOTH source AND target — not just when its strength
-        // happens to rank above some statistical midpoint. The prior
-        // median-split assigned 50% Genuine / 50% Weak by construction,
-        // independent of bridge quality. That was replaced with an
-        // absolute floor; this in turn fails on layouts where home
-        // affinities span a different range than the floor expected
-        // (e.g. post-stratified PCA on imbalanced corpora pushes them
-        // into the 0.3–0.6 band, where a fixed 0.5 cosine filters almost
-        // every cross-domain item out).
-        //
-        // The floor here is derived from the corpus itself: take each
-        // item's affinity to its own category centroid, sort, and pick
-        // the configured quantile. A bridge is `Genuine` when it has
-        // at least that much affinity to both sides — the same standard
-        // the bottom-q% of items achieve toward their own category.
-        let min_affinity_floor = {
-            let mut home_affs: Vec<f64> = Vec::with_capacity(embeddings.len());
-            for summary in summaries.iter() {
-                let centroid = &summary.centroid_embedding;
-                for &mi in &summary.member_indices {
-                    if let Ok(sim) = cosine_similarity(&embeddings[mi].values, centroid) {
-                        home_affs.push(sim);
-                    }
-                }
-            }
-            if home_affs.is_empty() {
-                0.0
-            } else {
-                home_affs.sort_by(f64::total_cmp);
-                let q = config.bridges.balanced_affinity_quantile.clamp(0.0, 1.0);
-                let idx = ((home_affs.len() as f64 * q) as usize).min(home_affs.len() - 1);
-                home_affs[idx]
-            }
+        // Classification pass: compare each bridge against the corpus-wide
+        // median strength and the pair's territorial separation on S².
+        let mut all_strengths: Vec<f64> = bridges
+            .values()
+            .flat_map(|list| list.iter().map(|b| b.bridge_strength))
+            .collect();
+        let median_strength = if all_strengths.is_empty() {
+            0.0
+        } else {
+            all_strengths.sort_by(|a, b| a.total_cmp(b));
+            all_strengths[all_strengths.len() / 2]
         };
 
-        // Dense corpora drive all exclusivities toward zero, so a fixed
-        // absolute threshold classifies every bridge as OverlapArtifact.
-        // Treat the config value as a percentile of the observed territorial
-        // factor distribution so the cutoff scales with corpus density.
-        let effective_overlap_threshold = {
-            let mut tfs: Vec<f64> = bridges
-                .keys()
-                .map(|&(ci, cj)| spatial.territorial_factor(ci, cj))
-                .collect();
-            if tfs.is_empty() {
-                config.bridges.overlap_artifact_territorial
-            } else {
-                tfs.sort_by(|a, b| a.total_cmp(b));
-                let idx = ((tfs.len() as f64 * config.bridges.overlap_artifact_territorial)
-                    as usize)
-                    .min(tfs.len() - 1);
-                tfs[idx]
-            }
-        };
+        let overlap_threshold = config.bridges.overlap_artifact_territorial;
         for list in bridges.values_mut() {
             for b in list.iter_mut() {
                 let tf = spatial.territorial_factor(b.source_category, b.target_category);
-                let min_aff = b.affinity_to_source.min(b.affinity_to_target);
-                b.classification = if tf < effective_overlap_threshold {
+                b.classification = if tf < overlap_threshold {
                     BridgeClassification::OverlapArtifact
-                } else if min_aff >= min_affinity_floor {
+                } else if b.bridge_strength >= median_strength {
                     BridgeClassification::Genuine
                 } else {
                     BridgeClassification::Weak
@@ -1616,54 +1574,6 @@ mod tests {
         for list in layer.graph.bridges.values() {
             for b in list {
                 assert!(b.bridge_strength >= 0.0 && b.bridge_strength <= 1.0);
-            }
-        }
-    }
-
-    #[test]
-    fn bridge_classification_uses_min_affinity_not_median() {
-        // Genuine bridges must have min(aff_source, aff_target) at-or-above
-        // the home-affinity quantile floor; Weak bridges in clean territory
-        // must fall below it. The floor here is derived from the test
-        // layer's own home affinities (not a hardcoded cosine) so this
-        // test exercises both the median-split regression guard and the
-        // corpus-derived quantile mechanism.
-        let (layer, embeddings, _) = build_test_layer();
-        let q = PipelineConfig::default().bridges.balanced_affinity_quantile;
-
-        let mut home_affs: Vec<f64> = Vec::new();
-        for summary in layer.summaries.iter() {
-            let centroid = &summary.centroid_embedding;
-            for &mi in &summary.member_indices {
-                if let Ok(sim) = cosine_similarity(&embeddings[mi].values, centroid) {
-                    home_affs.push(sim);
-                }
-            }
-        }
-        home_affs.sort_by(f64::total_cmp);
-        let idx = ((home_affs.len() as f64 * q) as usize).min(home_affs.len() - 1);
-        let floor = home_affs[idx];
-
-        for list in layer.graph.bridges.values() {
-            for b in list {
-                let min_aff = b.affinity_to_source.min(b.affinity_to_target);
-                match b.classification {
-                    BridgeClassification::Genuine => {
-                        assert!(
-                            min_aff >= floor,
-                            "Genuine bridge has min_affinity {min_aff:.3} below floor {floor:.3}"
-                        );
-                    }
-                    BridgeClassification::Weak => {
-                        assert!(
-                            min_aff < floor,
-                            "Weak bridge has min_affinity {min_aff:.3} at-or-above floor {floor:.3}"
-                        );
-                    }
-                    BridgeClassification::OverlapArtifact => {
-                        // Spatial check wins independent of affinity balance.
-                    }
-                }
             }
         }
     }

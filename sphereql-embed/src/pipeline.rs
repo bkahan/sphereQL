@@ -64,36 +64,28 @@ pub enum PipelineError {
     /// rolling up into `AllTrialsFailed { failures: [] }`.
     #[error("invalid search space: {0}")]
     InvalidSearchSpace(String),
+    /// Input validation failed before any projection or pipeline work was
+    /// attempted (e.g. empty corpus, ragged embeddings, mismatched lengths
+    /// detected during corpus feature extraction).
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 // ── Input contract ──────────────────────────────────────────────────────────
 
-/// Input required to build a [`SphereQLPipeline`].
+/// Input to construct a SphereQL pipeline.
 ///
-/// Both slices must be the same length and non-empty. Every embedding
-/// must have the same dimensionality (≥ 3); [`PipelineError::LengthMismatch`]
-/// and [`PipelineError::TooFewEmbeddings`] are returned on violation so
-/// callers get typed errors instead of panics.
-///
-/// Category strings are arbitrary labels — the pipeline groups items by
-/// them to build the category enrichment layer (graph, bridges, inner
-/// spheres). Using a single-element category list is valid but produces
-/// no inter-category structure.
+/// - `categories`: one category string per sentence, same length as `embeddings`
+/// - `embeddings`: one `Vec<f64>` per sentence, all same dimensionality
+/// - Both vectors must have the same length.
 pub struct PipelineInput {
-    /// One category label per item, index-aligned with `embeddings`.
     pub categories: Vec<String>,
-    /// One embedding vector per item, all the same dimensionality.
     pub embeddings: Vec<Vec<f64>>,
 }
 
-/// A query embedding to pass alongside a [`SphereQLQuery`].
-///
-/// The embedding must have the same dimensionality as the corpus the
-/// pipeline was built from; mismatches will produce out-of-distribution
-/// projections (the pipeline does not validate dimensionality at query
-/// time — that check happens during [`SphereQLPipeline::new_with_config`]).
+/// A query into the pipeline. All fields are embeddings of the same
+/// dimensionality as the pipeline's corpus.
 pub struct PipelineQuery {
-    /// The raw embedding vector for the query item.
     pub embedding: Vec<f64>,
 }
 
@@ -216,11 +208,7 @@ pub enum SphereQLQuery<'a> {
     CategoryStats,
 }
 
-/// One item's projected position plus its original metadata, suitable for
-/// export or visualization.
-///
-/// Produced by [`SphereQLPipeline::exported_points`]. All coordinate fields
-/// are in the pipeline's configured spherical / Cartesian frame.
+/// Projected data for a single item, suitable for export or visualization.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ExportedPoint {
     pub id: String,
@@ -237,29 +225,13 @@ pub struct ExportedPoint {
 
 // ── Pipeline ──────────────────────────────────────────────────────────────
 
-/// The main SphereQL pipeline.
+/// The main SphereQL pipeline: fitted projection + spatial index +
+/// category enrichment layer + optional tunable config.
 ///
-/// Combines a fitted outer-sphere projection, a spatial index for k-NN and
-/// region queries, and a category enrichment layer (inter-category graph,
-/// bridge detection, inner spheres per category, domain-group routing).
-///
-/// # Building a pipeline
-///
-/// | Method | When to use |
-/// |---|---|
-/// | [`Self::new`] | Default config, quick start |
-/// | [`Self::new_with_config`] | Explicit [`PipelineConfig`] (projection family, thresholds) |
-/// | [`Self::new_from_metamodel`] | Skip search — recall a config from past tuner runs |
-/// | [`Self::new_from_metamodel_tuned`] | Warm-start: predict then tune a small budget |
-///
-/// # Invariants
-///
-/// - Item ids are auto-generated as `"s-{i:04}"` strings in insertion order.
-///   Keep your own parallel array if you need to map back to external ids.
-/// - All query methods take `&self`; the pipeline is immutable after construction.
-/// - The `retain-embeddings` Cargo feature must be active for
-///   [`Self::raw_embeddings`], [`Self::pairwise_similarities`], and
-///   [`Self::nearest_by_embedding`] to return `Some(...)`.
+/// Build one with [`Self::new`] for defaults,
+/// [`Self::new_with_config`] for an explicit [`PipelineConfig`], or
+/// [`Self::new_from_metamodel`] / [`Self::new_from_metamodel_tuned`]
+/// to consult a trained meta-model on past tuner runs.
 pub struct SphereQLPipeline {
     projection: ConfiguredProjection,
     index: EmbeddingIndex<ConfiguredProjection>,
@@ -281,11 +253,11 @@ pub struct SphereQLPipeline {
 }
 
 impl SphereQLPipeline {
-    /// Build a pipeline with [`PipelineConfig::default`].
+    /// Build a pipeline from raw inputs with [`PipelineConfig::default`].
     ///
-    /// Equivalent to `Self::new_with_config(input, PipelineConfig::default())`.
-    /// Prefer [`Self::new_with_config`] when you have tuned constants or
-    /// want a non-PCA projection family.
+    /// - `input.categories[i]` is the category for sentence `i`
+    /// - `input.embeddings[i]` is the embedding vector for sentence `i`
+    /// - All embedding vectors must have the same dimensionality (>= 3).
     pub fn new(input: PipelineInput) -> Result<Self, PipelineError> {
         Self::new_with_config(input, PipelineConfig::default())
     }
@@ -336,7 +308,8 @@ impl SphereQLPipeline {
         input: PipelineInput,
         model: &M,
     ) -> Result<(Self, CorpusFeatures, PipelineConfig), PipelineError> {
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
+            .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
         let pipeline = Self::new_with_config(input, predicted.clone())?;
         Ok((pipeline, features, predicted))
@@ -367,7 +340,8 @@ impl SphereQLPipeline {
         M: MetaModel,
         Q: QualityMetric,
     {
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
+            .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
         let (pipeline, report) = auto_tune(input, space, metric, strategy, &predicted)?;
         Ok((pipeline, features, report))
@@ -1114,11 +1088,8 @@ impl SphereQLPipeline {
 
     /// Serialize all projected points as a JSON array string.
     pub fn to_json(&self) -> String {
-        // ExportedPoint contains only f64 (finite after projection) and String —
-        // serde_json can only fail on non-finite floats (NaN/Inf). Projections
-        // clamp outputs, so this is an invariant rather than a fallible path.
         serde_json::to_string(&self.exported_points())
-            .expect("ExportedPoint fields are always finite and serializable")
+            .expect("ExportedPoint is always serializable")
     }
 
     /// Serialize all projected points as RFC 4180-compliant CSV with a header row.
@@ -1684,7 +1655,7 @@ mod tests {
         use crate::meta_model::{MetaTrainingRecord, NearestNeighborMetaModel};
 
         let (input, _) = make_input(20, 10);
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings).unwrap();
 
         // Hand-built training record: "on a corpus shaped like this, a
         // LaplacianEigenmap config wins". The NN model has only one
@@ -1728,7 +1699,7 @@ mod tests {
         // pipeline should keep the predicted overlap value (base_config is
         // the prediction) while the tuner picks best num_domain_groups.
         let (input, _) = make_input(20, 10);
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings).unwrap();
 
         let mut predicted_cfg = PipelineConfig::default();
         predicted_cfg.bridges.overlap_artifact_territorial = 0.123; // unusual
@@ -1755,7 +1726,6 @@ mod tests {
             overlap_artifact_territorial: vec![0.3], // NOT the predicted 0.123
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
-            balanced_affinity_quantile: vec![0.5],
             min_evr_improvement: vec![0.10],
         };
 

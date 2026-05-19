@@ -217,7 +217,8 @@ fn run_demo(corpus: Vec<Concept>) {
     println!("================================================================\n");
 
     // 2a. Extract corpus features and create a training record
-    let features = CorpusFeatures::extract(&categories, &embeddings);
+    let features = CorpusFeatures::extract(&categories, &embeddings)
+        .expect("failed to extract corpus features");
     println!("Corpus feature profile (10-D):");
     println!("  n_items ..................... {}", features.n_items);
     println!("  n_categories ................ {}", features.n_categories);

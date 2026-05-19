@@ -762,7 +762,8 @@ impl From<&ProjectionWarning> for ProjectionWarningOut {
 #[wasm_bindgen(js_name = corpusFeatures)]
 pub fn corpus_features(input_json: &str) -> Result<CorpusFeaturesOut, JsError> {
     let input = parse_input(input_json)?;
-    let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+    let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
+        .map_err(|e| JsError::new(&e))?;
     Ok(CorpusFeaturesOut::from(&features))
 }
 

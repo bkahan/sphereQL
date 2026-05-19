@@ -401,6 +401,10 @@ impl MetaModel for NearestNeighborMetaModel {
     }
 
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
+        // Invariant: callers are expected to call fit() before predict().
+        // The trait contract documents this requirement, and the panic is
+        // intentional — a silent wrong prediction (returning Default) would
+        // be much harder to diagnose than a clear failure at the call site.
         assert!(
             !self.records.is_empty(),
             "NearestNeighborMetaModel::predict called before fit(); \
@@ -522,6 +526,10 @@ impl MetaModel for DistanceWeightedMetaModel {
     }
 
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
+        // Invariant: callers are expected to call fit() before predict().
+        // The trait contract documents this requirement, and the panic is
+        // intentional — a silent wrong prediction (returning Default) would
+        // be much harder to diagnose than a clear failure at the call site.
         assert!(
             !self.records.is_empty(),
             "DistanceWeightedMetaModel::predict called before fit(); \
@@ -713,7 +721,6 @@ mod tests {
             metric_name: "connectivity_composite".to_string(),
             best_score: 0.42,
             best_config: cfg.clone(),
-            effective_num_domain_groups: 0,
             trials: Vec::new(),
             failures: Vec::new(),
         };
@@ -742,7 +749,6 @@ mod tests {
             metric_name: "m".to_string(),
             best_score: 0.5,
             best_config: PipelineConfig::default(),
-            effective_num_domain_groups: 0,
             trials: Vec::new(),
             failures: Vec::new(),
         };

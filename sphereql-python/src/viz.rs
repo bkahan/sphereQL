@@ -58,12 +58,7 @@ fn build_data_json(
         evr: explained_variance,
         points,
     };
-    // Infallible in practice: every field is a finite f64 or a borrowed
-    // &str. On the unreachable error path, fall back to a shape-valid
-    // VizData so the JS template still has defined `evr` and `points`.
     let serialized = serde_json::to_string(&data).unwrap_or_else(|err| {
-        // Unreachable in practice (every field is finite f64 or &str),
-        // but guard the JS template against a malformed payload.
         eprintln!("viz: VizData serialization failed: {err}");
         r#"{"evr":0.0,"points":[]}"#.to_string()
     });
@@ -123,6 +118,13 @@ pub fn visualize(
         return Err(PyValueError::new_err("need at least 3 embeddings"));
     }
 
+    for (i, row) in embeddings.iter().enumerate() {
+        if let Some(j) = row.iter().position(|v| !v.is_finite()) {
+            return Err(PyValueError::new_err(format!(
+                "embeddings[{i}][{j}] must be finite (no NaN or Inf)"
+            )));
+        }
+    }
     let embs: Vec<Embedding> = embeddings
         .iter()
         .map(|v| Embedding::from(v.as_slice()))

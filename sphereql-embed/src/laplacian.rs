@@ -49,7 +49,7 @@ pub const DEFAULT_K_NEIGHBORS: usize = 15;
 /// Floor on the degree of any graph node. Zero-degree nodes would produce
 /// NaN during D^(-1/2) normalization; this regularization keeps the spectrum
 /// well-defined on disconnected graphs.
-pub const DEGREE_REGULARIZATION: f64 = 1e-6;
+pub(crate) const DEGREE_REGULARIZATION: f64 = 1e-6;
 
 const MAX_POWER_ITERS: usize = 400;
 const POWER_ITER_TOL: f64 = 1e-10;
@@ -152,28 +152,9 @@ impl LaplacianEigenmapProjection {
 
         // 2–4. Sparse top-k graph construction.
         //
-        // Previously this pass materialized four separate n×n matrices
-        // (`sim`, `keep`, `w`, then `w_norm`) totaling ~3.2 GB at
-        // n = 10 000. The only buffer the eigensolver actually reads
-        // is `w_norm`, so every intermediate above was pure RAM tax.
-        //
-        // New shape:
-        //   per-row top-k edge list  (≈ n · k entries, O(n · k) memory)
-        //     → union-symmetrize into a `HashSet<(i, j)>`
-        //     → compute degrees from the set
-        //     → scatter directly into one dense `w_norm` the
-        //       eigensolver can consume
-        //
-        // Memory: from 4 · n² · 8 ≈ 3.2 GB down to ~1 · n² · 8 + O(n·k)
-        // ≈ 800 MB + a few MB of scratch.
-        //
-        // Jaccard is computed once per unordered pair; the upper-
-        // triangular scan fills both rows' candidate lists in one step.
-
-        // Per-row top-k min-heap keyed on (sim, j) — keeps the
-        // *largest* k similarities by evicting the current minimum.
-        // Using `std::cmp::Reverse` converts the default max-heap into
-        // the min-heap we need.
+        // Per-row top-k min-heap keyed on (sim, j). `std::cmp::Reverse`
+        // converts the default max-heap into the min-heap we need so we
+        // can evict the lowest-similarity candidate as we go.
         use std::cmp::Reverse;
         use std::collections::BinaryHeap;
         #[derive(PartialEq)]
@@ -462,9 +443,6 @@ fn top_k_symmetric_excluding(
         normalize_vec(&mut v);
         let mut eigenvalue = 0.0;
 
-        // Cached `matrix · v` from the previous iteration's Rayleigh
-        // step. Each iteration's `matrix · v_new = matrix · u_previous`,
-        // so we can skip one mat-vec per step after the first.
         let mut mv_cache: Option<Vec<f64>> = None;
 
         for _ in 0..MAX_POWER_ITERS {
@@ -486,9 +464,6 @@ fn top_k_symmetric_excluding(
                 break;
             }
 
-            // Rayleigh quotient: λ ≈ uᵀ · (matrix · u). Cache
-            // `matrix · u` for next iteration's start — halves the
-            // steady-state mat-vec cost.
             let mut mv_next = vec![0.0f64; n];
             matvec(&mut mv_next, &u);
             eigenvalue = dot(&u, &mv_next);

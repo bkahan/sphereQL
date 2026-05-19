@@ -78,12 +78,16 @@ impl QualitySignal {
     }
 }
 
+const CONFIDENCE_HIGH: f64 = 0.10;
+const CONFIDENCE_MODERATE: f64 = 0.03;
+const CONFIDENCE_LOW: f64 = 0.005;
+
 fn classify(combined: f64) -> ConfidenceLevel {
-    if combined > 0.10 {
+    if combined > CONFIDENCE_HIGH {
         ConfidenceLevel::High
-    } else if combined > 0.03 {
+    } else if combined > CONFIDENCE_MODERATE {
         ConfidenceLevel::Moderate
-    } else if combined > 0.005 {
+    } else if combined > CONFIDENCE_LOW {
         ConfidenceLevel::Low
     } else {
         ConfidenceLevel::Unreliable

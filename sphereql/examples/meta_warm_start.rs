@@ -60,7 +60,8 @@ fn run_demo(corpus: &[Concept]) {
     //     pins an unusual threshold_evr_penalty value. The default
     //     SearchSpace uses {0.2, 0.4, 0.6} for this knob — we'll pin
     //     0.75 via the prediction and verify it survives tuning.
-    let features = CorpusFeatures::extract(&categories, &embeddings);
+    let features = CorpusFeatures::extract(&categories, &embeddings)
+        .expect("failed to extract corpus features");
 
     let mut expert_cfg = PipelineConfig::default();
     expert_cfg.bridges.threshold_evr_penalty = 0.75;
@@ -101,7 +102,6 @@ fn run_demo(corpus: &[Concept]) {
         overlap_artifact_territorial: vec![0.2, 0.3, 0.4],             // the only tuned axis
         threshold_base: vec![expert_cfg.bridges.threshold_base],       // pin
         threshold_evr_penalty: vec![expert_cfg.bridges.threshold_evr_penalty], // pin at 0.75
-        balanced_affinity_quantile: vec![expert_cfg.bridges.balanced_affinity_quantile], // pin
         min_evr_improvement: vec![expert_cfg.inner_sphere.min_evr_improvement], // pin
     };
 
@@ -155,7 +155,6 @@ fn mock_report(cfg: PipelineConfig, score: f64, metric_name: &str) -> sphereql::
         metric_name: metric_name.to_string(),
         best_score: score,
         best_config: cfg,
-        effective_num_domain_groups: 0,
         trials: Vec::new(),
         failures: Vec::new(),
     }

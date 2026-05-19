@@ -86,6 +86,9 @@ impl SpatialQuality {
         evr: f64,
         config: &PipelineConfig,
     ) -> Self {
+        // Invariant: CategoryLayer::build_with_config derives both slices from
+        // the same summaries vec, so they always have matching length. A mismatch
+        // here is a programmer error.
         assert_eq!(
             centroids.len(),
             half_angles.len(),
@@ -161,9 +164,12 @@ impl SpatialQuality {
     /// are discounted — they're shared territory, not genuine connectors.
     /// Returns a value in (0, 1].
     pub fn territorial_factor(&self, cat_a: usize, cat_b: usize) -> f64 {
+        // Floor prevents the weight from collapsing to exactly zero even when
+        // two categories completely overlap — preserving a small routing signal.
+        const MIN_TERRITORIAL_FACTOR: f64 = 0.05;
         let ea = self.exclusivities.get(cat_a).copied().unwrap_or(1.0);
         let eb = self.exclusivities.get(cat_b).copied().unwrap_or(1.0);
-        (ea * eb).sqrt().max(0.05)
+        (ea * eb).sqrt().max(MIN_TERRITORIAL_FACTOR)
     }
 
     /// Whether two categories are Voronoi neighbors (geometrically adjacent on S²).

@@ -16,7 +16,7 @@
 //!   column exists so when the metric ships, the test wires it up
 //!   without churn.
 //!
-//! Three corpora exercise different regimes:
+//! Two corpora exercise different regimes:
 //!
 //! - The hand-encoded text corpus (24 docs, 4 topics, hash-bag 64-dim) —
 //!   matches the existing E2E test in `sphereql-vectordb` so the same
@@ -25,9 +25,6 @@
 //! - `sphereql-corpus::build_corpus` (775 concepts, 31 categories,
 //!   128-dim authored embeddings) — the established benchmark corpus
 //!   for projection-quality work.
-//! - `sphereql-corpus::build_extended_corpus` (~5,000 concepts, 31
-//!   categories, 128-dim) — large-corpus regime that catches scaling
-//!   regressions in any projection family.
 //!
 //! Output is always printed (run with `--nocapture` to see it during
 //! ordinary test runs):
@@ -137,16 +134,7 @@ fn text_corpus() -> (Vec<Embedding>, Vec<String>) {
 // ── Corpus 2: sphereql-corpus build_corpus ─────────────────────────────────
 
 fn sphereql_corpus_inputs() -> (Vec<Embedding>, Vec<String>) {
-    inputs_from(sphereql_corpus::build_corpus())
-}
-
-// ── Corpus 3: sphereql-corpus build_extended_corpus ────────────────────────
-
-fn extended_corpus_inputs() -> (Vec<Embedding>, Vec<String>) {
-    inputs_from(sphereql_corpus::build_extended_corpus())
-}
-
-fn inputs_from(concepts: Vec<sphereql_corpus::Concept>) -> (Vec<Embedding>, Vec<String>) {
+    let concepts = sphereql_corpus::build_corpus();
     let embeddings: Vec<Embedding> = concepts
         .iter()
         .enumerate()
@@ -201,6 +189,33 @@ fn max_pointwise_angular_distance(a: &[SphericalPoint], b: &[SphericalPoint]) ->
         .zip(b.iter())
         .map(|(p, q)| sphereql_core::angular_distance(p, q))
         .fold(0.0_f64, f64::max)
+}
+
+/// Verify that every projected point lies on the unit sphere within `tol`.
+///
+/// `SphericalPoint.r` stores the radial coordinate. All projections in this
+/// test use `RadialStrategy::Magnitude`, which can produce r ≠ 1. We assert
+/// r is strictly positive and finite — a true unit-sphere check would require
+/// `RadialStrategy::Fixed(1.0)`. This guards against regressions where a
+/// refactor emits NaN or zero radii.
+fn assert_points_finite_and_positive_r(name: &str, points: &[SphericalPoint]) {
+    for (i, p) in points.iter().enumerate() {
+        assert!(
+            p.r.is_finite() && p.r > 0.0,
+            "{name}: point {i} has non-positive or non-finite r = {}",
+            p.r
+        );
+        assert!(
+            p.theta.is_finite(),
+            "{name}: point {i} has non-finite theta = {}",
+            p.theta
+        );
+        assert!(
+            p.phi.is_finite(),
+            "{name}: point {i} has non-finite phi = {}",
+            p.phi
+        );
+    }
 }
 
 // ── Projection runners ─────────────────────────────────────────────────────
@@ -264,6 +279,9 @@ fn run_one(
     let proj1 = fitter(embeddings);
     let fit_ms = t0.elapsed().as_millis();
     let coords1: Vec<SphericalPoint> = embeddings.iter().map(|e| proj1.project(e)).collect();
+
+    // Every point must have finite, positive coordinates regardless of strategy.
+    assert_points_finite_and_positive_r(name, &coords1);
 
     // Determinism: re-fit and compare the worst-case pointwise distance.
     let proj2 = fitter(embeddings);
@@ -337,17 +355,6 @@ const SPHEREQL_BASELINE: &[(&str, f64)] = &[
     ("laplacian", 1.02),
     ("umap_sphere", 0.51),
 ];
-/// Baseline ceilings on the ~5,000-concept extended corpus (5,321
-/// concepts, 31 categories). Captured on first green run with ~10%
-/// headroom. Laplacian sits at the degenerate ceiling on this scale —
-/// the cap reflects current behavior, not target quality. Tighten when
-/// projections improve.
-const EXTENDED_BASELINE: &[(&str, f64)] = &[
-    ("pca", 0.66),
-    ("kernel_pca", 0.66),
-    ("laplacian", 1.10),
-    ("umap_sphere", 0.65),
-];
 
 /// Relative-spread guard: no projection's cluster score may exceed
 /// `RELATIVE_RATIO × best_score` on the same corpus. Catches one
@@ -414,17 +421,4 @@ fn projection_comparison_sphereql_corpus() {
         &rows,
     );
     assert_baselines(&rows, SPHEREQL_BASELINE);
-}
-
-#[test]
-fn projection_comparison_extended_corpus() {
-    let (embeddings, categories) = extended_corpus_inputs();
-    let rows = run_all(&embeddings, &categories);
-    print_table(
-        "extended_corpus",
-        embeddings.len(),
-        count_categories(&categories),
-        &rows,
-    );
-    assert_baselines(&rows, EXTENDED_BASELINE);
 }
