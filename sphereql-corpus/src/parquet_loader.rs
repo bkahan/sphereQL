@@ -193,8 +193,7 @@ fn optional_str<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a StringArra
 /// shipped to a worker thread.
 pub fn stream_concepts<P: AsRef<Path>>(
     path: P,
-) -> Result<Box<dyn Iterator<Item = Result<Concept, ParquetLoadError>> + Send>, ParquetLoadError>
-{
+) -> Result<Box<dyn Iterator<Item = Result<Concept, ParquetLoadError>> + Send>, ParquetLoadError> {
     let file = File::open(path.as_ref())?;
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
     let reader = builder.build()?;
@@ -274,10 +273,7 @@ fn col_list<'a>(batch: &'a RecordBatch, name: &str) -> Result<&'a ListArray, Par
         .ok_or_else(|| ParquetLoadError::Schema(format!("{name}: not List")))
 }
 
-fn parse_feature_list(
-    list: &ListArray,
-    row: usize,
-) -> Result<Vec<(usize, f64)>, ParquetLoadError> {
+fn parse_feature_list(list: &ListArray, row: usize) -> Result<Vec<(usize, f64)>, ParquetLoadError> {
     let inner = list.value(row);
     let s = inner
         .as_any()

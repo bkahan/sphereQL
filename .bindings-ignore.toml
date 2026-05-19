@@ -433,3 +433,49 @@ reason = "internal struct passed to RadialStrategy::compute_rich during projecti
 [[exempt]]
 name = "UnimplementedLogicalConfidence"
 reason = "placeholder skeleton for the future logical-confidence metric; no scorer to bind yet"
+
+# ── Corpus self-tune / quality additions (Phase 7) ──
+
+[[exempt]]
+name = "CorpusQuality"
+reason = "internal quality aggregate; surfaced via run_self_tune result, not a standalone binding"
+
+[[exempt]]
+name = "CorpusQualityBreakdown"
+reason = "sub-struct of CorpusQuality; aggregated into SelfTuneReport"
+
+[[exempt]]
+name = "CorpusQualityWeights"
+reason = "config struct passed by value to run_self_tune; not user-facing in bindings"
+
+[[exempt]]
+name = "SelfTuneConfig"
+reason = "passed as dict/kwargs to the corpus self-tune entry point; not a standalone class"
+
+[[exempt]]
+name = "SelfTuneIteration"
+reason = "internal per-iteration record inside SelfTuneReport; not user-facing"
+
+[[exempt]]
+name = "SelfTuneReport"
+reason = "internal result type from run_self_tune; not yet surfaced in bindings"
+
+[[exempt]]
+name = "StopReason"
+reason = "internal enum inside SelfTuneReport; surfaced as a string field if report is bound"
+
+[[exempt]]
+name = "TunableConcept"
+reason = "internal corpus item used during self-tune pass; not user-facing"
+
+[[exempt]]
+name = "prune_below_floor"
+reason = "internal corpus pruning helper called inside run_self_tune; not a standalone binding"
+
+[[exempt]]
+name = "reweight_in_place"
+reason = "internal corpus reweighting helper called inside run_self_tune; not a standalone binding"
+
+[[exempt]]
+name = "run_self_tune"
+reason = "corpus-level batch operation; not yet exposed in Python/WASM bindings"

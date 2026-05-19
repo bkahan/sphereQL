@@ -43,13 +43,9 @@ fn main() {
         ("hand_crafted_775", build_corpus()),
         ("extended_5k", build_extended_corpus()),
     ] {
-        println!(
-            "\n████████████████████████████████████████████████████████████████"
-        );
+        println!("\n████████████████████████████████████████████████████████████████");
         println!("  Corpus: {label}");
-        println!(
-            "████████████████████████████████████████████████████████████████\n"
-        );
+        println!("████████████████████████████████████████████████████████████████\n");
         run_demo(corpus);
     }
 }
@@ -560,11 +556,17 @@ fn run_demo(corpus: Vec<Concept>) {
 
     for (src_cat, tgt_cat) in item_paths {
         let Some(src_id) = pick_id_by_category(src_cat) else {
-            println!("\n  ({} → {}: no source item found, skipping)", src_cat, tgt_cat);
+            println!(
+                "\n  ({} → {}: no source item found, skipping)",
+                src_cat, tgt_cat
+            );
             continue;
         };
         let Some(tgt_id) = pick_id_by_category(tgt_cat) else {
-            println!("\n  ({} → {}: no target item found, skipping)", src_cat, tgt_cat);
+            println!(
+                "\n  ({} → {}: no target item found, skipping)",
+                src_cat, tgt_cat
+            );
             continue;
         };
         let src_idx: usize = src_id.strip_prefix("s-").unwrap().parse().unwrap();

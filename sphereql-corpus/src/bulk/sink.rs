@@ -68,7 +68,9 @@ impl SinkCheckpoint {
     /// Load the checkpoint sidecar for `parquet_path`, if it exists.
     pub fn load_for(parquet_path: &Path) -> Option<Self> {
         let cp = Self::sidecar_for(parquet_path);
-        std::fs::read_to_string(cp).ok().and_then(|s| Self::parse(&s))
+        std::fs::read_to_string(cp)
+            .ok()
+            .and_then(|s| Self::parse(&s))
     }
 
     pub fn sidecar_for(parquet_path: &Path) -> PathBuf {
@@ -175,7 +177,9 @@ impl ParquetSink {
         }
         self.buffered.push(StagedRow {
             label: item.label,
-            category: item.category_hint.unwrap_or_else(|| UNCATEGORIZED.to_string()),
+            category: item
+                .category_hint
+                .unwrap_or_else(|| UNCATEGORIZED.to_string()),
             features,
             quality: item.quality_hint.clamp(0.0, 1.0),
             axis_coherence: 1.0,

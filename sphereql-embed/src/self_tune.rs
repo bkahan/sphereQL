@@ -25,11 +25,11 @@
 use std::collections::HashMap;
 
 use crate::category::BridgeClassification;
+use crate::config::PipelineConfig;
 use crate::corpus_quality::{CorpusQuality, CorpusQualityBreakdown};
 use crate::navigator::curvature_analysis;
 use crate::pipeline::{PipelineInput, SphereQLPipeline};
 use crate::quality_metric::QualityMetric;
-use crate::config::PipelineConfig;
 
 /// Concept view that the self-tuner mutates. The corpus crate's
 /// [`Concept`](sphereql_corpus::Concept) uses `&'static str` for label
@@ -332,7 +332,7 @@ pub fn prune_below_floor(corpus: &mut Vec<TunableConcept>, cfg: &SelfTuneConfig)
     }
     let kept: Vec<TunableConcept> = corpus
         .drain(..)
-        .zip(to_remove.into_iter())
+        .zip(to_remove)
         .filter_map(|(c, rm)| if rm { None } else { Some(c) })
         .collect();
     *corpus = kept;
@@ -374,9 +374,7 @@ mod tests {
         let mut corpus: Vec<TunableConcept> = (0..60)
             .map(|i| synthetic_concept(&format!("a{i}"), "x", 0.1, 0.5, 0.5))
             .collect();
-        corpus.extend(
-            (0..60).map(|i| synthetic_concept(&format!("b{i}"), "y", 0.9, 0.9, 0.9)),
-        );
+        corpus.extend((0..60).map(|i| synthetic_concept(&format!("b{i}"), "y", 0.9, 0.9, 0.9)));
         let cfg = SelfTuneConfig {
             min_quality_to_keep: 0.5,
             min_concepts_per_category: 50,
@@ -408,9 +406,8 @@ mod tests {
         // Verify the algebra of multiplier 3 in isolation.
         let cfg = SelfTuneConfig::default();
         let pre = 1.0_f64;
-        let post = pre
-            * (cfg.home_affinity_smoothing
-                + (1.0 - cfg.home_affinity_smoothing) * 0.0_f64);
+        let post =
+            pre * (cfg.home_affinity_smoothing + (1.0 - cfg.home_affinity_smoothing) * 0.0_f64);
         assert!((post - cfg.home_affinity_smoothing).abs() < 1e-12);
     }
 
@@ -419,8 +416,7 @@ mod tests {
         let cfg = SelfTuneConfig::default();
         let pre = 1.0_f64;
         let post = pre
-            * (cfg.source_confidence_smoothing
-                + (1.0 - cfg.source_confidence_smoothing) * 0.0_f64);
+            * (cfg.source_confidence_smoothing + (1.0 - cfg.source_confidence_smoothing) * 0.0_f64);
         assert!((post - cfg.source_confidence_smoothing).abs() < 1e-12);
     }
 
@@ -467,13 +463,8 @@ mod tests {
             v
         };
 
-        let (out, report) = run_self_tune(
-            corpus,
-            embed_fn,
-            PipelineConfig::default(),
-            &metric,
-            &cfg,
-        );
+        let (out, report) =
+            run_self_tune(corpus, embed_fn, PipelineConfig::default(), &metric, &cfg);
 
         assert!(!report.iterations.is_empty());
         assert_eq!(out.len(), n_per * n_cats);

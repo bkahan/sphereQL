@@ -747,8 +747,7 @@ fn tpe_propose(
         threshold_evr_penalty: space.threshold_evr_penalty[pick_idx(rng, &tep_g, &tep_b)],
         overlap_artifact_territorial: space.overlap_artifact_territorial
             [pick_idx(rng, &oat_g, &oat_b)],
-        balanced_affinity_quantile: space.balanced_affinity_quantile
-            [pick_idx(rng, &baq_g, &baq_b)],
+        balanced_affinity_quantile: space.balanced_affinity_quantile[pick_idx(rng, &baq_g, &baq_b)],
     };
     cfg.inner_sphere = InnerSphereConfig {
         min_evr_improvement: space.min_evr_improvement[pick_idx(rng, &mei_g, &mei_b)],

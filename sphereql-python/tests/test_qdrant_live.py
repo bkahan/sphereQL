@@ -17,6 +17,9 @@ import pytest
 import sphereql
 
 # Reuse the demo's encoder + REST upsert helper.
+pytest.importorskip("dotenv")
+pytest.importorskip("qdrant_client")
+
 import sys
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 sys.path.insert(0, str(EXAMPLES))

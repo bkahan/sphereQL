@@ -59,13 +59,9 @@ fn main() {
             }
         };
 
-        println!(
-            "\n████████████████████████████████████████████████████████████████"
-        );
+        println!("\n████████████████████████████████████████████████████████████████");
         println!("  Corpus: {}", id.name());
-        println!(
-            "████████████████████████████████████████████████████████████████\n"
-        );
+        println!("████████████████████████████████████████████████████████████████\n");
         run_demo(corpus);
     }
 }
@@ -123,7 +119,13 @@ fn run_demo(corpus: Vec<Concept>) {
 
     let space = SearchSpace::default();
     let metric = CompositeMetric::default_composite();
-    let budget = if n < 2_000 { 16 } else if n < 20_000 { 8 } else { 4 };
+    let budget = if n < 2_000 {
+        16
+    } else if n < 20_000 {
+        8
+    } else {
+        4
+    };
     let seed = 0x0A17_CABE_CAFE_u64;
 
     let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
@@ -889,8 +891,14 @@ fn run_demo(corpus: Vec<Concept>) {
             antipode_pts.push((format!("{cat} antipode"), antipode(&s.centroid_position)));
         }
     }
-    test_points.push(("North pole (void?)".into(), SphericalPoint::new_unchecked(1.0, 0.0, 0.01)));
-    test_points.push(("South pole (void?)".into(), SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01)));
+    test_points.push((
+        "North pole (void?)".into(),
+        SphericalPoint::new_unchecked(1.0, 0.0, 0.01),
+    ));
+    test_points.push((
+        "South pole (void?)".into(),
+        SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01),
+    ));
     test_points.extend(antipode_pts);
 
     println!("  {:<25} {:>12} interpretation", "Location", "Confidence");
@@ -1180,10 +1188,7 @@ fn run_demo(corpus: Vec<Concept>) {
                 .chain(rev)
                 .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
             if let Some((idx, strength)) = top {
-                if best_bridge
-                    .as_ref()
-                    .map_or(true, |x| strength > x.1)
-                {
+                if best_bridge.as_ref().map_or(true, |x| strength > x.1) {
                     best_bridge = Some((
                         labels[idx].to_string(),
                         strength,
@@ -1217,9 +1222,7 @@ fn run_demo(corpus: Vec<Concept>) {
         );
         println!("  │");
         if n_hops <= 1 {
-            println!(
-                "  │  The two categories are direct neighbors — no intermediate"
-            );
+            println!("  │  The two categories are direct neighbors — no intermediate");
             println!("  │  domains are needed to bridge them.");
         } else {
             let chain: Vec<&str> = path
@@ -1244,9 +1247,7 @@ fn run_demo(corpus: Vec<Concept>) {
                 );
             }
             None => {
-                println!(
-                    "  │  No item-level bridges span the hops — the path uses pure"
-                );
+                println!("  │  No item-level bridges span the hops — the path uses pure");
                 println!("  │  category adjacency rather than concrete connectors.");
             }
         }
