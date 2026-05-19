@@ -122,10 +122,8 @@ pub fn composite_quality(
     bridge_degree: u8,
 ) -> f64 {
     let bridge_score = (bridge_degree as f64 / 3.0).min(1.0);
-    let q = 0.4 * home_affinity
-        + 0.3 * axis_coherence
-        + 0.2 * source_confidence
-        + 0.1 * bridge_score;
+    let q =
+        0.4 * home_affinity + 0.3 * axis_coherence + 0.2 * source_confidence + 0.1 * bridge_score;
     q.clamp(0.0, 1.0)
 }
 

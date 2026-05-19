@@ -124,7 +124,8 @@ impl DBpediaTtlSource {
                 // ~6M entities / working_cap target → keep ratio.
                 let est_total = 6_000_000u64;
                 let ratio = (working_cap as u64).max(1).min(est_total);
-                keep_threshold = Some(((u64::MAX as u128) * (ratio as u128) / est_total as u128) as u64);
+                keep_threshold =
+                    Some(((u64::MAX as u128) * (ratio as u128) / est_total as u128) as u64);
             }
             if let Some(thr) = keep_threshold
                 && fnv1a64(s.as_bytes()) > thr
@@ -134,7 +135,7 @@ impl DBpediaTtlSource {
             if let Some(local) = ontology_local_name(o) {
                 builders
                     .entry(s.to_string())
-                    .or_insert_with(EntityBuilder::default)
+                    .or_default()
                     .types
                     .push(local.to_string());
             }
@@ -304,10 +305,9 @@ fn parse_triple(line: &str) -> Option<(&str, &str, &str)> {
         let end = stripped.find('>')?;
         return Some((s, p, &stripped[..end]));
     }
-    if o_rest.starts_with('"') {
+    if let Some(after_open) = o_rest.strip_prefix('"') {
         // Cheap literal parse: trust DBpedia's escaping and find the
         // last unescaped quote on the line.
-        let after_open = &o_rest[1..];
         let close = find_closing_quote(after_open)?;
         return Some((s, p, &after_open[..close]));
     }
@@ -327,7 +327,7 @@ fn find_closing_quote(s: &str) -> Option<usize> {
     None
 }
 
-fn parse_literal_en<'a>(o: &'a str) -> Option<&'a str> {
+fn parse_literal_en(o: &str) -> Option<&str> {
     // After parse_triple stripped the surrounding quotes, the lang
     // tag (if any) was already discarded. So `o` is the literal
     // body. We accept everything — DBpedia's `labels_lang=en` file

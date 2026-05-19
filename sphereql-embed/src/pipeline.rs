@@ -1130,8 +1130,13 @@ pub fn fit_projection_for_config(
         ProjectionKind::Pca => {
             let labels: Vec<&str> = categories.iter().map(String::as_str).collect();
             Ok(ConfiguredProjection::Pca(
-                PcaProjection::fit_stratified(embeddings, &labels, None, RadialStrategy::Magnitude)?
-                    .with_volumetric(true),
+                PcaProjection::fit_stratified(
+                    embeddings,
+                    &labels,
+                    None,
+                    RadialStrategy::Magnitude,
+                )?
+                .with_volumetric(true),
             ))
         }
         ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(KernelPcaProjection::fit(

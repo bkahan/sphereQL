@@ -1187,15 +1187,15 @@ fn run_demo(corpus: Vec<Concept>) {
                 .into_iter()
                 .chain(rev)
                 .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-            if let Some((idx, strength)) = top {
-                if best_bridge.as_ref().map_or(true, |x| strength > x.1) {
-                    best_bridge = Some((
-                        labels[idx].to_string(),
-                        strength,
-                        step.category_name.clone(),
-                        next.category_name.clone(),
-                    ));
-                }
+            if let Some((idx, strength)) = top
+                && best_bridge.as_ref().is_none_or(|x| strength > x.1)
+            {
+                best_bridge = Some((
+                    labels[idx].to_string(),
+                    strength,
+                    step.category_name.clone(),
+                    next.category_name.clone(),
+                ));
             }
         }
 

@@ -111,10 +111,7 @@ impl CorpusId {
             Self::DBpedia500kClustered => "dbpedia_500k_clustered",
             Self::DBpedia500kTuned => "dbpedia_500k_tuned",
             Self::Wikidata50k => "wikidata_50k",
-            Self::Parquet(p) => p
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("custom"),
+            Self::Parquet(p) => p.file_stem().and_then(|s| s.to_str()).unwrap_or("custom"),
         }
     }
 
@@ -181,10 +178,8 @@ impl CorpusId {
     /// [`load`]: CorpusId::load
     pub fn stream(
         &self,
-    ) -> Result<
-        Box<dyn Iterator<Item = Result<Concept, ParquetLoadError>> + Send>,
-        ParquetLoadError,
-    > {
+    ) -> Result<Box<dyn Iterator<Item = Result<Concept, ParquetLoadError>> + Send>, ParquetLoadError>
+    {
         match self {
             Self::HandCrafted => {
                 let v = crate::corpus::build_corpus();
@@ -221,7 +216,11 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort_unstable();
         sorted.dedup();
-        assert_eq!(names.len(), sorted.len(), "duplicate names in CorpusId::all()");
+        assert_eq!(
+            names.len(),
+            sorted.len(),
+            "duplicate names in CorpusId::all()"
+        );
     }
 
     #[test]
@@ -236,7 +235,11 @@ mod tests {
         for id in CorpusId::all() {
             match id {
                 CorpusId::HandCrafted | CorpusId::Full | CorpusId::Stress => {
-                    assert!(id.parquet_path().is_none(), "{} should have no path", id.name());
+                    assert!(
+                        id.parquet_path().is_none(),
+                        "{} should have no path",
+                        id.name()
+                    );
                 }
                 _ => {
                     assert!(

@@ -65,13 +65,13 @@ fn corpus_choice() -> &'static str {
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn load_runs(choice: &str) -> Vec<(&'static str, Vec<Concept>, Vec<String>, Vec<Vec<f64>>)> {
-    fn run_for(label: &'static str, corpus: Vec<Concept>, stress: bool) -> (
-        &'static str,
-        Vec<Concept>,
-        Vec<String>,
-        Vec<Vec<f64>>,
-    ) {
+    fn run_for(
+        label: &'static str,
+        corpus: Vec<Concept>,
+        stress: bool,
+    ) -> (&'static str, Vec<Concept>, Vec<String>, Vec<Vec<f64>>) {
         let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
         let embeddings = if stress {
             embed_stress(&corpus)

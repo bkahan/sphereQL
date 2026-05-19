@@ -209,10 +209,7 @@ pub fn parse_response(body: &str) -> Result<Vec<BulkItem>, BulkSourceError> {
         .ok_or_else(|| BulkSourceError::Parse("missing results.bindings".into()))?;
     let mut out = Vec::with_capacity(bindings.len());
     for b in bindings {
-        let Some(item_uri) = b
-            .pointer("/item/value")
-            .and_then(|v| v.as_str())
-        else {
+        let Some(item_uri) = b.pointer("/item/value").and_then(|v| v.as_str()) else {
             continue;
         };
         let qid = qid_from_uri(item_uri);
@@ -233,10 +230,7 @@ pub fn parse_response(body: &str) -> Result<Vec<BulkItem>, BulkSourceError> {
             .unwrap_or(0);
         let mut claims = Vec::new();
         for (pred, key) in [("P31", "p31s"), ("P279", "p279s"), ("P361", "p361s")] {
-            let Some(s) = b
-                .pointer(&format!("/{key}/value"))
-                .and_then(|v| v.as_str())
-            else {
+            let Some(s) = b.pointer(&format!("/{key}/value")).and_then(|v| v.as_str()) else {
                 continue;
             };
             for piece in s.split('|') {

@@ -904,14 +904,18 @@ mod tests {
     #[test]
     fn fit_stratified_balances_imbalanced_corpus() {
         let (embs, labels) = imbalanced_corpus();
-        let pca = PcaProjection::fit_stratified(&embs, &labels, Some(4), RadialStrategy::Fixed(1.0))
-            .unwrap();
+        let pca =
+            PcaProjection::fit_stratified(&embs, &labels, Some(4), RadialStrategy::Fixed(1.0))
+                .unwrap();
 
         // Cluster centers project to different points after balancing
         let a_proj = pca.project(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
         let b_proj = pca.project(&emb(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
         let sep = sphereql_core::angular_distance(&a_proj, &b_proj);
-        assert!(sep > 0.5, "stratified PCA should separate A and B, got {sep}");
+        assert!(
+            sep > 0.5,
+            "stratified PCA should separate A and B, got {sep}"
+        );
     }
 
     #[test]

@@ -119,11 +119,7 @@ impl Default for CorpusQuality {
 
 impl Clone for CorpusQuality {
     fn clone(&self) -> Self {
-        let snap = self
-            .last_breakdown
-            .lock()
-            .ok()
-            .and_then(|g| *g);
+        let snap = self.last_breakdown.lock().ok().and_then(|g| *g);
         Self {
             weights: self.weights,
             last_breakdown: Mutex::new(snap),
@@ -294,7 +290,7 @@ mod tests {
     #[test]
     fn category_balance_uniform_is_one() {
         let cats: Vec<String> = (0..30)
-            .flat_map(|i| std::iter::repeat(format!("cat_{i}")).take(10))
+            .flat_map(|i| std::iter::repeat_n(format!("cat_{i}"), 10))
             .collect();
         let s = compute_category_balance(&cats);
         assert!((s - 1.0).abs() < 1e-9);
@@ -302,13 +298,10 @@ mod tests {
 
     #[test]
     fn category_balance_collapses_when_one_category_dominates() {
-        let mut cats: Vec<String> = std::iter::repeat("a".to_string()).take(95).collect();
-        cats.extend(std::iter::repeat("b".to_string()).take(5));
+        let mut cats: Vec<String> = std::iter::repeat_n("a".to_string(), 95).collect();
+        cats.extend(std::iter::repeat_n("b".to_string(), 5));
         let s = compute_category_balance(&cats);
-        assert!(
-            s < 0.4,
-            "expected balance < 0.4 for skewed corpus, got {s}"
-        );
+        assert!(s < 0.4, "expected balance < 0.4 for skewed corpus, got {s}");
     }
 
     #[test]

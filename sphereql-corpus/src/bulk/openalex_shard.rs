@@ -106,10 +106,7 @@ impl OpenAlexShardSource {
                     return Ok(true);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "warning: failed to open shard {}: {e}",
-                        path.display()
-                    );
+                    eprintln!("warning: failed to open shard {}: {e}", path.display());
                     continue;
                 }
             }

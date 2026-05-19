@@ -47,8 +47,13 @@ fn main() {
     // ── 1. Tune on ALL THREE corpora, emit one training record each ────
     let (built_in_record, built_in_features) =
         tune_and_record("built_in_775", build_corpus(), false, &space, &metric);
-    let (extended_record, _extended_features) =
-        tune_and_record("extended_5k", build_extended_corpus(), false, &space, &metric);
+    let (extended_record, _extended_features) = tune_and_record(
+        "extended_5k",
+        build_extended_corpus(),
+        false,
+        &space,
+        &metric,
+    );
     let (stress_record, stress_features) =
         tune_and_record("stress_300", build_stress_corpus(), true, &space, &metric);
 

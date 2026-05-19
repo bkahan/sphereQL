@@ -161,7 +161,10 @@ mod tests {
         }
         assert!(sorted, "features must be sorted by axis");
         let max = feats.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
-        assert!((max - 1.0).abs() < 1e-9, "max bucket should normalize to 1.0");
+        assert!(
+            (max - 1.0).abs() < 1e-9,
+            "max bucket should normalize to 1.0"
+        );
     }
 
     #[test]
@@ -170,7 +173,7 @@ mod tests {
         // most of a 128-bucket space. We don't require uniformity, just
         // that we're not collapsing everything to one bucket.
         let ex = HashedClaimAxisExtractor::new(128, 99);
-        let mut hits = vec![false; 128];
+        let mut hits = [false; 128];
         for i in 0..200 {
             let b = ex.bucket_of("P31", &format!("Q{i}"));
             hits[b] = true;

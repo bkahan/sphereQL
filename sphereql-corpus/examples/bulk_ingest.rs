@@ -50,9 +50,9 @@ use sphereql_corpus::bulk::{
 };
 #[cfg(feature = "bulk-dbpedia")]
 use sphereql_corpus::bulk::{DBpediaConfig, DBpediaTtlSource};
+use sphereql_corpus::bulk::{SparqlConfig, WikidataSparqlSource};
 #[cfg(feature = "bulk-dump")]
 use sphereql_corpus::bulk::{WikidataDumpConfig, WikidataDumpSource};
-use sphereql_corpus::bulk::{SparqlConfig, WikidataSparqlSource};
 
 const DEFAULT_NUM_AXES: usize = 128;
 const DEFAULT_AXIS_SEED: u64 = 0xDEAD_BEEF;
@@ -199,7 +199,10 @@ fn parse_usize(s: &str) -> usize {
 
 fn parse_u64(s: &str) -> u64 {
     let cleaned = s.replace('_', "");
-    if let Some(hex) = cleaned.strip_prefix("0x").or_else(|| cleaned.strip_prefix("0X")) {
+    if let Some(hex) = cleaned
+        .strip_prefix("0x")
+        .or_else(|| cleaned.strip_prefix("0X"))
+    {
         return u64::from_str_radix(hex, 16)
             .unwrap_or_else(|_| panic!("expected hex u64, got {s:?}"));
     }
@@ -247,16 +250,15 @@ fn main() {
 }
 
 fn run(mut args: Args) {
-    if args.resume {
-        if let Some(cp) = SinkCheckpoint::load_for(&args.out) {
-            if cp.source_offset > args.start_offset {
-                println!(
-                    "→ resume: advancing source_offset {} → {} (checkpoint.json)",
-                    args.start_offset, cp.source_offset
-                );
-                args.start_offset = cp.source_offset;
-            }
-        }
+    if args.resume
+        && let Some(cp) = SinkCheckpoint::load_for(&args.out)
+        && cp.source_offset > args.start_offset
+    {
+        println!(
+            "→ resume: advancing source_offset {} → {} (checkpoint.json)",
+            args.start_offset, cp.source_offset
+        );
+        args.start_offset = cp.source_offset;
     }
 
     let extractor = HashedClaimAxisExtractor::new(args.num_axes, args.axis_seed);
@@ -276,10 +278,10 @@ fn run(mut args: Args) {
     let mut soft_errors = 0usize;
     let mut last_log = Instant::now();
 
-    let mut source = build_source(&args);
+    let source = build_source(&args);
     println!("→ source: {}", source.source_name());
 
-    while let Some(next) = source.next() {
+    for next in source {
         match next {
             Ok(item) => {
                 consumed += 1;
@@ -290,7 +292,7 @@ fn run(mut args: Args) {
                 if consumed >= args.target_size {
                     break;
                 }
-                if consumed % PROGRESS_EVERY == 0 {
+                if consumed.is_multiple_of(PROGRESS_EVERY) {
                     let now = Instant::now();
                     let rate = PROGRESS_EVERY as f64 / now.duration_since(last_log).as_secs_f64();
                     last_log = now;
@@ -321,10 +323,7 @@ fn run(mut args: Args) {
         cp.n_written,
         soft_errors
     );
-    println!(
-        "  output:     {}",
-        args.out.display()
-    );
+    println!("  output:     {}", args.out.display());
     println!(
         "  checkpoint: {}",
         SinkCheckpoint::sidecar_for(&args.out).display()
@@ -341,12 +340,14 @@ fn run(mut args: Args) {
 fn build_source(args: &Args) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkSourceError>>> {
     match args.source {
         SourceKind::WikidataSparql => {
-            let mut cfg = SparqlConfig::default();
-            cfg.start_offset = args.start_offset;
-            cfg.max_items = args.target_size;
-            cfg.page_size = args.sparql_page_size;
-            cfg.sleep_ms = args.sparql_sleep_ms;
-            cfg.retries = args.sparql_retries;
+            let cfg = SparqlConfig {
+                start_offset: args.start_offset,
+                max_items: args.target_size,
+                page_size: args.sparql_page_size,
+                sleep_ms: args.sparql_sleep_ms,
+                retries: args.sparql_retries,
+                ..Default::default()
+            };
             Box::new(WikidataSparqlSource::new(cfg))
         }
         SourceKind::OpenAlexShard => {
@@ -367,9 +368,7 @@ fn build_source(args: &Args) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkS
 }
 
 #[cfg(feature = "bulk-dump")]
-fn build_dump_source(
-    args: &Args,
-) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkSourceError>>> {
+fn build_dump_source(args: &Args) -> Box<dyn BulkSource<Item = Result<BulkItem, BulkSourceError>>> {
     let path = args
         .dump_path
         .clone()

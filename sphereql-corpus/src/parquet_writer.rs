@@ -59,6 +59,7 @@ pub struct ConceptRow<'a> {
 }
 
 impl<'a> ConceptRow<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         label: &'a str,
         category: &'a str,
@@ -103,8 +104,8 @@ where
         .set_compression(Compression::SNAPPY)
         .set_max_row_group_row_count(Some(ROW_GROUP_SIZE))
         .build();
-    let mut writer = ArrowWriter::try_new(file, schema, Some(props))
-        .map_err(ParquetLoadError::from)?;
+    let mut writer =
+        ArrowWriter::try_new(file, schema, Some(props)).map_err(ParquetLoadError::from)?;
     writer.write(&batch).map_err(ParquetLoadError::from)?;
     writer.close().map_err(ParquetLoadError::from)?;
     Ok(())
@@ -177,11 +178,7 @@ pub(crate) fn build_batch(
     let quality = Float64Array::from(rows.iter().map(|r| r.quality).collect::<Vec<_>>());
     let coherence = Float64Array::from(rows.iter().map(|r| r.axis_coherence).collect::<Vec<_>>());
     let bridge = UInt8Array::from(rows.iter().map(|r| r.bridge_degree).collect::<Vec<_>>());
-    let conf = Float64Array::from(
-        rows.iter()
-            .map(|r| r.source_confidence)
-            .collect::<Vec<_>>(),
-    );
+    let conf = Float64Array::from(rows.iter().map(|r| r.source_confidence).collect::<Vec<_>>());
     let home = Float64Array::from(rows.iter().map(|r| r.home_affinity).collect::<Vec<_>>());
 
     let source = StringArray::from(rows.iter().map(|r| r.source).collect::<Vec<_>>());
@@ -211,6 +208,7 @@ mod tests {
     use crate::parquet_loader::load_concepts_with_metadata;
     use tempfile::NamedTempFile;
 
+    #[allow(clippy::type_complexity)]
     fn sample_rows() -> Vec<(String, String, Vec<(usize, f64)>, ConceptMetadata)> {
         vec![
             (

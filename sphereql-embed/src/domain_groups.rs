@@ -10,7 +10,6 @@ use sphereql_core::{CartesianPoint, SphericalPoint, angular_distance, cartesian_
 
 use crate::category::CategoryLayer;
 
-
 /// A cluster of related categories detected from sphere geometry.
 #[derive(Debug, Clone)]
 pub struct DomainGroup {

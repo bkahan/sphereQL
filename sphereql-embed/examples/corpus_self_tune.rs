@@ -72,7 +72,10 @@ impl Args {
         while let Some(a) = args.next() {
             match a.as_str() {
                 "--corpus" => {
-                    corpus = args.next().map(PathBuf::from).expect("--corpus needs a value");
+                    corpus = args
+                        .next()
+                        .map(PathBuf::from)
+                        .expect("--corpus needs a value");
                 }
                 "--out" => {
                     out = Some(args.next().map(PathBuf::from).expect("--out needs a value"));
@@ -138,10 +141,7 @@ impl Args {
             return self.corpus.clone();
         }
         let mut p = self.corpus.clone();
-        let stem = p
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("corpus");
+        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("corpus");
         p.set_file_name(format!("{stem}{TUNED_SUFFIX}"));
         p
     }
@@ -199,8 +199,12 @@ fn main() {
     let (tuned, report) = run_self_tune(tunable, embed_fn, pipeline_config, &metric, &cfg);
     let elapsed = started.elapsed();
 
-    println!("\niter | n_concepts | composite | evr   | bridge | curv  | balance | n_pruned | mean_q | Δmean_q");
-    println!("-----|------------|-----------|-------|--------|-------|---------|----------|--------|--------");
+    println!(
+        "\niter | n_concepts | composite | evr   | bridge | curv  | balance | n_pruned | mean_q | Δmean_q"
+    );
+    println!(
+        "-----|------------|-----------|-------|--------|-------|---------|----------|--------|--------"
+    );
     for it in &report.iterations {
         let bd = &it.breakdown;
         println!(
@@ -217,7 +221,11 @@ fn main() {
             it.mean_quality_delta
         );
     }
-    println!("\nstopped: {:?}  ({:.2}s)", report.stopped_reason, elapsed.as_secs_f64());
+    println!(
+        "\nstopped: {:?}  ({:.2}s)",
+        report.stopped_reason,
+        elapsed.as_secs_f64()
+    );
 
     if let (Some(first), Some(last)) = (report.iterations.first(), report.iterations.last()) {
         let delta = last.composite_score - first.composite_score;
@@ -244,7 +252,11 @@ fn main() {
         std::process::exit(2);
     }
 
-    println!("→ writing {} ({} concepts)", out_path.display(), tuned.len());
+    println!(
+        "→ writing {} ({} concepts)",
+        out_path.display(),
+        tuned.len()
+    );
     let rows: Vec<ConceptRow<'_>> = tuned
         .iter()
         .map(|c| ConceptRow {
