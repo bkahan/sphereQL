@@ -68,6 +68,11 @@ pub struct SearchSpace {
     pub threshold_base: Vec<f64>,
     /// Candidate values for [`BridgeConfig::threshold_evr_penalty`].
     pub threshold_evr_penalty: Vec<f64>,
+    /// Candidate values for [`BridgeConfig::balanced_affinity_quantile`].
+    /// The quantile is meta-learned because the optimal floor depends
+    /// on the projection's home-affinity distribution, which varies
+    /// with corpus size, dimensionality, and class balance.
+    pub balanced_affinity_quantile: Vec<f64>,
     /// Candidate values for [`InnerSphereConfig::min_evr_improvement`].
     pub min_evr_improvement: Vec<f64>,
 }
@@ -89,6 +94,7 @@ impl Default for SearchSpace {
             overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
             threshold_base: vec![0.4, 0.5, 0.6],
             threshold_evr_penalty: vec![0.2, 0.4, 0.6],
+            balanced_affinity_quantile: vec![0.10, 0.25, 0.40],
             min_evr_improvement: vec![0.05, 0.10, 0.15],
         }
     }
@@ -156,6 +162,10 @@ impl SearchSpace {
             ),
             ("threshold_base", self.threshold_base.len()),
             ("threshold_evr_penalty", self.threshold_evr_penalty.len()),
+            (
+                "balanced_affinity_quantile",
+                self.balanced_affinity_quantile.len(),
+            ),
             ("min_evr_improvement", self.min_evr_improvement.len()),
         ];
         for (name, len) in common {
@@ -200,6 +210,7 @@ impl SearchSpace {
             * self.overlap_artifact_territorial.len()
             * self.threshold_base.len()
             * self.threshold_evr_penalty.len()
+            * self.balanced_affinity_quantile.len()
             * self.min_evr_improvement.len()
     }
 
@@ -262,6 +273,7 @@ impl SearchSpace {
         let i_oat = take(&mut idx, self.overlap_artifact_territorial.len());
         let i_tb = take(&mut idx, self.threshold_base.len());
         let i_tep = take(&mut idx, self.threshold_evr_penalty.len());
+        let i_baq = take(&mut idx, self.balanced_affinity_quantile.len());
         let i_mei = take(&mut idx, self.min_evr_improvement.len());
 
         let mut cfg = base.clone();
@@ -275,6 +287,7 @@ impl SearchSpace {
             threshold_base: self.threshold_base[i_tb],
             threshold_evr_penalty: self.threshold_evr_penalty[i_tep],
             overlap_artifact_territorial: self.overlap_artifact_territorial[i_oat],
+            balanced_affinity_quantile: self.balanced_affinity_quantile[i_baq],
         };
         cfg.inner_sphere = InnerSphereConfig {
             min_evr_improvement: self.min_evr_improvement[i_mei],
@@ -323,6 +336,7 @@ impl SearchSpace {
             threshold_base: pick_uniform(rng, &self.threshold_base),
             threshold_evr_penalty: pick_uniform(rng, &self.threshold_evr_penalty),
             overlap_artifact_territorial: pick_uniform(rng, &self.overlap_artifact_territorial),
+            balanced_affinity_quantile: pick_uniform(rng, &self.balanced_affinity_quantile),
         };
         cfg.inner_sphere = InnerSphereConfig {
             min_evr_improvement: pick_uniform(rng, &self.min_evr_improvement),
@@ -420,6 +434,16 @@ pub struct TuneReport {
     pub metric_name: String,
     pub best_score: f64,
     pub best_config: PipelineConfig,
+    /// Actual domain-group count in the winning pipeline.
+    ///
+    /// May be less than `best_config.routing.num_domain_groups` when the
+    /// corpus has fewer distinct category labels than the requested count —
+    /// `detect_domain_groups` silently clamps to `n_categories`. Compare
+    /// this against `best_config.routing.num_domain_groups` to detect the
+    /// mismatch; when they differ, the trial scores for every
+    /// `num_domain_groups > n_categories` value were identical (same
+    /// realized pipeline), so the winning config's label is arbitrary.
+    pub effective_num_domain_groups: usize,
     pub trials: Vec<TrialRecord>,
     /// Trials that failed to build (e.g., too few embeddings, config
     /// combination rejected by a downstream validator). Each entry is
@@ -493,7 +517,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         let key = ProjectionFitKey::from_config(&cfg);
         let projection = match prefit.get(&key) {
             Some(p) => p.clone(),
-            None => match fit_projection_for_config(&embeddings, &cfg) {
+            None => match fit_projection_for_config(&embeddings, &categories, &cfg) {
                 Ok(p) => {
                     prefit.insert(key, p.clone());
                     p
@@ -596,7 +620,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let best_key = ProjectionFitKey::from_config(&best_config);
     let best_projection = match prefit.get(&best_key).cloned() {
         Some(p) => p,
-        None => fit_projection_for_config(&embeddings, &best_config)?,
+        None => fit_projection_for_config(&embeddings, &categories, &best_config)?,
     };
     let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
         categories,
@@ -609,6 +633,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         metric_name: metric.name().to_string(),
         best_score,
         best_config,
+        effective_num_domain_groups: best_pipeline.domain_groups().len(),
         trials,
         failures,
     };
@@ -697,6 +722,12 @@ fn tpe_propose(
     let tep_b = hist_f64(&bad, &space.threshold_evr_penalty, |c| {
         c.bridges.threshold_evr_penalty
     });
+    let baq_g = hist_f64(&good, &space.balanced_affinity_quantile, |c| {
+        c.bridges.balanced_affinity_quantile
+    });
+    let baq_b = hist_f64(&bad, &space.balanced_affinity_quantile, |c| {
+        c.bridges.balanced_affinity_quantile
+    });
     let mei_g = hist_f64(&good, &space.min_evr_improvement, |c| {
         c.inner_sphere.min_evr_improvement
     });
@@ -716,6 +747,8 @@ fn tpe_propose(
         threshold_evr_penalty: space.threshold_evr_penalty[pick_idx(rng, &tep_g, &tep_b)],
         overlap_artifact_territorial: space.overlap_artifact_territorial
             [pick_idx(rng, &oat_g, &oat_b)],
+        balanced_affinity_quantile: space.balanced_affinity_quantile
+            [pick_idx(rng, &baq_g, &baq_b)],
     };
     cfg.inner_sphere = InnerSphereConfig {
         min_evr_improvement: space.min_evr_improvement[pick_idx(rng, &mei_g, &mei_b)],
@@ -883,6 +916,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         }
     }
 
@@ -1011,7 +1045,8 @@ mod tests {
             * s.overlap_artifact_territorial.len()
             * s.threshold_base.len()
             * s.threshold_evr_penalty.len()
-            * s.min_evr_improvement.len();
+            * s.min_evr_improvement.len()
+            * s.balanced_affinity_quantile.len();
         // Default kinds = {PCA, Laplacian}; PCA adds `common`, Laplacian
         // adds `common × k_neighbors × active_threshold`.
         let expected =
@@ -1043,6 +1078,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         };
         let base = PipelineConfig::default();
         let n = s.grid_cardinality();
@@ -1071,6 +1107,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         };
         let base = PipelineConfig::default();
         let kinds: std::collections::HashSet<ProjectionKind> = (0..s.grid_cardinality())
@@ -1094,6 +1131,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         };
         let metric = TerritorialHealth;
         let (pipeline, report) = auto_tune(
@@ -1229,6 +1267,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         };
         let metric = TerritorialHealth;
         let (_pipeline, report) = auto_tune(
@@ -1274,6 +1313,7 @@ mod tests {
             threshold_base: vec![0.5],
             threshold_evr_penalty: vec![0.4],
             min_evr_improvement: vec![0.10],
+            balanced_affinity_quantile: vec![0.25],
         };
         let base = PipelineConfig::default();
         let configs: Vec<(usize, u64)> = (0..s.grid_cardinality())

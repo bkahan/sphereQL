@@ -17,6 +17,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.7),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Quantum field theory",
@@ -30,6 +31,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.7),
                 (CALCULUS, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "General relativity",
@@ -43,6 +45,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.7),
                 (THEORY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Thermodynamics",
@@ -55,6 +58,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (CYCLE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Electromagnetism",
@@ -67,6 +71,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.6),
                 (ELECTRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Statistical mechanics",
@@ -79,6 +84,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Optics",
@@ -91,6 +97,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (VISUAL, 0.4),
                 (PARTICLE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Particle physics",
@@ -103,6 +110,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PARTICLE, 1.0),
                 (RELATIVITY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cosmology",
@@ -116,6 +124,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELESTIAL, 0.6),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Fluid dynamics",
@@ -128,6 +137,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOTION, 0.7),
                 (CALCULUS, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Acoustics",
@@ -140,6 +150,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATH, 0.3),
                 (TIMBRE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Information theory (physics)",
@@ -152,6 +163,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.6),
                 (CONCEPT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biophysics",
@@ -165,6 +177,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.5),
                 (CELLULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nuclear physics",
@@ -176,6 +189,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PARTICLE, 0.7),
                 (ATOMIC, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Condensed matter",
@@ -188,6 +202,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (ATOMIC, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Plasma physics",
@@ -201,6 +216,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PARTICLE, 0.5),
                 (STELLAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Laser physics",
@@ -212,6 +228,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.5),
                 (PARTICLE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nonlinear dynamics",
@@ -224,6 +241,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENTROPY, 0.4),
                 (CALCULUS, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Solid state physics",
@@ -235,6 +253,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.7),
                 (ATOMIC, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cryogenics",
@@ -246,6 +265,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.5),
                 (ATOMIC, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Photonics",
@@ -258,6 +278,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PARTICLE, 0.4),
                 (ELECTRICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Classical field theory",
@@ -270,6 +291,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.7),
                 (THEORY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Atomic physics",
@@ -282,6 +304,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ATOMIC, 0.9),
                 (PARTICLE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Rheology",
@@ -293,6 +316,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATH, 0.4),
                 (MECHANICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Quantum information",
@@ -305,6 +329,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENTROPY, 0.5),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         // ── BIOLOGY (25) ──
         Concept {
@@ -318,6 +343,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.7),
                 (CONCEPT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Molecular biology",
@@ -330,6 +356,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.8),
                 (CELLULAR, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ecology",
@@ -342,6 +369,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EVOLUTION, 0.4),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Genetics",
@@ -354,6 +382,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.5),
                 (CONCEPT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cell biology",
@@ -366,6 +395,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELLULAR, 0.9),
                 (MOLECULAR, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Bioinformatics",
@@ -379,6 +409,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.4),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Immunology",
@@ -391,6 +422,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELLULAR, 0.6),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Botany",
@@ -403,6 +435,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.5),
                 (CELLULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Marine biology",
@@ -414,6 +447,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.7),
                 (OCEAN, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Microbiology",
@@ -425,6 +459,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GENETICS, 0.4),
                 (CELLULAR, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Developmental biology",
@@ -437,6 +472,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELLULAR, 0.6),
                 (CYCLE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Evolutionary psychology",
@@ -449,6 +485,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.4),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biostatistics",
@@ -460,6 +497,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GENETICS, 0.3),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Taxonomy",
@@ -471,6 +509,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.5),
                 (CONCEPT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Zoology",
@@ -482,6 +521,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (ANATOMY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Parasitology",
@@ -493,6 +533,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mycology",
@@ -504,6 +545,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.4),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Virology",
@@ -516,6 +558,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.5),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Conservation biology",
@@ -527,6 +570,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.4),
                 (CONSERVATION, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Population genetics",
@@ -538,6 +582,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATH, 0.5),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethology",
@@ -549,6 +594,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (BRAIN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Proteomics",
@@ -561,6 +607,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.7),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Systems biology",
@@ -573,6 +620,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELLULAR, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Entomology",
@@ -584,6 +632,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.5),
                 (ANATOMY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Epigenetics",
@@ -597,6 +646,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.5),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         // ── COMPUTER SCIENCE (25) ──
         Concept {
@@ -610,6 +660,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.9),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Machine learning",
@@ -623,6 +674,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.6),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Database systems",
@@ -635,6 +687,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOFTWARE, 0.5),
                 (DATA, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Networking",
@@ -646,6 +699,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.5),
                 (SOFTWARE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cryptography",
@@ -658,6 +712,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.6),
                 (ALGEBRA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Operating systems",
@@ -669,6 +724,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.4),
                 (SOFTWARE, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Artificial intelligence",
@@ -682,6 +738,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.9),
                 (MACHINE_LEARN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational complexity",
@@ -693,6 +750,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.7),
                 (PROOF, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computer graphics",
@@ -705,6 +763,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (SOFTWARE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Natural language processing",
@@ -718,6 +777,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.5),
                 (LLM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Algorithmic trading",
@@ -730,6 +790,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.6),
                 (FINANCE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational biology",
@@ -743,6 +804,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.4),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Formal verification",
@@ -754,6 +816,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PROOF, 0.7),
                 (SOFTWARE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Information retrieval",
@@ -766,6 +829,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.4),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Distributed systems",
@@ -777,6 +841,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.3),
                 (SOFTWARE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Human-computer interaction",
@@ -789,6 +854,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.3),
                 (DESIGN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Compiler design",
@@ -801,6 +867,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOFTWARE, 0.6),
                 (ALGORITHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computer vision",
@@ -813,6 +880,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.5),
                 (MACHINE_LEARN, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Parallel computing",
@@ -825,6 +893,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOFTWARE, 0.4),
                 (ALGORITHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cybersecurity",
@@ -837,6 +906,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.3),
                 (SOFTWARE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Quantum computing",
@@ -848,6 +918,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.6),
                 (ALGORITHM, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Software engineering",
@@ -859,6 +930,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.6),
                 (SOFTWARE, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Reinforcement learning",
@@ -872,6 +944,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.4),
                 (LEARNING, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational geometry",
@@ -883,6 +956,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.5),
                 (ALGORITHM, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Robotics (CS)",
@@ -896,6 +970,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.4),
                 (MECHANICAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── PHILOSOPHY (25) ──
         Concept {
@@ -909,6 +984,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PROOF, 0.6),
                 (CONCEPT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethics",
@@ -920,6 +996,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.8),
                 (CONCEPT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of mind",
@@ -932,6 +1009,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSCIOUSNESS, 0.7),
                 (ONTOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Epistemology",
@@ -944,6 +1022,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EPISTEMOLOGY, 0.9),
                 (CONCEPT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Metaphysics",
@@ -956,6 +1035,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ONTOLOGY, 0.8),
                 (CONCEPT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of language",
@@ -968,6 +1048,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SEMANTICS_AX, 0.5),
                 (DISCOURSE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political philosophy",
@@ -981,6 +1062,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.4),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Bioethics",
@@ -993,6 +1075,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.7),
                 (CLINICAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Game theory (philosophy)",
@@ -1005,6 +1088,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MARKETS, 0.3),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Aesthetics",
@@ -1017,6 +1101,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (FORM, 0.4),
                 (CONCEPT, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of science",
@@ -1030,6 +1115,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EPISTEMOLOGY, 0.6),
                 (THEORY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Phenomenology",
@@ -1041,6 +1127,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSCIOUSNESS, 0.6),
                 (ONTOLOGY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Existentialism",
@@ -1053,6 +1140,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ONTOLOGY, 0.5),
                 (CONSCIOUSNESS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of mathematics",
@@ -1065,6 +1153,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PROOF, 0.5),
                 (EPISTEMOLOGY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Virtue ethics",
@@ -1076,6 +1165,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MIND, 0.3),
                 (MORAL, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social contract theory",
@@ -1089,6 +1179,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RIGHTS, 0.4),
                 (SOCIETY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Utilitarianism",
@@ -1101,6 +1192,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.7),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of technology",
@@ -1112,6 +1204,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (METAPHYSICS, 0.4),
                 (ONTOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Free will debate",
@@ -1124,6 +1217,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSCIOUSNESS, 0.5),
                 (DISCOURSE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Hermeneutics",
@@ -1136,6 +1230,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DISCOURSE, 0.5),
                 (EPISTEMOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Modal logic",
@@ -1147,6 +1242,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (PROOF, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental ethics",
@@ -1159,6 +1255,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.7),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of art",
@@ -1171,6 +1268,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.3),
                 (FORM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pragmatism",
@@ -1183,6 +1281,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EPISTEMOLOGY, 0.4),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Consciousness studies",
@@ -1195,6 +1294,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSCIOUSNESS, 0.9),
                 (NEURAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── ECONOMICS (25) ──
         Concept {
@@ -1208,6 +1308,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (MONEY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Macroeconomics",
@@ -1220,6 +1321,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MONEY, 0.6),
                 (POLICY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Behavioral economics",
@@ -1231,6 +1333,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MIND, 0.3),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Econometrics",
@@ -1242,6 +1345,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMPUTATION, 0.3),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Game theory (economics)",
@@ -1254,6 +1358,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MARKETS, 0.5),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Financial engineering",
@@ -1265,6 +1370,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMPUTATION, 0.4),
                 (FINANCE, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Development economics",
@@ -1277,6 +1383,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GOVERNANCE, 0.4),
                 (POLICY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Labor economics",
@@ -1288,6 +1395,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.3),
                 (LABOR, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Network economics",
@@ -1299,6 +1407,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.4),
                 (SOCIAL_NETWORK, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental economics",
@@ -1311,6 +1420,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSERVATION, 0.4),
                 (POLICY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Public choice theory",
@@ -1323,6 +1433,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (POLICY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Auction theory",
@@ -1334,6 +1445,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Monetary economics",
@@ -1346,6 +1458,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MONEY, 0.9),
                 (FINANCE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "International trade",
@@ -1357,6 +1470,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GOVERNANCE, 0.3),
                 (POLICY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Health economics",
@@ -1369,6 +1483,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.3),
                 (POLICY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Agricultural economics",
@@ -1380,6 +1495,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (LABOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Industrial organization",
@@ -1391,6 +1507,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (LABOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Welfare economics",
@@ -1403,6 +1520,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.4),
                 (POLICY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Resource economics",
@@ -1414,6 +1532,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.5),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban economics",
@@ -1425,6 +1544,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NETWORK, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Information economics",
@@ -1436,6 +1556,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.4),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Risk management",
@@ -1447,6 +1568,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.5),
                 (FINANCE, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Experimental economics",
@@ -1458,6 +1580,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mechanism design",
@@ -1469,6 +1592,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MARKETS, 0.5),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Economic history",
@@ -1481,6 +1605,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.3),
                 (HISTORICAL, 0.5),
             ],
+            ..Default::default()
         },
         // ── MUSIC (25) ──
         Concept {
@@ -1494,6 +1619,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HARMONY, 0.9),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Orchestration",
@@ -1506,6 +1632,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TIMBRE, 0.8),
                 (HARMONY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Rhythm and meter",
@@ -1518,6 +1645,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RHYTHM, 0.9),
                 (CYCLE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Musical acoustics",
@@ -1530,6 +1658,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.3),
                 (TIMBRE, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Music cognition",
@@ -1543,6 +1672,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.3),
                 (RHYTHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Composition",
@@ -1555,6 +1685,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HARMONY, 0.6),
                 (RHYTHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethnomusicology",
@@ -1568,6 +1699,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.5),
                 (TRADITION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Music theory",
@@ -1580,6 +1712,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HARMONY, 0.7),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Performance practice",
@@ -1591,6 +1724,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOTION, 0.3),
                 (RHYTHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Digital audio",
@@ -1603,6 +1737,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOFTWARE, 0.3),
                 (TIMBRE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Music therapy",
@@ -1616,6 +1751,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THERAPY, 0.6),
                 (MENTAL_HEALTH, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Counterpoint",
@@ -1627,6 +1763,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.6),
                 (HARMONY, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Choral conducting",
@@ -1638,6 +1775,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (HARMONY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film scoring",
@@ -1650,6 +1788,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (TIMBRE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sound design",
@@ -1661,6 +1800,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.4),
                 (TIMBRE, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Musical notation",
@@ -1673,6 +1813,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.3),
                 (RHYTHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Tuning systems",
@@ -1684,6 +1825,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.4),
                 (HARMONY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Music production",
@@ -1696,6 +1838,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TIMBRE, 0.4),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Improvisation",
@@ -1708,6 +1851,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RHYTHM, 0.5),
                 (HARMONY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Opera studies",
@@ -1720,6 +1864,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.5),
                 (THEATRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Musical form analysis",
@@ -1732,6 +1877,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HARMONY, 0.4),
                 (FORM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Early music practice",
@@ -1744,6 +1890,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.4),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Music information retrieval",
@@ -1756,6 +1903,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.3),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Songwriting",
@@ -1768,6 +1916,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POETRY, 0.3),
                 (RHYTHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "World music studies",
@@ -1781,6 +1930,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.5),
                 (RHYTHM, 0.3),
             ],
+            ..Default::default()
         },
         // ── MEDICINE (25) ──
         Concept {
@@ -1794,6 +1944,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.9),
                 (ANATOMY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pharmacology",
@@ -1807,6 +1958,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.4),
                 (CLINICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Epidemiology",
@@ -1819,6 +1971,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.4),
                 (CLINICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Surgery",
@@ -1831,6 +1984,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ANATOMY, 0.8),
                 (CLINICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Psychiatry",
@@ -1844,6 +1998,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MENTAL_HEALTH, 0.8),
                 (THERAPY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Radiology",
@@ -1857,6 +2012,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.5),
                 (ANATOMY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pathology",
@@ -1869,6 +2025,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELLULAR, 0.5),
                 (CLINICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Genomic medicine",
@@ -1882,6 +2039,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.5),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Medical imaging AI",
@@ -1895,6 +2053,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.5),
                 (CLINICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Public health",
@@ -1908,6 +2067,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POLICY, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neurology",
@@ -1922,6 +2082,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.5),
                 (CLINICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Immunotherapy",
@@ -1934,6 +2095,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THERAPY, 0.7),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cardiology",
@@ -1946,6 +2108,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ANATOMY, 0.6),
                 (CLINICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Oncology",
@@ -1959,6 +2122,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THERAPY, 0.5),
                 (CLINICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dermatology",
@@ -1971,6 +2135,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ANATOMY, 0.4),
                 (CLINICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Anesthesiology",
@@ -1983,6 +2148,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.5),
                 (NEURAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Emergency medicine",
@@ -1994,6 +2160,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.4),
                 (CLINICAL, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pediatrics",
@@ -2006,6 +2173,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.5),
                 (ANATOMY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geriatrics",
@@ -2018,6 +2186,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.5),
                 (THERAPY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Rehabilitation medicine",
@@ -2030,6 +2199,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THERAPY, 0.7),
                 (ANATOMY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Telemedicine",
@@ -2042,6 +2212,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.4),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Evidence-based medicine",
@@ -2054,6 +2225,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.5),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sports medicine",
@@ -2066,6 +2238,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ANATOMY, 0.5),
                 (THERAPY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Toxicology",
@@ -2078,6 +2251,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.4),
                 (CLINICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Medical ethics",
@@ -2090,6 +2264,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.6),
                 (CLINICAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── LINGUISTICS (25) ──
         Concept {
@@ -2103,6 +2278,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYNTAX, 0.9),
                 (GRAMMAR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Semantics",
@@ -2115,6 +2291,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SEMANTICS_AX, 0.9),
                 (CONCEPT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Phonology",
@@ -2127,6 +2304,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PHONETIC, 0.7),
                 (GRAMMAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pragmatics",
@@ -2139,6 +2317,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DISCOURSE, 0.5),
                 (SEMANTICS_AX, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Psycholinguistics",
@@ -2151,6 +2330,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (BRAIN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational linguistics",
@@ -2164,6 +2344,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LLM, 0.3),
                 (ALGORITHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Historical linguistics",
@@ -2176,6 +2357,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.5),
                 (GRAMMAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociolinguistics",
@@ -2188,6 +2370,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.5),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Morphology",
@@ -2198,6 +2381,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (GRAMMAR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Typology",
@@ -2209,6 +2393,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (GRAMMAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Corpus linguistics",
@@ -2220,6 +2405,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Discourse analysis",
@@ -2232,6 +2418,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.4),
                 (DISCOURSE, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Phonetics",
@@ -2244,6 +2431,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PHONETIC, 0.9),
                 (ANATOMY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Language acquisition",
@@ -2256,6 +2444,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEARNING, 0.6),
                 (BRAIN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neurolinguistics",
@@ -2269,6 +2458,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.6),
                 (NEURAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Forensic linguistics",
@@ -2280,6 +2470,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (LEGAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sign language linguistics",
@@ -2291,6 +2482,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (GRAMMAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Translation studies",
@@ -2302,6 +2494,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.3),
                 (SEMANTICS_AX, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Lexicography",
@@ -2314,6 +2507,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SEMANTICS_AX, 0.4),
                 (ARCHIVAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Applied linguistics",
@@ -2325,6 +2519,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dialectology",
@@ -2337,6 +2532,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PHONETIC, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Contact linguistics",
@@ -2349,6 +2545,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GRAMMAR, 0.3),
                 (SOCIETY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Semiotics",
@@ -2361,6 +2558,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (SEMANTICS_AX, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Language documentation",
@@ -2372,6 +2570,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.3),
                 (ARCHIVAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ecolinguistics",
@@ -2383,6 +2582,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (DISCOURSE, 0.3),
             ],
+            ..Default::default()
         },
         // ── MATHEMATICS (25) ──
         Concept {
@@ -2396,6 +2596,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PROOF, 0.7),
                 (ALGEBRA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Topology",
@@ -2408,6 +2609,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PROOF, 0.5),
                 (CONCEPT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Real analysis",
@@ -2419,6 +2621,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.8),
                 (PROOF, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Complex analysis",
@@ -2430,6 +2633,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (CALCULUS, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Abstract algebra",
@@ -2442,6 +2646,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGEBRA, 0.9),
                 (PROOF, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Differential geometry",
@@ -2454,6 +2659,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.7),
                 (RELATIVITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Combinatorics",
@@ -2466,6 +2672,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GRAPH_THEORY, 0.4),
                 (PROOF, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Category theory",
@@ -2478,11 +2685,13 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGEBRA, 0.5),
                 (CONCEPT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Set theory",
             category: "mathematics",
             features: vec![(MATH, 0.9), (LOGIC, 0.9), (STRUCTURE, 0.7), (PROOF, 0.6)],
+            ..Default::default()
         },
         Concept {
             label: "Graph theory",
@@ -2494,6 +2703,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (GRAPH_THEORY, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Probability theory",
@@ -2505,6 +2715,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mathematical logic",
@@ -2516,6 +2727,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.5),
                 (PROOF, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Numerical analysis",
@@ -2528,6 +2740,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.5),
                 (CALCULUS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dynamical systems theory",
@@ -2540,6 +2753,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.5),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Measure theory",
@@ -2552,6 +2766,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PROOF, 0.5),
                 (CALCULUS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Algebraic geometry",
@@ -2563,6 +2778,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (ALGEBRA, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Functional analysis",
@@ -2575,6 +2791,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.5),
                 (PROOF, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stochastic processes",
@@ -2586,6 +2803,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENTROPY, 0.4),
                 (CALCULUS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Optimization theory",
@@ -2598,6 +2816,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CALCULUS, 0.4),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Information theory (math)",
@@ -2609,6 +2828,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.5),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cryptographic mathematics",
@@ -2620,6 +2840,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.5),
                 (ALGEBRA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Representation theory",
@@ -2632,6 +2853,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGEBRA, 0.7),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Differential equations",
@@ -2643,6 +2865,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (FORCE, 0.3),
                 (CALCULUS, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mathematical statistics",
@@ -2654,6 +2877,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.4),
                 (PROOF, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Game theory (math)",
@@ -2665,6 +2889,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         // ── CHEMISTRY (25) ──
         Concept {
@@ -2678,6 +2903,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.8),
                 (REACTION, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Inorganic chemistry",
@@ -2690,6 +2916,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.5),
                 (ATOMIC, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Physical chemistry",
@@ -2702,6 +2929,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.5),
                 (MOLECULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biochemistry",
@@ -2714,6 +2942,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.7),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Analytical chemistry",
@@ -2725,6 +2954,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.4),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Quantum chemistry",
@@ -2737,6 +2967,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.6),
                 (ATOMIC, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Thermochemistry",
@@ -2748,6 +2979,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.7),
                 (CYCLE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Polymer chemistry",
@@ -2759,6 +2991,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (MOLECULAR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Electrochemistry",
@@ -2771,6 +3004,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.6),
                 (ELECTRICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Green chemistry",
@@ -2783,6 +3017,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSERVATION, 0.4),
                 (REACTION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Materials chemistry",
@@ -2794,6 +3029,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (QUANTUM, 0.3),
                 (MOLECULAR, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Astrochemistry",
@@ -2806,6 +3042,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.4),
                 (MOLECULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nuclear chemistry",
@@ -2818,6 +3055,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ATOMIC, 0.6),
                 (REACTION, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational chemistry",
@@ -2830,6 +3068,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ALGORITHM, 0.3),
                 (MOLECULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Catalysis",
@@ -2842,6 +3081,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.8),
                 (MOLECULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Surface chemistry",
@@ -2854,6 +3094,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SURFACE, 0.7),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Medicinal chemistry",
@@ -2866,6 +3107,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.6),
                 (THERAPY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Spectroscopy",
@@ -2878,6 +3120,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.4),
                 (ATOMIC, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Supramolecular chemistry",
@@ -2889,6 +3132,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (MOLECULAR, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Solid-state chemistry",
@@ -2900,6 +3144,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (QUANTUM, 0.3),
                 (ATOMIC, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental chemistry",
@@ -2912,6 +3157,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.3),
                 (WATER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Photochemistry",
@@ -2924,6 +3170,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.5),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Colloid chemistry",
@@ -2935,6 +3182,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.5),
                 (SURFACE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food chemistry",
@@ -2947,6 +3195,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.3),
                 (FLAVOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Petrochemistry",
@@ -2958,6 +3207,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.3),
                 (MOLECULAR, 0.4),
             ],
+            ..Default::default()
         },
         // ── PSYCHOLOGY (25) ──
         Concept {
@@ -2971,6 +3221,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.4),
                 (CONCEPT, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Developmental psychology",
@@ -2983,6 +3234,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ATTACHMENT, 0.4),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social psychology",
@@ -2994,6 +3246,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Clinical psychology",
@@ -3006,6 +3259,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MENTAL_HEALTH, 0.7),
                 (THERAPY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Behavioral psychology",
@@ -3016,6 +3270,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (LEARNING, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Personality psychology",
@@ -3027,6 +3282,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.4),
                 (ATTACHMENT, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuropsychology",
@@ -3039,6 +3295,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.7),
                 (NEURAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Educational psychology",
@@ -3050,6 +3307,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.5),
                 (LEARNING, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Organizational psychology",
@@ -3061,6 +3319,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NETWORK, 0.4),
                 (LABOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Positive psychology",
@@ -3072,6 +3331,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.3),
                 (MENTAL_HEALTH, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Forensic psychology",
@@ -3083,6 +3343,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.4),
                 (LEGAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Psychometrics",
@@ -3095,6 +3356,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ASSESSMENT, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Humanistic psychology",
@@ -3106,6 +3368,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (METAPHYSICS, 0.3),
                 (CONSCIOUSNESS, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Gestalt psychology",
@@ -3117,6 +3380,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (VISUAL, 0.5),
                 (CONCEPT, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Abnormal psychology",
@@ -3129,6 +3393,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MENTAL_HEALTH, 0.6),
                 (TRAUMA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Perception psychology",
@@ -3141,6 +3406,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOUND, 0.3),
                 (BRAIN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Memory studies",
@@ -3153,6 +3419,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.4),
                 (NEURAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Psychopharmacology",
@@ -3165,6 +3432,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THERAPY, 0.4),
                 (NEURAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental psychology",
@@ -3176,6 +3444,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPACE, 0.4),
                 (EMOTION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sport psychology",
@@ -3186,6 +3455,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.7),
                 (MOTION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Consumer psychology",
@@ -3197,6 +3467,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.4),
                 (FINANCE, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cross-cultural psychology",
@@ -3208,6 +3479,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (CULTURE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Health psychology",
@@ -3219,6 +3491,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DIAGNOSTICS, 0.3),
                 (MENTAL_HEALTH, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Evolutionary psychology (psych)",
@@ -3230,6 +3503,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.5),
                 (BRAIN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Attention and decision science",
@@ -3242,6 +3516,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.3),
                 (BRAIN, 0.3),
             ],
+            ..Default::default()
         },
         // ── ENGINEERING (25) ──
         Concept {
@@ -3255,6 +3530,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOTION, 0.5),
                 (MECHANICAL, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Electrical engineering",
@@ -3266,6 +3542,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.6),
                 (ELECTRICAL, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Civil engineering",
@@ -3277,6 +3554,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (MECHANICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Chemical engineering",
@@ -3288,6 +3566,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.4),
                 (REACTION, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Aerospace engineering",
@@ -3301,6 +3580,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MECHANICAL, 0.5),
                 (TRANSPORTATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Materials science",
@@ -3312,6 +3592,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (QUANTUM, 0.3),
                 (ATOMIC, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Control theory",
@@ -3324,6 +3605,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.4),
                 (CALCULUS, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Robotics",
@@ -3336,6 +3618,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MECHANICAL, 0.5),
                 (AI, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biomedical engineering",
@@ -3348,6 +3631,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLINICAL, 0.3),
                 (ANATOMY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Systems engineering",
@@ -3359,6 +3643,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.4),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nuclear engineering",
@@ -3370,6 +3655,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (ATOMIC, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental engineering",
@@ -3382,6 +3668,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSERVATION, 0.3),
                 (WATER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Software engineering",
@@ -3393,6 +3680,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.6),
                 (SOFTWARE, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Industrial engineering",
@@ -3405,6 +3693,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LABOR, 0.3),
                 (MECHANICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Structural engineering",
@@ -3416,6 +3705,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.6),
                 (MECHANICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mechatronics",
@@ -3428,6 +3718,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MECHANICAL, 0.6),
                 (ELECTRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanotechnology engineering",
@@ -3439,6 +3730,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CHEMISTRY, 0.5),
                 (NANO, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Renewable energy engineering",
@@ -3451,6 +3743,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ELECTRICAL, 0.4),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Telecommunications engineering",
@@ -3462,6 +3755,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.5),
                 (ELECTRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geotechnical engineering",
@@ -3473,6 +3767,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (GEOLOGY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Hydraulic engineering",
@@ -3485,6 +3780,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (WATER, 0.6),
                 (MECHANICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Manufacturing engineering",
@@ -3496,6 +3792,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.6),
                 (MECHANICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Reliability engineering",
@@ -3507,6 +3804,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Acoustical engineering",
@@ -3518,6 +3816,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.4),
                 (TIMBRE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Optical engineering",
@@ -3529,6 +3828,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENERGY, 0.4),
                 (ELECTRICAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── EARTH SCIENCE (25) ──
         Concept {
@@ -3542,6 +3842,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (GEOLOGY, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Meteorology",
@@ -3553,6 +3854,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENERGY, 0.5),
                 (CLIMATE, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Oceanography",
@@ -3565,6 +3867,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OCEAN, 0.9),
                 (WATER, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Climatology",
@@ -3577,6 +3880,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLIMATE, 0.9),
                 (CYCLE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Volcanology",
@@ -3588,6 +3892,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (GEOLOGY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Seismology",
@@ -3599,6 +3904,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.5),
                 (GEOLOGY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Paleontology",
@@ -3611,6 +3917,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GEOLOGY, 0.4),
                 (HISTORICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Hydrology",
@@ -3623,6 +3930,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (WATER, 0.8),
                 (CYCLE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geomorphology",
@@ -3634,6 +3942,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (GEOLOGY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mineralogy",
@@ -3646,6 +3955,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GEOLOGY, 0.5),
                 (ATOMIC, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geophysics",
@@ -3658,6 +3968,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GEOLOGY, 0.5),
                 (PLANETARY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geochemistry",
@@ -3669,6 +3980,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.4),
                 (GEOLOGY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Atmospheric science",
@@ -3681,6 +3993,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLIMATE, 0.6),
                 (PLANETARY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Glaciology",
@@ -3693,6 +4006,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLIMATE, 0.5),
                 (WATER, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geodesy",
@@ -3704,6 +4018,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.7),
                 (PLANETARY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Soil science",
@@ -3716,6 +4031,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.4),
                 (GEOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stratigraphy",
@@ -3728,6 +4044,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GEOLOGY, 0.6),
                 (HISTORICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Petrology",
@@ -3739,6 +4056,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.6),
                 (GEOLOGY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Speleology",
@@ -3751,6 +4069,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GEOLOGY, 0.5),
                 (WATER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Paleoecology",
@@ -3762,6 +4081,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.7),
                 (CLIMATE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Remote sensing",
@@ -3774,6 +4094,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (VISUAL, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geochronology",
@@ -3785,6 +4106,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CHEMISTRY, 0.4),
                 (GEOLOGY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Paleoclimatology",
@@ -3797,6 +4119,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLIMATE, 0.7),
                 (HISTORICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Tectonics",
@@ -3808,6 +4131,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOTION, 0.5),
                 (GEOLOGY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Natural hazards science",
@@ -3820,6 +4144,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.3),
                 (CLIMATE, 0.3),
             ],
+            ..Default::default()
         },
         // ── ASTRONOMY (25) ──
         Concept {
@@ -3832,6 +4157,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.6),
                 (CELESTIAL, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Astrophysics",
@@ -3844,6 +4170,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.6),
                 (RELATIVITY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Planetary science",
@@ -3856,6 +4183,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PLANETARY, 0.9),
                 (ORBIT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Exoplanet research",
@@ -3868,6 +4196,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PLANETARY, 0.8),
                 (ORBIT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stellar evolution",
@@ -3880,6 +4209,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.9),
                 (CYCLE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Radio astronomy",
@@ -3891,6 +4221,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.5),
                 (CELESTIAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Astrobiology",
@@ -3902,6 +4233,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EVOLUTION, 0.5),
                 (PLANETARY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Galactic dynamics",
@@ -3915,6 +4247,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CELESTIAL, 0.5),
                 (ORBIT, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Solar physics",
@@ -3926,6 +4259,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (QUANTUM, 0.5),
                 (STELLAR, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Gravitational wave astronomy",
@@ -3937,6 +4271,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATH, 0.5),
                 (RELATIVITY, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dark matter studies",
@@ -3949,6 +4284,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PARTICLE, 0.5),
                 (CELESTIAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "High-energy astrophysics",
@@ -3961,6 +4297,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PARTICLE, 0.5),
                 (STELLAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Astrometry",
@@ -3972,6 +4309,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.4),
                 (CELESTIAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Star formation",
@@ -3983,6 +4321,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENTROPY, 0.4),
                 (STELLAR, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cosmic microwave background",
@@ -3995,6 +4334,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RELATIVITY, 0.4),
                 (CELESTIAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Binary star systems",
@@ -4007,6 +4347,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.7),
                 (ORBIT, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Infrared astronomy",
@@ -4018,6 +4359,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ENERGY, 0.4),
                 (CELESTIAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "X-ray astronomy",
@@ -4029,6 +4371,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.5),
                 (STELLAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Asteroid science",
@@ -4041,6 +4384,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PLANETARY, 0.6),
                 (ORBIT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nebula studies",
@@ -4053,6 +4397,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.5),
                 (CELESTIAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Black hole physics",
@@ -4065,6 +4410,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (QUANTUM, 0.5),
                 (RELATIVITY, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cosmochemistry",
@@ -4077,6 +4423,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.3),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pulsar timing",
@@ -4089,6 +4436,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.5),
                 (CYCLE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Heliophysics",
@@ -4101,6 +4449,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STELLAR, 0.6),
                 (PLANETARY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Telescope instrumentation",
@@ -4112,6 +4461,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMPUTATION, 0.4),
                 (CELESTIAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── VISUAL ARTS (25) ──
         Concept {
@@ -4125,6 +4475,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COLOR, 0.7),
                 (FORM, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sculpture",
@@ -4136,6 +4487,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.7),
                 (FORM, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Drawing",
@@ -4147,6 +4499,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (FORM, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Printmaking",
@@ -4158,6 +4511,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.4),
                 (DESIGN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Photography",
@@ -4169,6 +4523,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (COLOR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Digital art",
@@ -4181,6 +4536,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Art history",
@@ -4192,6 +4548,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EVOLUTION, 0.4),
                 (HISTORICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Art theory",
@@ -4204,6 +4561,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (FORM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Illustration",
@@ -4215,6 +4573,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.3),
                 (DESIGN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ceramics",
@@ -4226,6 +4585,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.5),
                 (FORM, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Textile arts",
@@ -4238,6 +4598,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Calligraphy",
@@ -4249,6 +4610,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.6),
                 (FORM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Installation art",
@@ -4260,6 +4622,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (FORM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Conceptual art",
@@ -4271,6 +4634,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (VISUAL, 0.3),
                 (CONCEPT, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Glassblowing",
@@ -4282,6 +4646,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.7),
                 (FORM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mosaic art",
@@ -4293,6 +4658,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.5),
                 (COLOR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Street art",
@@ -4304,6 +4670,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPACE, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Color theory",
@@ -4316,6 +4683,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COLOR, 0.9),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mixed media",
@@ -4327,6 +4695,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (FORM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Graphic design",
@@ -4339,6 +4708,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.8),
                 (COLOR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Land art",
@@ -4350,6 +4720,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (FORM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Performance art (visual)",
@@ -4362,6 +4733,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOTION, 0.4),
                 (THEATRICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Bookbinding",
@@ -4373,6 +4745,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LANGUAGE, 0.3),
                 (DESIGN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Jewelry making",
@@ -4385,6 +4758,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (FORM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Restoration and conservation",
@@ -4396,6 +4770,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EVOLUTION, 0.4),
                 (ARCHIVAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── LITERATURE (25) ──
         Concept {
@@ -4409,6 +4784,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POETRY, 0.9),
                 (RHYTHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Fiction",
@@ -4420,6 +4796,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (LITERARY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Drama",
@@ -4432,6 +4809,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.7),
                 (LITERARY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Literary criticism",
@@ -4444,6 +4822,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LITERARY, 0.7),
                 (DISCOURSE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Comparative literature",
@@ -4456,6 +4835,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LITERARY, 0.6),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Narrative theory",
@@ -4468,6 +4848,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (LITERARY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Rhetoric",
@@ -4479,6 +4860,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (DISCOURSE, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Creative nonfiction",
@@ -4490,6 +4872,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (LITERARY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Science fiction studies",
@@ -4501,6 +4884,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.5),
                 (LITERARY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Children's literature",
@@ -4512,6 +4896,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PEDAGOGY, 0.4),
                 (LEARNING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Literary theory",
@@ -4524,6 +4909,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LITERARY, 0.8),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Digital humanities",
@@ -4535,6 +4921,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.5),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Translation studies",
@@ -4546,6 +4933,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.3),
                 (SEMANTICS_AX, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Oral tradition",
@@ -4557,6 +4945,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.6),
                 (TRADITION, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biographical writing",
@@ -4568,6 +4957,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (HISTORICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Postcolonial literature",
@@ -4580,6 +4970,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POWER, 0.3),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Gothic literature",
@@ -4591,6 +4982,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (METAPHYSICS, 0.3),
                 (LITERARY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ecocriticism",
@@ -4603,6 +4995,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LITERARY, 0.4),
                 (DISCOURSE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Autobiography studies",
@@ -4614,6 +5007,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (LITERARY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Screenwriting",
@@ -4625,6 +5019,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.4),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Graphic novel studies",
@@ -4636,6 +5031,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (LITERARY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Satire studies",
@@ -4648,6 +5044,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LITERARY, 0.5),
                 (MORAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Myth studies",
@@ -4660,6 +5057,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SACRED, 0.3),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Travel writing",
@@ -4671,6 +5069,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.3),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Literary magazines and publishing",
@@ -4682,6 +5081,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (LITERARY, 0.3),
             ],
+            ..Default::default()
         },
         // ── HISTORY (25) ──
         Concept {
@@ -4695,6 +5095,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.8),
                 (ARCHIVAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Medieval history",
@@ -4707,6 +5108,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.8),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Modern history",
@@ -4718,6 +5120,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GOVERNANCE, 0.4),
                 (HISTORICAL, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Military history",
@@ -4730,6 +5133,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.7),
                 (POWER, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Economic history",
@@ -4742,6 +5146,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.7),
                 (MONEY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social history",
@@ -4754,6 +5159,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.7),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Intellectual history",
@@ -4766,6 +5172,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.7),
                 (DISCOURSE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cultural history",
@@ -4778,6 +5185,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (CULTURE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental history",
@@ -4790,6 +5198,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (CLIMATE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Historiography",
@@ -4802,6 +5211,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (EPISTEMOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Archaeology",
@@ -4814,6 +5224,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (ARCHIVAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Diplomatic history",
@@ -4826,6 +5237,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (POWER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "History of technology",
@@ -4837,6 +5249,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (HISTORICAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "History of science",
@@ -4849,6 +5262,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (EPISTEMOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban history",
@@ -4861,6 +5275,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Maritime history",
@@ -4873,6 +5288,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (OCEAN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "History of art",
@@ -4884,6 +5300,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (HISTORICAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "History of medicine",
@@ -4896,6 +5313,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (CLINICAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Labor history",
@@ -4908,6 +5326,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (LABOR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Constitutional history",
@@ -4921,6 +5340,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.4),
                 (RIGHTS, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "History of education",
@@ -4932,6 +5352,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (HISTORICAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Colonial history",
@@ -4944,6 +5365,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (POWER, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Digital history",
@@ -4956,6 +5378,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.5),
                 (ARCHIVAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Oral history",
@@ -4968,6 +5391,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Religious history",
@@ -4980,6 +5404,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.6),
                 (DOCTRINE, 0.3),
             ],
+            ..Default::default()
         },
         // ── SOCIOLOGY (25) ──
         Concept {
@@ -4993,6 +5418,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.7),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban sociology",
@@ -5005,6 +5431,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.5),
                 (COMMUNITY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Rural sociology",
@@ -5017,6 +5444,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMMUNITY, 0.5),
                 (SOCIETY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of religion",
@@ -5029,6 +5457,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPIRITUAL, 0.3),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Medical sociology",
@@ -5041,6 +5470,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (CLINICAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Gender studies",
@@ -5053,6 +5483,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.5),
                 (POWER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Criminology",
@@ -5065,6 +5496,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.4),
                 (JUSTICE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social network analysis",
@@ -5077,6 +5509,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMPUTATION, 0.3),
                 (SOCIAL_NETWORK, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Demography",
@@ -5089,6 +5522,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cultural sociology",
@@ -5101,6 +5535,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.6),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political sociology",
@@ -5113,6 +5548,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POWER, 0.5),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of science",
@@ -5125,6 +5561,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (EPISTEMOLOGY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social movements research",
@@ -5137,6 +5574,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.5),
                 (POWER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stratification research",
@@ -5148,6 +5586,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.5),
                 (SOCIETY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethnography",
@@ -5159,6 +5598,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.3),
                 (CULTURE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Economic sociology",
@@ -5171,6 +5611,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (MONEY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of education",
@@ -5183,6 +5624,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (LEARNING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental sociology",
@@ -5194,6 +5636,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.5),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of technology",
@@ -5205,6 +5648,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.5),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Migration studies",
@@ -5217,6 +5661,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of health",
@@ -5228,6 +5673,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STATISTICS, 0.3),
                 (SOCIETY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Deviance studies",
@@ -5240,6 +5686,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (JUSTICE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Visual sociology",
@@ -5251,6 +5698,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LANGUAGE, 0.3),
                 (SOCIETY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of knowledge",
@@ -5263,6 +5711,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.4),
                 (EPISTEMOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational sociology",
@@ -5275,6 +5724,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIAL_NETWORK, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         // ── POLITICAL SCIENCE (25) ──
         Concept {
@@ -5287,6 +5737,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.5),
                 (POWER, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Comparative politics",
@@ -5298,6 +5749,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (POLICY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political theory",
@@ -5310,6 +5762,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POWER, 0.5),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Public administration",
@@ -5321,6 +5774,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (POLICY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Public policy",
@@ -5332,6 +5786,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.5),
                 (POLICY, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Electoral studies",
@@ -5343,6 +5798,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.3),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political economy",
@@ -5355,6 +5811,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POWER, 0.4),
                 (MONEY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geopolitics",
@@ -5366,6 +5823,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NETWORK, 0.5),
                 (POWER, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Security studies",
@@ -5377,6 +5835,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.5),
                 (POWER, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Democratic theory",
@@ -5389,6 +5848,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RIGHTS, 0.5),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nationalism studies",
@@ -5401,6 +5861,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.3),
                 (POWER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Peace studies",
@@ -5413,6 +5874,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (JUSTICE, 0.4),
                 (MORAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political psychology",
@@ -5424,6 +5886,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.4),
                 (POWER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Constitutional studies",
@@ -5436,6 +5899,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.5),
                 (RIGHTS, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Global governance",
@@ -5447,6 +5911,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.5),
                 (POLICY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Federalism studies",
@@ -5458,6 +5923,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.3),
                 (POWER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political communication",
@@ -5469,6 +5935,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NETWORK, 0.4),
                 (DISCOURSE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Foreign policy analysis",
@@ -5481,6 +5948,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POWER, 0.4),
                 (POLICY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political philosophy (pol sci)",
@@ -5493,6 +5961,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.4),
                 (THEORY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Comparative institutional analysis",
@@ -5504,6 +5973,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (POLICY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Quantitative political science",
@@ -5515,6 +5985,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMPUTATION, 0.4),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social policy",
@@ -5527,6 +5998,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POLICY, 0.7),
                 (SOCIETY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Conflict studies",
@@ -5538,6 +6010,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.4),
                 (POWER, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental politics",
@@ -5550,6 +6023,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POLICY, 0.5),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Regulatory studies",
@@ -5562,6 +6036,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POLICY, 0.5),
                 (LEGAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── LAW (25) ──
         Concept {
@@ -5575,6 +6050,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.8),
                 (RIGHTS, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Criminal law",
@@ -5587,6 +6063,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.8),
                 (JUSTICE, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Contract law",
@@ -5598,6 +6075,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (LEGAL, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Tort law",
@@ -5609,6 +6087,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.8),
                 (JUSTICE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "International law",
@@ -5621,6 +6100,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (RIGHTS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental law",
@@ -5633,6 +6113,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Intellectual property law",
@@ -5645,6 +6126,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (RIGHTS, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Corporate law",
@@ -5657,6 +6139,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (FINANCE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Jurisprudence",
@@ -5669,6 +6152,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Family law",
@@ -5681,6 +6165,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (KINSHIP, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Tax law",
@@ -5693,6 +6178,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (MONEY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Administrative law",
@@ -5705,6 +6191,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (POLICY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Human rights law",
@@ -5718,6 +6205,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RIGHTS, 0.9),
                 (JUSTICE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Antitrust law",
@@ -5729,6 +6217,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (LEGAL, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cyberlaw",
@@ -5741,6 +6230,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (RIGHTS, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Labor law",
@@ -5754,6 +6244,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LABOR, 0.6),
                 (RIGHTS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Immigration law",
@@ -5766,6 +6257,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (RIGHTS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Health law",
@@ -5778,6 +6270,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (CLINICAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Property law",
@@ -5790,6 +6283,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (RIGHTS, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "International humanitarian law",
@@ -5803,6 +6297,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (JUSTICE, 0.5),
                 (RIGHTS, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Legal theory",
@@ -5815,6 +6310,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Maritime law",
@@ -5827,6 +6323,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.6),
                 (OCEAN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Competition law",
@@ -5838,6 +6335,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.3),
                 (LEGAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Space law",
@@ -5850,6 +6348,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.6),
                 (CELESTIAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Data protection law",
@@ -5862,6 +6361,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEGAL, 0.7),
                 (RIGHTS, 0.5),
             ],
+            ..Default::default()
         },
         // ── ARCHITECTURE (25) ──
         Concept {
@@ -5875,6 +6375,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.7),
                 (FORM, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban planning",
@@ -5887,6 +6388,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COMMUNITY, 0.4),
                 (TRANSPORTATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Landscape architecture",
@@ -5898,6 +6400,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.4),
                 (DESIGN, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Interior design",
@@ -5910,6 +6413,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.7),
                 (COLOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sustainable architecture",
@@ -5922,6 +6426,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSERVATION, 0.4),
                 (DESIGN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Architectural history",
@@ -5933,6 +6438,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.3),
                 (HISTORICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Architectural theory",
@@ -5945,6 +6451,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEORY, 0.5),
                 (FORM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Parametric design",
@@ -5957,6 +6464,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.5),
                 (ALGORITHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Building information modeling",
@@ -5969,6 +6477,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOFTWARE, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Historic preservation",
@@ -5981,6 +6490,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.5),
                 (ARCHIVAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Vernacular architecture",
@@ -5993,6 +6503,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TRADITION, 0.5),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biophilic design",
@@ -6004,6 +6515,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.4),
                 (DESIGN, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Acoustic architecture",
@@ -6015,6 +6527,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPACE, 0.4),
                 (TIMBRE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sacred architecture",
@@ -6027,6 +6540,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SACRED, 0.6),
                 (SPIRITUAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Building physics",
@@ -6038,6 +6552,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (MECHANICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Housing studies",
@@ -6049,6 +6564,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MARKETS, 0.3),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Structural analysis",
@@ -6060,6 +6576,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.5),
                 (MECHANICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban morphology",
@@ -6071,6 +6588,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EVOLUTION, 0.4),
                 (FORM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Lighting design",
@@ -6083,6 +6601,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (COLOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Landscape ecology",
@@ -6094,6 +6613,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Transportation planning",
@@ -6105,6 +6625,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NETWORK, 0.5),
                 (TRANSPORTATION, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Climate-responsive design",
@@ -6117,6 +6638,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (CLIMATE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Architectural materials",
@@ -6128,6 +6650,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (FORCE, 0.3),
                 (SURFACE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Universal design",
@@ -6140,6 +6663,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.5),
                 (RIGHTS, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Building services engineering",
@@ -6152,6 +6676,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MECHANICAL, 0.3),
                 (ELECTRICAL, 0.3),
             ],
+            ..Default::default()
         },
         // ── CULINARY ARTS (25) ──
         Concept {
@@ -6165,6 +6690,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.9),
                 (TASTE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Baking",
@@ -6177,6 +6703,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.7),
                 (REACTION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pastry arts",
@@ -6189,6 +6716,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.6),
                 (DESIGN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Molecular gastronomy",
@@ -6202,6 +6730,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOLECULAR, 0.4),
                 (FLAVOR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Fermentation science",
@@ -6215,6 +6744,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.5),
                 (CYCLE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food chemistry",
@@ -6227,6 +6757,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (FLAVOR, 0.5),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nutrition science",
@@ -6238,6 +6769,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DIAGNOSTICS, 0.4),
                 (COOKING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Oenology",
@@ -6250,6 +6782,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TASTE, 0.7),
                 (FLAVOR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pastry decoration",
@@ -6262,6 +6795,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (COLOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Culinary history",
@@ -6275,6 +6809,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TRADITION, 0.4),
                 (COOKING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food science",
@@ -6286,6 +6821,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MATERIAL, 0.4),
                 (FLAVOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Plating and presentation",
@@ -6298,6 +6834,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DESIGN, 0.4),
                 (COLOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Brewing science",
@@ -6310,6 +6847,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.4),
                 (REACTION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sommelier studies",
@@ -6322,6 +6860,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TASTE, 0.7),
                 (FLAVOR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Traditional cuisine studies",
@@ -6335,6 +6874,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.4),
                 (COOKING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food safety",
@@ -6346,6 +6886,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (COOKING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Charcuterie",
@@ -6358,6 +6899,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.6),
                 (FLAVOR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Confectionery science",
@@ -6370,6 +6912,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.4),
                 (TASTE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Culinary anthropology",
@@ -6382,6 +6925,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.5),
                 (COOKING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food preservation",
@@ -6394,6 +6938,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COOKING, 0.4),
                 (REACTION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sous vide technique",
@@ -6405,6 +6950,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.4),
                 (COOKING, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Flavor pairing theory",
@@ -6418,6 +6964,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TASTE, 0.5),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Kitchen management",
@@ -6429,6 +6976,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (COOKING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Gastronomy philosophy",
@@ -6440,6 +6988,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (TASTE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food photography",
@@ -6451,6 +7000,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (COLOR, 0.4),
             ],
+            ..Default::default()
         },
         // ── RELIGION (25) ──
         Concept {
@@ -6464,6 +7014,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DOCTRINE, 0.7),
                 (SPIRITUAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Comparative religion",
@@ -6476,6 +7027,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPIRITUAL, 0.5),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biblical studies",
@@ -6488,6 +7040,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SACRED, 0.6),
                 (ARCHIVAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Islamic studies",
@@ -6500,6 +7053,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DOCTRINE, 0.5),
                 (SACRED, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Buddhist studies",
@@ -6512,6 +7066,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSCIOUSNESS, 0.4),
                 (SPIRITUAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Religious ethics",
@@ -6523,6 +7078,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.7),
                 (DOCTRINE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of religion",
@@ -6535,6 +7091,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EPISTEMOLOGY, 0.4),
                 (ONTOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Church history",
@@ -6547,6 +7104,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.5),
                 (DOCTRINE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mysticism",
@@ -6559,6 +7117,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPIRITUAL, 0.8),
                 (CONSCIOUSNESS, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Theological anthropology",
@@ -6570,6 +7129,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MIND, 0.6),
                 (SPIRITUAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Liturgical studies",
@@ -6582,6 +7142,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RITUAL, 0.7),
                 (SACRED, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Eschatology",
@@ -6593,6 +7154,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.4),
                 (DOCTRINE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Homiletics",
@@ -6604,6 +7166,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (DISCOURSE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Patristics",
@@ -6616,6 +7179,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.4),
                 (DOCTRINE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Religious education",
@@ -6628,6 +7192,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEARNING, 0.3),
                 (DOCTRINE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Hindu studies",
@@ -6640,6 +7205,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPIRITUAL, 0.5),
                 (SACRED, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Jewish studies",
@@ -6652,6 +7218,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SACRED, 0.4),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Religious art",
@@ -6663,6 +7230,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.3),
                 (SACRED, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sociology of religion (religion)",
@@ -6675,6 +7243,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIETY, 0.3),
                 (RITUAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Religious epistemology",
@@ -6686,6 +7255,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (EPISTEMOLOGY, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Liberation theology",
@@ -6698,6 +7268,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (JUSTICE, 0.4),
                 (MORAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Interreligious dialogue",
@@ -6709,6 +7280,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.5),
                 (DISCOURSE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sacred texts studies",
@@ -6721,6 +7293,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SACRED, 0.7),
                 (ARCHIVAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ritual studies",
@@ -6733,6 +7306,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RITUAL, 0.8),
                 (TRADITION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "New religious movements",
@@ -6745,6 +7319,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPIRITUAL, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         // ── ENVIRONMENTAL SCIENCE (25) ──
         Concept {
@@ -6758,6 +7333,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CLIMATE, 0.9),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Conservation ecology",
@@ -6769,6 +7345,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.5),
                 (CONSERVATION, 0.9),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pollution science",
@@ -6780,6 +7357,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.5),
                 (WATER, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ecosystem services",
@@ -6791,6 +7369,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.6),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Biodiversity science",
@@ -6802,6 +7381,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (CONSERVATION, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental toxicology",
@@ -6813,6 +7393,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DIAGNOSTICS, 0.4),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Renewable energy science",
@@ -6825,6 +7406,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSERVATION, 0.4),
                 (ELECTRICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Carbon cycle science",
@@ -6837,6 +7419,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CYCLE, 0.7),
                 (CLIMATE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Water resource management",
@@ -6849,6 +7432,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (WATER, 0.8),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Waste management science",
@@ -6860,6 +7444,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.3),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental remote sensing",
@@ -6871,6 +7456,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ECOSYSTEM, 0.5),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sustainability science",
@@ -6883,6 +7469,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CONSERVATION, 0.6),
                 (MORAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ecological modeling",
@@ -6894,6 +7481,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.6),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental policy",
@@ -6906,6 +7494,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POLICY, 0.6),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Agroecology",
@@ -6917,6 +7506,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental impact assessment",
@@ -6928,6 +7518,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GOVERNANCE, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Restoration ecology",
@@ -6939,6 +7530,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (CONSERVATION, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental microbiology",
@@ -6950,6 +7542,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.5),
                 (CELLULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Landscape ecology (env)",
@@ -6961,6 +7554,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPACE, 0.4),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental geochemistry",
@@ -6972,6 +7566,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MEASUREMENT, 0.4),
                 (GEOLOGY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Marine ecology",
@@ -6983,6 +7578,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (OCEAN, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban ecology",
@@ -6994,6 +7590,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (COMMUNITY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental data science",
@@ -7006,6 +7603,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.6),
                 (CLIMATE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Invasive species biology",
@@ -7017,6 +7615,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NATURE, 0.5),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Circular economy",
@@ -7029,6 +7628,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CYCLE, 0.5),
                 (CONSERVATION, 0.4),
             ],
+            ..Default::default()
         },
         // ── NEUROSCIENCE (25) ──
         Concept {
@@ -7042,6 +7642,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.8),
                 (NEURAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computational neuroscience",
@@ -7055,6 +7656,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.6),
                 (ALGORITHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cellular neuroscience",
@@ -7067,6 +7669,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.7),
                 (CELLULAR, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Behavioral neuroscience",
@@ -7079,6 +7682,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.6),
                 (NEURAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuroimaging",
@@ -7091,6 +7695,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.7),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Synaptic neuroscience",
@@ -7103,6 +7708,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.8),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Motor neuroscience",
@@ -7115,6 +7721,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.5),
                 (NEURAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sensory neuroscience",
@@ -7127,6 +7734,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.5),
                 (NEURAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Developmental neuroscience",
@@ -7139,6 +7747,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.5),
                 (CELLULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuroendocrinology",
@@ -7151,6 +7760,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.4),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Social neuroscience",
@@ -7162,6 +7772,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (BRAIN, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Affective neuroscience",
@@ -7174,6 +7785,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.6),
                 (NEURAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neural network theory",
@@ -7187,6 +7799,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.3),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neurogenetics",
@@ -7199,6 +7812,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.4),
                 (MOLECULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuroplasticity",
@@ -7211,6 +7825,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.6),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Pain neuroscience",
@@ -7223,6 +7838,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.5),
                 (BRAIN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuroethics",
@@ -7235,6 +7851,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.4),
                 (MORAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Connectomics",
@@ -7248,6 +7865,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.6),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Visual neuroscience",
@@ -7260,6 +7878,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.5),
                 (NEURAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Auditory neuroscience",
@@ -7272,6 +7891,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.5),
                 (NEURAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuropharmacology",
@@ -7284,6 +7904,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NEURAL, 0.5),
                 (THERAPY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Neuroinformatics",
@@ -7296,6 +7917,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.5),
                 (BRAIN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sleep neuroscience",
@@ -7308,6 +7930,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.5),
                 (CYCLE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Language neuroscience",
@@ -7320,6 +7943,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BRAIN, 0.6),
                 (NEURAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Decision neuroscience",
@@ -7331,6 +7955,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MIND, 0.5),
                 (BRAIN, 0.5),
             ],
+            ..Default::default()
         },
         // ── DATA SCIENCE (25) ──
         Concept {
@@ -7344,6 +7969,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MACHINE_LEARN, 0.6),
                 (DATA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Data visualization",
@@ -7356,6 +7982,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.6),
                 (DESIGN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Feature engineering",
@@ -7368,6 +7995,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.5),
                 (MACHINE_LEARN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Deep learning",
@@ -7381,6 +8009,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.5),
                 (NEURAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Natural language processing (DS)",
@@ -7394,6 +8023,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (AI, 0.4),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Time series analysis",
@@ -7406,6 +8036,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.5),
                 (CYCLE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Bayesian methods",
@@ -7417,6 +8048,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.4),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Causal inference",
@@ -7428,6 +8060,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Recommender systems",
@@ -7440,6 +8073,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MACHINE_LEARN, 0.5),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Anomaly detection",
@@ -7452,6 +8086,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.4),
                 (ALGORITHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dimensionality reduction",
@@ -7464,6 +8099,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.4),
                 (ALGORITHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "A/B testing",
@@ -7475,6 +8111,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.4),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Data engineering",
@@ -7487,6 +8124,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.8),
                 (SOFTWARE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Geospatial analytics",
@@ -7499,6 +8137,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.5),
                 (PLANETARY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Graph analytics",
@@ -7511,6 +8150,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GRAPH_THEORY, 0.5),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Survival analysis",
@@ -7523,6 +8163,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.4),
                 (CLINICAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ensemble methods",
@@ -7534,6 +8175,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (MACHINE_LEARN, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Interpretable ML",
@@ -7546,6 +8188,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MACHINE_LEARN, 0.5),
                 (AI, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Data ethics",
@@ -7558,6 +8201,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.5),
                 (MORAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Transfer learning",
@@ -7570,6 +8214,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MACHINE_LEARN, 0.6),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Text mining",
@@ -7582,6 +8227,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.5),
                 (LLM, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Computer vision (DS)",
@@ -7594,6 +8240,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MACHINE_LEARN, 0.5),
                 (AI, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Streaming analytics",
@@ -7606,6 +8253,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DATA, 0.6),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Experiment design",
@@ -7617,6 +8265,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (OPTIMIZATION, 0.4),
                 (DATA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Fairness in ML",
@@ -7630,6 +8279,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MORAL, 0.3),
                 (JUSTICE, 0.3),
             ],
+            ..Default::default()
         },
         // ── ANTHROPOLOGY (25) ──
         Concept {
@@ -7643,6 +8293,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.8),
                 (TRADITION, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Physical anthropology",
@@ -7654,6 +8305,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (GENETICS, 0.4),
                 (ANATOMY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Linguistic anthropology",
@@ -7665,6 +8317,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EVOLUTION, 0.3),
                 (CULTURE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Archaeological anthropology",
@@ -7677,6 +8330,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HISTORICAL, 0.4),
                 (ARCHIVAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Medical anthropology",
@@ -7689,6 +8343,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.4),
                 (THERAPY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Economic anthropology",
@@ -7701,6 +8356,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.4),
                 (MONEY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Political anthropology",
@@ -7713,6 +8369,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POWER, 0.4),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Visual anthropology",
@@ -7724,6 +8381,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LANGUAGE, 0.3),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Kinship studies",
@@ -7736,6 +8394,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (KINSHIP, 0.9),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ritual anthropology",
@@ -7748,6 +8407,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RITUAL, 0.7),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Urban anthropology",
@@ -7759,6 +8419,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.4),
                 (COMMUNITY, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethnobotany",
@@ -7771,6 +8432,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.4),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Digital anthropology",
@@ -7783,6 +8445,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOCIAL_NETWORK, 0.3),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Food anthropology",
@@ -7795,6 +8458,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.5),
                 (COOKING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Anthropology of religion",
@@ -7807,6 +8471,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (RITUAL, 0.4),
                 (SPIRITUAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Anthropology of art",
@@ -7818,6 +8483,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.5),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Primatology",
@@ -7829,6 +8495,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (BRAIN, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Forensic anthropology",
@@ -7841,6 +8508,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ANATOMY, 0.5),
                 (LEGAL, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ecological anthropology",
@@ -7852,6 +8520,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Anthropology of development",
@@ -7864,6 +8533,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.3),
                 (POLICY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethnoarchaeology",
@@ -7876,6 +8546,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.4),
                 (HISTORICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cognitive anthropology",
@@ -7887,6 +8558,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MIND, 0.4),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Anthropology of space",
@@ -7898,6 +8570,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ethnomedicine",
@@ -7910,6 +8583,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CULTURE, 0.4),
                 (TRADITION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Folklore studies",
@@ -7922,6 +8596,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TRADITION, 0.5),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         // ── EDUCATION (25) ──
         Concept {
@@ -7935,6 +8610,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CURRICULUM, 0.9),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Assessment theory",
@@ -7947,6 +8623,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ASSESSMENT, 0.9),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Learning theory",
@@ -7959,6 +8636,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEARNING, 0.8),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Educational technology",
@@ -7971,6 +8649,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SOFTWARE, 0.3),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Special education",
@@ -7982,6 +8661,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.4),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Higher education studies",
@@ -7993,6 +8673,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (CURRICULUM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Early childhood education",
@@ -8005,6 +8686,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEARNING, 0.6),
                 (ATTACHMENT, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "STEM education",
@@ -8017,6 +8699,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CURRICULUM, 0.4),
                 (LEARNING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Literacy studies",
@@ -8028,6 +8711,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.3),
                 (LEARNING, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Multicultural education",
@@ -8039,6 +8723,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.4),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Philosophy of education",
@@ -8051,6 +8736,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EPISTEMOLOGY, 0.3),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Distance education",
@@ -8062,6 +8748,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (INFORMATION, 0.4),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Instructional design",
@@ -8074,6 +8761,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CURRICULUM, 0.5),
                 (DESIGN, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Music education",
@@ -8086,6 +8774,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (HARMONY, 0.2),
                 (LEARNING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Arts education",
@@ -8097,6 +8786,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (LEARNING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Language education",
@@ -8109,6 +8799,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEARNING, 0.5),
                 (GRAMMAR, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Science education",
@@ -8121,6 +8812,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CURRICULUM, 0.3),
                 (LEARNING, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mathematics education",
@@ -8132,6 +8824,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LOGIC, 0.3),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Physical education",
@@ -8143,6 +8836,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (ANATOMY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Environmental education",
@@ -8155,6 +8849,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LEARNING, 0.3),
                 (CONSERVATION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Education policy",
@@ -8167,6 +8862,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (POLICY, 0.5),
                 (CURRICULUM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Teacher education",
@@ -8178,6 +8874,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (LEARNING, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Game-based learning",
@@ -8189,6 +8886,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.4),
                 (LEARNING, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Comparative education",
@@ -8200,6 +8898,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PATTERN, 0.4),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Educational measurement",
@@ -8212,6 +8911,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ASSESSMENT, 0.7),
                 (DATA, 0.3),
             ],
+            ..Default::default()
         },
         // ── FILM STUDIES (25) ──
         Concept {
@@ -8225,6 +8925,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.7),
                 (THEORY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Cinematography",
@@ -8237,6 +8938,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.8),
                 (COLOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film editing",
@@ -8249,6 +8951,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.6),
                 (MONTAGE, 0.8),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Sound design (film)",
@@ -8261,6 +8964,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (TIMBRE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Screenwriting (film)",
@@ -8272,6 +8976,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.5),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Documentary studies",
@@ -8283,6 +8988,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (ETHICS, 0.3),
                 (CINEMA, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Animation studies",
@@ -8294,6 +9000,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.5),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film history",
@@ -8306,6 +9013,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.6),
                 (HISTORICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Genre studies",
@@ -8317,6 +9025,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.4),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film semiotics",
@@ -8329,6 +9038,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (SEMANTICS_AX, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "National cinema studies",
@@ -8341,6 +9051,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.6),
                 (CULTURE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film and philosophy",
@@ -8352,6 +9063,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.4),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Visual effects",
@@ -8364,6 +9076,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (SOFTWARE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Production design",
@@ -8376,6 +9089,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (DESIGN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film music",
@@ -8388,6 +9102,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (HARMONY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Experimental film",
@@ -8400,6 +9115,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.6),
                 (MONTAGE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film criticism",
@@ -8412,6 +9128,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (DISCOURSE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Color grading",
@@ -8424,6 +9141,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (COLOR, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film and technology",
@@ -8435,6 +9153,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Adaptation studies",
@@ -8447,6 +9166,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.4),
                 (LITERARY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Spectatorship theory",
@@ -8459,6 +9179,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.5),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stop-motion animation",
@@ -8470,6 +9191,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.4),
                 (CINEMA, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film restoration",
@@ -8482,6 +9204,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (CINEMA, 0.4),
                 (ARCHIVAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Virtual reality cinema",
@@ -8493,6 +9216,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (CINEMA, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Film distribution",
@@ -8504,6 +9228,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SYSTEMS, 0.3),
                 (CINEMA, 0.4),
             ],
+            ..Default::default()
         },
         // ── PERFORMING ARTS (25) ──
         Concept {
@@ -8517,6 +9242,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DANCE, 0.9),
                 (RHYTHM, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Choreography",
@@ -8528,6 +9254,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPACE, 0.5),
                 (DANCE, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Theater directing",
@@ -8539,6 +9266,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (LANGUAGE, 0.4),
                 (THEATRICAL, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Acting method",
@@ -8550,6 +9278,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.4),
                 (THEATRICAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stage design",
@@ -8562,6 +9291,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.5),
                 (DESIGN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Costume design",
@@ -8574,6 +9304,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.4),
                 (DESIGN, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stage lighting",
@@ -8586,6 +9317,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.4),
                 (COLOR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Mime and physical theater",
@@ -8597,6 +9329,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.3),
                 (THEATRICAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Circus arts",
@@ -8608,6 +9341,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (THEATRICAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dance therapy",
@@ -8620,6 +9354,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DANCE, 0.5),
                 (THERAPY, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Puppetry",
@@ -8631,6 +9366,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (MOTION, 0.5),
                 (THEATRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Musical theater",
@@ -8643,6 +9379,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.7),
                 (HARMONY, 0.2),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Improvised theater",
@@ -8654,6 +9391,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (EMOTION, 0.5),
                 (THEATRICAL, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Ballet",
@@ -8666,6 +9404,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DANCE, 0.8),
                 (RHYTHM, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Contemporary dance",
@@ -8677,6 +9416,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SPACE, 0.4),
                 (DANCE, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Theater history",
@@ -8689,6 +9429,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.5),
                 (HISTORICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Performance studies",
@@ -8701,6 +9442,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.4),
                 (THEORY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Stage combat",
@@ -8712,6 +9454,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (BEHAVIOR, 0.3),
                 (THEATRICAL, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Voice and speech",
@@ -8723,6 +9466,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (WAVE, 0.3),
                 (PHONETIC, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Dance notation",
@@ -8734,6 +9478,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (STRUCTURE, 0.5),
                 (DANCE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Devised theater",
@@ -8745,6 +9490,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NARRATIVE, 0.4),
                 (THEATRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "World dance traditions",
@@ -8758,6 +9504,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (TRADITION, 0.4),
                 (CULTURE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Theater criticism",
@@ -8770,6 +9517,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (THEATRICAL, 0.4),
                 (DISCOURSE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Somatics",
@@ -8781,6 +9529,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (COGNITION, 0.5),
                 (ANATOMY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Kinesiology for performers",
@@ -8792,6 +9541,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (PERFORMANCE, 0.5),
                 (ANATOMY, 0.5),
             ],
+            ..Default::default()
         },
         // ── NANOTECHNOLOGY (25) ──
         Concept {
@@ -8805,6 +9555,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.9),
                 (ATOMIC, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanomedicine",
@@ -8817,6 +9568,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.7),
                 (THERAPY, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Quantum dots",
@@ -8829,6 +9581,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (ATOMIC, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanoelectronics",
@@ -8841,6 +9594,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.7),
                 (ELECTRICAL, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Carbon nanotubes",
@@ -8853,6 +9607,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.8),
                 (ATOMIC, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Self-assembly",
@@ -8865,6 +9620,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.5),
                 (MOLECULAR, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Molecular machines",
@@ -8877,6 +9633,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.5),
                 (MOLECULAR, 0.7),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanooptics",
@@ -8888,6 +9645,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (VISUAL, 0.3),
                 (NANO, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanofabrication",
@@ -8900,6 +9658,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.7),
                 (SURFACE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanotoxicology",
@@ -8911,6 +9670,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (DIAGNOSTICS, 0.4),
                 (NANO, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanocomposites",
@@ -8922,6 +9682,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (FORCE, 0.3),
                 (NANO, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "DNA nanotechnology",
@@ -8934,6 +9695,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (MOLECULAR, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanophotonics",
@@ -8945,6 +9707,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (QUANTUM, 0.5),
                 (NANO, 0.6),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanosensors",
@@ -8957,6 +9720,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (SURFACE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nano-catalysis",
@@ -8970,6 +9734,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (REACTION, 0.4),
                 (SURFACE, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Graphene research",
@@ -8982,6 +9747,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (ATOMIC, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanolithography",
@@ -8994,6 +9760,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (SURFACE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanofluidics",
@@ -9006,6 +9773,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.5),
                 (SURFACE, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nano-biointerfaces",
@@ -9019,6 +9787,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SURFACE, 0.4),
                 (CELLULAR, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanoparticle synthesis",
@@ -9031,6 +9800,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (REACTION, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Scanning probe microscopy",
@@ -9044,6 +9814,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (SURFACE, 0.5),
                 (ATOMIC, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanoethics",
@@ -9056,6 +9827,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.4),
                 (MORAL, 0.3),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Thin film technology",
@@ -9068,6 +9840,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.4),
                 (SURFACE, 0.5),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Polymer nanostructures",
@@ -9080,6 +9853,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.6),
                 (MOLECULAR, 0.4),
             ],
+            ..Default::default()
         },
         Concept {
             label: "Nanoscale energy harvesting",
@@ -9092,6 +9866,7 @@ pub fn build_corpus() -> Vec<Concept> {
                 (NANO, 0.5),
                 (ELECTRICAL, 0.3),
             ],
+            ..Default::default()
         },
     ]
 }

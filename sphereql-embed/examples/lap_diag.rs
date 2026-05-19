@@ -1,15 +1,24 @@
 use sphereql_core::{SphericalPoint, angular_distance};
+use sphereql_corpus::Concept;
 use sphereql_embed::{Embedding, LaplacianEigenmapProjection, Projection, RadialStrategy};
 
 fn main() {
-    let concepts = sphereql_corpus::build_corpus();
+    for (label, concepts) in [
+        ("hand_crafted_775", sphereql_corpus::build_corpus()),
+        ("extended_5k", sphereql_corpus::build_extended_corpus()),
+    ] {
+        println!("\n==== {label} ({} concepts) ====", concepts.len());
+        run_diag(&concepts);
+    }
+}
+
+fn run_diag(concepts: &[Concept]) {
     let embeddings: Vec<Embedding> = concepts
         .iter()
         .enumerate()
         .map(|(i, c)| Embedding::new(sphereql_corpus::embed(&c.features, i as u64)))
         .collect();
 
-    // active-set sizes
     let active_sizes: Vec<usize> = embeddings
         .iter()
         .map(|e| e.values.iter().filter(|v| v.abs() > 0.05).count())

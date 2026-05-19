@@ -10,6 +10,7 @@ use sphereql_core::{CartesianPoint, SphericalPoint, angular_distance, cartesian_
 
 use crate::category::CategoryLayer;
 
+
 /// A cluster of related categories detected from sphere geometry.
 #[derive(Debug, Clone)]
 pub struct DomainGroup {
@@ -38,7 +39,20 @@ pub fn detect_domain_groups(layer: &CategoryLayer, target_groups: usize) -> Vec<
     if n == 0 {
         return Vec::new();
     }
-    let target_groups = target_groups.max(1).min(n);
+    let effective = target_groups.max(1).min(n);
+    if effective < target_groups {
+        tracing::warn!(
+            requested = target_groups,
+            effective,
+            n_categories = n,
+            "num_domain_groups clamped to {} (corpus has only {} distinct categories); \
+             TuneReport.best_config.routing.num_domain_groups will show the requested value, \
+             not the realized one — compare against pipeline.domain_groups().len()",
+            effective,
+            n
+        );
+    }
+    let target_groups = effective;
     let sq = &layer.spatial_quality;
 
     // 1. Similarity matrix from Voronoi adjacency + normalized cap overlap.

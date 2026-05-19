@@ -1,0 +1,2414 @@
+{
+  "cluster_config": {
+    "k_requested": 64,
+    "k_effective": 63,
+    "batch_size": 4096,
+    "max_iter": 200,
+    "n_init": 3,
+    "random_seed": 42,
+    "min_size_per_cluster": 50,
+    "auto_merge": true,
+    "sample_size": 0
+  },
+  "corpus": {
+    "n_rows": 50000,
+    "num_axes": 128,
+    "nnz": 288363
+  },
+  "clusters": [
+    {
+      "id": 0,
+      "name": "cluster_0000__1949_grand_prix_motorcycle_racing_season__1956_grand_prix_motorcycle_racing_season",
+      "size": 121,
+      "top_axes": [
+        {
+          "axis": 85,
+          "mean_weight": 0.9875622391700745
+        },
+        {
+          "axis": 125,
+          "mean_weight": 0.9863184690475464
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.16417908668518066
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.0920398160815239
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.07711443305015564
+        },
+        {
+          "axis": 94,
+          "mean_weight": 0.057213928550481796
+        }
+      ],
+      "anchor_labels": [
+        "1949 Grand Prix motorcycle racing season",
+        "1956 Grand Prix motorcycle racing season",
+        "1955 Grand Prix motorcycle racing season",
+        "1954 Grand Prix motorcycle racing season",
+        "1953 Grand Prix motorcycle racing season"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "cluster_0001__2004_all_japan_grand_touring_car_championship__2008_pickup_truck_racing",
+      "size": 1286,
+      "top_axes": [
+        {
+          "axis": 85,
+          "mean_weight": 0.9799048900604248
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.07017724961042404
+        },
+        {
+          "axis": 75,
+          "mean_weight": 0.05925390496850014
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.05379225313663483
+        },
+        {
+          "axis": 2,
+          "mean_weight": 0.04451771825551987
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.0420445092022419
+        }
+      ],
+      "anchor_labels": [
+        "2004 All Japan Grand Touring Car Championship",
+        "2008 Pickup Truck Racing",
+        "2009 Pickup Truck Racing",
+        "2007 Pickup Truck Racing",
+        "1982 European Formula Two Championship"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "cluster_0002__1972_jean_becker_open__1978_paris_open",
+      "size": 914,
+      "top_axes": [
+        {
+          "axis": 93,
+          "mean_weight": 0.9747535586357117
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.9266508221626282
+        },
+        {
+          "axis": 121,
+          "mean_weight": 0.09142519533634186
+        },
+        {
+          "axis": 31,
+          "mean_weight": 0.07857781648635864
+        },
+        {
+          "axis": 123,
+          "mean_weight": 0.06871824711561203
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.06528234481811523
+        }
+      ],
+      "anchor_labels": [
+        "1972 Jean Becker Open",
+        "1978 Paris Open",
+        "1973 Jean Becker Open",
+        "1974 Paris Open",
+        "2005 Sunfeast Open"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "cluster_0003__100_washington_square__2013_asian_karate_championships",
+      "size": 823,
+      "top_axes": [
+        {
+          "axis": 41,
+          "mean_weight": 0.9496586918830872
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.1631399244070053
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.13805462419986725
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.12354948371648788
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.10887371748685837
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.09744025766849518
+        }
+      ],
+      "anchor_labels": [
+        "100 Washington Square",
+        "2013 Asian Karate Championships",
+        "1999 Broadway",
+        "1100 Superior",
+        "2007 CAF Champions League Final"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "cluster_0004__1953_54_rangers_f_c_season__1954_55_rangers_f_c_season",
+      "size": 143,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9446856379508972
+        },
+        {
+          "axis": 44,
+          "mean_weight": 0.9392626881599426
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.8806940317153931
+        },
+        {
+          "axis": 97,
+          "mean_weight": 0.8655096888542175
+        },
+        {
+          "axis": 88,
+          "mean_weight": 0.4403471350669861
+        },
+        {
+          "axis": 0,
+          "mean_weight": 0.26789590716362
+        }
+      ],
+      "anchor_labels": [
+        "1953\u201354 Rangers F.C. season",
+        "1954\u201355 Rangers F.C. season",
+        "1946\u201347 Rangers F.C. season",
+        "1971\u201372 Rangers F.C. season",
+        "2005\u201306 Rangers F.C. season"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "cluster_0005__1922_23_birmingham_f_c_season__1921_22_birmingham_f_c_season",
+      "size": 982,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9528994560241699
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.9515385031700134
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.15668392181396484
+        },
+        {
+          "axis": 105,
+          "mean_weight": 0.1267356425523758
+        },
+        {
+          "axis": 24,
+          "mean_weight": 0.12442144751548767
+        },
+        {
+          "axis": 29,
+          "mean_weight": 0.11747892200946808
+        }
+      ],
+      "anchor_labels": [
+        "1922\u201323 Birmingham F.C. season",
+        "1921\u201322 Birmingham F.C. season",
+        "1924\u201325 Birmingham F.C. season",
+        "1888\u201389 Heart of Midlothian F.C. season",
+        "2011\u201312 Newcastle United F.C. season"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "cluster_0006__1972_denver_broncos_season__1973_denver_broncos_season",
+      "size": 3271,
+      "top_axes": [
+        {
+          "axis": 26,
+          "mean_weight": 0.9930627942085266
+        },
+        {
+          "axis": 112,
+          "mean_weight": 0.028734158724546432
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.028562866151332855
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.024237753823399544
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.022225074470043182
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.02098321169614792
+        }
+      ],
+      "anchor_labels": [
+        "1972 Denver Broncos season",
+        "1973 Denver Broncos season",
+        "1978 Detroit Lions season",
+        "1976 San Francisco 49ers season",
+        "1957 Chicago Cardinals season"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "cluster_0007__1896_97_heart_of_midlothian_f_c_season__1945_s_o_paulo_fc_season",
+      "size": 477,
+      "top_axes": [
+        {
+          "axis": 102,
+          "mean_weight": 0.9512479305267334
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.9112983345985413
+        },
+        {
+          "axis": 110,
+          "mean_weight": 0.18949508666992188
+        },
+        {
+          "axis": 123,
+          "mean_weight": 0.18543240427970886
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.13764750957489014
+        },
+        {
+          "axis": 125,
+          "mean_weight": 0.09556974470615387
+        }
+      ],
+      "anchor_labels": [
+        "1896\u201397 Heart of Midlothian F.C. season",
+        "1945 S\u00e3o Paulo FC season",
+        "2003\u201304 CA Osasuna season",
+        "2010\u201311 Damash Gilan F.C. season",
+        "1998\u201399 Inverness Caledonian Thistle F.C. season"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "cluster_0008__2003_new_zealand_film_awards__2005_new_zealand_screen_awards",
+      "size": 481,
+      "top_axes": [
+        {
+          "axis": 58,
+          "mean_weight": 0.7024590373039246
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.3347600996494293
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.17002347111701965
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.15059587359428406
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.1289862096309662
+        },
+        {
+          "axis": 114,
+          "mean_weight": 0.060926467180252075
+        }
+      ],
+      "anchor_labels": [
+        "2003 New Zealand Film Awards",
+        "2005 New Zealand Screen Awards",
+        "2007 Air New Zealand Screen Awards",
+        "2006 Air New Zealand Screen Awards",
+        "2009 Qantas Film and Television Awards"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "cluster_0009__1st_mobile_fleet_imperial_japanese_navy__14th_destroyer_flotilla",
+      "size": 582,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.9540519118309021
+        },
+        {
+          "axis": 114,
+          "mean_weight": 0.866054117679596
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.26496797800064087
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.22723475098609924
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.12155387550592422
+        },
+        {
+          "axis": 71,
+          "mean_weight": 0.11946532130241394
+        }
+      ],
+      "anchor_labels": [
+        "1st Mobile Fleet (Imperial Japanese Navy)",
+        "14th Destroyer Flotilla",
+        "1st Green Jackets (43rd and 52nd)",
+        "17th Frigate Squadron (United Kingdom)",
+        "13th Destroyer Flotilla"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "cluster_0010__1975_canada_winter_games__1991_winter_universiade",
+      "size": 1283,
+      "top_axes": [
+        {
+          "axis": 82,
+          "mean_weight": 0.9866309762001038
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.08934938907623291
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.0889037549495697
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.08266488462686539
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.055481284856796265
+        },
+        {
+          "axis": 110,
+          "mean_weight": 0.04534313082695007
+        }
+      ],
+      "anchor_labels": [
+        "1975 Canada Winter Games",
+        "1991 Winter Universiade",
+        "1992 World Karate Championships",
+        "13th Flying Broom International Women's Film Festival",
+        "16th Festival on Wheels"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "cluster_0011__1950_51_dundee_united_f_c_season__1923_24_dundee_united_f_c_season",
+      "size": 2356,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9227980375289917
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.13779698312282562
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.11365493386983871
+        },
+        {
+          "axis": 122,
+          "mean_weight": 0.10909528285264969
+        },
+        {
+          "axis": 54,
+          "mean_weight": 0.09700021892786026
+        },
+        {
+          "axis": 11,
+          "mean_weight": 0.09092873334884644
+        }
+      ],
+      "anchor_labels": [
+        "1950\u201351 Dundee United F.C. season",
+        "1923\u201324 Dundee United F.C. season",
+        "1762 leto",
+        "1977 in Japanese football",
+        "1985\u201386 Torino Calcio season"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "cluster_0012__2002_tennis_masters_cup__1979_toray_sillook_open",
+      "size": 3493,
+      "top_axes": [
+        {
+          "axis": 9,
+          "mean_weight": 0.9554280042648315
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.12134993076324463
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.10635074973106384
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.09585929661989212
+        },
+        {
+          "axis": 89,
+          "mean_weight": 0.08329344540834427
+        },
+        {
+          "axis": 122,
+          "mean_weight": 0.07994258403778076
+        }
+      ],
+      "anchor_labels": [
+        "2002 Tennis Masters Cup",
+        "1979 Toray Sillook Open",
+        "2009 Shanghai ATP Masters 1000",
+        "2009 ATP World Tour Finals",
+        "1999 Open 13"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "cluster_0013__2011_breeders_cup_classic__2011_kentucky_derby",
+      "size": 528,
+      "top_axes": [
+        {
+          "axis": 119,
+          "mean_weight": 0.8673306703567505
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.4198291301727295
+        },
+        {
+          "axis": 77,
+          "mean_weight": 0.30147048830986023
+        },
+        {
+          "axis": 113,
+          "mean_weight": 0.08752371370792389
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.06499052792787552
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.061195436865091324
+        }
+      ],
+      "anchor_labels": [
+        "2011 Breeders' Cup Classic",
+        "2011 Kentucky Derby",
+        "2009 Kentucky Derby",
+        "2010 Breeders' Cup Classic",
+        "2010 Kentucky Derby"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "cluster_0014__1922_united_kingdom_general_election_in_scotland__2012_united_states_presidential_election_in_main",
+      "size": 472,
+      "top_axes": [
+        {
+          "axis": 118,
+          "mean_weight": 0.9730592370033264
+        },
+        {
+          "axis": 77,
+          "mean_weight": 0.5585169792175293
+        },
+        {
+          "axis": 96,
+          "mean_weight": 0.4634994864463806
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.05069525167346001
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.03736964240670204
+        },
+        {
+          "axis": 70,
+          "mean_weight": 0.03476246818900108
+        }
+      ],
+      "anchor_labels": [
+        "1922 United Kingdom general election in Scotland",
+        "2012 United States presidential election in Maine",
+        "1836 United States presidential election in Maine",
+        "1836 United States presidential election in Kentucky",
+        "1840 United States presidential election in Kentucky"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "cluster_0015__1953_pga_championship__2005_kansas_city_wizards_season",
+      "size": 388,
+      "top_axes": [
+        {
+          "axis": 97,
+          "mean_weight": 0.9536569714546204
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.4272266924381256
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.18899352848529816
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.12201303243637085
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.09087618440389633
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.07422156631946564
+        }
+      ],
+      "anchor_labels": [
+        "1953 PGA Championship",
+        "2005 Kansas City Wizards season",
+        "105 Artemis",
+        "103 Hera",
+        "1099 Figneria"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "cluster_0016__1st_maine_infantry_battalion__1st_independent_company_loyal_virginians",
+      "size": 656,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.8932104110717773
+        },
+        {
+          "axis": 49,
+          "mean_weight": 0.8693602085113525
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.8521702289581299
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.7137947082519531
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.23377738893032074
+        },
+        {
+          "axis": 6,
+          "mean_weight": 0.1151697188615799
+        }
+      ],
+      "anchor_labels": [
+        "1st Maine Infantry Battalion",
+        "1st Independent Company Loyal Virginians",
+        "1st Iowa Infantry Regiment (African Descent)",
+        "194th Ohio Infantry Regiment",
+        "19th Connecticut Infantry Regiment"
+      ]
+    },
+    {
+      "id": 17,
+      "name": "cluster_0017__mf__aq",
+      "size": 347,
+      "top_axes": [
+        {
+          "axis": 13,
+          "mean_weight": 0.9977083802223206
+        },
+        {
+          "axis": 106,
+          "mean_weight": 0.7711993455886841
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.06990068405866623
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.030939649790525436
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.025592055171728134
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.024446139112114906
+        }
+      ],
+      "anchor_labels": [
+        ".mf",
+        ".aq",
+        ".ca",
+        ".bz",
+        ".by"
+      ]
+    },
+    {
+      "id": 18,
+      "name": "cluster_0018__2013_united_states_senate_special_election_in_ma__2005_california_special_election",
+      "size": 406,
+      "top_axes": [
+        {
+          "axis": 118,
+          "mean_weight": 0.9999999403953552
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.997589647769928
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.059573013335466385
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.03305785730481148
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.029614325612783432
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.027548208832740784
+        }
+      ],
+      "anchor_labels": [
+        "2013 United States Senate special election in Massachusetts",
+        "2005 California special election",
+        "2004 Wyoming Democratic presidential caucuses",
+        "150 High Street, Stratford",
+        "1788\u201389 United States presidential election in Massachusetts"
+      ]
+    },
+    {
+      "id": 19,
+      "name": "cluster_0019__1992_93_fc_basel_season__1925_26_fc_basel_season",
+      "size": 410,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9041288495063782
+        },
+        {
+          "axis": 94,
+          "mean_weight": 0.8512946367263794
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.3470958471298218
+        },
+        {
+          "axis": 57,
+          "mean_weight": 0.30405882000923157
+        },
+        {
+          "axis": 43,
+          "mean_weight": 0.2295311689376831
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.22393283247947693
+        }
+      ],
+      "anchor_labels": [
+        "1992\u201393 FC Basel season",
+        "1925\u201326 FC Basel season",
+        "1993\u201394 FC Basel season",
+        "1982\u201383 FC Basel season",
+        "1926\u201327 FC Basel season"
+      ]
+    },
+    {
+      "id": 20,
+      "name": "cluster_0020__no_pussyfooting__1975_ncaa_division_i_golf_championship",
+      "size": 1613,
+      "top_axes": [
+        {
+          "axis": 18,
+          "mean_weight": 0.22302667796611786
+        },
+        {
+          "axis": 106,
+          "mean_weight": 0.11781152337789536
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.10484728217124939
+        },
+        {
+          "axis": 115,
+          "mean_weight": 0.0943993404507637
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.0933104082942009
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.08217083662748337
+        }
+      ],
+      "anchor_labels": [
+        "(No Pussyfooting)",
+        "1975 NCAA Division I Golf Championship",
+        "2011 Masters Tournament",
+        "'t Nopeind",
+        "1974 NCAA Division I Golf Championship"
+      ]
+    },
+    {
+      "id": 21,
+      "name": "cluster_0021__18_delphini_b__13_slays_till_x_mas",
+      "size": 1520,
+      "top_axes": [
+        {
+          "axis": 79,
+          "mean_weight": 0.9891036152839661
+        },
+        {
+          "axis": 124,
+          "mean_weight": 0.18800793588161469
+        },
+        {
+          "axis": 38,
+          "mean_weight": 0.058876633644104004
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.05698031187057495
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.04542171210050583
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.02850520797073841
+        }
+      ],
+      "anchor_labels": [
+        "18 Delphini b",
+        "13 Slays Till X-Mas",
+        "2013 ND15",
+        "1164 Kobolda",
+        "1163 Saga"
+      ]
+    },
+    {
+      "id": 22,
+      "name": "cluster_0022__1888_89_newton_heath_lyr_f_c_season__1989_in_japanese_football",
+      "size": 476,
+      "top_axes": [
+        {
+          "axis": 36,
+          "mean_weight": 0.978571355342865
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.9598639011383057
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.10578231513500214
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.10340134799480438
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.09285715222358704
+        },
+        {
+          "axis": 84,
+          "mean_weight": 0.08945576101541519
+        }
+      ],
+      "anchor_labels": [
+        "1888\u201389 Newton Heath LYR F.C. season",
+        "1989 in Japanese football",
+        "1901\u201302 Manchester City F.C. season",
+        "1800 United States presidential election in New York",
+        "1818 United States House of Representatives elections in New York"
+      ]
+    },
+    {
+      "id": 23,
+      "name": "cluster_0023__2008_kansas_city_brigade_season__102_sul_station",
+      "size": 432,
+      "top_axes": [
+        {
+          "axis": 103,
+          "mean_weight": 0.9191728234291077
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.3571428954601288
+        },
+        {
+          "axis": 47,
+          "mean_weight": 0.11954886466264725
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.11503759771585464
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.1003759428858757
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.08872179687023163
+        }
+      ],
+      "anchor_labels": [
+        "2008 Kansas City Brigade season",
+        "102 Sul station",
+        "110 Sul station",
+        "106 Sul Cine Bras\u00edlia station",
+        "114 Sul station"
+      ]
+    },
+    {
+      "id": 24,
+      "name": "cluster_0024__2013_speaker_of_the_chamber_of_deputies_of_the_p__2012_ulster_unionist_party_leadership_election",
+      "size": 270,
+      "top_axes": [
+        {
+          "axis": 97,
+          "mean_weight": 0.9983641505241394
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.9950926899909973
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.10850600898265839
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.07415483146905899
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.06761177629232407
+        },
+        {
+          "axis": 6,
+          "mean_weight": 0.05234459415078163
+        }
+      ],
+      "anchor_labels": [
+        "2013 Speaker of the Chamber of Deputies of the Parliament of the Czech Republic election",
+        "2012 Ulster Unionist Party leadership election",
+        "2007 Bassetlaw District Council election",
+        "1919 Liberal Party of Canada leadership election",
+        "2008 Bassetlaw District Council election"
+      ]
+    },
+    {
+      "id": 25,
+      "name": "cluster_0025__1915_santos_fc_season__2000_01_esteghlal_f_c_season",
+      "size": 597,
+      "top_axes": [
+        {
+          "axis": 117,
+          "mean_weight": 0.9676592350006104
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.8792459964752197
+        },
+        {
+          "axis": 52,
+          "mean_weight": 0.12889713048934937
+        },
+        {
+          "axis": 80,
+          "mean_weight": 0.1161005049943924
+        },
+        {
+          "axis": 20,
+          "mean_weight": 0.10958586633205414
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.10772451758384705
+        }
+      ],
+      "anchor_labels": [
+        "1915 Santos FC season",
+        "2000\u201301 Esteghlal F.C. season",
+        "2000\u201301 Celta de Vigo season",
+        "1895\u201396 Aston Villa F.C. season",
+        "2007 in Russian football"
+      ]
+    },
+    {
+      "id": 26,
+      "name": "cluster_0026__2013_valencia_bukidnon_local_elections__2006_united_states_house_of_representatives_elec",
+      "size": 382,
+      "top_axes": [
+        {
+          "axis": 25,
+          "mean_weight": 0.9909683465957642
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.3713873624801636
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.35838162899017334
+        },
+        {
+          "axis": 57,
+          "mean_weight": 0.31430649757385254
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.2048410326242447
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.08851159363985062
+        }
+      ],
+      "anchor_labels": [
+        "2013 Valencia (Bukidnon) local elections",
+        "2006 United States House of Representatives elections in Arizona",
+        "2008 Arizona Republican presidential primary",
+        "2004 United States Senate election in Arizona",
+        "2004 Arizona Democratic presidential primary"
+      ]
+    },
+    {
+      "id": 27,
+      "name": "cluster_0027__1967_68_moroccan_throne_cup__1968_69_moroccan_throne_cup",
+      "size": 658,
+      "top_axes": [
+        {
+          "axis": 53,
+          "mean_weight": 0.9706129431724548
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.37405550479888916
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.2619647681713104
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.12741394340991974
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.12503500282764435
+        },
+        {
+          "axis": 67,
+          "mean_weight": 0.09655752032995224
+        }
+      ],
+      "anchor_labels": [
+        "1967\u201368 Moroccan Throne Cup",
+        "1968\u201369 Moroccan Throne Cup",
+        "1969\u201370 Moroccan Throne Cup",
+        "1970\u201371 Moroccan Throne Cup",
+        "1971\u201372 Moroccan Throne Cup"
+      ]
+    },
+    {
+      "id": 28,
+      "name": "cluster_0028__1980_81_carlisle_united_f_c_season__1915_16_blackpool_f_c_season",
+      "size": 626,
+      "top_axes": [
+        {
+          "axis": 105,
+          "mean_weight": 0.9229257106781006
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.6158735752105713
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.1326189488172531
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.1260322481393814
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.09227944910526276
+        },
+        {
+          "axis": 122,
+          "mean_weight": 0.08638089150190353
+        }
+      ],
+      "anchor_labels": [
+        "1980\u201381 Carlisle United F.C. season",
+        "1915\u201316 Blackpool F.C. season",
+        "1996\u201397 HNK Rijeka season",
+        "1979\u201380 Carlisle United F.C. season",
+        "1955\u201356 Blackpool F.C. season"
+      ]
+    },
+    {
+      "id": 29,
+      "name": "cluster_0029__2000_liga_indonesia_premier_division_final__1974_all_ireland_senior_ladies_football_champion",
+      "size": 276,
+      "top_axes": [
+        {
+          "axis": 102,
+          "mean_weight": 0.9883744716644287
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.5423440337181091
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.24782615900039673
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.15579713881015778
+        },
+        {
+          "axis": 76,
+          "mean_weight": 0.13062383234500885
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.11625711619853973
+        }
+      ],
+      "anchor_labels": [
+        "2000 Liga Indonesia Premier Division Final",
+        "1974 All-Ireland Senior Ladies' Football Championship Final",
+        "1988 Hargeisa-Burao offensive",
+        "16th Street Park",
+        "2006 New Zealand Grand Prix"
+      ]
+    },
+    {
+      "id": 30,
+      "name": "cluster_0030__1804_united_states_house_of_representatives_elec__1806_united_states_house_of_representatives_elec",
+      "size": 828,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9490829706192017
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.3477187752723694
+        },
+        {
+          "axis": 40,
+          "mean_weight": 0.2071966528892517
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.20660874247550964
+        },
+        {
+          "axis": 83,
+          "mean_weight": 0.1819927990436554
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.10728287696838379
+        }
+      ],
+      "anchor_labels": [
+        "1804 United States House of Representatives elections in Pennsylvania",
+        "1806 United States House of Representatives elections in Pennsylvania",
+        "1808 United States House of Representatives elections in Pennsylvania",
+        "1810 United States House of Representatives elections in Pennsylvania",
+        "1812 United States House of Representatives elections in Pennsylvania"
+      ]
+    },
+    {
+      "id": 31,
+      "name": "cluster_0031__1992_in_russian_football__2010_11_cardiff_city_f_c_season",
+      "size": 331,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9804251790046692
+        },
+        {
+          "axis": 25,
+          "mean_weight": 0.715324342250824
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.27684566378593445
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.20581655204296112
+        },
+        {
+          "axis": 43,
+          "mean_weight": 0.1806487888097763
+        },
+        {
+          "axis": 20,
+          "mean_weight": 0.15324385464191437
+        }
+      ],
+      "anchor_labels": [
+        "1992 in Russian football",
+        "2010\u201311 Cardiff City F.C. season",
+        "2005 Indonesia national football team results",
+        "2011\u201312 in Russian football",
+        "2004 in Russian football"
+      ]
+    },
+    {
+      "id": 32,
+      "name": "cluster_0032__1844_united_states_presidential_election_in_new___1848_united_states_presidential_election_in_new_",
+      "size": 515,
+      "top_axes": [
+        {
+          "axis": 9,
+          "mean_weight": 0.9941011071205139
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.9879213571548462
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.08792136609554291
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.08258426934480667
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.07921349257230759
+        },
+        {
+          "axis": 69,
+          "mean_weight": 0.07359552383422852
+        }
+      ],
+      "anchor_labels": [
+        "1844 United States presidential election in New Hampshire",
+        "1848 United States presidential election in New Hampshire",
+        "1852 United States presidential election in New Hampshire",
+        "1856 United States presidential election in New Hampshire",
+        "1864 New York state election"
+      ]
+    },
+    {
+      "id": 33,
+      "name": "cluster_0033__1828_united_states_presidential_election_in_miss__1840_united_states_presidential_election_in_miss",
+      "size": 282,
+      "top_axes": [
+        {
+          "axis": 62,
+          "mean_weight": 0.9751816987991333
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.7469735741615295
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.1598062664270401
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.09866827726364136
+        },
+        {
+          "axis": 124,
+          "mean_weight": 0.0771791934967041
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.05205811932682991
+        }
+      ],
+      "anchor_labels": [
+        "1828 United States presidential election in Mississippi",
+        "1840 United States presidential election in Mississippi",
+        "1836 United States presidential election in Mississippi",
+        "1848 United States presidential election in Mississippi",
+        "1844 United States presidential election in Mississippi"
+      ]
+    },
+    {
+      "id": 34,
+      "name": "cluster_0034__12th_motorised_brigade_south_africa__101st_regiment_of_foot_1780",
+      "size": 703,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.9591168761253357
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.7193946242332458
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.5512760281562805
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.22451473772525787
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.18875131011009216
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.15612107515335083
+        }
+      ],
+      "anchor_labels": [
+        "12th Motorised Brigade (South Africa)",
+        "101st Regiment of Foot (1780)",
+        "157th Infantry Division \\\"Novara\\\"",
+        "130th Infantry Regiment (United States)",
+        "12th Infantry Division \\\"Sassari\\\""
+      ]
+    },
+    {
+      "id": 35,
+      "name": "cluster_0035__10_cm_feldhaubitze_m_99__15_cm_schwere_feldhaubitze_m_94",
+      "size": 453,
+      "top_axes": [
+        {
+          "axis": 109,
+          "mean_weight": 0.990458071231842
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.3355598449707031
+        },
+        {
+          "axis": 122,
+          "mean_weight": 0.19083969295024872
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.14281170070171356
+        },
+        {
+          "axis": 126,
+          "mean_weight": 0.10464378446340561
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.07442750781774521
+        }
+      ],
+      "anchor_labels": [
+        "10 cm Feldhaubitze M 99",
+        "15 cm schwere Feldhaubitze M 94",
+        "18 cm kurze Kanone M 80",
+        "15 cm M\u00f6rser M 80",
+        "12 cm Minenwerfer M 15"
+      ]
+    },
+    {
+      "id": 36,
+      "name": "cluster_0036__1932_33_sk_rapid_wien_season__1942_43_sk_rapid_wien_season",
+      "size": 161,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.880649745464325
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.8524011373519897
+        },
+        {
+          "axis": 127,
+          "mean_weight": 0.5685029625892639
+        },
+        {
+          "axis": 42,
+          "mean_weight": 0.5621470212936401
+        },
+        {
+          "axis": 43,
+          "mean_weight": 0.5522599816322327
+        },
+        {
+          "axis": 77,
+          "mean_weight": 0.5480228066444397
+        }
+      ],
+      "anchor_labels": [
+        "1932\u201333 SK Rapid Wien season",
+        "1942\u201343 SK Rapid Wien season",
+        "1923\u201324 SK Rapid Wien season",
+        "1955\u201356 SK Rapid Wien season",
+        "1926\u201327 SK Rapid Wien season"
+      ]
+    },
+    {
+      "id": 37,
+      "name": "cluster_0037__1892_united_states_presidential_election_in_mont__2008_united_states_presidential_election_in_mont",
+      "size": 269,
+      "top_axes": [
+        {
+          "axis": 61,
+          "mean_weight": 0.9863545894622803
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.7899608612060547
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.13352826237678528
+        },
+        {
+          "axis": 86,
+          "mean_weight": 0.07894735038280487
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.0696881115436554
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.06189084053039551
+        }
+      ],
+      "anchor_labels": [
+        "1892 United States presidential election in Montana",
+        "2008 United States presidential election in Montana",
+        "1900 United States presidential election in Montana",
+        "2009 Dublin City Council election",
+        "1904 United States presidential election in Montana"
+      ]
+    },
+    {
+      "id": 38,
+      "name": "cluster_0038__2004_bmw_open__2007_bmw_open",
+      "size": 653,
+      "top_axes": [
+        {
+          "axis": 9,
+          "mean_weight": 0.9485551714897156
+        },
+        {
+          "axis": 69,
+          "mean_weight": 0.9415501356124878
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.1037653386592865
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.0910683274269104
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.0768388956785202
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.07443082332611084
+        }
+      ],
+      "anchor_labels": [
+        "2004 BMW Open",
+        "2007 BMW Open",
+        "2009 ATP Studena Croatia Open Umag",
+        "1998 Shanghai Open",
+        "2003 Miller Lite Hall of Fame Championships"
+      ]
+    },
+    {
+      "id": 39,
+      "name": "cluster_0039__2013_soul_train_music_awards__2012_soul_train_music_awards",
+      "size": 333,
+      "top_axes": [
+        {
+          "axis": 111,
+          "mean_weight": 0.9602460861206055
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.49774977564811707
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.2160215973854065
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.16516651213169098
+        },
+        {
+          "axis": 127,
+          "mean_weight": 0.11071108281612396
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.0922592431306839
+        }
+      ],
+      "anchor_labels": [
+        "2013 Soul Train Music Awards",
+        "2012 Soul Train Music Awards",
+        "2011 Soul Train Music Awards",
+        "1987 Soul Train Music Awards",
+        "2009 Soul Train Music Awards"
+      ]
+    },
+    {
+      "id": 40,
+      "name": "cluster_0040__2006_indonesia_national_football_team_results__1954_in_japanese_football",
+      "size": 259,
+      "top_axes": [
+        {
+          "axis": 109,
+          "mean_weight": 0.969545841217041
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.8401162624359131
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.23255813121795654
+        },
+        {
+          "axis": 94,
+          "mean_weight": 0.19523809850215912
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.16038207709789276
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.13053707778453827
+        }
+      ],
+      "anchor_labels": [
+        "2006 Indonesia national football team results",
+        "1954 in Japanese football",
+        "1999\u20132000 FC Porto season",
+        "2005\u201306 Hull City A.F.C. season",
+        "1993\u201394 Everton F.C. season"
+      ]
+    },
+    {
+      "id": 41,
+      "name": "cluster_0041__1932_copa_del_presidente_de_la_rep_blica_final__1_2_paradise",
+      "size": 480,
+      "top_axes": [
+        {
+          "axis": 116,
+          "mean_weight": 0.9733608961105347
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.35868486762046814
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.2896612286567688
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.202416330575943
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.1666666567325592
+        },
+        {
+          "axis": 127,
+          "mean_weight": 0.15121805667877197
+        }
+      ],
+      "anchor_labels": [
+        "1932 Copa del Presidente de la Rep\u00fablica Final",
+        "1+2=Paradise",
+        "1959 Malayan general election",
+        "1985 Copa del Rey Final",
+        "1873 FA Cup Final"
+      ]
+    },
+    {
+      "id": 42,
+      "name": "cluster_0042__1888_the_extraordinary_voyage_of_the_santa_isabe__10_minutes_2013_film",
+      "size": 844,
+      "top_axes": [
+        {
+          "axis": 63,
+          "mean_weight": 0.9495560526847839
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.22788631916046143
+        },
+        {
+          "axis": 82,
+          "mean_weight": 0.10621672868728638
+        },
+        {
+          "axis": 80,
+          "mean_weight": 0.1046181246638298
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.07948490977287292
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.07664298266172409
+        }
+      ],
+      "anchor_labels": [
+        "1888: The Extraordinary Voyage of the Santa Isabel",
+        "10 Minutes (2013 film)",
+        "100 Horsemen",
+        "10 let Kasakhstan",
+        "10cc discography"
+      ]
+    },
+    {
+      "id": 43,
+      "name": "cluster_0043__2013_bosnia_and_herzegovina_football_cup_final__2002_fifa_world_cup_qualification_uefa_afc_play_",
+      "size": 2688,
+      "top_axes": [
+        {
+          "axis": 93,
+          "mean_weight": 0.976996898651123
+        },
+        {
+          "axis": 42,
+          "mean_weight": 0.19068127870559692
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.16337117552757263
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.1323903501033783
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.10415032505989075
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.07816170901060104
+        }
+      ],
+      "anchor_labels": [
+        "2013 Bosnia and Herzegovina Football Cup Final",
+        "2002 FIFA World Cup qualification (UEFA\u2013AFC play-off)",
+        "1978 Afro-Asian Cup of Nations",
+        "1973 All-Ireland Senior Football Championship Final",
+        "1948 All-Ireland Senior Camogie Championship Final"
+      ]
+    },
+    {
+      "id": 44,
+      "name": "cluster_0044__1165_imprinetta__1132_hollandia",
+      "size": 142,
+      "top_axes": [
+        {
+          "axis": 79,
+          "mean_weight": 0.9349591732025146
+        },
+        {
+          "axis": 71,
+          "mean_weight": 0.919715404510498
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.210365891456604
+        },
+        {
+          "axis": 65,
+          "mean_weight": 0.16971543431282043
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.16565045714378357
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.16056908667087555
+        }
+      ],
+      "anchor_labels": [
+        "1165 Imprinetta",
+        "1132 Hollandia",
+        "1133 Lugduna",
+        "1336 Zeelandia",
+        "12848 Agostino"
+      ]
+    },
+    {
+      "id": 45,
+      "name": "cluster_0045__1820_united_states_presidential_election_in_conn__1800_united_states_presidential_election_in_conn",
+      "size": 225,
+      "top_axes": [
+        {
+          "axis": 34,
+          "mean_weight": 0.9855491518974304
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.8132948279380798
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.09884393960237503
+        },
+        {
+          "axis": 40,
+          "mean_weight": 0.08208095282316208
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.0566474050283432
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.054335273802280426
+        }
+      ],
+      "anchor_labels": [
+        "1820 United States presidential election in Connecticut",
+        "1800 United States presidential election in Connecticut",
+        "1808 United States presidential election in Connecticut",
+        "1816 United States presidential election in Connecticut",
+        "1788\u201389 United States presidential election in Connecticut"
+      ]
+    },
+    {
+      "id": 46,
+      "name": "cluster_0046__2004_05_dynamo_dresden_season__1883_84_west_bromwich_albion_f_c_season",
+      "size": 489,
+      "top_axes": [
+        {
+          "axis": 66,
+          "mean_weight": 0.9250046610832214
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.9091861844062805
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.16352200508117676
+        },
+        {
+          "axis": 16,
+          "mean_weight": 0.14732226729393005
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.14694108068943024
+        },
+        {
+          "axis": 113,
+          "mean_weight": 0.1046312227845192
+        }
+      ],
+      "anchor_labels": [
+        "2004\u201305 Dynamo Dresden season",
+        "1883\u201384 West Bromwich Albion F.C. season",
+        "1956 in Japanese football",
+        "13\u00e8me Rue",
+        "2008 Indonesia national football team results"
+      ]
+    },
+    {
+      "id": 47,
+      "name": "cluster_0047__1999_virginia_senate_election__1946_in_japanese_football",
+      "size": 735,
+      "top_axes": [
+        {
+          "axis": 78,
+          "mean_weight": 0.9739602208137512
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.9355176091194153
+        },
+        {
+          "axis": 28,
+          "mean_weight": 0.1956682801246643
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.19104036688804626
+        },
+        {
+          "axis": 56,
+          "mean_weight": 0.13198815286159515
+        },
+        {
+          "axis": 24,
+          "mean_weight": 0.12069602310657501
+        }
+      ],
+      "anchor_labels": [
+        "1999 Virginia Senate election",
+        "1946 in Japanese football",
+        "1984\u201385 Port Vale F.C. season",
+        "1894\u201395 New Brompton F.C. season",
+        "1929\u201330 Celtic F.C. season"
+      ]
+    },
+    {
+      "id": 48,
+      "name": "cluster_0048__10th_fighter_wing__18th_strategic_aerospace_division",
+      "size": 642,
+      "top_axes": [
+        {
+          "axis": 111,
+          "mean_weight": 0.9695594906806946
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.9469199776649475
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.3172279894351959
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.1619890034198761
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.12596431374549866
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.11701206117868423
+        }
+      ],
+      "anchor_labels": [
+        "10th Fighter Wing",
+        "18th Strategic Aerospace Division",
+        "19th Air Division",
+        "110th Aviation Brigade (United States)",
+        "11th Air Division"
+      ]
+    },
+    {
+      "id": 49,
+      "name": "cluster_0049__2004_indonesia_national_football_team_results__2004_05_dunfermline_athletic_f_c_season",
+      "size": 596,
+      "top_axes": [
+        {
+          "axis": 35,
+          "mean_weight": 0.9286494255065918
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.8078184127807617
+        },
+        {
+          "axis": 94,
+          "mean_weight": 0.08365225791931152
+        },
+        {
+          "axis": 88,
+          "mean_weight": 0.08283214271068573
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.08255875110626221
+        },
+        {
+          "axis": 2,
+          "mean_weight": 0.08119188994169235
+        }
+      ],
+      "anchor_labels": [
+        "2004 Indonesia national football team results",
+        "2004\u201305 Dunfermline Athletic F.C. season",
+        "2004\u201305 Scunthorpe United F.C. season",
+        "2009\u201310 Hertha BSC season",
+        "2007\u201308 Hertha BSC season"
+      ]
+    },
+    {
+      "id": 50,
+      "name": "cluster_0050__1865_melbourne_cup__1866_melbourne_cup",
+      "size": 276,
+      "top_axes": [
+        {
+          "axis": 126,
+          "mean_weight": 0.9775681495666504
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.45454543828964233
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.15584415197372437
+        },
+        {
+          "axis": 75,
+          "mean_weight": 0.14403782784938812
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.10035418719053268
+        },
+        {
+          "axis": 55,
+          "mean_weight": 0.08854784071445465
+        }
+      ],
+      "anchor_labels": [
+        "1865 Melbourne Cup",
+        "1866 Melbourne Cup",
+        "1861 Melbourne Cup",
+        "1862 Melbourne Cup",
+        "1864 Melbourne Cup"
+      ]
+    },
+    {
+      "id": 51,
+      "name": "cluster_0051__2011_kwara_state_gubernatorial_election__2011_akwa_ibom_state_gubernatorial_election",
+      "size": 284,
+      "top_axes": [
+        {
+          "axis": 24,
+          "mean_weight": 0.9903665781021118
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.7548172473907471
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.07755302637815475
+        },
+        {
+          "axis": 105,
+          "mean_weight": 0.06262043863534927
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.05298652499914169
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.04624278470873833
+        }
+      ],
+      "anchor_labels": [
+        "2011 Kwara State gubernatorial election",
+        "2011 Akwa Ibom State gubernatorial election",
+        "2011 Jigawa State gubernatorial election",
+        "2011 Kogi State gubernatorial election",
+        "2010 United States House of Representatives elections in Idaho"
+      ]
+    },
+    {
+      "id": 52,
+      "name": "cluster_0052__2011_shimizu_s_pulse_season__1983_84_blackpool_f_c_season",
+      "size": 467,
+      "top_axes": [
+        {
+          "axis": 125,
+          "mean_weight": 0.9428871273994446
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.7118380069732666
+        },
+        {
+          "axis": 126,
+          "mean_weight": 0.14101769030094147
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.12575285136699677
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.12118380516767502
+        },
+        {
+          "axis": 69,
+          "mean_weight": 0.11858776211738586
+        }
+      ],
+      "anchor_labels": [
+        "2011 Shimizu S-Pulse season",
+        "1983\u201384 Blackpool F.C. season",
+        "2002 Suwon Samsung Bluewings season",
+        "1995 in Russian football",
+        "1999 in Russian football"
+      ]
+    },
+    {
+      "id": 53,
+      "name": "cluster_0053__1970_in_japanese_football__2012_south_ossetian_presidential_election",
+      "size": 372,
+      "top_axes": [
+        {
+          "axis": 27,
+          "mean_weight": 0.8588690161705017
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.6048830151557922
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.28687095642089844
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.2041604369878769
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.17974591255187988
+        },
+        {
+          "axis": 40,
+          "mean_weight": 0.17613352835178375
+        }
+      ],
+      "anchor_labels": [
+        "1970 in Japanese football",
+        "2012 South Ossetian presidential election",
+        "1530 in art",
+        "1946 in fine arts of the Soviet Union",
+        "2003 Chinese Football Super Cup"
+      ]
+    },
+    {
+      "id": 54,
+      "name": "cluster_0054__1997_u_s_open_golf__1910_u_s_open_golf",
+      "size": 317,
+      "top_axes": [
+        {
+          "axis": 20,
+          "mean_weight": 0.9781197309494019
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.6823340058326721
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.12844404578208923
+        },
+        {
+          "axis": 123,
+          "mean_weight": 0.10089138895273209
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.07495946437120438
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.0660453736782074
+        }
+      ],
+      "anchor_labels": [
+        "1997 U.S. Open (golf)",
+        "1910 U.S. Open (golf)",
+        "1907 U.S. Open (golf)",
+        "1916 U.S. Open (golf)",
+        "1888\u201389 Royal Arsenal F.C. season"
+      ]
+    },
+    {
+      "id": 55,
+      "name": "cluster_0055__1st_infantry_regiment_san_giusto__11th_tank_battalion_m_o_calzecchi",
+      "size": 138,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.943956196308136
+        },
+        {
+          "axis": 86,
+          "mean_weight": 0.8802198767662048
+        },
+        {
+          "axis": 28,
+          "mean_weight": 0.5450549721717834
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.16043958067893982
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.10549452900886536
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.10329670459032059
+        }
+      ],
+      "anchor_labels": [
+        "1st Infantry Regiment \\\"San Giusto\\\"",
+        "11th Tank Battalion \\\"M.O. Calzecchi\\\"",
+        "13th HUMINT Regiment (Italy)",
+        "1st Pontieri Regiment",
+        "17th Volunteer Training Regiment \\\"Acqui\\\""
+      ]
+    },
+    {
+      "id": 56,
+      "name": "cluster_0056__1992_indian_presidential_election__2010_stanbul_cup",
+      "size": 553,
+      "top_axes": [
+        {
+          "axis": 90,
+          "mean_weight": 0.853015661239624
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.35536304116249084
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.2000722885131836
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.19609974324703217
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.16612496972084045
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.1589021533727646
+        }
+      ],
+      "anchor_labels": [
+        "1992 Indian presidential election",
+        "2010 \u0130stanbul Cup",
+        "1992\u201393 Aberdeen F.C. season",
+        "2005 French Open",
+        "2010 European Grand Prix"
+      ]
+    },
+    {
+      "id": 57,
+      "name": "cluster_0057__2003_nanumea_by_election__1937_sind_legislative_assembly_election",
+      "size": 6896,
+      "top_axes": [
+        {
+          "axis": 118,
+          "mean_weight": 0.9954978823661804
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.062215205281972885
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.04441889375448227
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.03516153618693352
+        },
+        {
+          "axis": 86,
+          "mean_weight": 0.034935735166072845
+        },
+        {
+          "axis": 1,
+          "mean_weight": 0.032924167811870575
+        }
+      ],
+      "anchor_labels": [
+        "2003 Nanumea by-election",
+        "1937 Sind Legislative Assembly election",
+        "2011 Nui by-election",
+        "2003 Niutao by-election",
+        "2004 Nukufetau by-election"
+      ]
+    },
+    {
+      "id": 58,
+      "name": "cluster_0058__1998_canadian_grand_prix__1988_portuguese_grand_prix",
+      "size": 589,
+      "top_axes": [
+        {
+          "axis": 90,
+          "mean_weight": 0.8831235766410828
+        },
+        {
+          "axis": 70,
+          "mean_weight": 0.5207554697990417
+        },
+        {
+          "axis": 126,
+          "mean_weight": 0.37107428908348083
+        },
+        {
+          "axis": 54,
+          "mean_weight": 0.36403921246528625
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.36368948221206665
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.3530006408691406
+        }
+      ],
+      "anchor_labels": [
+        "1998 Canadian Grand Prix",
+        "1988 Portuguese Grand Prix",
+        "1974 Spanish Grand Prix",
+        "1975 Dutch Grand Prix",
+        "1952 Daily Mail Trophy"
+      ]
+    },
+    {
+      "id": 59,
+      "name": "cluster_0059__2012_west_lothian_council_election__2011_taraba_state_gubernatorial_election",
+      "size": 312,
+      "top_axes": [
+        {
+          "axis": 6,
+          "mean_weight": 0.9846367835998535
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.5623835921287537
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.0707634910941124
+        },
+        {
+          "axis": 70,
+          "mean_weight": 0.06378025561571121
+        },
+        {
+          "axis": 42,
+          "mean_weight": 0.0479515865445137
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.047486040741205215
+        }
+      ],
+      "anchor_labels": [
+        "2012 West Lothian Council election",
+        "2011 Taraba State gubernatorial election",
+        "2012 Angus Council election",
+        "2012 Clackmannanshire Council election",
+        "2012 Comhairle nan Eilean Siar election"
+      ]
+    },
+    {
+      "id": 60,
+      "name": "cluster_0060__2010_united_states_house_of_representatives_elec__2012_united_states_house_of_representatives_elec",
+      "size": 461,
+      "top_axes": [
+        {
+          "axis": 16,
+          "mean_weight": 0.995830774307251
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.9124438762664795
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.04746631532907486
+        },
+        {
+          "axis": 35,
+          "mean_weight": 0.03880692273378372
+        },
+        {
+          "axis": 13,
+          "mean_weight": 0.03046823851764202
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.029719900339841843
+        }
+      ],
+      "anchor_labels": [
+        "2010 United States House of Representatives elections in Texas",
+        "2012 United States House of Representatives elections in Texas",
+        "2004 United States presidential election in Texas",
+        "2004 United States presidential election in South Carolina",
+        "2004 United States presidential election in Colorado"
+      ]
+    },
+    {
+      "id": 61,
+      "name": "cluster_0061__1st_mission_support_command__199th_battalion_duchess_of_connaught_s_own_irish",
+      "size": 1191,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.9462469816207886
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.13834254443645477
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.12928926944732666
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.11984273791313171
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.10860908776521683
+        },
+        {
+          "axis": 100,
+          "mean_weight": 0.10449349135160446
+        }
+      ],
+      "anchor_labels": [
+        "1st Mission Support Command",
+        "199th Battalion Duchess of Connaught's Own Irish Rangers, CEF",
+        "11th Air Defense Division",
+        "121st Fighter Aviation Squadron",
+        "11th Army Corps (Russian Federation)"
+      ]
+    },
+    {
+      "id": 62,
+      "name": "cluster_0062__1868_united_states_presidential_election_in_ohio__1872_united_states_presidential_election_in_ohio",
+      "size": 247,
+      "top_axes": [
+        {
+          "axis": 0,
+          "mean_weight": 0.9929078221321106
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.6554373502731323
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.14125297963619232
+        },
+        {
+          "axis": 44,
+          "mean_weight": 0.061465710401535034
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.052600473165512085
+        },
+        {
+          "axis": 105,
+          "mean_weight": 0.05082743242383003
+        }
+      ],
+      "anchor_labels": [
+        "1868 United States presidential election in Ohio",
+        "1872 United States presidential election in Ohio",
+        "1876 United States presidential election in Ohio",
+        "1880 United States presidential election in Ohio",
+        "1888 United States presidential election in Ohio"
+      ]
+    }
+  ]
+}

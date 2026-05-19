@@ -16,7 +16,7 @@
 //!   column exists so when the metric ships, the test wires it up
 //!   without churn.
 //!
-//! Two corpora exercise different regimes:
+//! Three corpora exercise different regimes:
 //!
 //! - The hand-encoded text corpus (24 docs, 4 topics, hash-bag 64-dim) —
 //!   matches the existing E2E test in `sphereql-vectordb` so the same
@@ -25,6 +25,9 @@
 //! - `sphereql-corpus::build_corpus` (775 concepts, 31 categories,
 //!   128-dim authored embeddings) — the established benchmark corpus
 //!   for projection-quality work.
+//! - `sphereql-corpus::build_extended_corpus` (~5,000 concepts, 31
+//!   categories, 128-dim) — large-corpus regime that catches scaling
+//!   regressions in any projection family.
 //!
 //! Output is always printed (run with `--nocapture` to see it during
 //! ordinary test runs):
@@ -134,7 +137,16 @@ fn text_corpus() -> (Vec<Embedding>, Vec<String>) {
 // ── Corpus 2: sphereql-corpus build_corpus ─────────────────────────────────
 
 fn sphereql_corpus_inputs() -> (Vec<Embedding>, Vec<String>) {
-    let concepts = sphereql_corpus::build_corpus();
+    inputs_from(sphereql_corpus::build_corpus())
+}
+
+// ── Corpus 3: sphereql-corpus build_extended_corpus ────────────────────────
+
+fn extended_corpus_inputs() -> (Vec<Embedding>, Vec<String>) {
+    inputs_from(sphereql_corpus::build_extended_corpus())
+}
+
+fn inputs_from(concepts: Vec<sphereql_corpus::Concept>) -> (Vec<Embedding>, Vec<String>) {
     let embeddings: Vec<Embedding> = concepts
         .iter()
         .enumerate()
@@ -325,6 +337,17 @@ const SPHEREQL_BASELINE: &[(&str, f64)] = &[
     ("laplacian", 1.02),
     ("umap_sphere", 0.51),
 ];
+/// Baseline ceilings on the ~5,000-concept extended corpus (5,321
+/// concepts, 31 categories). Captured on first green run with ~10%
+/// headroom. Laplacian sits at the degenerate ceiling on this scale —
+/// the cap reflects current behavior, not target quality. Tighten when
+/// projections improve.
+const EXTENDED_BASELINE: &[(&str, f64)] = &[
+    ("pca", 0.66),
+    ("kernel_pca", 0.66),
+    ("laplacian", 1.10),
+    ("umap_sphere", 0.65),
+];
 
 /// Relative-spread guard: no projection's cluster score may exceed
 /// `RELATIVE_RATIO × best_score` on the same corpus. Catches one
@@ -391,4 +414,17 @@ fn projection_comparison_sphereql_corpus() {
         &rows,
     );
     assert_baselines(&rows, SPHEREQL_BASELINE);
+}
+
+#[test]
+fn projection_comparison_extended_corpus() {
+    let (embeddings, categories) = extended_corpus_inputs();
+    let rows = run_all(&embeddings, &categories);
+    print_table(
+        "extended_corpus",
+        embeddings.len(),
+        count_categories(&categories),
+        &rows,
+    );
+    assert_baselines(&rows, EXTENDED_BASELINE);
 }

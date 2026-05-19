@@ -178,6 +178,187 @@ impl PcaProjection {
         Self::fit(embeddings, RadialStrategy::default())
     }
 
+    /// Fit PCA on a stratified subsample to neutralize category imbalance.
+    ///
+    /// Naive fit lets large categories (e.g., medicine at 1018 concepts)
+    /// dominate the covariance structure over small categories (music at
+    /// 54). The dominant directions then align with within-category
+    /// variation of the largest group rather than across-category
+    /// separation.
+    ///
+    /// This subsamples up to `cap` embeddings per label deterministically
+    /// (hash-based, no RNG state), then defers to [`Self::fit`]. With
+    /// `cap = None`, the smallest label's size is used. The subsample is
+    /// used only for principal axis estimation; callers still project
+    /// the full corpus through the returned projection.
+    ///
+    /// Returns [`ProjectionError::EmptyCorpus`] if `embeddings` is empty,
+    /// and the same dimension errors as [`Self::fit`].
+    /// Panics if `embeddings.len() != labels.len()` — this is a caller bug,
+    /// not a runtime condition.
+    pub fn fit_stratified(
+        embeddings: &[Embedding],
+        labels: &[&str],
+        cap: Option<usize>,
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
+        assert_eq!(
+            embeddings.len(),
+            labels.len(),
+            "fit_stratified: embeddings and labels must be the same length"
+        );
+        if embeddings.is_empty() {
+            return Err(ProjectionError::EmptyCorpus);
+        }
+
+        // Group indices by label
+        let mut by_label: std::collections::BTreeMap<&str, Vec<usize>> =
+            std::collections::BTreeMap::new();
+        for (i, lbl) in labels.iter().enumerate() {
+            by_label.entry(*lbl).or_default().push(i);
+        }
+
+        let effective_cap = match cap {
+            Some(c) => c.max(1),
+            None => by_label.values().map(|v| v.len()).min().unwrap_or(1).max(1),
+        };
+
+        // Deterministic per-label subsample: sort indices by SplitMix64(i ^ label_hash),
+        // take first `effective_cap`. No global RNG state — reproducible across runs.
+        let mut subsample: Vec<Embedding> = Vec::with_capacity(by_label.len() * effective_cap);
+        for (lbl, indices) in by_label.iter() {
+            let seed = label_seed(lbl);
+            let mut keys: Vec<(u64, usize)> = indices
+                .iter()
+                .map(|&i| {
+                    let mut s = SplitMix64::new(seed ^ (i as u64).wrapping_mul(0x9E3779B97F4A7C15));
+                    (s.next_u64(), i)
+                })
+                .collect();
+            keys.sort_unstable_by_key(|(k, _)| *k);
+            for &(_, i) in keys.iter().take(effective_cap) {
+                subsample.push(embeddings[i].clone());
+            }
+        }
+
+        Self::fit(&subsample, radial)
+    }
+
+    /// Fit PCA with per-sample weights applied to the centered covariance.
+    ///
+    /// Equivalent to maximizing `wᵀ Σ` over
+    /// `Σ = Σᵢ wᵢ (xᵢ − μ_w)(xᵢ − μ_w)ᵀ`, where
+    /// `μ_w = (Σᵢ wᵢ xᵢ) / (Σᵢ wᵢ)` is the weighted mean. Use this with
+    /// `weights[i] = 1 / sqrt(|category_of[i]|)` to neutralize category
+    /// imbalance without discarding samples — generally preferred over
+    /// stratified subsampling when sample size matters for noise estimation.
+    ///
+    /// Implementation note: each centered row is pre-scaled by
+    /// `sqrt(wᵢ / w̄)` before power iteration. The eigenvectors of
+    /// `Σᵢ (wᵢ/w̄) cᵢcᵢᵀ` match those of the weighted covariance up to
+    /// an overall scale (`w̄` cancels). This keeps the existing
+    /// `top_k_eigenvectors` kernel reusable without a separate code
+    /// path for weights.
+    ///
+    /// Returns [`ProjectionError::EmptyCorpus`] if `embeddings` is empty,
+    /// and the same dimension errors as [`Self::fit`]. Panics if any
+    /// weight is non-finite or negative, or if the weights sum to zero —
+    /// these are caller bugs.
+    pub fn fit_weighted(
+        embeddings: &[Embedding],
+        weights: &[f64],
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
+        assert_eq!(
+            embeddings.len(),
+            weights.len(),
+            "fit_weighted: embeddings and weights must be the same length"
+        );
+        for (i, &w) in weights.iter().enumerate() {
+            assert!(
+                w.is_finite() && w >= 0.0,
+                "fit_weighted: weight at {i} must be finite and non-negative, got {w}"
+            );
+        }
+
+        if embeddings.is_empty() {
+            return Err(ProjectionError::EmptyCorpus);
+        }
+        let dim = embeddings[0].dimension();
+        if dim < 3 {
+            return Err(ProjectionError::DimensionTooLow {
+                got: dim,
+                required: 3,
+            });
+        }
+        for (i, e) in embeddings.iter().enumerate() {
+            if e.dimension() != dim {
+                return Err(ProjectionError::InconsistentDimension {
+                    index: i,
+                    expected: dim,
+                    got: e.dimension(),
+                });
+            }
+        }
+
+        let weight_sum: f64 = weights.iter().sum();
+        assert!(
+            weight_sum > f64::EPSILON,
+            "fit_weighted: weights sum to zero"
+        );
+
+        let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
+
+        let mut mean = vec![0.0; dim];
+        for (v, &w) in normalized.iter().zip(weights.iter()) {
+            for (i, &val) in v.iter().enumerate() {
+                mean[i] += w * val;
+            }
+        }
+        for m in &mut mean {
+            *m /= weight_sum;
+        }
+
+        let mean_w = weight_sum / weights.len() as f64;
+        let centered: Vec<Vec<f64>> = normalized
+            .iter()
+            .zip(weights.iter())
+            .map(|(v, &w)| {
+                let scale = (w / mean_w).sqrt();
+                v.iter()
+                    .zip(mean.iter())
+                    .map(|(&val, &m)| (val - m) * scale)
+                    .collect()
+            })
+            .collect();
+
+        let (components, eigenvalues) = top_k_eigenvectors(&centered, 3, dim);
+
+        let total_variance: f64 = centered
+            .iter()
+            .map(|row| row.iter().map(|x| x * x).sum::<f64>())
+            .sum::<f64>()
+            / centered.len() as f64;
+
+        Ok(Self {
+            components: [
+                components[0].clone(),
+                components[1].clone(),
+                components[2].clone(),
+            ],
+            mean,
+            dim,
+            radial,
+            volumetric: false,
+            eigenvalues: [
+                eigenvalues.first().copied().unwrap_or(0.0),
+                eigenvalues.get(1).copied().unwrap_or(0.0),
+                eigenvalues.get(2).copied().unwrap_or(0.0),
+            ],
+            total_variance,
+        })
+    }
+
     /// Enable volumetric mode: r comes from the PCA projection magnitude
     /// instead of the embedding magnitude. Points distribute through the
     /// full 3D volume rather than clustering on the sphere surface.
@@ -399,6 +580,18 @@ fn pca_certainty(embedding: &Embedding, mean: &[f64], intensity: f64, residual_s
     } else {
         (1.0 - residual_sq / total_sq).clamp(0.0, 1.0)
     }
+}
+
+/// Deterministic 64-bit hash for a string label. Used by `fit_stratified`
+/// to shuffle within-label indices reproducibly without external RNG state.
+/// Variant of FNV-1a — small, no dependencies, stable across runs.
+fn label_seed(label: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in label.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
 }
 
 pub(crate) fn project_xyz_to_spherical(x: f64, y: f64, z: f64, r: f64) -> SphericalPoint {
@@ -677,6 +870,163 @@ mod tests {
         let corpus = corpus_10d();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let _ = pca.project(&emb(&[1.0, 2.0, 3.0]));
+    }
+
+    // --- Stratified / weighted PCA tests ---
+
+    /// Build an imbalanced corpus: one huge cluster (label "A") near +x
+    /// and one tiny cluster (label "B") near +y. Naive PCA picks the
+    /// within-cluster variance of A as the dominant direction; balanced
+    /// fits should instead pick the A-vs-B separation direction.
+    fn imbalanced_corpus() -> (Vec<Embedding>, Vec<&'static str>) {
+        let mut embs = Vec::new();
+        let mut labels: Vec<&'static str> = Vec::new();
+
+        // 100 noisy copies near +x, with isotropic noise on the trailing axes
+        let mut rng = SplitMix64::new(0xC0FF_EE42);
+        for _ in 0..100 {
+            let mut v = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+            for x in v.iter_mut().skip(3) {
+                *x = rng.normal() * 0.3;
+            }
+            embs.push(emb(&v));
+            labels.push("A");
+        }
+        // 4 tight copies near +y — small enough to be drowned out under
+        // unweighted fit, but each axis is informative for A-vs-B separation
+        for _ in 0..4 {
+            embs.push(emb(&[0.0, 1.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+            labels.push("B");
+        }
+        (embs, labels)
+    }
+
+    #[test]
+    fn fit_stratified_balances_imbalanced_corpus() {
+        let (embs, labels) = imbalanced_corpus();
+        let pca = PcaProjection::fit_stratified(&embs, &labels, Some(4), RadialStrategy::Fixed(1.0))
+            .unwrap();
+
+        // Cluster centers project to different points after balancing
+        let a_proj = pca.project(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        let b_proj = pca.project(&emb(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        let sep = sphereql_core::angular_distance(&a_proj, &b_proj);
+        assert!(sep > 0.5, "stratified PCA should separate A and B, got {sep}");
+    }
+
+    #[test]
+    fn fit_stratified_is_deterministic() {
+        let (embs, labels) = imbalanced_corpus();
+        let pca1 =
+            PcaProjection::fit_stratified(&embs, &labels, Some(4), RadialStrategy::Fixed(1.0))
+                .unwrap();
+        let pca2 =
+            PcaProjection::fit_stratified(&embs, &labels, Some(4), RadialStrategy::Fixed(1.0))
+                .unwrap();
+
+        let test_pt = emb(&[0.5, 0.5, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let p1 = pca1.project(&test_pt);
+        let p2 = pca2.project(&test_pt);
+        assert!((p1.theta - p2.theta).abs() < 1e-12);
+        assert!((p1.phi - p2.phi).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fit_stratified_default_cap_uses_smallest_label() {
+        let (embs, labels) = imbalanced_corpus();
+        let with_none =
+            PcaProjection::fit_stratified(&embs, &labels, None, RadialStrategy::Fixed(1.0))
+                .unwrap();
+        let with_four =
+            PcaProjection::fit_stratified(&embs, &labels, Some(4), RadialStrategy::Fixed(1.0))
+                .unwrap();
+        // Default cap None falls back to min(|A|, |B|) = 4, matching Some(4)
+        let test_pt = emb(&[0.5, 0.5, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let p1 = with_none.project(&test_pt);
+        let p2 = with_four.project(&test_pt);
+        assert!((p1.theta - p2.theta).abs() < 1e-9);
+        assert!((p1.phi - p2.phi).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fit_stratified_empty_corpus_returns_err() {
+        assert!(matches!(
+            PcaProjection::fit_stratified(&[], &[], None, RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::EmptyCorpus)
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "embeddings and labels must be the same length")]
+    fn fit_stratified_length_mismatch_panics() {
+        let corpus = corpus_10d();
+        let labels: Vec<&str> = vec!["A"; corpus.len() - 1];
+        let _ = PcaProjection::fit_stratified(&corpus, &labels, None, RadialStrategy::Fixed(1.0));
+    }
+
+    #[test]
+    fn fit_weighted_balances_imbalanced_corpus() {
+        let (embs, labels) = imbalanced_corpus();
+        // w_i = 1/sqrt(|cat|) — A weight 1/√100, B weight 1/√4
+        let mut counts = std::collections::HashMap::new();
+        for l in &labels {
+            *counts.entry(*l).or_insert(0_usize) += 1;
+        }
+        let weights: Vec<f64> = labels
+            .iter()
+            .map(|l| 1.0 / (counts[l] as f64).sqrt())
+            .collect();
+        let pca = PcaProjection::fit_weighted(&embs, &weights, RadialStrategy::Fixed(1.0)).unwrap();
+
+        let a_proj = pca.project(&emb(&[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        let b_proj = pca.project(&emb(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        let sep = sphereql_core::angular_distance(&a_proj, &b_proj);
+        assert!(sep > 0.5, "weighted PCA should separate A and B, got {sep}");
+    }
+
+    #[test]
+    fn fit_weighted_uniform_weights_matches_naive_fit() {
+        let corpus = corpus_10d();
+        let weights = vec![1.0; corpus.len()];
+        let pca_w =
+            PcaProjection::fit_weighted(&corpus, &weights, RadialStrategy::Fixed(1.0)).unwrap();
+        let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
+
+        // Should produce equivalent projections (up to sign of components)
+        for e in &corpus {
+            let p_w = pca_w.project(e);
+            let p = pca.project(e);
+            let d = sphereql_core::angular_distance(&p_w, &p);
+            assert!(
+                d < 1e-6 || (d - std::f64::consts::PI).abs() < 1e-6,
+                "uniform-weighted fit should match naive fit (mod sign), got d={d}"
+            );
+        }
+    }
+
+    #[test]
+    fn fit_weighted_empty_corpus_returns_err() {
+        assert!(matches!(
+            PcaProjection::fit_weighted(&[], &[], RadialStrategy::Fixed(1.0)),
+            Err(ProjectionError::EmptyCorpus)
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "weight at 1 must be finite and non-negative")]
+    fn fit_weighted_negative_weight_panics() {
+        let corpus = corpus_10d();
+        let mut weights = vec![1.0; corpus.len()];
+        weights[1] = -0.5;
+        let _ = PcaProjection::fit_weighted(&corpus, &weights, RadialStrategy::Fixed(1.0));
+    }
+
+    #[test]
+    #[should_panic(expected = "weights sum to zero")]
+    fn fit_weighted_zero_sum_panics() {
+        let corpus = corpus_10d();
+        let weights = vec![0.0; corpus.len()];
+        let _ = PcaProjection::fit_weighted(&corpus, &weights, RadialStrategy::Fixed(1.0));
     }
 
     // --- Random projection tests ---

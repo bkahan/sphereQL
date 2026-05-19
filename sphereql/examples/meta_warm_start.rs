@@ -16,6 +16,10 @@
 //! is the sweet spot between "skip search entirely" and "search from
 //! scratch every time".
 //!
+//! The demo runs back-to-back on the 775-concept hand-crafted corpus
+//! and the ~5,000-concept extended corpus so warm-start behavior is
+//! verified at both scales.
+//!
 //! Run with:
 //!   cargo run --example meta_warm_start --features embed --release
 
@@ -23,7 +27,7 @@ use sphereql::embed::{
     CompositeMetric, CorpusFeatures, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
     PipelineConfig, PipelineInput, ProjectionKind, SearchSpace, SearchStrategy, SphereQLPipeline,
 };
-use sphereql_corpus::{build_corpus, embed};
+use sphereql_corpus::{Concept, build_corpus, build_extended_corpus, embed};
 
 const BUDGET: usize = 6;
 
@@ -32,7 +36,18 @@ fn main() {
     println!("  SphereQL warm-started hybrid: metamodel prediction + tuning");
     println!("================================================================\n");
 
-    let corpus = build_corpus();
+    for (label, corpus) in [
+        ("hand_crafted_775", build_corpus()),
+        ("extended_5k", build_extended_corpus()),
+    ] {
+        println!("\n████████████████████████████████████████████████████████████████");
+        println!("  Corpus: {label}");
+        println!("████████████████████████████████████████████████████████████████\n");
+        run_demo(&corpus);
+    }
+}
+
+fn run_demo(corpus: &[Concept]) {
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let embeddings: Vec<Vec<f64>> = corpus
         .iter()
@@ -139,6 +154,7 @@ fn mock_report(cfg: PipelineConfig, score: f64, metric_name: &str) -> sphereql::
         metric_name: metric_name.to_string(),
         best_score: score,
         best_config: cfg,
+        effective_num_domain_groups: 0,
         trials: Vec::new(),
         failures: Vec::new(),
     }

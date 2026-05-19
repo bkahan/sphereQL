@@ -130,9 +130,34 @@ pub struct BridgeConfig {
     pub threshold_base: f64,
     /// EVR-penalty coefficient in the bridge threshold formula.
     pub threshold_evr_penalty: f64,
-    /// Territorial factor below which a bridge is classified as an
-    /// `OverlapArtifact` rather than `Genuine` or `Weak`.
+    /// Percentile of the observed territorial factor distribution below
+    /// which a bridge is classified as `OverlapArtifact` rather than
+    /// `Genuine` or `Weak`.  0.3 = the bottom 30 % of bridge pairs by
+    /// territorial separation are labeled artifacts.  Expressed as a
+    /// percentile so that dense corpora (where all exclusivities collapse
+    /// toward zero) do not classify every bridge as an artifact.
     pub overlap_artifact_territorial: f64,
+    /// Quantile of the home-affinity distribution that sets the
+    /// genuine-bridge floor. For each member item, "home affinity" is
+    /// the cosine similarity between the item's embedding and its own
+    /// category's centroid. A bridge is classified `Genuine` when
+    /// `min(affinity_to_source, affinity_to_target)` exceeds the
+    /// quantile-q of those home affinities; otherwise `Weak`.
+    ///
+    /// Why a quantile and not an absolute cosine: home affinity scale
+    /// varies with the projection layout. After stratified PCA spreads
+    /// imbalanced corpora, home affinities can drop into the 0.3–0.6
+    /// band where a fixed 0.5 cosine floor labels almost every cross-
+    /// domain item `Weak`. A quantile-based floor adapts to the
+    /// corpus's own affinity scale: tight corpora get a strict floor,
+    /// spread ones get a permissive one, without per-corpus tuning.
+    ///
+    /// Smaller q = stricter (only bridges matching the strongest
+    /// home affinities qualify). Larger q = more permissive. Default
+    /// 0.25: a bridge is `Genuine` if it has at least as much
+    /// affinity to both sides as the bottom-25% of items have to
+    /// their own home category.
+    pub balanced_affinity_quantile: f64,
 }
 
 impl Default for BridgeConfig {
@@ -141,6 +166,7 @@ impl Default for BridgeConfig {
             threshold_base: 0.5,
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
+            balanced_affinity_quantile: 0.25,
         }
     }
 }
