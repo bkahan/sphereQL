@@ -24,7 +24,13 @@ __pycache__/
 dist/
 *.whl
 *.so
+*.pyd
 .venv/
+
+# Local env (API keys, cluster endpoints)
+.env
+.env.local
+.env.*.local
 
 # Large generated data files
 benchmark_results.json
