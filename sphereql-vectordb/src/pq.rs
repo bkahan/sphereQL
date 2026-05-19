@@ -160,15 +160,14 @@ impl PqCodebook {
 
     /// Encode an embedding to `m` codes (one per subspace). The code is
     /// the index of the nearest centroid in that subspace.
-    pub fn encode(&self, embedding: &[f32]) -> Vec<u8> {
+    pub fn encode(&self, embedding: &[f32]) -> Result<Vec<u8>, PqError> {
         let expected = self.m * self.sub_dim;
-        debug_assert_eq!(
-            embedding.len(),
-            expected,
-            "Pq::encode: embedding length {} does not match codebook dimensionality {}",
-            embedding.len(),
-            expected
-        );
+        if embedding.len() != expected {
+            return Err(PqError::DimensionMismatch {
+                expected,
+                got: embedding.len(),
+            });
+        }
         let mut out = vec![0u8; self.m];
         for m_idx in 0..self.m {
             let sub = &embedding[m_idx * self.sub_dim..(m_idx + 1) * self.sub_dim];
@@ -185,20 +184,19 @@ impl PqCodebook {
             }
             out[m_idx] = best_k as u8;
         }
-        out
+        Ok(out)
     }
 
     /// Build the asymmetric query → centroids LUT: `lut[m][k]` is the
     /// squared distance from the query's subspace-m to centroid k.
-    pub fn asymmetric_lut(&self, query: &[f32]) -> Vec<Vec<f32>> {
+    pub fn asymmetric_lut(&self, query: &[f32]) -> Result<Vec<Vec<f32>>, PqError> {
         let expected = self.m * self.sub_dim;
-        debug_assert_eq!(
-            query.len(),
-            expected,
-            "Pq::asymmetric_lut: query length {} does not match codebook dimensionality {}",
-            query.len(),
-            expected
-        );
+        if query.len() != expected {
+            return Err(PqError::DimensionMismatch {
+                expected,
+                got: query.len(),
+            });
+        }
         let mut lut = Vec::with_capacity(self.m);
         for m_idx in 0..self.m {
             let q = &query[m_idx * self.sub_dim..(m_idx + 1) * self.sub_dim];
@@ -210,7 +208,7 @@ impl PqCodebook {
             }
             lut.push(row);
         }
-        lut
+        Ok(lut)
     }
 }
 
@@ -308,7 +306,7 @@ impl PqIndex {
         let codebook = PqCodebook::train(corpus, config)?;
         let mut store: Box<dyn PqStore> = Box::new(InMemoryPqStore::new());
         for (id, e) in ids.iter().zip(corpus.iter()) {
-            let codes = codebook.encode(e);
+            let codes = codebook.encode(e)?;
             store.insert(id, &codes)?;
         }
         Ok(Self { codebook, store })
@@ -323,7 +321,7 @@ impl PqIndex {
                 got: embedding.len(),
             });
         }
-        let codes = self.codebook.encode(embedding);
+        let codes = self.codebook.encode(embedding)?;
         self.store.insert(id, &codes)
     }
 
@@ -335,7 +333,10 @@ impl PqIndex {
         if k == 0 || query.len() != self.codebook.m * self.codebook.sub_dim {
             return Vec::new();
         }
-        let lut = self.codebook.asymmetric_lut(query);
+        let lut = self
+            .codebook
+            .asymmetric_lut(query)
+            .expect("dimension validated above");
         let m = self.codebook.m;
         let mut heap: Vec<(String, f32)> = Vec::with_capacity(k + 1);
         self.store.for_each(&mut |id, codes| {
@@ -374,7 +375,10 @@ impl PqIndex {
         if query.len() != self.codebook.m * self.codebook.sub_dim {
             return Vec::new();
         }
-        let lut = self.codebook.asymmetric_lut(query);
+        let lut = self
+            .codebook
+            .asymmetric_lut(query)
+            .expect("dimension validated above");
         let m = self.codebook.m;
         let mut scored: Vec<(String, f32)> = Vec::with_capacity(candidates.len());
         for id in candidates {
@@ -578,7 +582,7 @@ mod tests {
         assert_eq!(cb.k, 16);
         assert_eq!(cb.sub_dim, 4);
 
-        let codes = cb.encode(&corpus[0]);
+        let codes = cb.encode(&corpus[0]).unwrap();
         assert_eq!(codes.len(), 4);
         // All codes must be valid centroid indices.
         for c in codes {
