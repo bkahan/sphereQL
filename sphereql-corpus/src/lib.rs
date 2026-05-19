@@ -36,6 +36,7 @@ pub mod extended;
 pub mod loader;
 pub mod parquet_loader;
 pub mod parquet_writer;
+pub mod registry;
 pub mod stress_corpus;
 
 pub use axes::*;
@@ -46,6 +47,7 @@ pub use extended::{build_extended_corpus, build_full_corpus};
 pub use loader::{load_extended_corpus, stream_extended_corpus};
 pub use parquet_loader::{ConceptMetadata, ParquetLoadError, load_concepts_with_metadata};
 pub use parquet_writer::{ConceptRow, write_concepts};
+pub use registry::CorpusId;
 pub use stress_corpus::{
     STRESS_CATEGORIES, STRESS_CONCEPTS_PER_CATEGORY, STRESS_NOISE_AMPLITUDE, build_stress_corpus,
 };

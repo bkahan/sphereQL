@@ -1,0 +1,4884 @@
+{
+  "cluster_config": {
+    "k_requested": 128,
+    "k_effective": 128,
+    "batch_size": 4096,
+    "max_iter": 200,
+    "n_init": 3,
+    "random_seed": 42,
+    "min_size_per_cluster": 50,
+    "auto_merge": true,
+    "sample_size": 0
+  },
+  "corpus": {
+    "n_rows": 500000,
+    "num_axes": 128,
+    "nnz": 3179481
+  },
+  "clusters": [
+    {
+      "id": 0,
+      "name": "cluster_0000__139th_delaware_general_assembly__3rd_delaware_general_assembly",
+      "size": 2007,
+      "top_axes": [
+        {
+          "axis": 3,
+          "mean_weight": 0.9700950384140015
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.9602440595626831
+        },
+        {
+          "axis": 114,
+          "mean_weight": 0.10597224533557892
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.09567984938621521
+        },
+        {
+          "axis": 94,
+          "mean_weight": 0.08976054936647415
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.08605003356933594
+        }
+      ],
+      "anchor_labels": [
+        "139th Delaware General Assembly",
+        "3rd Delaware General Assembly",
+        "Bradley A. Buckles",
+        "45th Delaware General Assembly",
+        "Balkrishna Gupta"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "cluster_0001__battna_barrett__bridges_tv",
+      "size": 3731,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9781128168106079
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.3850734531879425
+        },
+        {
+          "axis": 44,
+          "mean_weight": 0.15184062719345093
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.13975055515766144
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.1378997266292572
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.13765834271907806
+        }
+      ],
+      "anchor_labels": [
+        "Battna Barrett",
+        "Bridges TV",
+        "AZN Television",
+        "Andrew O'Flynn",
+        "Billy Nolan (hurler)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "cluster_0002__abductor_pollicis_brevis_muscle__arizona_thunder",
+      "size": 3882,
+      "top_axes": [
+        {
+          "axis": 126,
+          "mean_weight": 0.9826369881629944
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.18043790757656097
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.16575028002262115
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.13441821932792664
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.11767475306987762
+        },
+        {
+          "axis": 49,
+          "mean_weight": 0.10553818196058273
+        }
+      ],
+      "anchor_labels": [
+        "Abductor pollicis brevis muscle",
+        "Arizona Thunder",
+        "2016 Guangzhou International Women's Open",
+        "10 cm/50 Type 88 naval gun",
+        "12.7 cm/40 Type 89 naval gun"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "cluster_0003__armand_bayou_archeological_district__alloway_auld_kirk",
+      "size": 8173,
+      "top_axes": [
+        {
+          "axis": 115,
+          "mean_weight": 0.9890663027763367
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.09435516595840454
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.09380624443292618
+        },
+        {
+          "axis": 33,
+          "mean_weight": 0.05756816267967224
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.05516400560736656
+        },
+        {
+          "axis": 71,
+          "mean_weight": 0.05223287642002106
+        }
+      ],
+      "anchor_labels": [
+        "Armand Bayou Archeological District",
+        "Alloway Auld Kirk",
+        "Alphonso Johnson House",
+        "Bryant-Lasater House",
+        "Atlantic Gas Station"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "cluster_0004__battle_of_megara_1359__a_woman_loves",
+      "size": 3679,
+      "top_axes": [
+        {
+          "axis": 90,
+          "mean_weight": 0.9663699865341187
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.3746470808982849
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.1374577283859253
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.12876680493354797
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.11459053307771683
+        },
+        {
+          "axis": 70,
+          "mean_weight": 0.11441699415445328
+        }
+      ],
+      "anchor_labels": [
+        "Battle of Megara (1359)",
+        "A Woman Loves",
+        "Before the Law",
+        "A Country Doctor (short story)",
+        "Ashok Row Kavi"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "cluster_0005__adrienn_nagy__andr_s_l_nyi",
+      "size": 5009,
+      "top_axes": [
+        {
+          "axis": 39,
+          "mean_weight": 0.9877654910087585
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.16993166506290436
+        },
+        {
+          "axis": 82,
+          "mean_weight": 0.07081738859415054
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.06143508851528168
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.058564163744449615
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.0568753220140934
+        }
+      ],
+      "anchor_labels": [
+        "Adrienn Nagy",
+        "Andr\u00e1s L\u00e1nyi",
+        "British Columbia Highway 18",
+        "2001 Asian Karate Championships",
+        "Blanka Sz\u00e1vay"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "cluster_0006__buck_tick_discography__bike_india",
+      "size": 9105,
+      "top_axes": [
+        {
+          "axis": 63,
+          "mean_weight": 0.9869953989982605
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.23842735588550568
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.1313123255968094
+        },
+        {
+          "axis": 27,
+          "mean_weight": 0.12442533671855927
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.11917831748723984
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.08016836643218994
+        }
+      ],
+      "anchor_labels": [
+        "Buck-Tick discography",
+        "Bike India",
+        "Brotherhood of Man discography",
+        "Amaia discography",
+        "Ardian Bujupi discography"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "cluster_0007__1900_united_states_house_of_representatives_elec__1898_united_states_house_of_representatives_elec",
+      "size": 1841,
+      "top_axes": [
+        {
+          "axis": 41,
+          "mean_weight": 0.9410531520843506
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.9309332370758057
+        },
+        {
+          "axis": 98,
+          "mean_weight": 0.32133370637893677
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.2715660333633423
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.21411199867725372
+        },
+        {
+          "axis": 15,
+          "mean_weight": 0.20769740641117096
+        }
+      ],
+      "anchor_labels": [
+        "1900 United States House of Representatives elections in California",
+        "1898 United States House of Representatives elections in California",
+        "1868 United States presidential election in Massachusetts",
+        "2012 United States Senate election in Massachusetts",
+        "2012 United States House of Representatives elections in Massachusetts"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "cluster_0008__avrecourt__buding",
+      "size": 9495,
+      "top_axes": [
+        {
+          "axis": 30,
+          "mean_weight": 0.8733802437782288
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.7524620890617371
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.058358173817396164
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.04968375340104103
+        },
+        {
+          "axis": 1,
+          "mean_weight": 0.047817837446928024
+        },
+        {
+          "axis": 52,
+          "mean_weight": 0.03861932456493378
+        }
+      ],
+      "anchor_labels": [
+        "Avrecourt",
+        "Buding",
+        "Budling",
+        "Auverse",
+        "Bulcy"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "cluster_0009__anaphe_moth__arotrophora",
+      "size": 366,
+      "top_axes": [
+        {
+          "axis": 75,
+          "mean_weight": 0.9992826581001282
+        },
+        {
+          "axis": 61,
+          "mean_weight": 0.9892396926879883
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.9870877861976624
+        },
+        {
+          "axis": 115,
+          "mean_weight": 0.9842180609703064
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.9741747975349426
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.8120518922805786
+        }
+      ],
+      "anchor_labels": [
+        "Anaphe (moth)",
+        "Arotrophora",
+        "Borboniella tekayaella",
+        "Borboniella gigantella",
+        "Arotrophora diadela"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "cluster_0010__abatocera__asyngenes",
+      "size": 1955,
+      "top_axes": [
+        {
+          "axis": 115,
+          "mean_weight": 0.9762365818023682
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.9725276231765747
+        },
+        {
+          "axis": 61,
+          "mean_weight": 0.9615387916564941
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.9592030048370361
+        },
+        {
+          "axis": 42,
+          "mean_weight": 0.9445056915283203
+        },
+        {
+          "axis": 70,
+          "mean_weight": 0.7086538672447205
+        }
+      ],
+      "anchor_labels": [
+        "Abatocera",
+        "Asyngenes",
+        "Atelais",
+        "Abaiba",
+        "Acabyara"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "cluster_0011__bertil_persson_potter__antoine_chappey",
+      "size": 1922,
+      "top_axes": [
+        {
+          "axis": 125,
+          "mean_weight": 0.9860196709632874
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.6380631923675537
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.06613124161958694
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.06196705624461174
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.05770373344421387
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.055819928646087646
+        }
+      ],
+      "anchor_labels": [
+        "Bertil Persson (potter)",
+        "Antoine Chappey",
+        "Andhra Pradesh Pollution Control Board",
+        "Andy Knight",
+        "Australian Transaction Reports and Analysis Centre"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "cluster_0012__anshuman_nandi__bill_kopp",
+      "size": 17713,
+      "top_axes": [
+        {
+          "axis": 36,
+          "mean_weight": 0.9868922829627991
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.059552453458309174
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.04646866023540497
+        },
+        {
+          "axis": 33,
+          "mean_weight": 0.04007236286997795
+        },
+        {
+          "axis": 87,
+          "mean_weight": 0.03916304185986519
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.03907233849167824
+        }
+      ],
+      "anchor_labels": [
+        "Anshuman Nandi",
+        "Bill Kopp",
+        "Adi Irani",
+        "Bian Que",
+        "Anne Crookshank"
+      ]
+    },
+    {
+      "id": 13,
+      "name": "cluster_0013__adultcon__arba_een_pilgrimage",
+      "size": 1649,
+      "top_axes": [
+        {
+          "axis": 29,
+          "mean_weight": 0.9554042220115662
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.6689886450767517
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.10727786272764206
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.1001511886715889
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.09388834238052368
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.09199874848127365
+        }
+      ],
+      "anchor_labels": [
+        "Adultcon",
+        "Arba'een Pilgrimage",
+        "Akashat",
+        "Big Rock, Virginia",
+        "Ben Jacobs (journalist)"
+      ]
+    },
+    {
+      "id": 14,
+      "name": "cluster_0014__ben_duckett__afzal_masood",
+      "size": 1782,
+      "top_axes": [
+        {
+          "axis": 33,
+          "mean_weight": 0.6277403235435486
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.6125413775444031
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.5881670713424683
+        },
+        {
+          "axis": 84,
+          "mean_weight": 0.5872622132301331
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.5743647217750549
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.5537383556365967
+        }
+      ],
+      "anchor_labels": [
+        "Ben Duckett",
+        "Afzal Masood",
+        "Anthony Caci",
+        "Andreas Pyndt",
+        "Alireza Vafaei"
+      ]
+    },
+    {
+      "id": 15,
+      "name": "cluster_0015__andrew_d_angelo__brian_monaco",
+      "size": 7211,
+      "top_axes": [
+        {
+          "axis": 78,
+          "mean_weight": 0.15660054981708527
+        },
+        {
+          "axis": 27,
+          "mean_weight": 0.12226313352584839
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.0891009047627449
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.08468742668628693
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.08382511138916016
+        },
+        {
+          "axis": 59,
+          "mean_weight": 0.08302674442529678
+        }
+      ],
+      "anchor_labels": [
+        "Andrew D'Angelo",
+        "Brian Monaco",
+        "Bobby Sanabria",
+        "America's Response Monument",
+        "Amykos Painter"
+      ]
+    },
+    {
+      "id": 16,
+      "name": "cluster_0016__biathlon_at_the_2012_winter_youth_olympics__atanas_tendeng",
+      "size": 5200,
+      "top_axes": [
+        {
+          "axis": 28,
+          "mean_weight": 0.9741285443305969
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.15486538410186768
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.15475088357925415
+        },
+        {
+          "axis": 33,
+          "mean_weight": 0.11696409434080124
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.09715555608272552
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.09290395677089691
+        }
+      ],
+      "anchor_labels": [
+        "Biathlon at the 2012 Winter Youth Olympics",
+        "Atanas Tendeng",
+        "Abd\u00e9razak Hamad",
+        "Bartosz Jurecki",
+        "Abdelkrim Bendjemil"
+      ]
+    },
+    {
+      "id": 17,
+      "name": "cluster_0017__benjamin_isaacs__andy_roberts_footballer",
+      "size": 1876,
+      "top_axes": [
+        {
+          "axis": 24,
+          "mean_weight": 0.688908576965332
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.4975784122943878
+        },
+        {
+          "axis": 49,
+          "mean_weight": 0.49658963084220886
+        },
+        {
+          "axis": 74,
+          "mean_weight": 0.49481040239334106
+        },
+        {
+          "axis": 125,
+          "mean_weight": 0.4709373116493225
+        },
+        {
+          "axis": 23,
+          "mean_weight": 0.46910858154296875
+        }
+      ],
+      "anchor_labels": [
+        "Benjamin Isaacs",
+        "Andy Roberts (footballer)",
+        "Aaron Meijers",
+        "Basavaraj Horatti",
+        "Abderahmane Hachoud"
+      ]
+    },
+    {
+      "id": 18,
+      "name": "cluster_0018__abbondio_marcelli__angelo_mannironi",
+      "size": 12785,
+      "top_axes": [
+        {
+          "axis": 124,
+          "mean_weight": 0.987511932849884
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.043134722858667374
+        },
+        {
+          "axis": 105,
+          "mean_weight": 0.03377391770482063
+        },
+        {
+          "axis": 33,
+          "mean_weight": 0.0333152674138546
+        },
+        {
+          "axis": 52,
+          "mean_weight": 0.03294694051146507
+        },
+        {
+          "axis": 0,
+          "mean_weight": 0.03127214312553406
+        }
+      ],
+      "anchor_labels": [
+        "Abbondio Marcelli",
+        "Angelo Mannironi",
+        "Beth Coats",
+        "Branko Dolhar",
+        "Ayabonga Sonjica"
+      ]
+    },
+    {
+      "id": 19,
+      "name": "cluster_0019__ben_slater__arnold_laperi",
+      "size": 1929,
+      "top_axes": [
+        {
+          "axis": 60,
+          "mean_weight": 0.5799923539161682
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.5649662613868713
+        },
+        {
+          "axis": 86,
+          "mean_weight": 0.5623621344566345
+        },
+        {
+          "axis": 85,
+          "mean_weight": 0.5563703179359436
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.5560476183891296
+        },
+        {
+          "axis": 35,
+          "mean_weight": 0.5538811683654785
+        }
+      ],
+      "anchor_labels": [
+        "Ben Slater",
+        "Arnold Laperi",
+        "Billy Jeavons",
+        "Babe Pressley",
+        "Alec Vinci"
+      ]
+    },
+    {
+      "id": 20,
+      "name": "cluster_0020__big_8_conference_mhsaa__atlantic_coast_conference_fencing_championships",
+      "size": 2625,
+      "top_axes": [
+        {
+          "axis": 111,
+          "mean_weight": 0.7657052874565125
+        },
+        {
+          "axis": 24,
+          "mean_weight": 0.4548623561859131
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.11314236372709274
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.0672823041677475
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.06143986061215401
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.061345651745796204
+        }
+      ],
+      "anchor_labels": [
+        "Big 8 Conference (MHSAA)",
+        "Atlantic Coast Conference Fencing Championships",
+        "Alycia Moulton",
+        "Bill Mosiello",
+        "Bill O'Brien (American football)"
+      ]
+    },
+    {
+      "id": 21,
+      "name": "cluster_0021__beef_o_brady_s__ai_se_eu_te_pego",
+      "size": 9142,
+      "top_axes": [
+        {
+          "axis": 72,
+          "mean_weight": 0.9824572205543518
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.12834757566452026
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.11424333602190018
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.08968072384595871
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.0790344625711441
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.07422338426113129
+        }
+      ],
+      "anchor_labels": [
+        "Beef O'Brady's",
+        "Ai Se Eu Te Pego",
+        "Alte Taverne",
+        "Alive & Kicking (social enterprise)",
+        "Biological Society of Pakistan"
+      ]
+    },
+    {
+      "id": 22,
+      "name": "cluster_0022__begusarai__bijapur_dam",
+      "size": 4310,
+      "top_axes": [
+        {
+          "axis": 66,
+          "mean_weight": 0.9893471598625183
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.21473313868045807
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.1989610195159912
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.12758328020572662
+        },
+        {
+          "axis": 113,
+          "mean_weight": 0.11345217376947403
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.09626416862010956
+        }
+      ],
+      "anchor_labels": [
+        "Begusarai",
+        "Bijapur Dam",
+        "Basilio Lami Dozo",
+        "Atascadero Printery",
+        "Buckingham Hockey Club"
+      ]
+    },
+    {
+      "id": 23,
+      "name": "cluster_0023__bogdan_dochev__assaf_khalifa",
+      "size": 1631,
+      "top_axes": [
+        {
+          "axis": 56,
+          "mean_weight": 0.6478263735771179
+        },
+        {
+          "axis": 55,
+          "mean_weight": 0.5049154758453369
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.4972151517868042
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.49044346809387207
+        },
+        {
+          "axis": 106,
+          "mean_weight": 0.4685453176498413
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.46723490953445435
+        }
+      ],
+      "anchor_labels": [
+        "Bogdan Dochev",
+        "Assaf Khalifa",
+        "Antony Kay",
+        "Alin Ra\u021biu",
+        "Andrew Powell (politician)"
+      ]
+    },
+    {
+      "id": 24,
+      "name": "cluster_0024__angel_s_friends__17th_ali_ibn_abi_taleb_division",
+      "size": 1961,
+      "top_axes": [
+        {
+          "axis": 124,
+          "mean_weight": 0.8944922685623169
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.23719923198223114
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.21713927388191223
+        },
+        {
+          "axis": 71,
+          "mean_weight": 0.2128818929195404
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.18509462475776672
+        },
+        {
+          "axis": 0,
+          "mean_weight": 0.18096143007278442
+        }
+      ],
+      "anchor_labels": [
+        "Angel's Friends",
+        "17th Ali ibn Abi Taleb Division",
+        "Brooklyn Nine-Nine",
+        "Brand New Cherry Flavor",
+        "Bora (TV series)"
+      ]
+    },
+    {
+      "id": 25,
+      "name": "cluster_0025__amadi_congo__bradshaw_west_virginia",
+      "size": 3242,
+      "top_axes": [
+        {
+          "axis": 122,
+          "mean_weight": 0.9830704927444458
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.4948316514492035
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.13983820378780365
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.12021078169345856
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.11730514466762543
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.11728226393461227
+        }
+      ],
+      "anchor_labels": [
+        "Amadi, Congo",
+        "Bradshaw, West Virginia",
+        "Asela de Armas P\u00e9rez",
+        "Arian Gonz\u00e1lez P\u00e9rez",
+        "Alberto L\u00f3pez Arce"
+      ]
+    },
+    {
+      "id": 26,
+      "name": "cluster_0026__al_muzani__antoine_bruni_d_entrecasteaux",
+      "size": 3209,
+      "top_axes": [
+        {
+          "axis": 106,
+          "mean_weight": 0.992274284362793
+        },
+        {
+          "axis": 13,
+          "mean_weight": 0.20563088357448578
+        },
+        {
+          "axis": 52,
+          "mean_weight": 0.1995847374200821
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.10021992772817612
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.08660074323415756
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.06733234971761703
+        }
+      ],
+      "anchor_labels": [
+        "Al-Muzani",
+        "Antoine Bruni d'Entrecasteaux",
+        "Atiyah ibn Sa'd",
+        "Brown's Mountain",
+        "Blue Ridge Mountain (New York)"
+      ]
+    },
+    {
+      "id": 27,
+      "name": "cluster_0027__am_69_georges_payre__ausabandhi",
+      "size": 1158,
+      "top_axes": [
+        {
+          "axis": 117,
+          "mean_weight": 0.9953079223632812
+        },
+        {
+          "axis": 66,
+          "mean_weight": 0.9142268896102905
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.7179996967315674
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.4491367042064667
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.1903153508901596
+        },
+        {
+          "axis": 43,
+          "mean_weight": 0.1668543666601181
+        }
+      ],
+      "anchor_labels": [
+        "AM-69 Georges Payre",
+        "Ausabandhi",
+        "Aranghata",
+        "Baidul",
+        "Bagdah, North 24 Parganas"
+      ]
+    },
+    {
+      "id": 28,
+      "name": "cluster_0028__andre_creary__alcal_de_henares",
+      "size": 3620,
+      "top_axes": [
+        {
+          "axis": 17,
+          "mean_weight": 0.9703192114830017
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.41978463530540466
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.403294175863266
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.19557826220989227
+        },
+        {
+          "axis": 97,
+          "mean_weight": 0.1722344011068344
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.12181121855974197
+        }
+      ],
+      "anchor_labels": [
+        "Andre Creary",
+        "Alcal\u00e1 de Henares",
+        "Bou Mhel el-Bassatine",
+        "Ashish Chakrapani",
+        "Avanduse Parish"
+      ]
+    },
+    {
+      "id": 29,
+      "name": "cluster_0029__2008_pickup_truck_racing__2007_pickup_truck_racing",
+      "size": 6359,
+      "top_axes": [
+        {
+          "axis": 85,
+          "mean_weight": 0.983737587928772
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.06449935585260391
+        },
+        {
+          "axis": 2,
+          "mean_weight": 0.05239921808242798
+        },
+        {
+          "axis": 125,
+          "mean_weight": 0.052116747945547104
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.04478831589221954
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.04368828982114792
+        }
+      ],
+      "anchor_labels": [
+        "2008 Pickup Truck Racing",
+        "2007 Pickup Truck Racing",
+        "2009 Pickup Truck Racing",
+        "2004 All Japan Grand Touring Car Championship",
+        "1982 European Formula Two Championship"
+      ]
+    },
+    {
+      "id": 30,
+      "name": "cluster_0030__abraham_middlesworth__bheki_maphalala",
+      "size": 9862,
+      "top_axes": [
+        {
+          "axis": 3,
+          "mean_weight": 0.9756377339363098
+        },
+        {
+          "axis": 59,
+          "mean_weight": 0.19831131398677826
+        },
+        {
+          "axis": 127,
+          "mean_weight": 0.18270660936832428
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.06822795420885086
+        },
+        {
+          "axis": 112,
+          "mean_weight": 0.052034977823495865
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.050584856420755386
+        }
+      ],
+      "anchor_labels": [
+        "Abraham Middlesworth",
+        "Bheki Maphalala",
+        "Abdiqadir Kosar Abdi",
+        "Aziz Osman Bakir",
+        "Akira Shinoda"
+      ]
+    },
+    {
+      "id": 31,
+      "name": "cluster_0031__andrew_whitford__arenda_grimberg",
+      "size": 876,
+      "top_axes": [
+        {
+          "axis": 22,
+          "mean_weight": 0.9755666851997375
+        },
+        {
+          "axis": 67,
+          "mean_weight": 0.5215965509414673
+        },
+        {
+          "axis": 101,
+          "mean_weight": 0.49258291721343994
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.13121727108955383
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.1158377155661583
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.11049305647611618
+        }
+      ],
+      "anchor_labels": [
+        "Andrew Whitford",
+        "Arenda Grimberg",
+        "Anne Riemersma",
+        "Boys' Ranch",
+        "Anton Muzychkin"
+      ]
+    },
+    {
+      "id": 32,
+      "name": "cluster_0032__bemarivo_special_reserve__bisanadi_national_reserve",
+      "size": 5905,
+      "top_axes": [
+        {
+          "axis": 120,
+          "mean_weight": 0.9860051870346069
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.1095246821641922
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.08368675410747528
+        },
+        {
+          "axis": 108,
+          "mean_weight": 0.08019980043172836
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.06725723296403885
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.06721019744873047
+        }
+      ],
+      "anchor_labels": [
+        "Bemarivo Special Reserve",
+        "Bisanadi National Reserve",
+        "Ball Diamond",
+        "Big Draft Wilderness",
+        "Berwind Lake Wildlife Management Area"
+      ]
+    },
+    {
+      "id": 33,
+      "name": "cluster_0033__ashburton_playing_fields__al_snoubari_park",
+      "size": 7380,
+      "top_axes": [
+        {
+          "axis": 69,
+          "mean_weight": 0.9908862709999084
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.10804380476474762
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.0823766440153122
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.05757804214954376
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.05552617460489273
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.04496476426720619
+        }
+      ],
+      "anchor_labels": [
+        "Ashburton Playing Fields",
+        "Al-Snoubari Park",
+        "Abista",
+        "Aleppo Public Park",
+        "Archer River"
+      ]
+    },
+    {
+      "id": 34,
+      "name": "cluster_0034__alzarri_joseph__bob_taylor_footballer_born_1876",
+      "size": 1786,
+      "top_axes": [
+        {
+          "axis": 14,
+          "mean_weight": 0.6030130386352539
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.5978673696517944
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.5891149044036865
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.5743687748908997
+        },
+        {
+          "axis": 13,
+          "mean_weight": 0.5671545267105103
+        },
+        {
+          "axis": 65,
+          "mean_weight": 0.5605774521827698
+        }
+      ],
+      "anchor_labels": [
+        "Alzarri Joseph",
+        "Bob Taylor (footballer, born 1876)",
+        "Arseniy Protsyshyn",
+        "Billy McOwen",
+        "Bernd D\u00fcker"
+      ]
+    },
+    {
+      "id": 35,
+      "name": "cluster_0035__1930_in_japanese_football__belize_barrier_reef",
+      "size": 3706,
+      "top_axes": [
+        {
+          "axis": 55,
+          "mean_weight": 0.9879471063613892
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.297378808259964
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.16193222999572754
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.1507936716079712
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.1280820071697235
+        },
+        {
+          "axis": 80,
+          "mean_weight": 0.12430816143751144
+        }
+      ],
+      "anchor_labels": [
+        "1930 in Japanese football",
+        "Belize Barrier Reef",
+        "Andrew de Boorder",
+        "Belcourt, North Dakota",
+        "Ames Lake, Washington"
+      ]
+    },
+    {
+      "id": 36,
+      "name": "cluster_0036__berkleasmium__appendiculella",
+      "size": 755,
+      "top_axes": [
+        {
+          "axis": 48,
+          "mean_weight": 0.9852902889251709
+        },
+        {
+          "axis": 15,
+          "mean_weight": 0.6125506162643433
+        },
+        {
+          "axis": 31,
+          "mean_weight": 0.5585694313049316
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.22051282227039337
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.1546558141708374
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.10404855757951736
+        }
+      ],
+      "anchor_labels": [
+        "Berkleasmium",
+        "Appendiculella",
+        "Aurantiosporium",
+        "Bauerago",
+        "African heavy metal"
+      ]
+    },
+    {
+      "id": 37,
+      "name": "cluster_0037__allen_stonex__an_vannieuwenhuyse",
+      "size": 1231,
+      "top_axes": [
+        {
+          "axis": 7,
+          "mean_weight": 0.9813247919082642
+        },
+        {
+          "axis": 124,
+          "mean_weight": 0.9748039245605469
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.11508816480636597
+        },
+        {
+          "axis": 113,
+          "mean_weight": 0.10463906079530716
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.09652433544397354
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.09515340626239777
+        }
+      ],
+      "anchor_labels": [
+        "Allen Stonex",
+        "An Vannieuwenhuyse",
+        "Anastasia Karakatsani",
+        "Aleksandar Nanev",
+        "Alessandro Rivolta"
+      ]
+    },
+    {
+      "id": 38,
+      "name": "cluster_0038__bugnara__aprigliano",
+      "size": 2314,
+      "top_axes": [
+        {
+          "axis": 86,
+          "mean_weight": 0.9795385003089905
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.7735537886619568
+        },
+        {
+          "axis": 11,
+          "mean_weight": 0.10173307359218597
+        },
+        {
+          "axis": 29,
+          "mean_weight": 0.07982135564088821
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.0648190900683403
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.06352115422487259
+        }
+      ],
+      "anchor_labels": [
+        "Bugnara",
+        "Aprigliano",
+        "Ari, Abruzzo",
+        "Argusto",
+        "Altomonte"
+      ]
+    },
+    {
+      "id": 39,
+      "name": "cluster_0039__ahq_air_defences_eastern_mediterranean__balkan_air_force",
+      "size": 5740,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.9695896506309509
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.33122116327285767
+        },
+        {
+          "axis": 114,
+          "mean_weight": 0.2802627384662628
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.221725195646286
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.10752338916063309
+        },
+        {
+          "axis": 40,
+          "mean_weight": 0.09438388049602509
+        }
+      ],
+      "anchor_labels": [
+        "AHQ Air Defences Eastern Mediterranean",
+        "Balkan Air Force",
+        "AHQ Levant",
+        "Air Headquarters East Africa",
+        "10th Battalion, Parachute Regiment"
+      ]
+    },
+    {
+      "id": 40,
+      "name": "cluster_0040__bessarabia_governorate__baruunturuun",
+      "size": 5553,
+      "top_axes": [
+        {
+          "axis": 123,
+          "mean_weight": 0.9810675978660583
+        },
+        {
+          "axis": 54,
+          "mean_weight": 0.14814987778663635
+        },
+        {
+          "axis": 91,
+          "mean_weight": 0.13573341071605682
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.1259358525276184
+        },
+        {
+          "axis": 97,
+          "mean_weight": 0.11526022106409073
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.09957791864871979
+        }
+      ],
+      "anchor_labels": [
+        "Bessarabia Governorate",
+        "Baruunturuun",
+        "Bayandelger, S\u00fckhbaatar",
+        "Alumin\u00e9 Department",
+        "A\u00f1elo Department"
+      ]
+    },
+    {
+      "id": 41,
+      "name": "cluster_0041__bert_adams__al_gould",
+      "size": 3888,
+      "top_axes": [
+        {
+          "axis": 13,
+          "mean_weight": 0.986315906047821
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.4511994421482086
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.2530824840068817
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.06431727856397629
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.053153373301029205
+        },
+        {
+          "axis": 123,
+          "mean_weight": 0.04771723598241806
+        }
+      ],
+      "anchor_labels": [
+        "Bert Adams",
+        "Al Gould",
+        "Alex White (baseball)",
+        "Beckhead Plantation",
+        "Barn Hill Meadows"
+      ]
+    },
+    {
+      "id": 42,
+      "name": "cluster_0042__association_of_independent_schools_of_greater_wa__association_of_lunar_and_planetary_observers",
+      "size": 3028,
+      "top_axes": [
+        {
+          "axis": 99,
+          "mean_weight": 0.989922285079956
+        },
+        {
+          "axis": 114,
+          "mean_weight": 0.3241742253303528
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.30823349952697754
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.07599668204784393
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.04931226372718811
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.04677692800760269
+        }
+      ],
+      "anchor_labels": [
+        "Association of Independent Schools of Greater Washington",
+        "Association of Lunar and Planetary Observers",
+        "Association of Reproductive Health Professionals",
+        "Associated Catholic Charities",
+        "Association of Writers & Writing Programs"
+      ]
+    },
+    {
+      "id": 43,
+      "name": "cluster_0043__anton_sch_birz_von_chobinin__aert_jansse_van_nes",
+      "size": 7541,
+      "top_axes": [
+        {
+          "axis": 7,
+          "mean_weight": 0.9775872826576233
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.11785975098609924
+        },
+        {
+          "axis": 80,
+          "mean_weight": 0.11251796782016754
+        },
+        {
+          "axis": 31,
+          "mean_weight": 0.09607681632041931
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.07937109470367432
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.07672535628080368
+        }
+      ],
+      "anchor_labels": [
+        "Anton Sch\u00fcbirz von Chobinin",
+        "Aert Jansse van Nes",
+        "Arnie Shockley",
+        "Abdel Rahman Abdel Hamid",
+        "Alexander Javakhishvili (admiral)"
+      ]
+    },
+    {
+      "id": 44,
+      "name": "cluster_0044__borisovka_volokonovsky_district_belgorod_oblast__atfih",
+      "size": 1949,
+      "top_axes": [
+        {
+          "axis": 30,
+          "mean_weight": 0.9936006665229797
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.9870617389678955
+        },
+        {
+          "axis": 54,
+          "mean_weight": 0.5961328148841858
+        },
+        {
+          "axis": 21,
+          "mean_weight": 0.12047863006591797
+        },
+        {
+          "axis": 67,
+          "mean_weight": 0.0815248042345047
+        },
+        {
+          "axis": 24,
+          "mean_weight": 0.07721210271120071
+        }
+      ],
+      "anchor_labels": [
+        "Borisovka, Volokonovsky District, Belgorod Oblast",
+        "Atfih",
+        "Abd El Gilil",
+        "Bawiti",
+        "Bahariya Oasis"
+      ]
+    },
+    {
+      "id": 45,
+      "name": "cluster_0045__boone_municipal_airport__brenner_field",
+      "size": 5884,
+      "top_axes": [
+        {
+          "axis": 20,
+          "mean_weight": 0.9870517253875732
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.1778014600276947
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.08782455325126648
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.07672363519668579
+        },
+        {
+          "axis": 123,
+          "mean_weight": 0.0668598860502243
+        },
+        {
+          "axis": 82,
+          "mean_weight": 0.06172465160489082
+        }
+      ],
+      "anchor_labels": [
+        "Boone Municipal Airport",
+        "Brenner Field",
+        "Bartlesville Municipal Airport",
+        "Big Bay Water Aerodrome",
+        "Anson County Airport"
+      ]
+    },
+    {
+      "id": 46,
+      "name": "cluster_0046__aleksandr_kovalyov_football_manager__ahmet_can_ar_k",
+      "size": 1805,
+      "top_axes": [
+        {
+          "axis": 98,
+          "mean_weight": 0.6112223267555237
+        },
+        {
+          "axis": 48,
+          "mean_weight": 0.5690906047821045
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.5568758249282837
+        },
+        {
+          "axis": 21,
+          "mean_weight": 0.5533925294876099
+        },
+        {
+          "axis": 47,
+          "mean_weight": 0.5496234893798828
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.5481916666030884
+        }
+      ],
+      "anchor_labels": [
+        "Aleksandr Kovalyov (football manager)",
+        "Ahmet Can Ar\u0131k",
+        "Adrian Neni\u021b\u0103",
+        "Ablaye Sy",
+        "Bryan Garc\u00eda (Nicaraguan footballer)"
+      ]
+    },
+    {
+      "id": 47,
+      "name": "cluster_0047__brad_inwood__bahjat_ghanem_military_base",
+      "size": 7265,
+      "top_axes": [
+        {
+          "axis": 19,
+          "mean_weight": 0.9800383448600769
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.17423754930496216
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.1668245494365692
+        },
+        {
+          "axis": 56,
+          "mean_weight": 0.09953738749027252
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.09216084331274033
+        },
+        {
+          "axis": 28,
+          "mean_weight": 0.062387678772211075
+        }
+      ],
+      "anchor_labels": [
+        "Brad Inwood",
+        "Bahjat Ghanem military base",
+        "Bill de Freitas",
+        "Beja Airbase",
+        "Barry Knight (cricketer)"
+      ]
+    },
+    {
+      "id": 48,
+      "name": "cluster_0048__andi_gr_nenfelder__britta_johansson_norgren",
+      "size": 3744,
+      "top_axes": [
+        {
+          "axis": 45,
+          "mean_weight": 0.9785552024841309
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.18773743510246277
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.11804834753274918
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.10469198226928711
+        },
+        {
+          "axis": 52,
+          "mean_weight": 0.08543464541435242
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.07510076463222504
+        }
+      ],
+      "anchor_labels": [
+        "Andi Gr\u00fcnenfelder",
+        "Britta Johansson Norgren",
+        "Ari Fuji",
+        "Belmond Hiram Bingham",
+        "Alice Hutchins (gardener)"
+      ]
+    },
+    {
+      "id": 49,
+      "name": "cluster_0049__avondale_mall__baghdad_mall",
+      "size": 2507,
+      "top_axes": [
+        {
+          "axis": 31,
+          "mean_weight": 0.9791327714920044
+        },
+        {
+          "axis": 15,
+          "mean_weight": 0.2975013852119446
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.2727210223674774
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.1481671780347824
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.1318986862897873
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.1251717060804367
+        }
+      ],
+      "anchor_labels": [
+        "Avondale Mall",
+        "Baghdad Mall",
+        "Boond Jo Ban Gayee Moti",
+        "Budd Silverliner",
+        "Alexandra Rapaport"
+      ]
+    },
+    {
+      "id": 50,
+      "name": "cluster_0050__balaan_bukid__black_cap_mountain",
+      "size": 6296,
+      "top_axes": [
+        {
+          "axis": 94,
+          "mean_weight": 0.9888823628425598
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.09106642007827759
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.09101010859012604
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.07327812165021896
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.06415887176990509
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.06171014904975891
+        }
+      ],
+      "anchor_labels": [
+        "Balaan bukid",
+        "Black Cap Mountain",
+        "Alcovy Mountain",
+        "Aleksandr Verkhovsky",
+        "2021 Canadian federal election"
+      ]
+    },
+    {
+      "id": 51,
+      "name": "cluster_0051__avesthagen__bank_muscat",
+      "size": 3001,
+      "top_axes": [
+        {
+          "axis": 40,
+          "mean_weight": 0.9793562293052673
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.41830602288246155
+        },
+        {
+          "axis": 12,
+          "mean_weight": 0.29544636607170105
+        },
+        {
+          "axis": 105,
+          "mean_weight": 0.09732850641012192
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.08184584975242615
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.07616880536079407
+        }
+      ],
+      "anchor_labels": [
+        "Avesthagen",
+        "Bank Muscat",
+        "Australian Space Research Institute",
+        "Breville Group",
+        "Bruker"
+      ]
+    },
+    {
+      "id": 52,
+      "name": "cluster_0052__anophiodes__attatha",
+      "size": 1580,
+      "top_axes": [
+        {
+          "axis": 84,
+          "mean_weight": 0.9674280285835266
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.9610479474067688
+        },
+        {
+          "axis": 22,
+          "mean_weight": 0.9592007994651794
+        },
+        {
+          "axis": 32,
+          "mean_weight": 0.869375467300415
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.841336727142334
+        },
+        {
+          "axis": 126,
+          "mean_weight": 0.18687047064304352
+        }
+      ],
+      "anchor_labels": [
+        "Anophiodes",
+        "Attatha",
+        "Amazonides",
+        "Avitta",
+        "Acroria"
+      ]
+    },
+    {
+      "id": 53,
+      "name": "cluster_0053__ba_mak_skilip__bay_nd_r_elmal",
+      "size": 3377,
+      "top_axes": [
+        {
+          "axis": 108,
+          "mean_weight": 0.980952262878418
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.9504024386405945
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.6061537265777588
+        },
+        {
+          "axis": 5,
+          "mean_weight": 0.5561906099319458
+        },
+        {
+          "axis": 123,
+          "mean_weight": 0.2950913608074188
+        },
+        {
+          "axis": 29,
+          "mean_weight": 0.11186806112527847
+        }
+      ],
+      "anchor_labels": [
+        "Ba\u015fmak\u00e7\u0131, \u0130skilip",
+        "Bay\u0131nd\u0131r, Elmal\u0131",
+        "Ak\u00e7aini\u015f, Elmal\u0131",
+        "Bayralar, Elmal\u0131",
+        "Ak\u00e7ay, Elmal\u0131"
+      ]
+    },
+    {
+      "id": 54,
+      "name": "cluster_0054__ashish_nehra__ali_al_zubaidi_footballer_born_1986",
+      "size": 359,
+      "top_axes": [
+        {
+          "axis": 30,
+          "mean_weight": 0.8952705264091492
+        },
+        {
+          "axis": 81,
+          "mean_weight": 0.8755630254745483
+        },
+        {
+          "axis": 55,
+          "mean_weight": 0.8105291128158569
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.7970157265663147
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.7865990400314331
+        },
+        {
+          "axis": 56,
+          "mean_weight": 0.780686616897583
+        }
+      ],
+      "anchor_labels": [
+        "Ashish Nehra",
+        "Ali Al-Zubaidi (footballer, born 1986)",
+        "Brad Gotch",
+        "Andr\u00e9 Fliess",
+        "Alexandro Cavagnera"
+      ]
+    },
+    {
+      "id": 55,
+      "name": "cluster_0055__andrew_harris_cricketer_born_1973__arun_karthik",
+      "size": 1679,
+      "top_axes": [
+        {
+          "axis": 66,
+          "mean_weight": 0.731768012046814
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.6799843311309814
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.562357485294342
+        },
+        {
+          "axis": 67,
+          "mean_weight": 0.5037725567817688
+        },
+        {
+          "axis": 16,
+          "mean_weight": 0.4998859763145447
+        },
+        {
+          "axis": 15,
+          "mean_weight": 0.452617883682251
+        }
+      ],
+      "anchor_labels": [
+        "Andrew Harris (cricketer, born 1973)",
+        "Arun Karthik",
+        "Bal\u00e1zs T\u00f3th (footballer, born 1981)",
+        "Amos Sassi",
+        "Amel D\u017euzdanovi\u0107"
+      ]
+    },
+    {
+      "id": 56,
+      "name": "cluster_0056__begum_rokeya_padak__2005_new_zealand_screen_awards",
+      "size": 3091,
+      "top_axes": [
+        {
+          "axis": 58,
+          "mean_weight": 0.9934926629066467
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.28996533155441284
+        },
+        {
+          "axis": 114,
+          "mean_weight": 0.06944859772920609
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.06388475745916367
+        },
+        {
+          "axis": 97,
+          "mean_weight": 0.05081969127058983
+        },
+        {
+          "axis": 61,
+          "mean_weight": 0.050074514001607895
+        }
+      ],
+      "anchor_labels": [
+        "Begum Rokeya Padak",
+        "2005 New Zealand Screen Awards",
+        "2003 New Zealand Film Awards",
+        "2007 Air New Zealand Screen Awards",
+        "2006 Air New Zealand Screen Awards"
+      ]
+    },
+    {
+      "id": 57,
+      "name": "cluster_0057__bert_jansch_discography__aya_ueto_discography",
+      "size": 1277,
+      "top_axes": [
+        {
+          "axis": 81,
+          "mean_weight": 0.9556713104248047
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.9050610661506653
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.09986044466495514
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.09732632339000702
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.08928310126066208
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.0850595012307167
+        }
+      ],
+      "anchor_labels": [
+        "Bert Jansch discography",
+        "Aya Ueto discography",
+        "Big Daddy Kane discography",
+        "Baavra Mann",
+        "Artifacts (film)"
+      ]
+    },
+    {
+      "id": 58,
+      "name": "cluster_0058__arthur_williams_boxer__billy_moeller",
+      "size": 8263,
+      "top_axes": [
+        {
+          "axis": 9,
+          "mean_weight": 0.9893085956573486
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.11423926055431366
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.1106257438659668
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.0962674617767334
+        },
+        {
+          "axis": 89,
+          "mean_weight": 0.08037877827882767
+        },
+        {
+          "axis": 60,
+          "mean_weight": 0.0774773433804512
+        }
+      ],
+      "anchor_labels": [
+        "Arthur Williams (boxer)",
+        "Billy Moeller",
+        "Billy Dib",
+        "Alfonso Frazer",
+        "Alejandro Berrio"
+      ]
+    },
+    {
+      "id": 59,
+      "name": "cluster_0059__abrial_a_3_oricou__apollon_arnaia_f_c",
+      "size": 3033,
+      "top_axes": [
+        {
+          "axis": 6,
+          "mean_weight": 0.608855128288269
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.5516257286071777
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.06502440571784973
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.051264964044094086
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.050294067710638046
+        },
+        {
+          "axis": 100,
+          "mean_weight": 0.04893476516008377
+        }
+      ],
+      "anchor_labels": [
+        "Abrial A-3 Oricou",
+        "Apollon Arnaia F.C.",
+        "Bayburt \u00d6zel \u0130darespor",
+        "Beitar Rishon LeZion F.C.",
+        "Baffins Milton Rovers F.C."
+      ]
+    },
+    {
+      "id": 60,
+      "name": "cluster_0060__2017_european_fencing_championships__2015_european_youth_summer_olympic_festival",
+      "size": 4252,
+      "top_axes": [
+        {
+          "axis": 82,
+          "mean_weight": 0.9780994057655334
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.32124075293540955
+        },
+        {
+          "axis": 61,
+          "mean_weight": 0.11388810724020004
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.09025661647319794
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.07477152347564697
+        },
+        {
+          "axis": 25,
+          "mean_weight": 0.0687713623046875
+        }
+      ],
+      "anchor_labels": [
+        "2017 European Fencing Championships",
+        "2015 European Youth Summer Olympic Festival",
+        "1991 Winter Universiade",
+        "1975 Canada Winter Games",
+        "2021 World Para Powerlifting Championships"
+      ]
+    },
+    {
+      "id": 61,
+      "name": "cluster_0061__ausleben__beendorf",
+      "size": 3625,
+      "top_axes": [
+        {
+          "axis": 37,
+          "mean_weight": 0.9874424338340759
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.47098347544670105
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.1925555169582367
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.0948292538523674
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.061680544167757034
+        },
+        {
+          "axis": 56,
+          "mean_weight": 0.0541897751390934
+        }
+      ],
+      "anchor_labels": [
+        "Ausleben",
+        "Beendorf",
+        "Altenhausen",
+        "Barleben",
+        "Angern"
+      ]
+    },
+    {
+      "id": 62,
+      "name": "cluster_0062__bridgeman_art_library__automation_and_remote_control",
+      "size": 6496,
+      "top_axes": [
+        {
+          "axis": 105,
+          "mean_weight": 0.9739876389503479
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.11445976793766022
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.08660761266946793
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.06505322456359863
+        },
+        {
+          "axis": 102,
+          "mean_weight": 0.06158393248915672
+        },
+        {
+          "axis": 80,
+          "mean_weight": 0.05889487639069557
+        }
+      ],
+      "anchor_labels": [
+        "Bridgeman Art Library",
+        "Automation and Remote Control",
+        "Bakersfield Museum of Art",
+        "Ana Zubashvili",
+        "Bedford Racecourse"
+      ]
+    },
+    {
+      "id": 63,
+      "name": "cluster_0063__1973_denver_broncos_season__1972_denver_broncos_season",
+      "size": 7749,
+      "top_axes": [
+        {
+          "axis": 26,
+          "mean_weight": 0.9904724955558777
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.10641683638095856
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.053758975118398666
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.04241139069199562
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.03661591187119484
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.0333472415804863
+        }
+      ],
+      "anchor_labels": [
+        "1973 Denver Broncos season",
+        "1972 Denver Broncos season",
+        "1992 Saskatchewan Roughriders season",
+        "1981 Detroit Lions season",
+        "1982 Detroit Lions season"
+      ]
+    },
+    {
+      "id": 64,
+      "name": "cluster_0064__bullioh_railway_station__asakayama_station",
+      "size": 700,
+      "top_axes": [
+        {
+          "axis": 25,
+          "mean_weight": 0.974065363407135
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.9678782820701599
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.15639814734458923
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.15560826659202576
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.12124807387590408
+        },
+        {
+          "axis": 33,
+          "mean_weight": 0.11058453470468521
+        }
+      ],
+      "anchor_labels": [
+        "Bullioh railway station",
+        "Asakayama Station",
+        "Ashiharach\u014d Station",
+        "Asari Station (Shimane)",
+        "Ballig Halt"
+      ]
+    },
+    {
+      "id": 65,
+      "name": "cluster_0065__andrew_bird_rowing__ba_dexin",
+      "size": 1327,
+      "top_axes": [
+        {
+          "axis": 124,
+          "mean_weight": 0.9764738082885742
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.5285182595252991
+        },
+        {
+          "axis": 74,
+          "mean_weight": 0.4813980758190155
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.07974284142255783
+        },
+        {
+          "axis": 86,
+          "mean_weight": 0.07317741215229034
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.07133087515830994
+        }
+      ],
+      "anchor_labels": [
+        "Andrew Bird (rowing)",
+        "Ba Dexin",
+        "Alain Bordeleau",
+        "Al Lawrence (sprinter)",
+        "Amanda Ross (equestrian)"
+      ]
+    },
+    {
+      "id": 66,
+      "name": "cluster_0066__annunciation_el_greco_prado_1570__annunciation_el_greco_sig_enza",
+      "size": 1062,
+      "top_axes": [
+        {
+          "axis": 76,
+          "mean_weight": 0.9439988732337952
+        },
+        {
+          "axis": 27,
+          "mean_weight": 0.6468663811683655
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.11175902187824249
+        },
+        {
+          "axis": 89,
+          "mean_weight": 0.08491255342960358
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.08491252362728119
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.08163268119096756
+        }
+      ],
+      "anchor_labels": [
+        "Annunciation (El Greco, Prado, 1570)",
+        "Annunciation (El Greco, Sig\u00fcenza)",
+        "Annunciation (El Greco, Madrid)",
+        "Annunciation (El Greco, Illescas)",
+        "Babak Zanjani"
+      ]
+    },
+    {
+      "id": 67,
+      "name": "cluster_0067__american_accounting_association__baba_is_you",
+      "size": 4868,
+      "top_axes": [
+        {
+          "axis": 50,
+          "mean_weight": 0.970462441444397
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.15492931008338928
+        },
+        {
+          "axis": 110,
+          "mean_weight": 0.1494867205619812
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.1298372596502304
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.1153399646282196
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.11367420852184296
+        }
+      ],
+      "anchor_labels": [
+        "American Accounting Association",
+        "Baba Is You",
+        "Ar Tonelico: Melody of Elemia",
+        "9:05",
+        "Atelier Lydie & Suelle: The Alchemists and the Mysterious Paintings"
+      ]
+    },
+    {
+      "id": 68,
+      "name": "cluster_0068__ajami_film__afflictions_culture_mental_illness_in_indonesia",
+      "size": 1504,
+      "top_axes": [
+        {
+          "axis": 75,
+          "mean_weight": 0.9567510485649109
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.6837787628173828
+        },
+        {
+          "axis": 49,
+          "mean_weight": 0.08901777118444443
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.08432956784963608
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.07981711626052856
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.07794182747602463
+        }
+      ],
+      "anchor_labels": [
+        "Ajami (film)",
+        "Afflictions: Culture & Mental Illness in Indonesia",
+        "Ae Kaash Ke Hum",
+        "Abby's Flower Tower",
+        "Anni-Frid Lyngstad discography"
+      ]
+    },
+    {
+      "id": 69,
+      "name": "cluster_0069__birds_of_east_asia__after_the_flood_novel",
+      "size": 8766,
+      "top_axes": [
+        {
+          "axis": 4,
+          "mean_weight": 0.9876809120178223
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.11043816059827805
+        },
+        {
+          "axis": 73,
+          "mean_weight": 0.09542054682970047
+        },
+        {
+          "axis": 26,
+          "mean_weight": 0.07552064210176468
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.05601222813129425
+        },
+        {
+          "axis": 35,
+          "mean_weight": 0.05408603698015213
+        }
+      ],
+      "anchor_labels": [
+        "Birds of East Asia",
+        "After the Flood (novel)",
+        "A Private Matter (novel)",
+        "Anti-Coup Alliance",
+        "All the Women Are White, All the Blacks Are Men, But Some of Us Are Brave"
+      ]
+    },
+    {
+      "id": 70,
+      "name": "cluster_0070__bravos_de_nuevo_laredo_tercera_divisi_n__134th_delaware_general_assembly",
+      "size": 1358,
+      "top_axes": [
+        {
+          "axis": 6,
+          "mean_weight": 0.982196033000946
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.975896954536438
+        },
+        {
+          "axis": 83,
+          "mean_weight": 0.11858855932950974
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.10451219975948334
+        },
+        {
+          "axis": 127,
+          "mean_weight": 0.08362260460853577
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.08118008822202682
+        }
+      ],
+      "anchor_labels": [
+        "Bravos de Nuevo Laredo (Tercera Divisi\u00f3n)",
+        "134th Delaware General Assembly",
+        "Alonso Fajardo de Entenza",
+        "Billingham Town F.C.",
+        "Arome Bigabwa"
+      ]
+    },
+    {
+      "id": 71,
+      "name": "cluster_0071__austinn_jones__adrien_saddier",
+      "size": 9803,
+      "top_axes": [
+        {
+          "axis": 32,
+          "mean_weight": 0.988793134689331
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.07549925148487091
+        },
+        {
+          "axis": 24,
+          "mean_weight": 0.06916908919811249
+        },
+        {
+          "axis": 87,
+          "mean_weight": 0.05450977757573128
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.050687626004219055
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.05011383444070816
+        }
+      ],
+      "anchor_labels": [
+        "Austinn Jones",
+        "Adrien Saddier",
+        "Avalon Peninsula",
+        "Brian Leary",
+        "Acuy Island"
+      ]
+    },
+    {
+      "id": 72,
+      "name": "cluster_0072__442nd_operations_group__437th_operations_group",
+      "size": 1118,
+      "top_axes": [
+        {
+          "axis": 118,
+          "mean_weight": 0.9587405920028687
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.9443665146827698
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.15244752168655396
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.11367522180080414
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.11142188310623169
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.09619269520044327
+        }
+      ],
+      "anchor_labels": [
+        "442nd Operations Group",
+        "437th Operations Group",
+        "1872 Transvaal presidential election",
+        "439th Operations Group",
+        "43rd Air Defense Artillery Regiment"
+      ]
+    },
+    {
+      "id": 73,
+      "name": "cluster_0073__2019_european_parliament_election_in_poland__1928_united_states_presidential_election_in_ariz",
+      "size": 1333,
+      "top_axes": [
+        {
+          "axis": 25,
+          "mean_weight": 0.9846766591072083
+        },
+        {
+          "axis": 118,
+          "mean_weight": 0.46460896730422974
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.10668420791625977
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.10128434002399445
+        },
+        {
+          "axis": 83,
+          "mean_weight": 0.08362529426813126
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.07494165003299713
+        }
+      ],
+      "anchor_labels": [
+        "2019 European Parliament election in Poland",
+        "1928 United States presidential election in Arizona",
+        "2019 Albay local elections",
+        "1924 United States presidential election in Arizona",
+        "1952 United States presidential election in Arizona"
+      ]
+    },
+    {
+      "id": 74,
+      "name": "cluster_0074__big_comic_original__big_comic",
+      "size": 6027,
+      "top_axes": [
+        {
+          "axis": 63,
+          "mean_weight": 0.9873931407928467
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.9823144674301147
+        },
+        {
+          "axis": 35,
+          "mean_weight": 0.5301584601402283
+        },
+        {
+          "axis": 54,
+          "mean_weight": 0.27561473846435547
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.11368492245674133
+        },
+        {
+          "axis": 102,
+          "mean_weight": 0.11038842052221298
+        }
+      ],
+      "anchor_labels": [
+        "Big Comic Original",
+        "Big Comic",
+        "Akapasak Efa",
+        "24 de Diciembre metro station",
+        "12 de Octubre metro station"
+      ]
+    },
+    {
+      "id": 75,
+      "name": "cluster_0075__alan_fuchs__2021_in_brave_combat_federation",
+      "size": 5030,
+      "top_axes": [
+        {
+          "axis": 56,
+          "mean_weight": 0.9741100668907166
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.11239000409841537
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.10691659897565842
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.08484246581792831
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.06220506876707077
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.06138671189546585
+        }
+      ],
+      "anchor_labels": [
+        "Alan Fuchs",
+        "2021 in Brave Combat Federation",
+        "Ana Maria T\u0103nasie",
+        "2017 in K-1",
+        "Benny Williams"
+      ]
+    },
+    {
+      "id": 76,
+      "name": "cluster_0076__bending_all_the_rules__bellanca_se",
+      "size": 1475,
+      "top_axes": [
+        {
+          "axis": 63,
+          "mean_weight": 0.9622036218643188
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.9506528377532959
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.08417999744415283
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.0827285647392273
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.07402031123638153
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.07383891940116882
+        }
+      ],
+      "anchor_labels": [
+        "Bending All the Rules",
+        "Bellanca SE",
+        "Bellanca XSOE",
+        "BlocBoy JB discography",
+        "Analectic Magazine"
+      ]
+    },
+    {
+      "id": 77,
+      "name": "cluster_0077__bill_dundee__alexander_joseph_sulkowski",
+      "size": 3835,
+      "top_axes": [
+        {
+          "axis": 67,
+          "mean_weight": 0.9821576476097107
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.1768016517162323
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.125620037317276
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.10460340976715088
+        },
+        {
+          "axis": 26,
+          "mean_weight": 0.09113463014364243
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.08908095210790634
+        }
+      ],
+      "anchor_labels": [
+        "Bill Dundee",
+        "Alexander Joseph Sulkowski",
+        "Bhalchandra Udgaonkar",
+        "Anouk van de Wiel",
+        "Angela Steenbakkers"
+      ]
+    },
+    {
+      "id": 78,
+      "name": "cluster_0078__ashwell_prince__andrei_markov_footballer",
+      "size": 1843,
+      "top_axes": [
+        {
+          "axis": 25,
+          "mean_weight": 0.629899799823761
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.6053133010864258
+        },
+        {
+          "axis": 102,
+          "mean_weight": 0.5984957814216614
+        },
+        {
+          "axis": 0,
+          "mean_weight": 0.5825314521789551
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.5741860270500183
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.5550878643989563
+        }
+      ],
+      "anchor_labels": [
+        "Ashwell Prince",
+        "Andrei Markov (footballer)",
+        "Adnan Akmal",
+        "Benny Howell",
+        "Adam Maru\u0161i\u0107"
+      ]
+    },
+    {
+      "id": 79,
+      "name": "cluster_0079__angelo_cuniberti__1967_68_moroccan_throne_cup",
+      "size": 4497,
+      "top_axes": [
+        {
+          "axis": 53,
+          "mean_weight": 0.9738914966583252
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.2770985960960388
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.18162614107131958
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.14772695302963257
+        },
+        {
+          "axis": 80,
+          "mean_weight": 0.09281264245510101
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.08300325274467468
+        }
+      ],
+      "anchor_labels": [
+        "Angelo Cuniberti",
+        "1967\u201368 Moroccan Throne Cup",
+        "1968\u201369 Moroccan Throne Cup",
+        "1970\u201371 Moroccan Throne Cup",
+        "1971\u201372 Moroccan Throne Cup"
+      ]
+    },
+    {
+      "id": 80,
+      "name": "cluster_0080__allende_class_frigate__almirante_padilla_class_frigate",
+      "size": 7098,
+      "top_axes": [
+        {
+          "axis": 107,
+          "mean_weight": 0.9949783682823181
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.15682795643806458
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.06240362301468849
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.052564989775419235
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.04891617223620415
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.04706165939569473
+        }
+      ],
+      "anchor_labels": [
+        "Allende-class frigate",
+        "Almirante Padilla-class frigate",
+        "Alpino-class frigate",
+        "Alvand-class frigate",
+        "Andrea Doria-class cruiser"
+      ]
+    },
+    {
+      "id": 81,
+      "name": "cluster_0081__1973_all_ireland_senior_football_championship_fi__1948_all_ireland_senior_camogie_championship_fin",
+      "size": 4034,
+      "top_axes": [
+        {
+          "axis": 93,
+          "mean_weight": 0.9294714331626892
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.4270193576812744
+        },
+        {
+          "axis": 42,
+          "mean_weight": 0.41081055998802185
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.16838626563549042
+        },
+        {
+          "axis": 43,
+          "mean_weight": 0.1593465656042099
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.15918393433094025
+        }
+      ],
+      "anchor_labels": [
+        "1973 All-Ireland Senior Football Championship Final",
+        "1948 All-Ireland Senior Camogie Championship Final",
+        "Alan Ashcroft",
+        "Bill Flanagan (rugby league)",
+        "2008 All-Ireland Senior Hurling Championship Final"
+      ]
+    },
+    {
+      "id": 82,
+      "name": "cluster_0082__assumption_college_san_lorenzo__aguaruna_people",
+      "size": 4474,
+      "top_axes": [
+        {
+          "axis": 113,
+          "mean_weight": 0.9821627140045166
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.17440256476402283
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.17368657886981964
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.10302076488733292
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.093057781457901
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.07865018397569656
+        }
+      ],
+      "anchor_labels": [
+        "Assumption College San Lorenzo",
+        "Aguaruna people",
+        "Barisha High School",
+        "Akshar School",
+        "American School of Warsaw"
+      ]
+    },
+    {
+      "id": 83,
+      "name": "cluster_0083__ante_batarelo__abdallah_deeb",
+      "size": 1996,
+      "top_axes": [
+        {
+          "axis": 19,
+          "mean_weight": 0.8435043692588806
+        },
+        {
+          "axis": 70,
+          "mean_weight": 0.5387821197509766
+        },
+        {
+          "axis": 121,
+          "mean_weight": 0.5038458108901978
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.5030127167701721
+        },
+        {
+          "axis": 44,
+          "mean_weight": 0.48929718136787415
+        },
+        {
+          "axis": 96,
+          "mean_weight": 0.459943562746048
+        }
+      ],
+      "anchor_labels": [
+        "Ante Batarelo",
+        "Abdallah Deeb",
+        "Adam Fry",
+        "Beuran Hendricks",
+        "Abdou Rahman Dampha"
+      ]
+    },
+    {
+      "id": 84,
+      "name": "cluster_0084__410th_air_expeditionary_wing__880th_bombardment_squadron",
+      "size": 3702,
+      "top_axes": [
+        {
+          "axis": 111,
+          "mean_weight": 0.9830829501152039
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.9703298807144165
+        },
+        {
+          "axis": 100,
+          "mean_weight": 0.1102612242102623
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.10878158360719681
+        },
+        {
+          "axis": 127,
+          "mean_weight": 0.10424134135246277
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.09485255181789398
+        }
+      ],
+      "anchor_labels": [
+        "410th Air Expeditionary Wing",
+        "880th Bombardment Squadron",
+        "87th Troop Carrier Group",
+        "87th Tactical Missile Squadron",
+        "110th Aviation Brigade (United States)"
+      ]
+    },
+    {
+      "id": 85,
+      "name": "cluster_0085__birgit_radochla__1977_in_japanese_football",
+      "size": 6413,
+      "top_axes": [
+        {
+          "axis": 51,
+          "mean_weight": 0.9826413989067078
+        },
+        {
+          "axis": 20,
+          "mean_weight": 0.16943302750587463
+        },
+        {
+          "axis": 124,
+          "mean_weight": 0.15794192254543304
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.09911835193634033
+        },
+        {
+          "axis": 75,
+          "mean_weight": 0.09388963878154755
+        },
+        {
+          "axis": 108,
+          "mean_weight": 0.08309771865606308
+        }
+      ],
+      "anchor_labels": [
+        "Birgit Radochla",
+        "1977 in Japanese football",
+        "1762 leto",
+        "Astro Hua Hee Dai",
+        "1927 in Japanese football"
+      ]
+    },
+    {
+      "id": 86,
+      "name": "cluster_0086__bright_south_australia__builyan_queensland",
+      "size": 1577,
+      "top_axes": [
+        {
+          "axis": 123,
+          "mean_weight": 0.9976233839988708
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.9959254264831543
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.03667233884334564
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.03327672928571701
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.0288624819368124
+        },
+        {
+          "axis": 88,
+          "mean_weight": 0.027843816205859184
+        }
+      ],
+      "anchor_labels": [
+        "Bright, South Australia",
+        "Builyan, Queensland",
+        "Bukkulla, New South Wales",
+        "Bulahdelah, New South Wales",
+        "Bulburin National Park"
+      ]
+    },
+    {
+      "id": 87,
+      "name": "cluster_0087__andrezinho_footballer_born_1975__ben_mcdermott",
+      "size": 2077,
+      "top_axes": [
+        {
+          "axis": 37,
+          "mean_weight": 0.675507664680481
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.5472126007080078
+        },
+        {
+          "axis": 89,
+          "mean_weight": 0.5260254740715027
+        },
+        {
+          "axis": 38,
+          "mean_weight": 0.5214853882789612
+        },
+        {
+          "axis": 115,
+          "mean_weight": 0.5144564509391785
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.5020511746406555
+        }
+      ],
+      "anchor_labels": [
+        "Andrezinho (footballer, born 1975)",
+        "Ben McDermott",
+        "Asif Ali (cricketer, born 1991)",
+        "Arsen Akayev",
+        "Benjamin Tatar (footballer)"
+      ]
+    },
+    {
+      "id": 88,
+      "name": "cluster_0088__amer_osmanagi__bruno_jord_o",
+      "size": 1831,
+      "top_axes": [
+        {
+          "axis": 57,
+          "mean_weight": 0.6181173324584961
+        },
+        {
+          "axis": 6,
+          "mean_weight": 0.5902403593063354
+        },
+        {
+          "axis": 83,
+          "mean_weight": 0.5879302024841309
+        },
+        {
+          "axis": 32,
+          "mean_weight": 0.5794077515602112
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.5692456960678101
+        },
+        {
+          "axis": 82,
+          "mean_weight": 0.5690221786499023
+        }
+      ],
+      "anchor_labels": [
+        "Amer Osmanagi\u0107",
+        "Bruno Jord\u00e3o",
+        "Ander Olaizola",
+        "Aleksandar Nedovi\u0107",
+        "Alex Hartley (cricketer)"
+      ]
+    },
+    {
+      "id": 89,
+      "name": "cluster_0089__132nd_delaware_general_assembly__aye_thein_rakhaine",
+      "size": 1414,
+      "top_axes": [
+        {
+          "axis": 90,
+          "mean_weight": 0.9695616364479065
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.9606436491012573
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.10430397093296051
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.09305931627750397
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.0899573564529419
+        },
+        {
+          "axis": 59,
+          "mean_weight": 0.087824746966362
+        }
+      ],
+      "anchor_labels": [
+        "132nd Delaware General Assembly",
+        "Aye Thein Rakhaine",
+        "Alejandro Pe\u00f1a Esclusa",
+        "Akiko D\u014dmoto",
+        "Ahmad Reza Mamduhi"
+      ]
+    },
+    {
+      "id": 90,
+      "name": "cluster_0090__bhadra_krishna_s_wife__bruce_dorminey",
+      "size": 6812,
+      "top_axes": [
+        {
+          "axis": 62,
+          "mean_weight": 0.9830446243286133
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.15744717419147491
+        },
+        {
+          "axis": 87,
+          "mean_weight": 0.09228792786598206
+        },
+        {
+          "axis": 11,
+          "mean_weight": 0.08550573885440826
+        },
+        {
+          "axis": 88,
+          "mean_weight": 0.06768925487995148
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.06374185532331467
+        }
+      ],
+      "anchor_labels": [
+        "Bhadra (Krishna's wife)",
+        "Bruce Dorminey",
+        "Anne Nasimiyu Wasike",
+        "Bob Drury",
+        "Arthur W. Saha"
+      ]
+    },
+    {
+      "id": 91,
+      "name": "cluster_0091__alfred_cleveland_weed__antonio_summerton",
+      "size": 3161,
+      "top_axes": [
+        {
+          "axis": 11,
+          "mean_weight": 0.9814611077308655
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.3382190465927124
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.24256597459316254
+        },
+        {
+          "axis": 87,
+          "mean_weight": 0.22217825055122375
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.12000207602977753
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.08265988528728485
+        }
+      ],
+      "anchor_labels": [
+        "Alfred Cleveland Weed",
+        "Antonio Summerton",
+        "Avon Park High School",
+        "American Falls High School",
+        "Brandon High School (Florida)"
+      ]
+    },
+    {
+      "id": 92,
+      "name": "cluster_0092__ad_i_i__berek_gradi_ka",
+      "size": 2292,
+      "top_axes": [
+        {
+          "axis": 5,
+          "mean_weight": 0.981305718421936
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.9749193787574768
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.9681839346885681
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.49616846442222595
+        },
+        {
+          "axis": 1,
+          "mean_weight": 0.23676273226737976
+        },
+        {
+          "axis": 54,
+          "mean_weight": 0.18497461080551147
+        }
+      ],
+      "anchor_labels": [
+        "Ad\u017ei\u0107i",
+        "Berek (Gradi\u0161ka)",
+        "Bok Jankovac",
+        "Bistrica (Gradi\u0161ka)",
+        "Bukovac (Gradi\u0161ka)"
+      ]
+    },
+    {
+      "id": 93,
+      "name": "cluster_0093__1989_iaaf_grand_prix_final__1995_iaaf_grand_prix_final",
+      "size": 1492,
+      "top_axes": [
+        {
+          "axis": 82,
+          "mean_weight": 0.980495035648346
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.8484283685684204
+        },
+        {
+          "axis": 53,
+          "mean_weight": 0.18990284204483032
+        },
+        {
+          "axis": 31,
+          "mean_weight": 0.11397560685873032
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.1079828217625618
+        },
+        {
+          "axis": 16,
+          "mean_weight": 0.10538218915462494
+        }
+      ],
+      "anchor_labels": [
+        "1989 IAAF Grand Prix Final",
+        "1995 IAAF Grand Prix Final",
+        "Brie Rogers Lowery",
+        "Adolphe Barrot",
+        "Adama Dieng"
+      ]
+    },
+    {
+      "id": 94,
+      "name": "cluster_0094__barsovo_khanty_mansi_autonomous_okrug__bugryanka",
+      "size": 2196,
+      "top_axes": [
+        {
+          "axis": 54,
+          "mean_weight": 0.985870361328125
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.6355577707290649
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.07579351961612701
+        },
+        {
+          "axis": 87,
+          "mean_weight": 0.05746854096651077
+        },
+        {
+          "axis": 65,
+          "mean_weight": 0.0539855994284153
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.05256074294447899
+        }
+      ],
+      "anchor_labels": [
+        "Barsovo, Khanty-Mansi Autonomous Okrug",
+        "Bugryanka",
+        "Bugry, Fatezhsky District, Kursk Oblast",
+        "Bugrino",
+        "Budyonnovsk"
+      ]
+    },
+    {
+      "id": 95,
+      "name": "cluster_0095__2013_nukufetau_by_election__2003_nanumea_by_election",
+      "size": 13560,
+      "top_axes": [
+        {
+          "axis": 118,
+          "mean_weight": 0.9955750703811646
+        },
+        {
+          "axis": 90,
+          "mean_weight": 0.049367837607860565
+        },
+        {
+          "axis": 16,
+          "mean_weight": 0.04132824018597603
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.03975096717476845
+        },
+        {
+          "axis": 68,
+          "mean_weight": 0.037298861891031265
+        },
+        {
+          "axis": 99,
+          "mean_weight": 0.03498084470629692
+        }
+      ],
+      "anchor_labels": [
+        "2013 Nukufetau by-election",
+        "2003 Nanumea by-election",
+        "2014 Nanumaga by-election",
+        "2013 Nui by-election",
+        "2003 Niutao by-election"
+      ]
+    },
+    {
+      "id": 96,
+      "name": "cluster_0096__alexandre_da_cunha__angela_freiberger",
+      "size": 1288,
+      "top_axes": [
+        {
+          "axis": 74,
+          "mean_weight": 0.9681638479232788
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.5347820520401001
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.13872969150543213
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.10824582725763321
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.09391914308071136
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.08285578340291977
+        }
+      ],
+      "anchor_labels": [
+        "Alexandre da Cunha",
+        "Angela Freiberger",
+        "Bascove",
+        "Ang\u00e9lica Dass",
+        "Britta Marakatt-Labba"
+      ]
+    },
+    {
+      "id": 97,
+      "name": "cluster_0097__andreas_kundler__andreas_konstantinou",
+      "size": 3642,
+      "top_axes": [
+        {
+          "axis": 98,
+          "mean_weight": 0.9805163741111755
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.22765421867370605
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.1745970994234085
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.13228456676006317
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.12980306148529053
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.11346123367547989
+        }
+      ],
+      "anchor_labels": [
+        "Andreas Kundler",
+        "Andreas Konstantinou",
+        "Atlanta Biltmore Hotel and Biltmore Apartments",
+        "Arvydai-Bezdonys Manor",
+        "Annelie Ehrhardt"
+      ]
+    },
+    {
+      "id": 98,
+      "name": "cluster_0098__archaeolepis__holcoceroides_scythrella",
+      "size": 3036,
+      "top_axes": [
+        {
+          "axis": 115,
+          "mean_weight": 0.9616656303405762
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.9609702825546265
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.9588837027549744
+        },
+        {
+          "axis": 61,
+          "mean_weight": 0.9493220448493958
+        },
+        {
+          "axis": 14,
+          "mean_weight": 0.6873264312744141
+        },
+        {
+          "axis": 91,
+          "mean_weight": 0.13656115531921387
+        }
+      ],
+      "anchor_labels": [
+        "Archaeolepis",
+        "\\\"Holcoceroides\\\" scythrella",
+        "Auliepterix",
+        "Auximobasis",
+        "Anaphantis"
+      ]
+    },
+    {
+      "id": 99,
+      "name": "cluster_0099__alec_mudimu__bino_george",
+      "size": 2121,
+      "top_axes": [
+        {
+          "axis": 19,
+          "mean_weight": 0.5885372161865234
+        },
+        {
+          "axis": 77,
+          "mean_weight": 0.5691455602645874
+        },
+        {
+          "axis": 103,
+          "mean_weight": 0.5605073571205139
+        },
+        {
+          "axis": 1,
+          "mean_weight": 0.5467309951782227
+        },
+        {
+          "axis": 52,
+          "mean_weight": 0.5461472272872925
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.5226096510887146
+        }
+      ],
+      "anchor_labels": [
+        "Alec Mudimu",
+        "Bino George",
+        "Ante Vuku\u0161i\u0107",
+        "Almir Rahmanovi\u0107",
+        "Billy Knott"
+      ]
+    },
+    {
+      "id": 100,
+      "name": "cluster_0100__1982_cline__19982_barbaradoore",
+      "size": 800,
+      "top_axes": [
+        {
+          "axis": 24,
+          "mean_weight": 0.9741818904876709
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.9541268348693848
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.13404791057109833
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.12724757194519043
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.12425079196691513
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.11768097430467606
+        }
+      ],
+      "anchor_labels": [
+        "1982 Cline",
+        "19982 Barbaradoore",
+        "Ben Hall (baseball)",
+        "2143 Jimarnold",
+        "2074 Shoemaker"
+      ]
+    },
+    {
+      "id": 101,
+      "name": "cluster_0101__babycastles__albert_l_fgren_state_park",
+      "size": 1863,
+      "top_axes": [
+        {
+          "axis": 50,
+          "mean_weight": 0.9830500483512878
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.9597165584564209
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.1268794983625412
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.12666679918766022
+        },
+        {
+          "axis": 56,
+          "mean_weight": 0.10617020726203918
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.1042552962899208
+        }
+      ],
+      "anchor_labels": [
+        "Babycastles",
+        "Albert L\u00f6fgren State Park",
+        "Baryshnikov Arts Center",
+        "Boulon Forest",
+        "Bombay Hook National Wildlife Refuge"
+      ]
+    },
+    {
+      "id": 102,
+      "name": "cluster_0102__balaban_zmit__ahiboz_g_lba",
+      "size": 513,
+      "top_axes": [
+        {
+          "axis": 5,
+          "mean_weight": 0.9881954193115234
+        },
+        {
+          "axis": 120,
+          "mean_weight": 0.9865092635154724
+        },
+        {
+          "axis": 108,
+          "mean_weight": 0.9797641038894653
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.7234402298927307
+        },
+        {
+          "axis": 121,
+          "mean_weight": 0.433389812707901
+        },
+        {
+          "axis": 124,
+          "mean_weight": 0.3794266879558563
+        }
+      ],
+      "anchor_labels": [
+        "Balaban, \u0130zmit",
+        "Ahiboz, G\u00f6lba\u015f\u0131",
+        "Ba\u015fbereket, Aya\u015f",
+        "Ba\u015faya\u015f, Aya\u015f",
+        "Ball\u0131kp\u0131nar, G\u00f6lba\u015f\u0131"
+      ]
+    },
+    {
+      "id": 103,
+      "name": "cluster_0103__andrew_biraj__bacon_glacier",
+      "size": 1073,
+      "top_axes": [
+        {
+          "axis": 121,
+          "mean_weight": 0.9786347150802612
+        },
+        {
+          "axis": 62,
+          "mean_weight": 0.5348541736602783
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.09415173530578613
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.08772404491901398
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.07206231355667114
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.06744524091482162
+        }
+      ],
+      "anchor_labels": [
+        "Andrew Biraj",
+        "Bacon Glacier",
+        "Bi Pu",
+        "B. Wongar",
+        "Brattle Hall"
+      ]
+    },
+    {
+      "id": 104,
+      "name": "cluster_0104__ali_al_numairy__antony_crowther",
+      "size": 2149,
+      "top_axes": [
+        {
+          "axis": 108,
+          "mean_weight": 0.9792707562446594
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.6738805770874023
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.10070484131574631
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.06417910754680634
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.06243780627846718
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.05990882217884064
+        }
+      ],
+      "anchor_labels": [
+        "Ali Al Numairy",
+        "Antony Crowther",
+        "Bernie Su",
+        "Ana Brun",
+        "Benjamin Schwarz (writer)"
+      ]
+    },
+    {
+      "id": 105,
+      "name": "cluster_0105__amrapali_dubey__41_lyncis_b",
+      "size": 5453,
+      "top_axes": [
+        {
+          "axis": 79,
+          "mean_weight": 0.9894114136695862
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.36880970001220703
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.07479206472635269
+        },
+        {
+          "axis": 22,
+          "mean_weight": 0.060140758752822876
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.0567658431828022
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.05503837764263153
+        }
+      ],
+      "anchor_labels": [
+        "Amrapali Dubey",
+        "41 Lyncis b",
+        "18 Delphini b",
+        "Bishun Khare",
+        "Angel Parker"
+      ]
+    },
+    {
+      "id": 106,
+      "name": "cluster_0106__basic4ppc__adavadi",
+      "size": 4284,
+      "top_axes": [
+        {
+          "axis": 48,
+          "mean_weight": 0.9788128137588501
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.1799682080745697
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.14227394759655
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.12765824794769287
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.09663482010364532
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.09263244271278381
+        }
+      ],
+      "anchor_labels": [
+        "Basic4ppc",
+        "Adavadi",
+        "Bolet\u00edn Oficial del Estado",
+        "Black Humor (film)",
+        "Bahing language"
+      ]
+    },
+    {
+      "id": 107,
+      "name": "cluster_0107__1876_united_states_presidential_election_in_tenn__1880_united_states_presidential_election_in_new_",
+      "size": 1606,
+      "top_axes": [
+        {
+          "axis": 118,
+          "mean_weight": 0.991439700126648
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.9912647604942322
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.08263451606035233
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.06708596646785736
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.06341718137264252
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.05870022997260094
+        }
+      ],
+      "anchor_labels": [
+        "1876 United States presidential election in Tennessee",
+        "1880 United States presidential election in New York",
+        "1881 United States Senate special elections in New York",
+        "1884 United States presidential election in New York",
+        "1887 United States Senate election in New York"
+      ]
+    },
+    {
+      "id": 108,
+      "name": "cluster_0108__anthony_mikovsky__brigid_arthur",
+      "size": 1080,
+      "top_axes": [
+        {
+          "axis": 105,
+          "mean_weight": 0.9797081351280212
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.8879009485244751
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.1284390538930893
+        },
+        {
+          "axis": 91,
+          "mean_weight": 0.1272229254245758
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.1254749745130539
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.1114150658249855
+        }
+      ],
+      "anchor_labels": [
+        "Anthony Mikovsky",
+        "Brigid Arthur",
+        "Atlanta Contemporary Art Center",
+        "Annales d'histochimie",
+        "Abdullah Tahiri"
+      ]
+    },
+    {
+      "id": 109,
+      "name": "cluster_0109__brookfoot__bedminster_bristol",
+      "size": 5051,
+      "top_axes": [
+        {
+          "axis": 114,
+          "mean_weight": 0.9888224601745605
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.9223697781562805
+        },
+        {
+          "axis": 96,
+          "mean_weight": 0.13139918446540833
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.05366344377398491
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.052559684962034225
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.04323907569050789
+        }
+      ],
+      "anchor_labels": [
+        "Brookfoot",
+        "Bedminster, Bristol",
+        "Becontree Heath",
+        "Bedfont",
+        "Bayswater"
+      ]
+    },
+    {
+      "id": 110,
+      "name": "cluster_0110__100_washington_square__bethel_presbyterian_church_clover_south_carolina",
+      "size": 9417,
+      "top_axes": [
+        {
+          "axis": 41,
+          "mean_weight": 0.9928014874458313
+        },
+        {
+          "axis": 109,
+          "mean_weight": 0.05475246161222458
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.052022624760866165
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.04916650429368019
+        },
+        {
+          "axis": 74,
+          "mean_weight": 0.04604802280664444
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.045329123735427856
+        }
+      ],
+      "anchor_labels": [
+        "100 Washington Square",
+        "Bethel Presbyterian Church (Clover, South Carolina)",
+        "Abingdon Glebe House",
+        "Berks County Trust Company building",
+        "Aitken Barn"
+      ]
+    },
+    {
+      "id": 111,
+      "name": "cluster_0111__bilingual_research_journal__bill_mckenzie_rugby_league",
+      "size": 2809,
+      "top_axes": [
+        {
+          "axis": 16,
+          "mean_weight": 0.9885974526405334
+        },
+        {
+          "axis": 30,
+          "mean_weight": 0.22221067547798157
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.19321443140506744
+        },
+        {
+          "axis": 79,
+          "mean_weight": 0.11986716836690903
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.09345928579568863
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.07999302446842194
+        }
+      ],
+      "anchor_labels": [
+        "Bilingual Research Journal",
+        "Bill McKenzie (rugby league)",
+        "1st Parliament of the Province of Canada",
+        "Blame (Sono song)",
+        "Alvis Hermanis"
+      ]
+    },
+    {
+      "id": 112,
+      "name": "cluster_0112__alex_herron__bass_phillip",
+      "size": 4250,
+      "top_axes": [
+        {
+          "axis": 21,
+          "mean_weight": 0.9726207256317139
+        },
+        {
+          "axis": 124,
+          "mean_weight": 0.17785631120204926
+        },
+        {
+          "axis": 72,
+          "mean_weight": 0.14102593064308167
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.1344461739063263
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.13348351418972015
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.09709188342094421
+        }
+      ],
+      "anchor_labels": [
+        "Alex Herron",
+        "Bass Phillip",
+        "Anthony Cianflone",
+        "Adam Szejnfeld",
+        "Beth Gleeson"
+      ]
+    },
+    {
+      "id": 113,
+      "name": "cluster_0113__alec_rayme__alix_wilton_regan",
+      "size": 2833,
+      "top_axes": [
+        {
+          "axis": 62,
+          "mean_weight": 0.9372128844261169
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.8986806869506836
+        },
+        {
+          "axis": 87,
+          "mean_weight": 0.2646385431289673
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.2360837459564209
+        },
+        {
+          "axis": 113,
+          "mean_weight": 0.2343442589044571
+        },
+        {
+          "axis": 11,
+          "mean_weight": 0.21333856880664825
+        }
+      ],
+      "anchor_labels": [
+        "Alec Rayme",
+        "Alix Wilton Regan",
+        "Aimen Dean",
+        "Aline Huke Frink",
+        "Bren Bataclan"
+      ]
+    },
+    {
+      "id": 114,
+      "name": "cluster_0114__166th_division_2nd_formation_people_s_republic_o__163rd_division_1st_formation_people_s_republic_o",
+      "size": 412,
+      "top_axes": [
+        {
+          "axis": 92,
+          "mean_weight": 0.9167901873588562
+        },
+        {
+          "axis": 25,
+          "mean_weight": 0.8735804557800293
+        },
+        {
+          "axis": 57,
+          "mean_weight": 0.7918520569801331
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.6140742897987366
+        },
+        {
+          "axis": 10,
+          "mean_weight": 0.15061728656291962
+        },
+        {
+          "axis": 29,
+          "mean_weight": 0.09703704714775085
+        }
+      ],
+      "anchor_labels": [
+        "166th Division (2nd Formation) (People's Republic of China)",
+        "163rd Division (1st Formation) (People's Republic of China)",
+        "208th Division (People's Republic of China)",
+        "3rd Interior Guard Division (People's Republic of China)",
+        "71st Division (2nd Formation) (People's Republic of China)"
+      ]
+    },
+    {
+      "id": 115,
+      "name": "cluster_0115__41st_missouri_infantry_regiment__3rd_michigan_infantry_regiment_reorganized",
+      "size": 1665,
+      "top_axes": [
+        {
+          "axis": 111,
+          "mean_weight": 0.899272084236145
+        },
+        {
+          "axis": 49,
+          "mean_weight": 0.890506386756897
+        },
+        {
+          "axis": 92,
+          "mean_weight": 0.86354660987854
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.6806151270866394
+        },
+        {
+          "axis": 116,
+          "mean_weight": 0.24787749350070953
+        },
+        {
+          "axis": 62,
+          "mean_weight": 0.11390453577041626
+        }
+      ],
+      "anchor_labels": [
+        "41st Missouri Infantry Regiment",
+        "3rd Michigan Infantry Regiment (Reorganized)",
+        "42nd United States Colored Infantry Regiment",
+        "191st Ohio Infantry Regiment",
+        "192nd Ohio Infantry Regiment"
+      ]
+    },
+    {
+      "id": 116,
+      "name": "cluster_0116__bardwell_texas__arp_texas",
+      "size": 3058,
+      "top_axes": [
+        {
+          "axis": 102,
+          "mean_weight": 0.9890140295028687
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.38488078117370605
+        },
+        {
+          "axis": 93,
+          "mean_weight": 0.2870445251464844
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.18013134598731995
+        },
+        {
+          "axis": 58,
+          "mean_weight": 0.08775459229946136
+        },
+        {
+          "axis": 117,
+          "mean_weight": 0.08748665452003479
+        }
+      ],
+      "anchor_labels": [
+        "Bardwell, Texas",
+        "Arp, Texas",
+        "Ashby, Minnesota",
+        "Barrett, Minnesota",
+        "Brooke Evers"
+      ]
+    },
+    {
+      "id": 117,
+      "name": "cluster_0117__amir_zargari__alan_grieco",
+      "size": 5900,
+      "top_axes": [
+        {
+          "axis": 22,
+          "mean_weight": 0.9848385453224182
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.15032263100147247
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.08637483417987823
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.0771121233701706
+        },
+        {
+          "axis": 20,
+          "mean_weight": 0.07709674537181854
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.07545313239097595
+        }
+      ],
+      "anchor_labels": [
+        "Amir Zargari",
+        "Alan Grieco",
+        "Anna Turvey",
+        "Beguelkar Airport",
+        "Bol-B\u00e9rim Airport"
+      ]
+    },
+    {
+      "id": 118,
+      "name": "cluster_0118__benafti__badamak_yazd",
+      "size": 9125,
+      "top_axes": [
+        {
+          "axis": 91,
+          "mean_weight": 0.9588789343833923
+        },
+        {
+          "axis": 84,
+          "mean_weight": 0.9442947506904602
+        },
+        {
+          "axis": 65,
+          "mean_weight": 0.9403175711631775
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.814472496509552
+        },
+        {
+          "axis": 24,
+          "mean_weight": 0.11092166602611542
+        },
+        {
+          "axis": 46,
+          "mean_weight": 0.10550859570503235
+        }
+      ],
+      "anchor_labels": [
+        "Benafti",
+        "Badamak, Yazd",
+        "Ali Moradi",
+        "Aderu",
+        "Bujru"
+      ]
+    },
+    {
+      "id": 119,
+      "name": "cluster_0119__berlin_brandenburger_tor_station__bremen_lesum_station",
+      "size": 5522,
+      "top_axes": [
+        {
+          "axis": 103,
+          "mean_weight": 0.9904575347900391
+        },
+        {
+          "axis": 33,
+          "mean_weight": 0.3265746235847473
+        },
+        {
+          "axis": 88,
+          "mean_weight": 0.12408215552568436
+        },
+        {
+          "axis": 31,
+          "mean_weight": 0.10543724149465561
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.05299169570207596
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.04255414009094238
+        }
+      ],
+      "anchor_labels": [
+        "Berlin Brandenburger Tor station",
+        "Bremen-Lesum station",
+        "Bremen-Oslebshausen station",
+        "Bremen-Sch\u00f6nebeck station",
+        "Berlin-Zehlendorf station"
+      ]
+    },
+    {
+      "id": 120,
+      "name": "cluster_0120__1949_edmonton_eskimos_season__1965_detroit_lions_season",
+      "size": 722,
+      "top_axes": [
+        {
+          "axis": 24,
+          "mean_weight": 0.9784901142120361
+        },
+        {
+          "axis": 26,
+          "mean_weight": 0.9303192496299744
+        },
+        {
+          "axis": 4,
+          "mean_weight": 0.20273062586784363
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.10548686981201172
+        },
+        {
+          "axis": 51,
+          "mean_weight": 0.09763005375862122
+        },
+        {
+          "axis": 107,
+          "mean_weight": 0.09544050693511963
+        }
+      ],
+      "anchor_labels": [
+        "1949 Edmonton Eskimos season",
+        "1965 Detroit Lions season",
+        "1955 BC Lions season",
+        "1954 BC Lions season",
+        "1966 Detroit Lions season"
+      ]
+    },
+    {
+      "id": 121,
+      "name": "cluster_0121__aikaterini_sarakatsani__avery_patterson",
+      "size": 3211,
+      "top_axes": [
+        {
+          "axis": 88,
+          "mean_weight": 0.9804829955101013
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.1947883814573288
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.16103538870811462
+        },
+        {
+          "axis": 61,
+          "mean_weight": 0.14603006839752197
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.14144806563854218
+        },
+        {
+          "axis": 18,
+          "mean_weight": 0.12976568937301636
+        }
+      ],
+      "anchor_labels": [
+        "Aikaterini Sarakatsani",
+        "Avery Patterson",
+        "Adi Ali Bakit, Anseba",
+        "Amy Yasbeck",
+        "Be\u011fendik Bridge"
+      ]
+    },
+    {
+      "id": 122,
+      "name": "cluster_0122__bethlehem_chapel_saint_jean_de_boiseau__anzara_county",
+      "size": 5085,
+      "top_axes": [
+        {
+          "axis": 44,
+          "mean_weight": 0.9895044565200806
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.18629135191440582
+        },
+        {
+          "axis": 3,
+          "mean_weight": 0.14081546664237976
+        },
+        {
+          "axis": 7,
+          "mean_weight": 0.09226823598146439
+        },
+        {
+          "axis": 39,
+          "mean_weight": 0.08523160219192505
+        },
+        {
+          "axis": 9,
+          "mean_weight": 0.07843130081892014
+        }
+      ],
+      "anchor_labels": [
+        "Bethlehem Chapel (Saint-Jean-de-Boiseau)",
+        "Anzara County",
+        "Boylesports Gold Cup",
+        "999 Peachtree",
+        "Appeal-Democrat"
+      ]
+    },
+    {
+      "id": 123,
+      "name": "cluster_0123__55_s_55__ariana_university",
+      "size": 7904,
+      "top_axes": [
+        {
+          "axis": 109,
+          "mean_weight": 0.9914669394493103
+        },
+        {
+          "axis": 75,
+          "mean_weight": 0.1142454445362091
+        },
+        {
+          "axis": 111,
+          "mean_weight": 0.07602259516716003
+        },
+        {
+          "axis": 49,
+          "mean_weight": 0.07530567795038223
+        },
+        {
+          "axis": 36,
+          "mean_weight": 0.0640338733792305
+        },
+        {
+          "axis": 50,
+          "mean_weight": 0.06364599615335464
+        }
+      ],
+      "anchor_labels": [
+        "55 S 55",
+        "Ariana University",
+        "Al Hussein (missile)",
+        "20 cm Luftminenwerfer M 16",
+        "9 cm Minenwerfer M 17"
+      ]
+    },
+    {
+      "id": 124,
+      "name": "cluster_0124__australian_aircraft_kits_bushman__bharawas",
+      "size": 5122,
+      "top_axes": [
+        {
+          "axis": 66,
+          "mean_weight": 0.9884207248687744
+        },
+        {
+          "axis": 95,
+          "mean_weight": 0.9182333946228027
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.6522090435028076
+        },
+        {
+          "axis": 62,
+          "mean_weight": 0.1942102462053299
+        },
+        {
+          "axis": 17,
+          "mean_weight": 0.1399695724248886
+        },
+        {
+          "axis": 41,
+          "mean_weight": 0.1329609453678131
+        }
+      ],
+      "anchor_labels": [
+        "Australian Aircraft Kits Bushman",
+        "Bharawas",
+        "Australian Aircraft Kits Wasp",
+        "Australian Aircraft Kits Hornet STOL",
+        "Bon Dialgam"
+      ]
+    },
+    {
+      "id": 125,
+      "name": "cluster_0125__asa_koma__appveyor",
+      "size": 1195,
+      "top_axes": [
+        {
+          "axis": 30,
+          "mean_weight": 0.9896124005317688
+        },
+        {
+          "axis": 20,
+          "mean_weight": 0.988612174987793
+        },
+        {
+          "axis": 37,
+          "mean_weight": 0.12650056183338165
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.1043398380279541
+        },
+        {
+          "axis": 63,
+          "mean_weight": 0.09533704072237015
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.0907202661037445
+        }
+      ],
+      "anchor_labels": [
+        "Asa Koma",
+        "AppVeyor",
+        "Bartica Airport",
+        "Altay Xuedu Airport",
+        "Abbeville Chris Crusta Memorial Airport"
+      ]
+    },
+    {
+      "id": 126,
+      "name": "cluster_0126__bogdan_va_t_uk__abdullah_yi_iter",
+      "size": 1915,
+      "top_axes": [
+        {
+          "axis": 71,
+          "mean_weight": 0.6511459350585938
+        },
+        {
+          "axis": 19,
+          "mean_weight": 0.5818691253662109
+        },
+        {
+          "axis": 45,
+          "mean_weight": 0.5346599221229553
+        },
+        {
+          "axis": 122,
+          "mean_weight": 0.5250560641288757
+        },
+        {
+          "axis": 20,
+          "mean_weight": 0.51536625623703
+        },
+        {
+          "axis": 46,
+          "mean_weight": 0.4981788098812103
+        }
+      ],
+      "anchor_labels": [
+        "Bogdan Va\u0161t\u0161uk",
+        "Abdullah Yi\u011fiter",
+        "Bendeg\u00faz Bolla",
+        "Andr\u00e9s Vombergar",
+        "Benj\u00e1min Cseke"
+      ]
+    },
+    {
+      "id": 127,
+      "name": "cluster_0127__bassin_bleu_jacmel__adam_tas_singer",
+      "size": 1857,
+      "top_axes": [
+        {
+          "axis": 83,
+          "mean_weight": 0.6808826923370361
+        },
+        {
+          "axis": 77,
+          "mean_weight": 0.5656627416610718
+        },
+        {
+          "axis": 119,
+          "mean_weight": 0.15436424314975739
+        },
+        {
+          "axis": 78,
+          "mean_weight": 0.0904165655374527
+        },
+        {
+          "axis": 34,
+          "mean_weight": 0.06914207339286804
+        },
+        {
+          "axis": 104,
+          "mean_weight": 0.06397252529859543
+        }
+      ],
+      "anchor_labels": [
+        "Bassin Bleu (Jacmel)",
+        "Adam Tas (singer)",
+        "Adamu Augie College of Education",
+        "Benue State University",
+        "Alpsee"
+      ]
+    }
+  ]
+}
