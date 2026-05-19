@@ -85,7 +85,7 @@ fn main() {
     println!("  {}", "-".repeat(66));
 
     let mut sorted_summaries: Vec<&_> = layer.summaries.iter().collect();
-    sorted_summaries.sort_by(|a, b| b.cohesion.partial_cmp(&a.cohesion).unwrap());
+    sorted_summaries.sort_by(|a, b| b.cohesion.total_cmp(&a.cohesion));
 
     for summary in &sorted_summaries {
         println!(
@@ -283,7 +283,7 @@ fn main() {
             ));
         }
     }
-    bridge_pairs.sort_by(|a, b| b.2.cmp(&a.2).then(b.3.partial_cmp(&a.3).unwrap()));
+    bridge_pairs.sort_by(|a, b| b.2.cmp(&a.2).then(b.3.total_cmp(&a.3)));
 
     println!("  Top 20 most-bridged domain pairs:\n");
     println!(
@@ -393,7 +393,7 @@ fn main() {
         .values()
         .flat_map(|v| v.iter())
         .collect();
-    all_bridges.sort_by(|a, b| b.bridge_strength.partial_cmp(&a.bridge_strength).unwrap());
+    all_bridges.sort_by(|a, b| b.bridge_strength.total_cmp(&a.bridge_strength));
 
     println!("  Top 15 boundary-straddling concepts (strongest bridges globally):\n");
     println!(
@@ -541,11 +541,6 @@ fn main() {
         embedding: vec![0.0; DIM],
     };
 
-    // The pipeline assigns ids in insertion order as "s-NNNN". Because
-    // build_corpus() returns a fixed, deterministic list, the numeric
-    // suffix equals the index in the corpus slice. See full_e2e.rs for the
-    // robust id-lookup approach (pipeline.ids() zipped with labels) when
-    // you don't control corpus order.
     for (src_idx, tgt_idx, desc) in &item_paths {
         let src_id = format!("s-{:04}", src_idx);
         let tgt_id = format!("s-{:04}", tgt_idx);
@@ -565,7 +560,6 @@ fn main() {
 
         if let SphereQLOutput::ConceptPath(Some(path)) = result {
             for (i, step) in path.steps.iter().enumerate() {
-                // Parse the numeric suffix from the pipeline-assigned "s-NNNN" id.
                 let item_idx: usize = step.id.strip_prefix("s-").unwrap().parse().unwrap();
                 let hop_str = if step.hop_distance > 0.0 {
                     format!(" hop={:.4}", step.hop_distance)

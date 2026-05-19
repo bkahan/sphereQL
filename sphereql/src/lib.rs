@@ -1,47 +1,16 @@
-//! # sphereQL
+//! Umbrella crate for SphereQL.
 //!
-//! Project high-dimensional embeddings onto a 3D sphere for fast semantic
-//! search, spatial queries, category-aware exploration, and interactive
-//! visualization.
+//! Re-exports each sub-crate behind a feature gate of the same name.
+//! Enable only the features your binary needs to keep compile times short.
 //!
-//! This umbrella crate re-exports each workspace sub-crate behind a named
-//! feature flag. Enable only what you need:
-//!
-//! ```toml
-//! [dependencies]
-//! sphereql = { version = "0.2.0-alpha", features = ["full"] }
-//! ```
-//!
-//! ## Feature flags
-//!
-//! | Feature | What it unlocks |
-//! |---|---|
-//! | `core` (default) | [`core`] — spherical math, coordinates, distance metrics, regions |
-//! | `index` | [`index`] — spatial indexing with shell + sector partitioning |
-//! | `layout` | [`layout`] — layout engines (Fibonacci, k-means, force-directed) |
-//! | `embed` | [`embed`] — projections, query pipeline, category enrichment, auto-tuner, meta-model |
-//! | `graphql` | [`graphql`] — `async-graphql` schema with spatial + category queries |
-//! | `vectordb` | [`vectordb`] — Qdrant / Pinecone / InMemory vector store bridge |
-//! | `pinecone` | Adds Pinecone backend (pulls `reqwest`; excluded from `full`) |
-//! | `retain-embeddings` | Keep original high-d embeddings in the pipeline for cosine re-ranking |
-//! | `full` | All of the above except `pinecone` |
-//!
-//! ## Minimal example
-//!
-//! ```rust,ignore
-//! use sphereql::embed::*;
-//!
-//! let input = PipelineInput {
-//!     categories: vec!["science".into(), "cooking".into()],
-//!     embeddings: vec![vec![0.1, 0.9, 0.3], vec![0.9, 0.1, 0.0]],
-//! };
-//! let pipeline = SphereQLPipeline::new(input).unwrap();
-//! let query = PipelineQuery { embedding: vec![0.15, 0.85, 0.35] };
-//! let results = pipeline.query(SphereQLQuery::Nearest { k: 1 }, &query).unwrap();
-//! ```
-//!
-//! See the [repository README](https://github.com/bkahan/sphereQL) and
-//! `docs/` for quickstarts in Rust, Python, and WASM.
+//! | Feature | Crate |
+//! |---------|-------|
+//! | `core` | [`sphereql_core`] — spherical geometry primitives |
+//! | `index` | [`sphereql_index`] — spatial index structures |
+//! | `layout` | [`sphereql_layout`] — projection & layout utilities |
+//! | `embed` | [`sphereql_embed`] — embedding pipeline + tuner |
+//! | `graphql` | [`sphereql_graphql`] — GraphQL schema layer |
+//! | `vectordb` | [`sphereql_vectordb`] — vector store backend |
 
 #[cfg(feature = "core")]
 pub mod core {

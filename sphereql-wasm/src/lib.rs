@@ -239,9 +239,8 @@ impl Pipeline {
         }
     }
 
-    /// Shared dimension-mismatch guard for every query-taking method —
-    /// the pipeline panics internally on a dim mismatch; we catch it at
-    /// the WASM boundary and surface a clean error instead.
+    /// Guards every query-taking method against dimension mismatches before
+    /// the query reaches the pipeline, where a mismatch would panic.
     fn require_matching_dim(&self, query: &PipelineQuery) -> Result<(), JsError> {
         let expected = self.inner.projection().dimensionality();
         if query.embedding.len() != expected {

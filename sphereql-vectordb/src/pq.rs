@@ -162,8 +162,6 @@ impl PqCodebook {
     /// the index of the nearest centroid in that subspace.
     pub fn encode(&self, embedding: &[f32]) -> Vec<u8> {
         let expected = self.m * self.sub_dim;
-        // Callers must validate dimension before encoding; this is an
-        // internal invariant, not a user-input check.
         debug_assert_eq!(
             embedding.len(),
             expected,
@@ -194,8 +192,6 @@ impl PqCodebook {
     /// squared distance from the query's subspace-m to centroid k.
     pub fn asymmetric_lut(&self, query: &[f32]) -> Vec<Vec<f32>> {
         let expected = self.m * self.sub_dim;
-        // Callers guard dimension before building the LUT; this is an
-        // internal invariant, not a user-input check.
         debug_assert_eq!(
             query.len(),
             expected,
@@ -359,10 +355,10 @@ impl PqIndex {
             // common k ≪ N case (k = 10 on N = 1e6).
             if heap.len() < k {
                 heap.push((id.to_string(), d));
-                heap.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                heap.sort_by(|a, b| a.1.total_cmp(&b.1));
             } else if d < heap[k - 1].1 {
                 heap[k - 1] = (id.to_string(), d);
-                heap.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                heap.sort_by(|a, b| a.1.total_cmp(&b.1));
             }
         });
         heap
@@ -395,7 +391,7 @@ impl PqIndex {
             }
             scored.push((id.clone(), d));
         }
-        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| a.1.total_cmp(&b.1));
         scored.truncate(k);
         scored
     }

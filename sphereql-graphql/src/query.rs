@@ -64,7 +64,7 @@ where
 
     Ok(SpatialQueryResultOutput {
         items,
-        total_scanned: result.total_scanned as i32,
+        total_scanned: i32::try_from(result.total_scanned).unwrap_or(i32::MAX),
     })
 }
 

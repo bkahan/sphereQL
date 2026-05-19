@@ -15,15 +15,16 @@ pub fn embed(features: &[(usize, f64)], seed: u64) -> Vec<f64> {
 
 /// [`embed`] with a configurable noise amplitude.
 ///
-/// Each dim gets uniform noise in `[-amplitude/2, +amplitude/2]` from a
-/// SplitMix64 stream. Use this to synthesize stress-test corpora that
-/// bracket the default regime (e.g. `amplitude=0.2` for a signal-to-noise
-/// ratio roughly 10× harsher than the built-in corpus).
+/// Each dimension gets uniform noise in `[-amplitude/2, +amplitude/2]` from a
+/// seeded LCG. Use this to synthesize stress-test corpora that bracket the
+/// default regime (e.g. `amplitude=0.2` for a signal-to-noise ratio roughly
+/// 10× harsher than the built-in corpus).
 pub fn embed_with_noise(features: &[(usize, f64)], seed: u64, amplitude: f64) -> Vec<f64> {
     let mut v = vec![0.0; DIM];
     for &(axis, val) in features {
         v[axis] = val;
     }
+    // Knuth's 64-bit LCG: cheap, deterministic, good enough for noise injection.
     let mut s = seed;
     for x in &mut v {
         s = s

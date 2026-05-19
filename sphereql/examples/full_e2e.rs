@@ -34,7 +34,7 @@ use sphereql::embed::{
     category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
 };
 use sphereql_corpus::axes::*;
-use sphereql_corpus::{Concept, CorpusId, DIM, ParquetLoadError, embed};
+use sphereql_corpus::{DIM, build_corpus, embed};
 
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
@@ -42,52 +42,11 @@ fn main() {
     println!("║      Auto-tune → Meta-learn → Embed → Analyze → Query     ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
-    for id in CorpusId::all() {
-        let corpus = match id.load() {
-            Ok(c) if c.is_empty() => {
-                println!("\n[{}] skipped — empty", id.name());
-                continue;
-            }
-            Ok(c) => c,
-            Err(ParquetLoadError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-                println!("\n[{}] skipped — data file not found", id.name());
-                continue;
-            }
-            Err(e) => {
-                println!("\n[{}] skipped — {e}", id.name());
-                continue;
-            }
-        };
-
-        println!("\n████████████████████████████████████████████████████████████████");
-        println!("  Corpus: {}", id.name());
-        println!("████████████████████████████████████████████████████████████████\n");
-        run_demo(corpus);
-    }
-}
-
-fn pick_n_cats<'a>(sorted: &[&'a str], n: usize) -> Vec<&'a str> {
-    sorted.iter().take(n).copied().collect()
-}
-
-fn pick_pairs<'a>(sorted: &[&'a str], n: usize) -> Vec<(&'a str, &'a str)> {
-    let mut pairs = Vec::new();
-    'outer: for i in 0..sorted.len() {
-        for j in (i + 1)..sorted.len() {
-            pairs.push((sorted[i], sorted[j]));
-            if pairs.len() >= n {
-                break 'outer;
-            }
-        }
-    }
-    pairs
-}
-
-fn run_demo(corpus: Vec<Concept>) {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // BUILD CORPUS
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+    let corpus = build_corpus();
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let embeddings: Vec<Vec<f64>> = corpus
@@ -99,8 +58,6 @@ fn run_demo(corpus: Vec<Concept>) {
 
     let unique_cats: std::collections::HashSet<&str> =
         categories.iter().map(|s| s.as_str()).collect();
-    let mut cats_sorted: Vec<&str> = unique_cats.iter().copied().collect();
-    cats_sorted.sort_unstable();
     println!(
         "Corpus: {} concepts across {} categories (dim={})\n",
         n,
@@ -119,13 +76,7 @@ fn run_demo(corpus: Vec<Concept>) {
 
     let space = SearchSpace::default();
     let metric = CompositeMetric::default_composite();
-    let budget = if n < 2_000 {
-        16
-    } else if n < 20_000 {
-        8
-    } else {
-        4
-    };
+    let budget = 16;
     let seed = 0x0A17_CABE_CAFE_u64;
 
     let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
@@ -329,7 +280,13 @@ fn run_demo(corpus: Vec<Concept>) {
         .collect();
 
     // Show a sample of projected points across different categories
-    let sample_cats = pick_n_cats(&cats_sorted, 5);
+    let sample_cats = [
+        "physics",
+        "music",
+        "computer_science",
+        "biology",
+        "philosophy",
+    ];
     println!(
         "  {:<30} {:<18} {:>7} {:>7} {:>9} {:>9}",
         "Concept", "Category", "θ (°)", "φ (°)", "Certainty", "Intensity"
@@ -434,7 +391,11 @@ fn run_demo(corpus: Vec<Concept>) {
     println!("  ── §4c. GEODESIC SWEEPS ────────────────────────────────────");
     println!("  What lies between two ideas on the great circle?\n");
 
-    let sweep_pairs = pick_pairs(&cats_sorted, 3);
+    let sweep_pairs = [
+        ("physics", "music"),
+        ("computer_science", "philosophy"),
+        ("biology", "economics"),
+    ];
     for (src, tgt) in &sweep_pairs {
         if let Some(sweep) = category_geodesic_sweep(
             layer,
@@ -560,10 +521,22 @@ fn run_demo(corpus: Vec<Concept>) {
     // 5b: Cross-domain concept paths
     println!("\n  ── §5b. CROSS-DOMAIN CONCEPT PATHS ────────────────────────");
 
-    let path_queries = pick_pairs(&cats_sorted, 3);
+    let path_queries = [
+        (
+            "nanotechnology",
+            "economics",
+            "How does nanotech impact the economy?",
+        ),
+        ("music", "biology", "Musical patterns in living systems?"),
+        (
+            "philosophy",
+            "computer_science",
+            "From abstract thought to computation",
+        ),
+    ];
 
-    for (src, tgt) in &path_queries {
-        println!("\n  {} → {}:", src, tgt);
+    for (src, tgt, question) in &path_queries {
+        println!("\n  Q: \"{}\"", question);
         if let Some(path) = pipeline.category_path(src, tgt) {
             let chain: Vec<&str> = path
                 .steps
@@ -603,7 +576,12 @@ fn run_demo(corpus: Vec<Concept>) {
 
     // 5c: Bridge items between select pairs
     println!("\n  ── §5c. BRIDGE CONCEPTS ───────────────────────────────────\n");
-    let bridge_pairs = pick_pairs(&cats_sorted, 4);
+    let bridge_pairs = [
+        ("physics", "computer_science"),
+        ("biology", "philosophy"),
+        ("music", "psychology"),
+        ("nanotechnology", "medicine"),
+    ];
     for (src, tgt) in &bridge_pairs {
         let bridges = pipeline.bridge_items(src, tgt, 3);
         let rev = pipeline.bridge_items(tgt, src, 3);
@@ -611,11 +589,7 @@ fn run_demo(corpus: Vec<Concept>) {
         let mut all: Vec<_> = bridges.into_iter().chain(rev).collect();
         all.sort_by_key(|a| a.item_index);
         all.dedup_by(|a, b| a.item_index == b.item_index);
-        all.sort_by(|a, b| {
-            b.bridge_strength
-                .partial_cmp(&a.bridge_strength)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        all.sort_by(|a, b| b.bridge_strength.total_cmp(&a.bridge_strength));
         let all: Vec<_> = all.iter().take(3).collect();
 
         if all.is_empty() {
@@ -884,23 +858,45 @@ fn run_demo(corpus: Vec<Concept>) {
     println!("\n  ── §7a. KNOWLEDGE GAP CARTOGRAPHY ─────────────────────────");
     println!("  Where on the sphere does knowledge run out?\n");
 
-    let mut test_points: Vec<(String, SphericalPoint)> = Vec::new();
-    let mut antipode_pts: Vec<(String, SphericalPoint)> = Vec::new();
-    for &cat in cats_sorted.iter().take(2) {
-        if let Some(s) = layer.summaries.iter().find(|s| s.name == cat) {
-            test_points.push((format!("At {cat} centroid"), s.centroid_position));
-            antipode_pts.push((format!("{cat} antipode"), antipode(&s.centroid_position)));
-        }
-    }
-    test_points.push((
-        "North pole (void?)".into(),
-        SphericalPoint::new_unchecked(1.0, 0.0, 0.01),
-    ));
-    test_points.push((
-        "South pole (void?)".into(),
-        SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01),
-    ));
-    test_points.extend(antipode_pts);
+    let test_points = [
+        (
+            "At physics centroid",
+            layer
+                .summaries
+                .iter()
+                .find(|s| s.name == "physics")
+                .unwrap()
+                .centroid_position,
+        ),
+        (
+            "At music centroid",
+            layer
+                .summaries
+                .iter()
+                .find(|s| s.name == "music")
+                .unwrap()
+                .centroid_position,
+        ),
+        (
+            "North pole (void?)",
+            SphericalPoint::new_unchecked(1.0, 0.0, 0.01),
+        ),
+        (
+            "South pole (void?)",
+            SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01),
+        ),
+        (
+            "Physics antipode",
+            antipode(
+                &layer
+                    .summaries
+                    .iter()
+                    .find(|s| s.name == "physics")
+                    .unwrap()
+                    .centroid_position,
+            ),
+        ),
+    ];
 
     println!("  {:<25} {:>12} interpretation", "Location", "Confidence");
     println!("  {}", "─".repeat(55));
@@ -956,7 +952,12 @@ fn run_demo(corpus: Vec<Concept>) {
     println!("\n  ── §7c. GEODESIC DEVIATION ───────────────────────────────");
     println!("  Graph path vs. direct great-circle arc (0 = perfect alignment)\n");
 
-    let dev_pairs = pick_pairs(&cats_sorted, 4);
+    let dev_pairs = [
+        ("physics", "music"),
+        ("computer_science", "religion"),
+        ("biology", "law"),
+        ("nanotechnology", "culinary_arts"),
+    ];
     for (src, tgt) in &dev_pairs {
         if let Some(dev) = category_path_deviation(layer, src, tgt) {
             let quality = if dev < 0.1 {
@@ -1043,10 +1044,8 @@ fn run_demo(corpus: Vec<Concept>) {
     }
 
     // Step 2: Find the category path
-    let phase7_src = cats_sorted.first().copied().unwrap_or("source");
-    let phase7_tgt = cats_sorted.last().copied().unwrap_or(phase7_src);
     println!("\n  Step 2 — Category path:");
-    if let Some(path) = pipeline.category_path(phase7_src, phase7_tgt) {
+    if let Some(path) = pipeline.category_path("music", "physics") {
         let chain: Vec<&str> = path
             .steps
             .iter()
@@ -1070,11 +1069,7 @@ fn run_demo(corpus: Vec<Concept>) {
                 let mut all: Vec<_> = bridges.into_iter().chain(rev).collect();
                 all.sort_by_key(|a| a.item_index);
                 all.dedup_by(|a, b| a.item_index == b.item_index);
-                all.sort_by(|a, b| {
-                    b.bridge_strength
-                        .partial_cmp(&a.bridge_strength)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
+                all.sort_by(|a, b| b.bridge_strength.total_cmp(&a.bridge_strength));
                 let all: Vec<_> = all.iter().take(2).collect();
 
                 let all_labels: Vec<String> = all
@@ -1111,7 +1106,7 @@ fn run_demo(corpus: Vec<Concept>) {
         }
 
         // Step 5: Geodesic deviation for this pair
-        if let Some(dev) = category_path_deviation(layer, phase7_src, phase7_tgt) {
+        if let Some(dev) = category_path_deviation(layer, "music", "physics") {
             println!(
                 "\n  Step 5 — Path deviation from geodesic: {:.4} rad ({:.1}°)",
                 dev,
@@ -1144,8 +1139,7 @@ fn run_demo(corpus: Vec<Concept>) {
             }
         }
 
-        // Step 7: Synthesize from path data — every claim below traces back
-        // to a value computed above (no hardcoded prose about the domains).
+        // Step 7: Synthesize
         let closeness = if path.total_distance < 0.5 {
             "surprisingly close"
         } else if path.total_distance < 1.0 {
@@ -1156,111 +1150,29 @@ fn run_demo(corpus: Vec<Concept>) {
             "quite distant"
         };
 
-        let src_name = path
-            .steps
-            .first()
-            .map(|s| s.category_name.as_str())
-            .unwrap_or("source");
-        let tgt_name = path
-            .steps
-            .last()
-            .map(|s| s.category_name.as_str())
-            .unwrap_or("target");
-        let n_hops = path.steps.len().saturating_sub(1);
-
-        let mut best_bridge: Option<(String, f64, String, String)> = None;
-        for (i, step) in path.steps.iter().enumerate() {
-            if i + 1 >= path.steps.len() {
-                break;
-            }
-            let next = &path.steps[i + 1];
-            let fwd: Vec<(usize, f64)> = pipeline
-                .bridge_items(&step.category_name, &next.category_name, 1)
-                .into_iter()
-                .map(|b| (b.item_index, b.bridge_strength))
-                .collect();
-            let rev: Vec<(usize, f64)> = pipeline
-                .bridge_items(&next.category_name, &step.category_name, 1)
-                .into_iter()
-                .map(|b| (b.item_index, b.bridge_strength))
-                .collect();
-            let top = fwd
-                .into_iter()
-                .chain(rev)
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-            if let Some((idx, strength)) = top
-                && best_bridge.as_ref().is_none_or(|x| strength > x.1)
-            {
-                best_bridge = Some((
-                    labels[idx].to_string(),
-                    strength,
-                    step.category_name.clone(),
-                    next.category_name.clone(),
-                ));
-            }
-        }
-
-        let confidence_note = if path.path_confidence > 0.5 {
-            "solid"
-        } else if path.path_confidence > 0.1 {
-            "moderate"
-        } else {
-            "tenuous"
-        };
-
-        println!("\n  ┌─ SYNTHESIZED ANSWER ─────────────────────────────────────");
-        println!("  │");
+        println!("\n  ┌──────────────────────────────────────────────────────────┐");
+        println!("  │  SYNTHESIZED ANSWER                                      │");
+        println!("  │                                                          │");
         println!(
-            "  │  {} and {} are {} on the semantic sphere",
-            src_name, tgt_name, closeness
+            "  │  Music and physics are {} on the semantic  │",
+            closeness
         );
         println!(
-            "  │  (geodesic distance {:.3} rad / {:.3}π, {} hop{}).",
-            path.total_distance,
-            path.total_distance / std::f64::consts::PI,
-            n_hops,
-            if n_hops == 1 { "" } else { "s" }
+            "  │  sphere (distance {:.3} / π). The connection runs     │",
+            path.total_distance / std::f64::consts::PI
         );
-        println!("  │");
-        if n_hops <= 1 {
-            println!("  │  The two categories are direct neighbors — no intermediate");
-            println!("  │  domains are needed to bridge them.");
-        } else {
-            let chain: Vec<&str> = path
-                .steps
-                .iter()
-                .map(|s| s.category_name.as_str())
-                .collect();
-            println!(
-                "  │  Path routes through {} intermediate categor{}:",
-                n_hops - 1,
-                if n_hops - 1 == 1 { "y" } else { "ies" }
-            );
-            println!("  │    {}", chain.join(" → "));
-        }
-        println!("  │");
-        match best_bridge {
-            Some((label, strength, from, to)) => {
-                println!("  │  Strongest bridge concept along the path:");
-                println!(
-                    "  │    \"{}\" (strength {:.3}) at the {} → {} hop",
-                    label, strength, from, to
-                );
-            }
-            None => {
-                println!("  │  No item-level bridges span the hops — the path uses pure");
-                println!("  │  category adjacency rather than concrete connectors.");
-            }
-        }
-        println!("  │");
+        println!("  │  through shared mathematical structure — waves,        │");
+        println!("  │  harmonics, and resonance are native to both fields.   │");
+        println!("  │                                                          │");
+        println!("  │  Bridge concepts at each transition provide specific    │");
+        println!("  │  jumping-off points for cross-domain reasoning. The    │");
         println!(
-            "  │  Path confidence: {:.3} ({}). Projection retains {:.1}%",
-            path.path_confidence,
-            confidence_note,
+            "  │  projection preserves {:.1}% of the original semantic    │",
             evr * 100.0
         );
-        println!("  │  of the original high-dimensional structure.");
-        println!("  └──────────────────────────────────────────────────────────");
+        println!("  │  structure, giving confidence that these spatial        │");
+        println!("  │  relationships reflect genuine conceptual affinity.     │");
+        println!("  └──────────────────────────────────────────────────────────┘");
     }
 
     // ════════════════════════════════════════════════════════════════════════

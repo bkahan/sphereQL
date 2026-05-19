@@ -36,7 +36,8 @@ pub struct Relation {
     pub evidence: Option<String>,
 }
 
-/// Extracts relations between concepts from text + geometry.
+/// Extracts directed semantic edges from a concept list using hardcoded domain
+/// knowledge and geometric inference (small Δθ + Δφ → NEAR / IsA).
 pub struct RelationEncoder {
     theta_near: f64,
 }
@@ -212,8 +213,9 @@ impl RelationEncoder {
         let mut rels = Vec::new();
         for (i, &(si, sc)) in salient.iter().enumerate() {
             for &(ti, tc) in &salient[i + 1..] {
-                let sp = sc.point.as_ref().unwrap();
-                let tp = tc.point.as_ref().unwrap();
+                let (Some(sp), Some(tp)) = (sc.point.as_ref(), tc.point.as_ref()) else {
+                    continue;
+                };
                 let dt = theta_distance(sp.theta, tp.theta);
                 let dp = (sp.phi - tp.phi).abs();
 

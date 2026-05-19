@@ -75,13 +75,13 @@ impl ConceptGraph {
             .filter(|&i| self.concepts[i].point.is_some())
             .collect();
         sorted.sort_by(|&a, &b| {
-            let ra = self.concepts[a].point.as_ref().unwrap().r;
-            let rb = self.concepts[b].point.as_ref().unwrap().r;
+            let ra = self.concepts[a].point.as_ref().map_or(0.0, |p| p.r);
+            let rb = self.concepts[b].point.as_ref().map_or(0.0, |p| p.r);
             rb.total_cmp(&ra)
         });
         for &i in &sorted {
             let c = &self.concepts[i];
-            let p = c.point.as_ref().unwrap();
+            let Some(p) = c.point.as_ref() else { continue };
             let name = safe_ident(&c.normalized);
             let dom = taxonomy.domain_name(p.theta);
             out.push_str(&format!(

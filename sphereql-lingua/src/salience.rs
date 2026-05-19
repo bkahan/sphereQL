@@ -1,6 +1,7 @@
 use crate::concept::Concept;
 use std::collections::HashMap;
 
+/// Computes per-concept salience and maps it to a radial value r ∈ [r_min, r_max].
 pub struct SalienceScorer {
     pub r_min: f64,
     pub r_max: f64,

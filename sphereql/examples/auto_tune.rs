@@ -17,99 +17,52 @@
 //!   cargo run --example auto_tune --features embed --release
 //!
 //! Switch corpora via the `SPHEREQL_CORPUS` env var:
-//!   built_in        → 775-concept hand-crafted corpus
-//!   extended        → ~5,000-concept OpenAlex-derived corpus
-//!   full            → union of built-in + extended
-//!   stress          → 300-concept extreme-sparsity stress corpus
-//!   all (default)   → run back-to-back on built_in then extended
+//!   SPHEREQL_CORPUS=stress  → 300-concept extreme-sparsity stress corpus
+//!   (anything else or unset → 775-concept built-in corpus)
 
 use sphereql::embed::{
     BridgeClassification, CompositeMetric, PipelineConfig, PipelineInput, ProjectionKind,
     QualityMetric, SearchSpace, SearchStrategy, SphereQLPipeline, TuneReport, auto_tune,
 };
 use sphereql_corpus::{
-    Concept, STRESS_NOISE_AMPLITUDE, build_corpus, build_extended_corpus, build_full_corpus,
-    build_stress_corpus, embed, embed_with_noise,
+    Concept, STRESS_NOISE_AMPLITUDE, build_corpus, build_stress_corpus, embed, embed_with_noise,
 };
 
 const RANDOM_BUDGET: usize = 24;
 const RANDOM_SEED: u64 = 0x0A17_CABE_CAFE;
 
-fn embed_default(corpus: &[Concept]) -> Vec<Vec<f64>> {
-    corpus
-        .iter()
-        .enumerate()
-        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
-        .collect()
-}
+fn load_corpus_from_env() -> (Vec<Concept>, Vec<String>, Vec<Vec<f64>>, &'static str) {
+    let use_stress = std::env::var("SPHEREQL_CORPUS")
+        .map(|v| v == "stress")
+        .unwrap_or(false);
 
-fn embed_stress(corpus: &[Concept]) -> Vec<Vec<f64>> {
-    corpus
-        .iter()
-        .enumerate()
-        .map(|(i, c)| embed_with_noise(&c.features, 9000 + i as u64, STRESS_NOISE_AMPLITUDE))
-        .collect()
-}
-
-fn corpus_choice() -> &'static str {
-    match std::env::var("SPHEREQL_CORPUS")
-        .ok()
-        .as_deref()
-        .unwrap_or("all")
-    {
-        "stress" => "stress",
-        "built_in" => "built_in",
-        "extended" => "extended",
-        "full" => "full",
-        _ => "all",
-    }
-}
-
-#[allow(clippy::type_complexity)]
-fn load_runs(choice: &str) -> Vec<(&'static str, Vec<Concept>, Vec<String>, Vec<Vec<f64>>)> {
-    fn run_for(
-        label: &'static str,
-        corpus: Vec<Concept>,
-        stress: bool,
-    ) -> (&'static str, Vec<Concept>, Vec<String>, Vec<Vec<f64>>) {
+    if use_stress {
+        let corpus = build_stress_corpus();
         let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
-        let embeddings = if stress {
-            embed_stress(&corpus)
-        } else {
-            embed_default(&corpus)
-        };
-        (label, corpus, categories, embeddings)
-    }
-    match choice {
-        "stress" => vec![run_for("stress", build_stress_corpus(), true)],
-        "built_in" => vec![run_for("built_in", build_corpus(), false)],
-        "extended" => vec![run_for("extended", build_extended_corpus(), false)],
-        "full" => vec![run_for("full", build_full_corpus(), false)],
-        _ => vec![
-            run_for("built_in", build_corpus(), false),
-            run_for("extended", build_extended_corpus(), false),
-        ],
+        let embeddings: Vec<Vec<f64>> = corpus
+            .iter()
+            .enumerate()
+            .map(|(i, c)| embed_with_noise(&c.features, 9000 + i as u64, STRESS_NOISE_AMPLITUDE))
+            .collect();
+        (corpus, categories, embeddings, "stress")
+    } else {
+        let corpus = build_corpus();
+        let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
+        let embeddings: Vec<Vec<f64>> = corpus
+            .iter()
+            .enumerate()
+            .map(|(i, c)| embed(&c.features, 1000 + i as u64))
+            .collect();
+        (corpus, categories, embeddings, "built_in")
     }
 }
 
 fn main() {
-    let choice = corpus_choice();
-    let runs = load_runs(choice);
-    for (corpus_label, corpus, categories, embeddings) in runs {
-        run_demo(corpus_label, &corpus, &categories, &embeddings);
-    }
-}
-
-fn run_demo(
-    corpus_label: &str,
-    corpus: &[Concept],
-    categories: &[String],
-    embeddings: &[Vec<f64>],
-) {
-    println!("\n================================================================");
-    println!("  SphereQL AutoTuner: metric-choice comparison ({corpus_label})");
+    println!("================================================================");
+    println!("  SphereQL AutoTuner: metric-choice comparison");
     println!("================================================================\n");
 
+    let (corpus, categories, embeddings, corpus_label) = load_corpus_from_env();
     let n = corpus.len();
     let unique_cats: std::collections::HashSet<&str> =
         categories.iter().map(|s| s.as_str()).collect();
@@ -124,8 +77,7 @@ fn run_demo(
         "Budget: {} random trials (seed = 0x{:X})\n",
         RANDOM_BUDGET, RANDOM_SEED
     );
-    let _ = corpus; // keep for future per-concept reporting; not used past this point
-    let _ = n;
+    drop(corpus);
 
     let space = SearchSpace::default();
     // Small budget chosen deliberately so Bayesian's sample-efficiency
@@ -177,8 +129,8 @@ fn run_demo(
     // Baseline: the default-config pipeline, built once and scored under
     // each metric below for the "lift over default" comparison.
     let baseline_pipeline = SphereQLPipeline::new(PipelineInput {
-        categories: categories.to_vec(),
-        embeddings: embeddings.to_vec(),
+        categories: categories.clone(),
+        embeddings: embeddings.clone(),
     })
     .expect("baseline pipeline build failed");
 
@@ -186,7 +138,7 @@ fn run_demo(
     let default_metric = CompositeMetric::default_composite();
     let default_baseline_score = default_metric.score(&baseline_pipeline);
     let (default_pipeline, default_report) =
-        run_tune(categories, embeddings, &space, &default_metric);
+        run_tune(&categories, &embeddings, &space, &default_metric);
 
     println!("\n================================================================");
     println!("  Metric 1: default_composite (silhouette 25%)");
@@ -201,7 +153,7 @@ fn run_demo(
     // Connectivity (modularity-weighted) composite.
     let conn_metric = CompositeMetric::connectivity_composite();
     let conn_baseline_score = conn_metric.score(&baseline_pipeline);
-    let (conn_pipeline, conn_report) = run_tune(categories, embeddings, &space, &conn_metric);
+    let (conn_pipeline, conn_report) = run_tune(&categories, &embeddings, &space, &conn_metric);
 
     println!("\n================================================================");
     println!("  Metric 2: connectivity_composite (graph modularity 50%)");
@@ -223,8 +175,8 @@ fn run_demo(
     println!("================================================================\n");
 
     let (random_best, random_trials_to_best) = run_strategy(
-        categories,
-        embeddings,
+        &categories,
+        &embeddings,
         &space,
         &default_metric,
         SearchStrategy::Random {
@@ -233,8 +185,8 @@ fn run_demo(
         },
     );
     let (bayes_best, bayes_trials_to_best) = run_strategy(
-        categories,
-        embeddings,
+        &categories,
+        &embeddings,
         &space,
         &default_metric,
         SearchStrategy::Bayesian {
