@@ -246,7 +246,7 @@ class FeedbackAggregator:
         r"""
         Summarize feedback for one corpus. Returns None if no events.
         """
-    def summarize_all(self) -> builtins.dict:
+    def summarize_all(self) -> dict:
         r"""
         Summarize every corpus that has events. Returns a dict keyed by corpus_id.
         """
