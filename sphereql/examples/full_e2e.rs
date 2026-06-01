@@ -99,7 +99,10 @@ fn select_corpora() -> Vec<CorpusId> {
         .interact();
 
     match result {
-        Ok(indices) => indices.into_iter().map(|i| candidates[i].0.clone()).collect(),
+        Ok(indices) => indices
+            .into_iter()
+            .map(|i| candidates[i].0.clone())
+            .collect(),
         Err(_) => {
             eprintln!("Not running interactively — defaulting to HandCrafted corpus.");
             vec![CorpusId::HandCrafted]
@@ -853,7 +856,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             let items: Vec<String> = results
                 .iter()
                 .map(|r| {
-                    let sphere = if r.used_inner_sphere { "inner" } else { "outer" };
+                    let sphere = if r.used_inner_sphere {
+                        "inner"
+                    } else {
+                        "outer"
+                    };
                     format!(
                         "\"{}\" ({}, d={:.4})",
                         labels[r.item_index], sphere, r.distance
@@ -1195,9 +1202,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
 
                 let all_labels: Vec<String> = all
                     .iter()
-                    .map(|b| {
-                        format!("\"{}\" (s={:.3})", labels[b.item_index], b.bridge_strength)
-                    })
+                    .map(|b| format!("\"{}\" (s={:.3})", labels[b.item_index], b.bridge_strength))
                     .collect();
                 if all_labels.is_empty() {
                     println!(
