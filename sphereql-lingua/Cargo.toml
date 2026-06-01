@@ -12,6 +12,3 @@ categories = ["text-processing", "science", "algorithms"]
 sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
 serde = { version = "1", features = ["derive"] }
 regex = "1"
-
-[dev-dependencies]
-approx = "0.5"
