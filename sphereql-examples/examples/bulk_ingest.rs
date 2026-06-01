@@ -11,21 +11,21 @@
 //! ```bash
 //! # Default: 500K from Wikidata SPARQL (~30 min – 2 h depending on
 //! # rate limit). Requires --features bulk-http (the default).
-//! cargo run -p sphereql-corpus --example bulk_ingest --release -- \
+//! cargo run -p sphereql-examples --example bulk_ingest --release -- \
 //!     --source wikidata_sparql \
 //!     --out /tmp/wikidata_500k.parquet \
 //!     --target-size 500000
 //!
 //! # 5M from OpenAlex shards. Requires --features bulk-gzip (default)
 //! # and a local shard directory populated via `aws s3 sync`.
-//! cargo run -p sphereql-corpus --example bulk_ingest --release -- \
+//! cargo run -p sphereql-examples --example bulk_ingest --release -- \
 //!     --source openalex_shard \
 //!     --shard-dir /tmp/openalex_shards \
 //!     --out /tmp/openalex_5m.parquet \
 //!     --target-size 5000000
 //!
 //! # 50M from the full Wikidata dump. Requires --features bulk-dump.
-//! cargo run -p sphereql-corpus --example bulk_ingest --release \
+//! cargo run -p sphereql-examples --example bulk_ingest --release \
 //!     --features bulk-dump -- \
 //!     --source wikidata_dump \
 //!     --dump /data/latest-all.json.bz2 \

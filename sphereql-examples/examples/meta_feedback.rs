@@ -18,7 +18,7 @@
 //! default `~/.sphereql/` store).
 //!
 //! Run with:
-//!   cargo run --example meta_feedback --features embed --release
+//!   cargo run -p sphereql-examples --example meta_feedback --release
 
 use sphereql::embed::{
     CorpusFeatures, FeedbackAggregator, FeedbackEvent, MetaTrainingRecord, PipelineConfig,

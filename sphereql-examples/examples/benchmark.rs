@@ -2,7 +2,7 @@
 //! vs Hybrid search.
 //!
 //! Run with:
-//!   cargo run --example benchmark -p sphereql --features full --release
+//!   cargo run -p sphereql-examples --example benchmark --release
 
 use std::collections::HashMap;
 use std::time::Instant;

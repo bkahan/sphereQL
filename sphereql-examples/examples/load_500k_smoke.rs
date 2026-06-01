@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! python3 sphereql-corpus/tools/synthesize_500k.py
-//! cargo run -p sphereql-corpus --example load_500k_smoke --release
+//! cargo run -p sphereql-examples --example load_500k_smoke --release
 //! ```
 //!
 //! Expected: < 30s wall, < 2 GB RSS. Phase 3 acceptance criterion.

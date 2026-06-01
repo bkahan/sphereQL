@@ -150,13 +150,13 @@ want.
 
 ## See also
 
-- [`examples/auto_tune.rs`](../sphereql/examples/auto_tune.rs) — a full
+- [`examples/auto_tune.rs`](../sphereql-examples/examples/auto_tune.rs) — a full
   sweep on either corpus.
-- [`examples/meta_learn.rs`](../sphereql/examples/meta_learn.rs) —
+- [`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) —
   cross-corpus tune → record → verify MetaModel prediction.
-- [`examples/meta_warm_start.rs`](../sphereql/examples/meta_warm_start.rs)
+- [`examples/meta_warm_start.rs`](../sphereql-examples/examples/meta_warm_start.rs)
   — recall a config, refine from it.
-- [`examples/meta_feedback.rs`](../sphereql/examples/meta_feedback.rs)
+- [`examples/meta_feedback.rs`](../sphereql-examples/examples/meta_feedback.rs)
   — L3 feedback blending in action.
 - [Empirical findings](empirical-findings.md) — PCA wins the built-in
   corpus, Laplacian wins the stress corpus. The metalearning framework

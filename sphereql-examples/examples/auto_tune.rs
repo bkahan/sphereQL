@@ -14,7 +14,7 @@
 //! metric-choice artifact rather than a property of the corpus.
 //!
 //! Run with:
-//!   cargo run --example auto_tune --features embed --release
+//!   cargo run -p sphereql-examples --example auto_tune --release
 //!
 //! Switch corpora via the `SPHEREQL_CORPUS` env var:
 //!   SPHEREQL_CORPUS=stress  → 300-concept extreme-sparsity stress corpus

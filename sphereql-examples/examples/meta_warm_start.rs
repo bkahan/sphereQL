@@ -21,7 +21,7 @@
 //! verified at both scales.
 //!
 //! Run with:
-//!   cargo run --example meta_warm_start --features embed --release
+//!   cargo run -p sphereql-examples --example meta_warm_start --release
 
 use sphereql::embed::{
     CompositeMetric, CorpusFeatures, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,

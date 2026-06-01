@@ -21,7 +21,7 @@
 //! `~/.sphereql/` store) so running the example is self-contained.
 //!
 //! Run with:
-//!   cargo run --example meta_learn --features embed --release
+//!   cargo run -p sphereql-examples --example meta_learn --release
 
 use sphereql::embed::{
     CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord,

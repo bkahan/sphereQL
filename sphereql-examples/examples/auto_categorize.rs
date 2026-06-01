@@ -6,7 +6,7 @@
 //!
 //! Run:
 //!   python3 sphereql-embed/tools/auto_classify.py > sphereql-embed/tools/embeddings_auto.json
-//!   cargo run --example auto_categorize -p sphereql --features embed
+//!   cargo run -p sphereql-examples --example auto_categorize
 
 use std::collections::HashMap;
 

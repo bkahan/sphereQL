@@ -73,7 +73,8 @@ let custom = CorpusId::Parquet("/tmp/my_corpus.parquet".into()).load()?;
 ```
 
 Bulk parquet files are produced by the `bulk_ingest` example — see
-`examples/bulk_ingest.rs` for usage.
+[`sphereql-examples/examples/bulk_ingest.rs`](../sphereql-examples/examples/bulk_ingest.rs)
+for usage.
 
 ## Embedding format
 

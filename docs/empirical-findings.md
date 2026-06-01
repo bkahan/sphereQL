@@ -21,17 +21,17 @@ projection is right, so the pipeline picks one per corpus.
 
 ```bash
 # Built-in corpus (default)
-cargo run --example auto_tune -p sphereql --features embed --release
+cargo run -p sphereql-examples --example auto_tune --release
 
 # Stress corpus
 SPHEREQL_CORPUS=stress \
-    cargo run --example auto_tune -p sphereql --features embed --release
+    cargo run -p sphereql-examples --example auto_tune --release
 
 # Both corpora at once, with MetaModel verification
-cargo run --example meta_learn -p sphereql --features embed --release
+cargo run -p sphereql-examples --example meta_learn --release
 ```
 
-[`examples/meta_learn.rs`](../sphereql/examples/meta_learn.rs) also
+[`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) also
 verifies that a `NearestNeighborMetaModel` fitted on both records can
 predict the winning projection family from each corpus's feature
 profile without re-running the tuner.

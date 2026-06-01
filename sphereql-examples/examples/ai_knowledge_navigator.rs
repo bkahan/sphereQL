@@ -25,7 +25,7 @@
 //!  13.  Assembled reasoning chain from spatial structure
 //!
 //! Run with:
-//!   cargo run --example ai_knowledge_navigator --features embed
+//!   cargo run -p sphereql-examples --example ai_knowledge_navigator
 
 use sphereql::embed::{
     PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,

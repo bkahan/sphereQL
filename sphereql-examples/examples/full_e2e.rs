@@ -22,7 +22,7 @@
 //!             and a synthesized cross-domain reasoning chain.
 //!
 //! Run with:
-//!   cargo run --example full_e2e --features embed --release
+//!   cargo run -p sphereql-examples --example full_e2e --release
 //!
 //! A terminal prompt lets you select which corpus to run. Multiple
 //! corpora can be selected and will run sequentially. Auto-tune budget

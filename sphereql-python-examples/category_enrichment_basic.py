@@ -8,7 +8,7 @@ Demonstrates SphereQL's hierarchical category system:
 
 Usage:
   pip install sphereql  # or: maturin develop --features embed
-  python examples/category_enrichment.py
+  python sphereql-python-examples/category_enrichment_basic.py
 """
 
 import numpy as np

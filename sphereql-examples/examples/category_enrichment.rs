@@ -8,7 +8,7 @@
 //! - Drill-down queries within a single category
 //!
 //! Run with:
-//!   cargo run --example category_enrichment --features embed
+//!   cargo run -p sphereql-examples --example category_enrichment
 
 use sphereql::embed::{
     BridgeClassification, BridgeItem, CategorySummary, PipelineInput, PipelineQuery,

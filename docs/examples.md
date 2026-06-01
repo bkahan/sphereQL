@@ -1,45 +1,49 @@
 # Examples
 
-Runnable examples live in [`sphereql/examples/`](../sphereql/examples/)
-(Rust) and [`sphereql-python/examples/`](../sphereql-python/examples/)
-plus [`examples/`](../examples/) (Python).
+Runnable examples live in [`sphereql-examples/examples/`](../sphereql-examples/examples/)
+(Rust) and [`sphereql-python-examples/`](../sphereql-python-examples/)
+(Python).
+
+The Rust examples crate pulls in `sphereql` with the `full` feature set
+plus each sub-crate directly, so individual invocations no longer need
+`--features` flags.
 
 ## Rust — basics
 
 ```bash
 # Basic spherical math
-cargo run --example basic_positioning -p sphereql --features core
+cargo run -p sphereql-examples --example basic_positioning
 
 # Spatial indexing and geospatial queries
-cargo run --example geospatial -p sphereql --features index
+cargo run -p sphereql-examples --example geospatial
 
 # GraphQL server
-cargo run --example graphql_server -p sphereql --features full
+cargo run -p sphereql-examples --example graphql_server
 
 # Embedding projection
-cargo run --example word_embeddings   -p sphereql --features embed
-cargo run --example semantic_search   -p sphereql --features embed
-cargo run --example auto_categorize   -p sphereql --features embed
+cargo run -p sphereql-examples --example word_embeddings
+cargo run -p sphereql-examples --example semantic_search
+cargo run -p sphereql-examples --example auto_categorize
 ```
 
 ## Rust — category enrichment & spatial analysis
 
 ```bash
 # Category Enrichment Layer — inter-category graph, bridges, inner spheres
-cargo run --example category_enrichment -p sphereql --features embed
+cargo run -p sphereql-examples --example category_enrichment
 
 # AI Knowledge Navigator — 13 analyses on the 775-concept corpus
-cargo run --example ai_knowledge_navigator -p sphereql --features embed
+cargo run -p sphereql-examples --example ai_knowledge_navigator
 
 # Spatial Analysis on S² — every geometric primitive (antipode, Voronoi,
 # geodesic sweep, lunes, curvature) raw and navigator-wrapped
-cargo run --example spatial_analysis -p sphereql --features embed
+cargo run -p sphereql-examples --example spatial_analysis
 
 # End-to-end transformer embedding pipeline
-cargo run --example e2e_transformer -p sphereql --features embed
+cargo run -p sphereql-examples --example e2e_transformer
 
 # Benchmarks
-cargo run --example benchmark -p sphereql --features full
+cargo run -p sphereql-examples --example benchmark
 ```
 
 ## Rust — comprehensive end-to-end demo
@@ -48,25 +52,25 @@ cargo run --example benchmark -p sphereql --features full
 # Full 7-phase demo: auto-tune → meta-learn → embed → spatial analysis →
 # category analysis → queries → AI-enhanced divergence cartography.
 # Exercises every major API in a single run.
-cargo run --example full_e2e -p sphereql --features embed --release
+cargo run -p sphereql-examples --example full_e2e --release
 ```
 
 ## Rust — auto-tuning and meta-learning
 
 ```bash
 # Sweep PCA vs Laplacian on either corpus (flip with SPHEREQL_CORPUS=stress)
-cargo run --example auto_tune -p sphereql --features embed --release
+cargo run -p sphereql-examples --example auto_tune --release
 
 # Tune both corpora, accumulate MetaTrainingRecords, verify the MetaModel
 # predicts the right projection family from a corpus feature profile
-cargo run --example meta_learn -p sphereql --features embed --release
+cargo run -p sphereql-examples --example meta_learn --release
 
 # Warm-started hybrid: recall a config from the meta-store, then run a
 # few refinement trials from that starting point
-cargo run --example meta_warm_start -p sphereql --features embed --release
+cargo run -p sphereql-examples --example meta_warm_start --release
 
 # L3 feedback loop: blend per-query FeedbackEvents into stored records
-cargo run --example meta_feedback -p sphereql --features embed --release
+cargo run -p sphereql-examples --example meta_feedback --release
 ```
 
 ## Python
@@ -75,11 +79,10 @@ cargo run --example meta_feedback -p sphereql --features embed --release
 cd sphereql-python
 pip install maturin numpy
 maturin develop
+cd ..
 
-python examples/quickstart.py
-python examples/kernel_pca.py
-python examples/dataset.py
-
-# Category enrichment (from repo root)
-python examples/category_enrichment.py
+python sphereql-python-examples/quickstart.py
+python sphereql-python-examples/kernel_pca.py
+python sphereql-python-examples/dataset.py
+python sphereql-python-examples/category_enrichment.py
 ```
