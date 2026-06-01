@@ -191,6 +191,33 @@ fn max_pointwise_angular_distance(a: &[SphericalPoint], b: &[SphericalPoint]) ->
         .fold(0.0_f64, f64::max)
 }
 
+/// Verify that every projected point lies on the unit sphere within `tol`.
+///
+/// `SphericalPoint.r` stores the radial coordinate. All projections in this
+/// test use `RadialStrategy::Magnitude`, which can produce r ≠ 1. We assert
+/// r is strictly positive and finite — a true unit-sphere check would require
+/// `RadialStrategy::Fixed(1.0)`. This guards against regressions where a
+/// refactor emits NaN or zero radii.
+fn assert_points_finite_and_positive_r(name: &str, points: &[SphericalPoint]) {
+    for (i, p) in points.iter().enumerate() {
+        assert!(
+            p.r.is_finite() && p.r > 0.0,
+            "{name}: point {i} has non-positive or non-finite r = {}",
+            p.r
+        );
+        assert!(
+            p.theta.is_finite(),
+            "{name}: point {i} has non-finite theta = {}",
+            p.theta
+        );
+        assert!(
+            p.phi.is_finite(),
+            "{name}: point {i} has non-finite phi = {}",
+            p.phi
+        );
+    }
+}
+
 // ── Projection runners ─────────────────────────────────────────────────────
 
 #[derive(Debug)]
@@ -252,6 +279,9 @@ fn run_one(
     let proj1 = fitter(embeddings);
     let fit_ms = t0.elapsed().as_millis();
     let coords1: Vec<SphericalPoint> = embeddings.iter().map(|e| proj1.project(e)).collect();
+
+    // Every point must have finite, positive coordinates regardless of strategy.
+    assert_points_finite_and_positive_r(name, &coords1);
 
     // Determinism: re-fit and compare the worst-case pointwise distance.
     let proj2 = fitter(embeddings);

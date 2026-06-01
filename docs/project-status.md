@@ -81,6 +81,21 @@ explaining why a 1:1 binding isn't required. The allowlist ships with
 ~90 intentionally-exempt items (config structs reached via dict,
 internal helpers, layout-crate internals, foreign-trait objects).
 
+## Large-scale corpus support
+
+The `sphereql-corpus/data/` directory contains bulk-ingested parquet corpora
+built by the `tools/bulk_ingest` pipeline:
+
+- **DBpedia 500K** — `dbpedia_500k.parquet` with clustered and pre-tuned
+  variants; produced from the DBpedia TTL dump via `DBpediaTtlSource`.
+- **Wikidata 50K** — `wikidata_50k.parquet` with checkpoint-resume support.
+
+Each parquet file embeds the auto-tuned `PipelineConfig` in its metadata so
+consumers can reconstruct a pre-tuned pipeline without rerunning `auto_tune`.
+The bulk pipeline runs: download → parse → embed → cluster → auto-tune →
+validate → write. A `run_self_tune` pass gates each corpus on a minimum
+`QualityMetric` score before it is committed.
+
 ## Roadmap
 
 - Improve search precision at higher k values.

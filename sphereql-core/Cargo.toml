@@ -6,6 +6,8 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
+keywords = ["spherical", "geometry", "spatial", "math", "coordinates"]
+categories = ["mathematics", "science"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

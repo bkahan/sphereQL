@@ -46,14 +46,6 @@ pub struct VectorPage {
     pub next_offset: Option<String>,
 }
 
-/// Configuration for creating or connecting to a vector collection.
-#[derive(Debug, Clone)]
-pub struct CollectionConfig {
-    pub name: String,
-    pub dimension: usize,
-    pub distance: DistanceMetric,
-}
-
 /// Distance metric used by the vector index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[non_exhaustive]

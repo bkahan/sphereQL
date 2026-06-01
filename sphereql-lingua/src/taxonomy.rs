@@ -99,7 +99,7 @@ impl DomainTaxonomy {
             .min_by(|a, b| {
                 let da = theta_distance(theta, a.theta);
                 let db = theta_distance(theta, b.theta);
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                da.total_cmp(&db)
             })
             .map(|a| a.name.as_str())
             .unwrap_or("unknown")

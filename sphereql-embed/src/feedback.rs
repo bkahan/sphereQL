@@ -50,6 +50,8 @@ fn migration_lock(path: &Path) -> Arc<Mutex<()>> {
     static LOCKS: OnceLock<Mutex<IndexMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
     let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     let map = LOCKS.get_or_init(|| Mutex::new(IndexMap::new()));
+    // Panics only if another thread panicked while holding this lock, which
+    // indicates an unrecoverable process state — re-panicking is correct.
     let mut guard = map.lock().expect("migration lock map poisoned");
     if let Some(existing) = guard.shift_remove(&key) {
         guard.insert(key, existing.clone());
@@ -161,6 +163,7 @@ impl FeedbackEvent {
         // JSONL — never a half-written mix.
         if path.exists() && first_non_ws_byte(path)? == Some(b'[') {
             let lock = migration_lock(path);
+            // Same reasoning as above — mutex poisoning means unrecoverable state.
             let _g = lock.lock().expect("migration lock poisoned");
             if path.exists() && first_non_ws_byte(path)? == Some(b'[') {
                 let head = fs::read_to_string(path)?;

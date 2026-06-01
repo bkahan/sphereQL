@@ -42,6 +42,15 @@ cargo run --example e2e_transformer -p sphereql --features embed
 cargo run --example benchmark -p sphereql --features full
 ```
 
+## Rust — comprehensive end-to-end demo
+
+```bash
+# Full 7-phase demo: auto-tune → meta-learn → embed → spatial analysis →
+# category analysis → queries → AI-enhanced divergence cartography.
+# Exercises every major API in a single run.
+cargo run --example full_e2e -p sphereql --features embed --release
+```
+
 ## Rust — auto-tuning and meta-learning
 
 ```bash

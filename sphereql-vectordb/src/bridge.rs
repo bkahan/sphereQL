@@ -174,7 +174,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         self.embeddings = embeddings;
         self.install_id_maps();
 
-        Ok(self.pipeline.as_ref().unwrap())
+        Ok(self.pipeline.as_ref().expect("just assigned"))
     }
 
     /// Pull all vectors from the store and build the sphereQL pipeline
@@ -213,7 +213,7 @@ impl<S: VectorStore> VectorStoreBridge<S> {
         self.embeddings = embeddings;
         self.install_id_maps();
 
-        Ok(self.pipeline.as_ref().unwrap())
+        Ok(self.pipeline.as_ref().expect("just assigned"))
     }
 
     /// Fetch, validate, and split records into the tuple both build paths

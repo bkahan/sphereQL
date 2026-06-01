@@ -64,6 +64,11 @@ pub enum PipelineError {
     /// rolling up into `AllTrialsFailed { failures: [] }`.
     #[error("invalid search space: {0}")]
     InvalidSearchSpace(String),
+    /// Input validation failed before any projection or pipeline work was
+    /// attempted (e.g. empty corpus, ragged embeddings, mismatched lengths
+    /// detected during corpus feature extraction).
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 // ── Input contract ──────────────────────────────────────────────────────────
@@ -303,7 +308,8 @@ impl SphereQLPipeline {
         input: PipelineInput,
         model: &M,
     ) -> Result<(Self, CorpusFeatures, PipelineConfig), PipelineError> {
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
+            .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
         let pipeline = Self::new_with_config(input, predicted.clone())?;
         Ok((pipeline, features, predicted))
@@ -334,7 +340,8 @@ impl SphereQLPipeline {
         M: MetaModel,
         Q: QualityMetric,
     {
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
+            .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
         let (pipeline, report) = auto_tune(input, space, metric, strategy, &predicted)?;
         Ok((pipeline, features, report))
@@ -1648,7 +1655,7 @@ mod tests {
         use crate::meta_model::{MetaTrainingRecord, NearestNeighborMetaModel};
 
         let (input, _) = make_input(20, 10);
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings).unwrap();
 
         // Hand-built training record: "on a corpus shaped like this, a
         // LaplacianEigenmap config wins". The NN model has only one
@@ -1692,7 +1699,7 @@ mod tests {
         // pipeline should keep the predicted overlap value (base_config is
         // the prediction) while the tuner picks best num_domain_groups.
         let (input, _) = make_input(20, 10);
-        let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+        let features = CorpusFeatures::extract(&input.categories, &input.embeddings).unwrap();
 
         let mut predicted_cfg = PipelineConfig::default();
         predicted_cfg.bridges.overlap_artifact_territorial = 0.123; // unusual

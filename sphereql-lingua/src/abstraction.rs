@@ -3,6 +3,9 @@ use std::f64::consts::PI;
 
 use crate::concept::Concept;
 
+/// Maps a concept to a φ (abstraction/latitude) value in [0, π] by combining
+/// five weighted signals: hierarchy lookup, morphology, specificity, context, and
+/// any caller-supplied `abstraction_hint`.
 pub struct AbstractionResolver {
     hierarchy: HashMap<String, f64>,
     weights: [f64; 5],

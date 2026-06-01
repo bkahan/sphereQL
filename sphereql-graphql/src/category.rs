@@ -26,10 +26,11 @@ use sphereql_embed::types::Embedding;
 
 use crate::category_types::{
     CategoryNearestResultOutput, CategoryPathOutput, CategoryStatsOutput, CategorySummaryOutput,
-    ConceptPathOutput, DomainGroupOutput, DrillDownOutput,
+    ConceptPathOutput, DomainGroupOutput, DrillDownOutput, InnerSphereReportOutput,
 };
 use crate::context::{CategoryPipelineHandle, EmbedderHandle};
 
+#[derive(Default)]
 pub struct CategoryQueryRoot;
 
 #[Object]
@@ -190,7 +191,7 @@ impl CategoryQueryRoot {
                 summaries: summaries.iter().map(CategorySummaryOutput::from).collect(),
                 inner_sphere_reports: inner_sphere_reports
                     .iter()
-                    .map(crate::category_types::InnerSphereReportOutput::from)
+                    .map(InnerSphereReportOutput::from)
                     .collect(),
             }),
             _ => Err(unexpected("CategoryStats")),

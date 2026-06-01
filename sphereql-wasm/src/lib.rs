@@ -239,9 +239,8 @@ impl Pipeline {
         }
     }
 
-    /// Shared dimension-mismatch guard for every query-taking method —
-    /// the pipeline panics internally on a dim mismatch; we catch it at
-    /// the WASM boundary and surface a clean error instead.
+    /// Guards every query-taking method against dimension mismatches before
+    /// the query reaches the pipeline, where a mismatch would panic.
     fn require_matching_dim(&self, query: &PipelineQuery) -> Result<(), JsError> {
         let expected = self.inner.projection().dimensionality();
         if query.embedding.len() != expected {
@@ -762,7 +761,8 @@ impl From<&ProjectionWarning> for ProjectionWarningOut {
 #[wasm_bindgen(js_name = corpusFeatures)]
 pub fn corpus_features(input_json: &str) -> Result<CorpusFeaturesOut, JsError> {
     let input = parse_input(input_json)?;
-    let features = CorpusFeatures::extract(&input.categories, &input.embeddings);
+    let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
+        .map_err(|e| JsError::new(&e))?;
     Ok(CorpusFeaturesOut::from(&features))
 }
 

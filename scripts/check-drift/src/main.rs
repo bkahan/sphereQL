@@ -100,6 +100,9 @@ fn visit_items(items: &[Item], out: &mut BTreeSet<String>) {
             Item::Type(t) if matches!(t.vis, syn::Visibility::Public(_)) => {
                 out.insert(t.ident.to_string());
             }
+            Item::Trait(t) if matches!(t.vis, syn::Visibility::Public(_)) => {
+                out.insert(t.ident.to_string());
+            }
             Item::Mod(m) => {
                 if let Some((_, items)) = &m.content {
                     visit_items(items, out);

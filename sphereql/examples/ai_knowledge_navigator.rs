@@ -85,7 +85,7 @@ fn main() {
     println!("  {}", "-".repeat(66));
 
     let mut sorted_summaries: Vec<&_> = layer.summaries.iter().collect();
-    sorted_summaries.sort_by(|a, b| b.cohesion.partial_cmp(&a.cohesion).unwrap());
+    sorted_summaries.sort_by(|a, b| b.cohesion.total_cmp(&a.cohesion));
 
     for summary in &sorted_summaries {
         println!(
@@ -283,7 +283,7 @@ fn main() {
             ));
         }
     }
-    bridge_pairs.sort_by(|a, b| b.2.cmp(&a.2).then(b.3.partial_cmp(&a.3).unwrap()));
+    bridge_pairs.sort_by(|a, b| b.2.cmp(&a.2).then(b.3.total_cmp(&a.3)));
 
     println!("  Top 20 most-bridged domain pairs:\n");
     println!(
@@ -393,7 +393,7 @@ fn main() {
         .values()
         .flat_map(|v| v.iter())
         .collect();
-    all_bridges.sort_by(|a, b| b.bridge_strength.partial_cmp(&a.bridge_strength).unwrap());
+    all_bridges.sort_by(|a, b| b.bridge_strength.total_cmp(&a.bridge_strength));
 
     println!("  Top 15 boundary-straddling concepts (strongest bridges globally):\n");
     println!(

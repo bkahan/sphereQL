@@ -6,6 +6,31 @@ versions.
 
 ## [Unreleased]
 
+### Added — corpus and bulk ingestion
+
+- **DBpedia 500K corpus** — `sphereql-corpus/data/dbpedia_500k.parquet` with
+  clustered and auto-tuned variants (`dbpedia_500k.clustered.parquet`,
+  `dbpedia_500k.clustered.tuned.parquet`). Built from the DBpedia TTL dump via
+  the new `DBpediaTtlSource` ingestor.
+- **Wikidata 50K corpus** — `sphereql-corpus/data/wikidata_50k.parquet` with
+  checkpoint resume support (`wikidata_50k.parquet.checkpoint.json`).
+- **Bulk ingestion pipeline** (`tools/bulk_ingest`) — end-to-end orchestrator
+  covering download → parse → embed → cluster → tune → validate. Corpus sources
+  implement a shared trait so DBpedia and Wikidata share the same pipeline path.
+- **Emergent clustering** — density-based cluster discovery on the projected
+  sphere, emitting a `.clusters.json` sidecar that feeds downstream validation.
+- **Bulk validator** — automated quality gate that rejects corpora below a
+  minimum `QualityMetric` threshold before writing the final parquet.
+- **`[bulk]` config table** in `sphereql-corpus/config.toml` for soft self-tune
+  defaults (budget, strategy, metric weights) tunable per corpus source.
+- **Corpus self-tune pass** (`run_self_tune`) — runs the auto-tuner on an
+  ingested corpus and writes the winning `PipelineConfig` into the parquet
+  metadata, so consumers can load a pre-tuned pipeline without rerunning the
+  tuner.
+- **Python / Qdrant end-to-end integration** — `examples/qdrant_e2e.py`
+  demonstrates loading a pre-tuned parquet corpus into a Qdrant collection and
+  running hybrid spherical + cosine search through the Python bindings.
+
 ### Added
 
 - **`SphereQLPipeline::raw_embeddings()`** — returns the original high-dimensional embeddings when the `retain-embeddings` feature is active; `None` otherwise. Aligned with `ids()`, `categories()`, and `projected_points()`.

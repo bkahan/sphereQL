@@ -8,6 +8,10 @@ repository.workspace = true
 readme = "README.md"
 
 [features]
+# When active, SphereQLPipeline retains a copy of the original high-dimensional
+# embeddings alongside the projected positions, enabling pairwise cosine
+# similarity queries and nearest-by-embedding lookups. Disabled by default
+# because it doubles peak memory (one Vec<f64> per item at full dimensionality).
 retain-embeddings = []
 
 [dependencies]

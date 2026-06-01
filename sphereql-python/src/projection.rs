@@ -200,7 +200,6 @@ impl PyPcaProjection {
 }
 
 impl PyPcaProjection {
-    #[allow(dead_code)] // used by pipeline module (prompt 04)
     pub(crate) fn inner(&self) -> &PcaProjection {
         &self.inner
     }

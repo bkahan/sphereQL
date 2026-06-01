@@ -24,12 +24,21 @@ __pycache__/
 dist/
 *.whl
 *.so
+*.pyd
 .venv/
+
+# Local env (API keys, cluster endpoints)
+.env
+.env.local
+.env.*.local
 
 # Large generated data files
 benchmark_results.json
 *.generated.json
-sphere_viz.html 
+sphere_viz.html
+# Self-tune binary output (Phase 6); regenerate with
+# `cargo run -p sphereql-embed --example corpus_self_tune`.
+*.tuned.parquet
 
 # RustRover
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
@@ -42,3 +51,4 @@ sphere_viz.html
 
 .claude/
 CLAUDE.md
+docs/.prompts/

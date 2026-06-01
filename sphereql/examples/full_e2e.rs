@@ -23,6 +23,16 @@
 //!
 //! Run with:
 //!   cargo run --example full_e2e --features embed --release
+//!
+//! A terminal prompt lets you select which corpus to run. Multiple
+//! corpora can be selected and will run sequentially. Auto-tune budget
+//! and projection space scale automatically to corpus size.
+
+use std::collections::HashSet;
+use std::time::Duration;
+
+use dialoguer::MultiSelect;
+use indicatif::{ProgressBar, ProgressStyle};
 
 use sphereql::core::SphericalPoint;
 use sphereql::core::spatial::*;
@@ -30,36 +40,193 @@ use sphereql::embed::{
     BridgeClassification, CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, Embedding,
     FeedbackAggregator, FeedbackEvent, MetaModel, MetaTrainingRecord, NavigatorConfig,
     NearestNeighborMetaModel, PipelineConfig, PipelineInput, PipelineQuery, Projection,
-    QualityMetric, SearchSpace, SearchStrategy, SphereQLOutput, SphereQLQuery, auto_tune,
-    category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
+    ProjectionKind, QualityMetric, SearchSpace, SearchStrategy, SphereQLOutput, SphereQLQuery,
+    auto_tune, category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
 };
 use sphereql_corpus::axes::*;
-use sphereql_corpus::{DIM, build_corpus, embed};
+use sphereql_corpus::{Concept, CorpusId, DIM, embed};
 
 fn main() {
+    let selected = select_corpora();
+    if selected.is_empty() {
+        println!("No corpora selected. Exiting.");
+        return;
+    }
+    let total = selected.len();
+    for (i, id) in selected.iter().enumerate() {
+        if total > 1 {
+            println!("\n{}", "═".repeat(66));
+            println!("  Corpus {}/{}: {}", i + 1, total, id.name());
+            println!("{}\n", "═".repeat(66));
+        }
+        match load_and_embed(id) {
+            Some((corpus, embeddings)) => run_corpus(id, corpus, embeddings),
+            None => eprintln!("  Skipping {} (load failed).", id.name()),
+        }
+    }
+}
+
+// ─── Corpus selection ────────────────────────────────────────────────────────
+
+fn select_corpora() -> Vec<CorpusId> {
+    let candidates: Vec<(CorpusId, String)> = CorpusId::all()
+        .iter()
+        .filter_map(|id| {
+            if corpus_available(id) {
+                Some((id.clone(), corpus_display_label(id)))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        eprintln!("No corpora found. Run the bulk ingest to generate parquet files.");
+        return vec![];
+    }
+
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║      SphereQL — Full End-to-End Demo                       ║");
-    println!("║      Auto-tune → Meta-learn → Embed → Analyze → Query     ║");
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // BUILD CORPUS
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    let items: Vec<&str> = candidates.iter().map(|(_, l)| l.as_str()).collect();
+    let defaults: Vec<bool> = (0..candidates.len()).map(|i| i == 0).collect();
 
-    let corpus = build_corpus();
+    let result = MultiSelect::new()
+        .with_prompt("Select corpora  (↑/↓ move · space toggle · enter confirm)")
+        .items(&items)
+        .defaults(&defaults)
+        .interact();
+
+    match result {
+        Ok(indices) => indices
+            .into_iter()
+            .map(|i| candidates[i].0.clone())
+            .collect(),
+        Err(_) => {
+            eprintln!("Not running interactively — defaulting to HandCrafted corpus.");
+            vec![CorpusId::HandCrafted]
+        }
+    }
+}
+
+fn corpus_available(id: &CorpusId) -> bool {
+    match id {
+        CorpusId::HandCrafted | CorpusId::Stress => true,
+        // Full depends on the Extended parquet being present.
+        CorpusId::Full => CorpusId::Extended
+            .parquet_path()
+            .map(|p| p.exists())
+            .unwrap_or(false),
+        _ => id.parquet_path().map(|p| p.exists()).unwrap_or(false),
+    }
+}
+
+fn corpus_display_label(id: &CorpusId) -> String {
+    let (size, eta) = match id {
+        CorpusId::HandCrafted => ("775 concepts", "~10s"),
+        CorpusId::Extended => ("~5k concepts", "~5min"),
+        CorpusId::Full => ("~5.8k concepts", "~7min"),
+        CorpusId::Stress => ("300 concepts", "~3s"),
+        CorpusId::DBpedia50k => ("~50k concepts", "~25min"),
+        CorpusId::DBpedia50kClustered => ("~50k concepts", "~25min"),
+        CorpusId::DBpedia50kTuned => ("~50k concepts", "~25min"),
+        CorpusId::DBpedia500k => ("~500k concepts", "~3min"),
+        CorpusId::DBpedia500kClustered => ("~500k concepts", "~3min"),
+        CorpusId::DBpedia500kTuned => ("~500k concepts", "~3min"),
+        CorpusId::Wikidata50k => ("~50k concepts", "~25min"),
+        CorpusId::Parquet(p) => {
+            return format!(
+                "{:<28} custom",
+                p.file_stem().and_then(|s| s.to_str()).unwrap_or("?")
+            );
+        }
+    };
+    format!("{:<28} {:<14} est. {}", id.name(), size, eta)
+}
+
+// ─── Load + embed ─────────────────────────────────────────────────────────────
+
+fn load_and_embed(id: &CorpusId) -> Option<(Vec<Concept>, Vec<Vec<f64>>)> {
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("  {spinner:.cyan}  {msg}  [{elapsed}]")
+            .unwrap(),
+    );
+    spinner.set_message(format!("Loading {}...", id.name()));
+    spinner.enable_steady_tick(Duration::from_millis(80));
+
+    let corpus = match id.load() {
+        Ok(c) => c,
+        Err(e) => {
+            spinner.abandon_with_message(format!("Load failed for {}: {}", id.name(), e));
+            return None;
+        }
+    };
+    spinner.finish_with_message(format!(
+        "Loaded  {:>7} concepts  ({})",
+        corpus.len(),
+        id.name()
+    ));
+
+    let n = corpus.len();
+    let pb = ProgressBar::new(n as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("  Embedding  {bar:40.green/dim}  {pos:>7}/{len:7}  [{elapsed}]")
+            .unwrap(),
+    );
+    let mut embeddings = Vec::with_capacity(n);
+    for (i, c) in corpus.iter().enumerate() {
+        embeddings.push(embed(&c.features, 1000 + i as u64));
+        pb.inc(1);
+    }
+    pb.finish_and_clear();
+
+    Some((corpus, embeddings))
+}
+
+// ─── Tuning params ────────────────────────────────────────────────────────────
+
+/// Returns `(budget, search_space)` scaled to corpus size.
+///
+/// Laplacian eigenmap requires an O(n²) k-NN graph; at 10k+ concepts a
+/// single trial takes minutes. PCA stays under a second per trial at any
+/// practical scale, so large corpora drop to PCA-only with a smaller budget.
+fn tuning_params(n: usize) -> (usize, SearchSpace) {
+    if n <= 10_000 {
+        (16, SearchSpace::default())
+    } else if n <= 100_000 {
+        (
+            8,
+            SearchSpace {
+                projection_kinds: vec![ProjectionKind::Pca],
+                ..SearchSpace::default()
+            },
+        )
+    } else {
+        (
+            4,
+            SearchSpace {
+                projection_kinds: vec![ProjectionKind::Pca],
+                ..SearchSpace::default()
+            },
+        )
+    }
+}
+
+// ─── Main demo (7 phases) ─────────────────────────────────────────────────────
+
+fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
-    let embeddings: Vec<Vec<f64>> = corpus
-        .iter()
-        .enumerate()
-        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
-        .collect();
     let labels: Vec<&str> = corpus.iter().map(|c| c.label).collect();
 
-    let unique_cats: std::collections::HashSet<&str> =
-        categories.iter().map(|s| s.as_str()).collect();
+    let unique_cats: HashSet<&str> = categories.iter().map(|s| s.as_str()).collect();
     println!(
-        "Corpus: {} concepts across {} categories (dim={})\n",
+        "Corpus [{}]: {} concepts across {} categories (dim={})\n",
+        id.name(),
         n,
         unique_cats.len(),
         DIM
@@ -74,9 +241,8 @@ fn main() {
     println!("  Optimize pipeline parameters against a quality metric");
     println!("================================================================\n");
 
-    let space = SearchSpace::default();
+    let (budget, space) = tuning_params(n);
     let metric = CompositeMetric::default_composite();
-    let budget = 16;
     let seed = 0x0A17_CABE_CAFE_u64;
 
     let kinds_str: Vec<&str> = space.projection_kinds.iter().map(|k| k.name()).collect();
@@ -106,11 +272,6 @@ fn main() {
     .expect("auto_tune failed");
     let tune_elapsed = start.elapsed();
 
-    // Map pipeline-assigned IDs back to human-readable labels. The
-    // pipeline's `ids()` slice is index-aligned with `categories` /
-    // `embeddings` (the order we passed them in), so zipping with
-    // `labels` yields the right pairing without assuming the ID format
-    // is parseable.
     let id_to_label: std::collections::HashMap<String, &str> = pipeline
         .ids()
         .iter()
@@ -167,8 +328,8 @@ fn main() {
     println!("  Extract corpus profile → build meta-model → simulate feedback");
     println!("================================================================\n");
 
-    // 2a. Extract corpus features and create a training record
-    let features = CorpusFeatures::extract(&categories, &embeddings);
+    let features = CorpusFeatures::extract(&categories, &embeddings)
+        .expect("failed to extract corpus features");
     println!("Corpus feature profile (10-D):");
     println!("  n_items ..................... {}", features.n_items);
     println!("  n_categories ................ {}", features.n_categories);
@@ -203,13 +364,12 @@ fn main() {
     );
 
     let record = MetaTrainingRecord::from_tune_result(
-        "demo_e2e",
+        id.name(),
         features.clone(),
         &tune_report,
         format!("random{{budget={}}}", budget),
     );
 
-    // 2b. Fit meta-models on this single record (in practice you'd have many)
     let records = vec![record.clone()];
     let mut nn_model = NearestNeighborMetaModel::new();
     nn_model.fit(&records);
@@ -219,8 +379,8 @@ fn main() {
     let nn_pred = nn_model.predict(&features);
     let dw_pred = dw_model.predict(&features);
     println!("\nMeta-model predictions (self-query, should match tuner):");
-    println!("  {} → {}", nn_model.name(), nn_pred.projection_kind.name(),);
-    println!("  {} → {}", dw_model.name(), dw_pred.projection_kind.name(),);
+    println!("  {} → {}", nn_model.name(), nn_pred.projection_kind.name());
+    println!("  {} → {}", dw_model.name(), dw_pred.projection_kind.name());
     let matches = nn_pred.projection_kind == pipeline.projection_kind();
     println!(
         "  Match tuner winner ({}): {}",
@@ -228,18 +388,17 @@ fn main() {
         if matches { "YES" } else { "no" }
     );
 
-    // 2c. Simulate user feedback and blend
     let feedback_scores = [0.85, 0.72, 0.90, 0.60, 0.78, 0.95, 0.55, 0.80];
     let mut agg = FeedbackAggregator::new();
     for (i, &s) in feedback_scores.iter().enumerate() {
         agg.record(FeedbackEvent {
-            corpus_id: "demo_e2e".to_string(),
+            corpus_id: id.name().to_string(),
             query_id: format!("q_{:03}", i),
             score: s,
             timestamp: i.to_string(),
         });
     }
-    let summary = agg.summarize("demo_e2e").expect("no feedback");
+    let summary = agg.summarize(id.name()).expect("no feedback");
     println!(
         "\nUser feedback: {} events, mean={:.3}, min={:.2}, max={:.2}",
         summary.n_events, summary.mean_score, summary.min_score, summary.max_score,
@@ -278,7 +437,6 @@ fn main() {
         .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
         .collect();
 
-    // Show a sample of projected points across different categories
     let sample_cats = [
         "physics",
         "music",
@@ -310,7 +468,6 @@ fn main() {
         }
     }
 
-    // Project a fresh query embedding to show the Projection trait in action
     let fresh_query_features = vec![
         (QUANTUM, 0.7),
         (COMPUTATION, 0.6),
@@ -347,7 +504,6 @@ fn main() {
     let config = NavigatorConfig::default();
     let report = run_full_analysis(layer, &positions, &categories, evr, &config);
 
-    // §4a: Antipodal discovery
     println!("\n  ── §4a. ANTIPODAL DISCOVERY ─────────────────────────────────");
     println!("  What is semantically OPPOSITE to each domain?\n");
 
@@ -370,7 +526,6 @@ fn main() {
         );
     }
 
-    // §4b: Coverage & voids
     println!("\n  ── §4b. KNOWLEDGE COVERAGE ──────────────────────────────────");
     let cov = &report.coverage;
     println!(
@@ -386,7 +541,6 @@ fn main() {
         (1.0 - cov.coverage_fraction) * 100.0
     );
 
-    // §4c: Geodesic sweeps
     println!("  ── §4c. GEODESIC SWEEPS ────────────────────────────────────");
     println!("  What lies between two ideas on the great circle?\n");
 
@@ -426,7 +580,6 @@ fn main() {
         }
     }
 
-    // §4d: Voronoi tessellation (top 5 by area)
     println!("\n  ── §4d. VORONOI TESSELLATION ────────────────────────────────");
     println!("  How much spherical real-estate does each domain own?\n");
 
@@ -448,7 +601,6 @@ fn main() {
         println!("  ... and {} more categories", cells.len() - 8);
     }
 
-    // §4e: Curvature
     println!("\n  ── §4e. CURVATURE SIGNATURES ───────────────────────────────");
     println!("  Spherical excess = 0 in flat space; nonzero = genuine curvature\n");
 
@@ -461,7 +613,6 @@ fn main() {
         println!("  {:<50} excess = {:.6} sr", name, triple.excess);
     }
 
-    // §4f: Lune decomposition
     println!("\n  ── §4f. LUNE DECOMPOSITION ─────────────────────────────────");
     println!("  Do bridge concepts lean toward one domain or the other?\n");
 
@@ -493,7 +644,6 @@ fn main() {
     println!("  Landscape, paths, bridges, domain groups");
     println!("================================================================");
 
-    // 5a: Category landscape
     println!("\n  ── §5a. CATEGORY LANDSCAPE ─────────────────────────────────\n");
     let mut sorted_summaries: Vec<&_> = layer.summaries.iter().collect();
     sorted_summaries.sort_by(|a, b| b.cohesion.total_cmp(&a.cohesion));
@@ -517,7 +667,6 @@ fn main() {
         println!("  ... and {} more", sorted_summaries.len() - 15);
     }
 
-    // 5b: Cross-domain concept paths
     println!("\n  ── §5b. CROSS-DOMAIN CONCEPT PATHS ────────────────────────");
 
     let path_queries = [
@@ -573,7 +722,6 @@ fn main() {
         }
     }
 
-    // 5c: Bridge items between select pairs
     println!("\n  ── §5c. BRIDGE CONCEPTS ───────────────────────────────────\n");
     let bridge_pairs = [
         ("physics", "computer_science"),
@@ -588,11 +736,7 @@ fn main() {
         let mut all: Vec<_> = bridges.into_iter().chain(rev).collect();
         all.sort_by_key(|a| a.item_index);
         all.dedup_by(|a, b| a.item_index == b.item_index);
-        all.sort_by(|a, b| {
-            b.bridge_strength
-                .partial_cmp(&a.bridge_strength)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        all.sort_by(|a, b| b.bridge_strength.total_cmp(&a.bridge_strength));
         let all: Vec<_> = all.iter().take(3).collect();
 
         if all.is_empty() {
@@ -612,7 +756,6 @@ fn main() {
         }
     }
 
-    // 5d: Domain groups
     println!("\n  ── §5d. HIERARCHICAL DOMAIN GROUPS ────────────────────────\n");
     let groups = pipeline.domain_groups();
     println!(
@@ -632,7 +775,6 @@ fn main() {
         );
     }
 
-    // 5e: Inner sphere stats
     let stats = pipeline.inner_sphere_stats();
     if !stats.is_empty() {
         println!("\n  ── §5e. INNER SPHERE STATUS ──────────────────────────────\n");
@@ -675,7 +817,6 @@ fn main() {
         embedding: qvec.clone(),
     };
 
-    // 6a: Nearest neighbor
     println!("\n  ── §6a. NEAREST NEIGHBOR ──────────────────────────────────");
     println!("  Query: \"quantum computation\" — top 8\n");
 
@@ -700,7 +841,6 @@ fn main() {
         }
     }
 
-    // 6b: Drill-down
     println!("\n  ── §6b. DRILL-DOWN ───────────────────────────────────────");
     for cat in ["physics", "computer_science", "mathematics"] {
         let drill = pipeline
@@ -731,16 +871,11 @@ fn main() {
         }
     }
 
-    // 6c: Item-level concept path
     println!("\n  ── §6c. ITEM-LEVEL CONCEPT PATH ──────────────────────────");
     let dummy_q = PipelineQuery {
         embedding: vec![0.0; DIM],
     };
 
-    // Pick concrete source / target items by category instead of
-    // hardcoding `s-####` strings. Pipeline IDs are an opaque
-    // implementation detail; selecting through `categories` keeps the
-    // example correct even if the ID scheme or insertion order changes.
     let pick_id_by_category = |target: &str| -> Option<String> {
         pipeline
             .ids()
@@ -784,7 +919,6 @@ fn main() {
         );
     }
 
-    // 6d: Glob detection
     println!("  ── §6d. KNOWLEDGE DENSITY — Glob Detection ────────────────\n");
     let glob_result = pipeline
         .query(SphereQLQuery::DetectGlobs { k: None, max_k: 10 }, &dummy_q)
@@ -808,7 +942,6 @@ fn main() {
         }
     }
 
-    // 6e: Hierarchical routing
     println!("\n  ── §6e. HIERARCHICAL ROUTING ─────────────────────────────");
     println!("  EVR={:.3} (hierarchical activates below 0.35)\n", evr);
 
@@ -857,7 +990,6 @@ fn main() {
     println!("  gap confidence, and a synthesized reasoning chain");
     println!("================================================================");
 
-    // 7a: Knowledge gap cartography — gap_confidence at strategic points
     println!("\n  ── §7a. KNOWLEDGE GAP CARTOGRAPHY ─────────────────────────");
     println!("  Where on the sphere does knowledge run out?\n");
 
@@ -917,7 +1049,6 @@ fn main() {
         println!("  {:<25} {:>12.4} {}", name, conf, interp);
     }
 
-    // 7b: Bridge classification census
     println!("\n  ── §7b. BRIDGE CLASSIFICATION CENSUS ─────────────────────\n");
     let mut genuine = 0usize;
     let mut artifact = 0usize;
@@ -951,7 +1082,6 @@ fn main() {
         );
     }
 
-    // 7c: Geodesic deviation — how much do graph paths stray from direct arcs?
     println!("\n  ── §7c. GEODESIC DEVIATION ───────────────────────────────");
     println!("  Graph path vs. direct great-circle arc (0 = perfect alignment)\n");
 
@@ -981,7 +1111,6 @@ fn main() {
         }
     }
 
-    // 7d: Bridge quality matrix — strongest off-diagonal cell
     println!("\n  ── §7d. BRIDGE QUALITY MATRIX ────────────────────────────\n");
     let matrix = &layer.spatial_quality.bridge_quality_matrix;
     let cat_names: Vec<&str> = layer.summaries.iter().map(|s| s.name.as_str()).collect();
@@ -1018,7 +1147,6 @@ fn main() {
         );
     }
 
-    // 7e: Synthesized AI reasoning — cross-domain question
     println!("\n  ── §7e. SYNTHESIZED REASONING CHAIN ─────────────────────");
     println!("  Simulating how an AI answers: \"How does music relate to physics?\"\n");
 
@@ -1034,7 +1162,6 @@ fn main() {
     );
     let question_emb = Embedding::new(question_vec.clone());
 
-    // Step 1: Route to relevant categories
     let nearby =
         layer.categories_near_embedding(&question_emb, pipeline.projection(), std::f64::consts::PI);
     println!("  Step 1 — Category routing:");
@@ -1046,7 +1173,6 @@ fn main() {
         );
     }
 
-    // Step 2: Find the category path
     println!("\n  Step 2 — Category path:");
     if let Some(path) = pipeline.category_path("music", "physics") {
         let chain: Vec<&str> = path
@@ -1061,7 +1187,6 @@ fn main() {
             path.total_distance.to_degrees()
         );
 
-        // Step 3: Gather bridge concepts at each transition
         println!("\n  Step 3 — Bridge concepts at each hop:");
         for (i, step) in path.steps.iter().enumerate() {
             if i + 1 < path.steps.len() {
@@ -1072,11 +1197,7 @@ fn main() {
                 let mut all: Vec<_> = bridges.into_iter().chain(rev).collect();
                 all.sort_by_key(|a| a.item_index);
                 all.dedup_by(|a, b| a.item_index == b.item_index);
-                all.sort_by(|a, b| {
-                    b.bridge_strength
-                        .partial_cmp(&a.bridge_strength)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
+                all.sort_by(|a, b| b.bridge_strength.total_cmp(&a.bridge_strength));
                 let all: Vec<_> = all.iter().take(2).collect();
 
                 let all_labels: Vec<String> = all
@@ -1099,7 +1220,6 @@ fn main() {
             }
         }
 
-        // Step 4: Confidence calibration
         println!("\n  Step 4 — Confidence per hop:");
         for step in &path.steps {
             if let Some(s) = layer.get_category(&step.category_name) {
@@ -1112,7 +1232,6 @@ fn main() {
             }
         }
 
-        // Step 5: Geodesic deviation for this pair
         if let Some(dev) = category_path_deviation(layer, "music", "physics") {
             println!(
                 "\n  Step 5 — Path deviation from geodesic: {:.4} rad ({:.1}°)",
@@ -1128,7 +1247,6 @@ fn main() {
             }
         }
 
-        // Step 6: Gap confidence along the path
         println!("\n  Step 6 — Gap confidence along path midpoints:");
         for step in &path.steps {
             if let Some(s) = layer.get_category(&step.category_name) {
@@ -1146,7 +1264,6 @@ fn main() {
             }
         }
 
-        // Step 7: Synthesize
         let closeness = if path.total_distance < 0.5 {
             "surprisingly close"
         } else if path.total_distance < 1.0 {
@@ -1191,7 +1308,8 @@ fn main() {
     println!("╚══════════════════════════════════════════════════════════════╝\n");
 
     println!(
-        "  Corpus:       {} concepts across {} categories",
+        "  Corpus:       {} — {} concepts across {} categories",
+        id.name(),
         n,
         pipeline.num_categories()
     );

@@ -102,3 +102,62 @@ class TestVectorStoreBridge:
     def test_len(self):
         _, bridge = make_store_and_bridge()
         assert len(bridge) == N
+
+    def test_category_stats(self):
+        _, bridge = make_store_and_bridge()
+        summaries, inner_reports = bridge.category_stats()
+        assert len(summaries) == 2
+        names = {s.name for s in summaries}
+        assert names == {"group_a", "group_b"}
+        assert isinstance(inner_reports, list)
+
+    def test_category_neighbors(self):
+        _, bridge = make_store_and_bridge()
+        neighbors = bridge.category_neighbors("group_a", k=1)
+        assert len(neighbors) >= 1
+
+    def test_drill_down(self):
+        _, bridge = make_store_and_bridge()
+        query = [0.9] * DIM
+        hits = bridge.drill_down("group_a", query, k=3)
+        assert len(hits) == 3
+        for h in hits:
+            assert isinstance(h.item_index, int)
+            assert isinstance(h.distance, float)
+
+    def test_domain_groups(self):
+        _, bridge = make_store_and_bridge()
+        groups = bridge.domain_groups()
+        assert isinstance(groups, list)
+        total = sum(g.total_items for g in groups)
+        assert total == N
+
+    def test_hierarchical_nearest(self):
+        _, bridge = make_store_and_bridge()
+        query = [0.9] * DIM
+        results = bridge.hierarchical_nearest(query, k=3)
+        assert len(results) == 3
+
+    def test_projection_warnings(self):
+        _, bridge = make_store_and_bridge()
+        warnings = bridge.projection_warnings()
+        assert isinstance(warnings, list)
+        for w in warnings:
+            assert w.severity in ("Info", "Warning", "Critical")
+
+    def test_projection_kind(self):
+        _, bridge = make_store_and_bridge()
+        kind = bridge.projection_kind
+        assert kind in ("pca", "kernel_pca", "laplacian_eigenmap")
+
+    def test_config(self):
+        _, bridge = make_store_and_bridge()
+        cfg = bridge.config()
+        assert cfg is not None
+        assert isinstance(cfg, dict)
+        assert "projection_kind" in cfg
+
+    def test_repr(self):
+        _, bridge = make_store_and_bridge()
+        assert "VectorStoreBridge(" in repr(bridge)
+        assert str(N) in repr(bridge)

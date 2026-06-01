@@ -98,7 +98,6 @@ impl ConfiguredProjection {
         }
     }
 
-    /// Borrow the inner [`UmapSphereProjection`] if that is the active variant.
     pub fn as_umap_sphere(&self) -> Option<&UmapSphereProjection> {
         match self {
             Self::UmapSphere(p) => Some(p),
@@ -106,7 +105,6 @@ impl ConfiguredProjection {
         }
     }
 
-    /// Borrow the inner [`PcaProjection`] if that is the active variant.
     pub fn as_pca(&self) -> Option<&PcaProjection> {
         match self {
             Self::Pca(p) => Some(p),
@@ -114,7 +112,6 @@ impl ConfiguredProjection {
         }
     }
 
-    /// Borrow the inner [`KernelPcaProjection`] if that is the active variant.
     pub fn as_kernel_pca(&self) -> Option<&KernelPcaProjection> {
         match self {
             Self::KernelPca(p) => Some(p),
@@ -122,8 +119,6 @@ impl ConfiguredProjection {
         }
     }
 
-    /// Borrow the inner [`LaplacianEigenmapProjection`] if that is the
-    /// active variant.
     pub fn as_laplacian(&self) -> Option<&LaplacianEigenmapProjection> {
         match self {
             Self::Laplacian(p) => Some(p),

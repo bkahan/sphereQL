@@ -6,6 +6,8 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
+keywords = ["vector-database", "embeddings", "qdrant", "pinecone", "search"]
+categories = ["database", "science", "api-bindings"]
 
 [features]
 default = []

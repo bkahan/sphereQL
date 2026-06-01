@@ -106,7 +106,10 @@ impl CorpusFeatures {
 
     /// Extract features from a corpus using default Laplacian config
     /// (for the `active_threshold` used in sparsity/noise estimation).
-    pub fn extract(categories: &[String], embeddings: &[Vec<f64>]) -> Self {
+    ///
+    /// Returns an error if the inputs are invalid (empty corpus, mismatched
+    /// lengths, zero-dim embeddings, or ragged rows).
+    pub fn extract(categories: &[String], embeddings: &[Vec<f64>]) -> Result<Self, String> {
         Self::extract_with_threshold(
             categories,
             embeddings,
@@ -117,27 +120,36 @@ impl CorpusFeatures {
     /// Extract features with an explicit active-axis threshold. Use this
     /// when you want feature values comparable across different Laplacian
     /// configurations.
+    ///
+    /// Returns an error if the inputs are invalid (empty corpus, mismatched
+    /// lengths, zero-dim embeddings, or ragged rows).
     pub fn extract_with_threshold(
         categories: &[String],
         embeddings: &[Vec<f64>],
         active_threshold: f64,
-    ) -> Self {
-        assert_eq!(
-            categories.len(),
-            embeddings.len(),
-            "categories and embeddings must have matching length"
-        );
+    ) -> Result<Self, String> {
+        if categories.len() != embeddings.len() {
+            return Err(format!(
+                "categories length {} does not match embeddings length {}",
+                categories.len(),
+                embeddings.len()
+            ));
+        }
         let n = embeddings.len();
-        let dim = if n > 0 { embeddings[0].len() } else { 0 };
-        assert!(n > 0, "cannot extract features from an empty corpus");
-        assert!(dim > 0, "embeddings must have positive dimensionality");
+        if n == 0 {
+            return Err("cannot extract features from an empty corpus".into());
+        }
+        let dim = embeddings[0].len();
+        if dim == 0 {
+            return Err("embeddings must have positive dimensionality".into());
+        }
         for (i, e) in embeddings.iter().enumerate() {
-            assert_eq!(
-                e.len(),
-                dim,
-                "ragged embeddings: row {i} length {} != dim {dim}",
-                e.len()
-            );
+            if e.len() != dim {
+                return Err(format!(
+                    "ragged embeddings: row {i} length {} != dim {dim}",
+                    e.len()
+                ));
+            }
         }
 
         // 1. Category bookkeeping.
@@ -219,7 +231,7 @@ impl CorpusFeatures {
         let category_separation_ratio =
             mean_intra_category_similarity / mean_inter_category_similarity.abs().max(1e-12);
 
-        Self {
+        Ok(Self {
             n_items: n,
             n_categories,
             dim,
@@ -231,7 +243,7 @@ impl CorpusFeatures {
             mean_intra_category_similarity,
             mean_inter_category_similarity,
             category_separation_ratio,
-        }
+        })
     }
 }
 
@@ -269,6 +281,9 @@ fn pairwise_similarity(
         for i in 0..n {
             for j in (i + 1)..n {
                 if pair_matches(mode, &categories[i], &categories[j]) {
+                    // Invariant: extract_with_threshold validates that all rows
+                    // share the same dim before reaching here, so cosine_similarity
+                    // cannot fail on a dimension mismatch.
                     sum += cosine_similarity(&embeddings[i], &embeddings[j])
                         .expect("corpus embeddings share fixed dimensionality");
                     count += 1;
@@ -285,6 +300,7 @@ fn pairwise_similarity(
             let mut c = 0usize;
             for j in (i + 1)..n {
                 if pair_matches(mode, &categories[i], &categories[j]) {
+                    // Same invariant as the serial branch above.
                     s += cosine_similarity(&embeddings[i], &embeddings[j])
                         .expect("corpus embeddings share fixed dimensionality");
                     c += 1;
@@ -335,9 +351,33 @@ mod tests {
     }
 
     #[test]
+    fn extract_rejects_empty_corpus() {
+        let result = CorpusFeatures::extract(&[], &[]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty corpus"));
+    }
+
+    #[test]
+    fn extract_rejects_mismatched_lengths() {
+        let cats = vec!["a".to_string()];
+        let embs: Vec<Vec<f64>> = vec![];
+        let result = CorpusFeatures::extract(&cats, &embs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_rejects_ragged_embeddings() {
+        let cats = vec!["a".to_string(), "b".to_string()];
+        let embs = vec![vec![1.0, 2.0], vec![1.0]];
+        let result = CorpusFeatures::extract(&cats, &embs);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ragged"));
+    }
+
+    #[test]
     fn extract_basic_shape() {
         let (cats, embs) = toy_corpus();
-        let cf = CorpusFeatures::extract(&cats, &embs);
+        let cf = CorpusFeatures::extract(&cats, &embs).unwrap();
         assert_eq!(cf.n_items, 6);
         assert_eq!(cf.n_categories, 2);
         assert_eq!(cf.dim, 5);
@@ -348,7 +388,7 @@ mod tests {
     fn category_size_entropy_balanced() {
         // Balanced 3/3 split → maximum entropy = 1.0 (after log normalization).
         let (cats, embs) = toy_corpus();
-        let cf = CorpusFeatures::extract(&cats, &embs);
+        let cf = CorpusFeatures::extract(&cats, &embs).unwrap();
         assert!(
             (cf.category_size_entropy - 1.0).abs() < 1e-10,
             "balanced split should give entropy = 1.0, got {}",
@@ -364,7 +404,7 @@ mod tests {
             .map(Into::into)
             .collect();
         let embs = vec![vec![1.0, 0.0, 0.0]; 6];
-        let cf = CorpusFeatures::extract(&cats, &embs);
+        let cf = CorpusFeatures::extract(&cats, &embs).unwrap();
         assert!(
             cf.category_size_entropy < 0.9,
             "skewed split should give entropy < 0.9, got {}",
@@ -376,7 +416,7 @@ mod tests {
     fn sparsity_matches_threshold() {
         let (cats, embs) = toy_corpus();
         // With threshold 0.05: each 5-dim vector has 2 active axes → sparsity 2/5 = 0.4
-        let cf = CorpusFeatures::extract_with_threshold(&cats, &embs, 0.05);
+        let cf = CorpusFeatures::extract_with_threshold(&cats, &embs, 0.05).unwrap();
         assert!(
             (cf.mean_sparsity - 0.4).abs() < 0.11,
             "expected ~0.4, got {}",
@@ -387,7 +427,7 @@ mod tests {
     #[test]
     fn intra_higher_than_inter_for_well_separated() {
         let (cats, embs) = toy_corpus();
-        let cf = CorpusFeatures::extract(&cats, &embs);
+        let cf = CorpusFeatures::extract(&cats, &embs).unwrap();
         assert!(
             cf.mean_intra_category_similarity > cf.mean_inter_category_similarity,
             "expected intra > inter on well-separated corpus"
@@ -398,7 +438,7 @@ mod tests {
     #[test]
     fn to_vec_length_matches_feature_names() {
         let (cats, embs) = toy_corpus();
-        let cf = CorpusFeatures::extract(&cats, &embs);
+        let cf = CorpusFeatures::extract(&cats, &embs).unwrap();
         assert_eq!(cf.to_vec().len(), CorpusFeatures::feature_names().len());
         assert_eq!(cf.to_vec().len(), CORPUS_FEATURE_COUNT);
     }
@@ -406,7 +446,7 @@ mod tests {
     #[test]
     fn features_serialize_json_roundtrip() {
         let (cats, embs) = toy_corpus();
-        let cf = CorpusFeatures::extract(&cats, &embs);
+        let cf = CorpusFeatures::extract(&cats, &embs).unwrap();
         let json = serde_json::to_string(&cf).unwrap();
         let back: CorpusFeatures = serde_json::from_str(&json).unwrap();
         assert_eq!(cf.n_items, back.n_items);
@@ -421,7 +461,7 @@ mod tests {
         // All axes active — noise_estimate defaults to 0.
         let cats: Vec<String> = vec!["a".into(), "a".into()];
         let embs = vec![vec![1.0, 1.0], vec![0.9, 0.9]];
-        let cf = CorpusFeatures::extract_with_threshold(&cats, &embs, 0.05);
+        let cf = CorpusFeatures::extract_with_threshold(&cats, &embs, 0.05).unwrap();
         assert_eq!(cf.noise_estimate, 0.0);
     }
 }

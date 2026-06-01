@@ -5,11 +5,11 @@ use sphereql_core::{
     spherical_to_cartesian,
 };
 
+use crate::quality::{MAX_QUALITY_N, OVERLAP_THRESHOLD};
 use crate::traits::{DimensionMapper, LayoutStrategy};
 use crate::types::{LayoutEntry, LayoutQuality, LayoutResult};
 
 const MAX_KMEANS_ITERATIONS: usize = 50;
-const OVERLAP_THRESHOLD: f64 = 0.01;
 
 pub struct ClusteredLayout {
     pub num_clusters: usize,
@@ -247,8 +247,6 @@ fn local_frame(center: &CartesianPoint) -> (CartesianPoint, CartesianPoint) {
 
     (u, v)
 }
-
-const MAX_QUALITY_N: usize = 5000;
 
 fn compute_quality(
     positions: &[SphericalPoint],

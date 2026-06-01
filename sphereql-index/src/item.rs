@@ -27,14 +27,18 @@ pub trait SpatialItem: Clone + Send + Sync {
     fn position(&self) -> &SphericalPoint;
 }
 
+/// One result from a k-nearest-neighbor query.
 #[derive(Debug, Clone)]
 pub struct NearestResult<T: SpatialItem> {
     pub item: T,
+    /// Angular distance in radians from the query point to this item.
     pub distance: f64,
 }
 
+/// Result of a spatial region query.
 #[derive(Debug, Clone)]
 pub struct SpatialQueryResult<T: SpatialItem> {
     pub items: Vec<T>,
+    /// Number of items inspected (including those that did not match). Useful for profiling index efficiency.
     pub total_scanned: usize,
 }

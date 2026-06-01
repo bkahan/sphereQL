@@ -36,14 +36,28 @@ pub struct Relation {
     pub evidence: Option<String>,
 }
 
-/// Extracts relations between concepts from text + geometry.
+/// Extracts directed semantic edges from a concept list using hardcoded domain
+/// knowledge and geometric inference (small Δθ + Δφ → NEAR / IsA).
 pub struct RelationEncoder {
     theta_near: f64,
 }
 
+/// Δθ below which two concepts are considered in the same domain neighborhood.
+const DEFAULT_THETA_NEAR: f64 = 0.4;
+/// Δφ below which two near-domain concepts are classed as NEAR (same abstraction band).
+const PHI_NEAR: f64 = 0.3;
+/// Δφ above which two near-domain concepts are classed as IsA (abstraction gap).
+const PHI_FAR: f64 = 0.5;
+/// Edge weight assigned to inferred NEAR relations.
+const WEIGHT_NEAR: f64 = 0.6;
+/// Edge weight assigned to inferred IsA relations.
+const WEIGHT_ISA: f64 = 0.5;
+
 impl Default for RelationEncoder {
     fn default() -> Self {
-        Self { theta_near: 0.4 }
+        Self {
+            theta_near: DEFAULT_THETA_NEAR,
+        }
     }
 }
 
@@ -212,26 +226,27 @@ impl RelationEncoder {
         let mut rels = Vec::new();
         for (i, &(si, sc)) in salient.iter().enumerate() {
             for &(ti, tc) in &salient[i + 1..] {
-                let sp = sc.point.as_ref().unwrap();
-                let tp = tc.point.as_ref().unwrap();
+                let (Some(sp), Some(tp)) = (sc.point.as_ref(), tc.point.as_ref()) else {
+                    continue;
+                };
                 let dt = theta_distance(sp.theta, tp.theta);
                 let dp = (sp.phi - tp.phi).abs();
 
-                if dt < self.theta_near && dp < 0.3 {
+                if dt < self.theta_near && dp < PHI_NEAR {
                     rels.push(Relation {
                         source_idx: si,
                         target_idx: ti,
                         relation_type: RelationType::Near,
-                        weight: 0.6,
+                        weight: WEIGHT_NEAR,
                         evidence: None,
                     });
-                } else if dt < self.theta_near && dp > 0.5 {
+                } else if dt < self.theta_near && dp > PHI_FAR {
                     let (src, tgt) = if sp.phi < tp.phi { (ti, si) } else { (si, ti) };
                     rels.push(Relation {
                         source_idx: src,
                         target_idx: tgt,
                         relation_type: RelationType::IsA,
-                        weight: 0.5,
+                        weight: WEIGHT_ISA,
                         evidence: None,
                     });
                 }

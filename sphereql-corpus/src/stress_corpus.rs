@@ -82,6 +82,7 @@ pub fn build_stress_corpus() -> Vec<Concept> {
                 label,
                 category: category_name,
                 features: vec![(axis_a, weight_a), (axis_b, weight_b)],
+                ..Default::default()
             });
         }
     }

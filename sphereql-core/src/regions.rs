@@ -4,7 +4,9 @@ use crate::distance::angular_distance;
 use crate::error::SphereQlError;
 use crate::types::SphericalPoint;
 
+/// Spatial containment test for a [`SphericalPoint`].
 pub trait Contains {
+    /// Returns `true` if `point` lies inside (or on the boundary of) this region.
     fn contains(&self, point: &SphericalPoint) -> bool;
 }
 
@@ -21,6 +23,9 @@ pub struct Cone {
 }
 
 impl Cone {
+    /// Creates a new `Cone` with validation.
+    ///
+    /// Returns an error if `half_angle` is not in (0, π].
     pub fn new(
         apex: SphericalPoint,
         axis: SphericalPoint,
@@ -45,6 +50,10 @@ impl Contains for Cone {
     }
 }
 
+/// A spherical cap: all points within `half_angle` radians of `center` on S².
+///
+/// Unlike `Cone`, a cap has no apex — containment depends only on angular distance
+/// from `center`, regardless of radial distance.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Cap {
     pub center: SphericalPoint,
@@ -52,6 +61,9 @@ pub struct Cap {
 }
 
 impl Cap {
+    /// Creates a new `Cap` with validation.
+    ///
+    /// Returns an error if `half_angle` is not in (0, π].
     pub fn new(center: SphericalPoint, half_angle: f64) -> Result<Self, SphereQlError> {
         if half_angle <= 0.0 || half_angle > PI {
             return Err(SphereQlError::InvalidCapAngle(half_angle));
@@ -68,6 +80,9 @@ impl Contains for Cap {
     }
 }
 
+/// A hollow spherical shell bounded by two radii.
+///
+/// Contains all points with `inner <= r <= outer`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Shell {
     pub inner: f64,
@@ -75,6 +90,9 @@ pub struct Shell {
 }
 
 impl Shell {
+    /// Creates a new `Shell` with validation.
+    ///
+    /// Returns an error if `inner < 0` or `inner >= outer`.
     pub fn new(inner: f64, outer: f64) -> Result<Self, SphereQlError> {
         if inner < 0.0 || inner >= outer {
             return Err(SphereQlError::InvalidShellBounds { inner, outer });
@@ -89,6 +107,9 @@ impl Contains for Shell {
     }
 }
 
+/// A latitude band: all points with polar angle `phi` in [`phi_min`, `phi_max`].
+///
+/// `phi = 0` is the north pole; `phi = π` is the south pole.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Band {
     pub phi_min: f64,
@@ -96,6 +117,9 @@ pub struct Band {
 }
 
 impl Band {
+    /// Creates a new `Band` with validation.
+    ///
+    /// Returns an error if `phi_min < 0`, `phi_min >= phi_max`, or `phi_max > π`.
     pub fn new(phi_min: f64, phi_max: f64) -> Result<Self, SphereQlError> {
         if phi_min < 0.0 || phi_min >= phi_max || phi_max > PI {
             return Err(SphereQlError::InvalidBandBounds { phi_min, phi_max });
@@ -110,6 +134,11 @@ impl Contains for Band {
     }
 }
 
+/// A longitude wedge: all points with azimuthal angle `theta` between `theta_min` and
+/// `theta_max`.
+///
+/// Supports wrap-around: if `theta_min > theta_max`, the wedge spans across the 0/2π
+/// boundary (e.g. 350° to 10°).
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Wedge {
     pub theta_min: f64,
@@ -117,6 +146,9 @@ pub struct Wedge {
 }
 
 impl Wedge {
+    /// Creates a new `Wedge` with validation.
+    ///
+    /// Returns an error if either bound is outside [0, 2π) or if `theta_min == theta_max`.
     pub fn new(theta_min: f64, theta_max: f64) -> Result<Self, SphereQlError> {
         if !(0.0..TAU).contains(&theta_min)
             || !(0.0..TAU).contains(&theta_max)
@@ -148,6 +180,10 @@ impl Contains for Wedge {
     }
 }
 
+/// A composable spatial region on S².
+///
+/// Regions can be primitive shapes (`Cone`, `Cap`, `Shell`, `Band`, `Wedge`) or
+/// boolean combinations (`Intersection`, `Union`). All implement [`Contains`].
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub enum Region {
@@ -161,10 +197,12 @@ pub enum Region {
 }
 
 impl Region {
+    /// Creates a region that contains points inside **all** of the given regions.
     pub fn intersection(regions: Vec<Region>) -> Self {
         Region::Intersection(regions)
     }
 
+    /// Creates a region that contains points inside **any** of the given regions.
     pub fn union(regions: Vec<Region>) -> Self {
         Region::Union(regions)
     }

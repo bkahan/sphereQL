@@ -15,11 +15,13 @@ impl ShellIndexBuilder {
         }
     }
 
+    /// Adds a single radial boundary at `r`.
     pub fn boundary(mut self, r: f64) -> Self {
         self.boundaries.push(r);
         self
     }
 
+    /// Adds `count + 1` evenly-spaced boundaries from 0 to `max_r` (inclusive).
     pub fn uniform_boundaries(mut self, count: usize, max_r: f64) -> Self {
         for i in 0..=count {
             self.boundaries.push(max_r * i as f64 / count as f64);
@@ -27,6 +29,7 @@ impl ShellIndexBuilder {
         self
     }
 
+    /// Builds the [`ShellIndex`], sorting and deduplicating boundaries.
     pub fn build<T: SpatialItem>(mut self) -> ShellIndex<T> {
         self.boundaries.sort_by(|a, b| a.total_cmp(b));
         self.boundaries.dedup();

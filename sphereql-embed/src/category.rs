@@ -348,6 +348,9 @@ impl CategoryLayer {
         config: &PipelineConfig,
     ) -> Self {
         let n = categories.len();
+        // Invariant: the pipeline builder validates length parity before calling
+        // build_with_config. A mismatch here is a programmer error, not a
+        // recoverable input error.
         assert_eq!(n, embeddings.len());
         assert_eq!(n, projected_positions.len());
 
@@ -540,6 +543,8 @@ impl CategoryLayer {
 
             for &mi in &summary.member_indices {
                 let item_emb = &embeddings[mi];
+                // Invariant: all embeddings are validated to share the same dimension
+                // at pipeline build time, so cosine_similarity cannot fail here.
                 let sim_to_own = cosine_similarity(&item_emb.values, centroid_a)
                     .expect("centroid and member share fixed embedding dimensionality");
 
@@ -548,6 +553,7 @@ impl CategoryLayer {
                         continue;
                     }
 
+                    // Same invariant as sim_to_own above.
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding)
                             .expect("centroid and member share fixed embedding dimensionality");

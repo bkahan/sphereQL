@@ -5,9 +5,11 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords = ["nlp", "text", "spherical", "coordinates", "semantic"]
+categories = ["text-processing", "science", "algorithms"]
 
 [dependencies]
-sphereql-core = { path = "../sphereql-core" }
+sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
 serde = { version = "1", features = ["derive"] }
 regex = "1"
 

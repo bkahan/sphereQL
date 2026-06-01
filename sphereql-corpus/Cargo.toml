@@ -1,7 +1,38 @@
 [package]
 name = "sphereql-corpus"
-description = "Shared test corpus for SphereQL examples — 775 concepts across 31 categories"
+description = "Shared test corpus for SphereQL examples — 775 hand-crafted + 5,000+ extended concepts across 31 categories"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Phase 3: Parquet/Arrow read path for scale beyond ~10K concepts.
+arrow = { version = "58", default-features = false, features = ["ipc"] }
+parquet = { version = "58", default-features = false, features = ["arrow", "snap"] }
+# Phase 7: streaming sources. ureq is sync + tokio-free; flate2 is for
+# OpenAlex Works snapshot shards (.jsonl.gz); bzip2 is pure-Rust and
+# only compiled when the dump source feature is on (requires a local
+# `latest-all.json.bz2` — 150 GB compressed — which most users won't
+# have).
+ureq = { version = "2", default-features = false, features = ["tls"], optional = true }
+flate2 = { version = "1", optional = true }
+bzip2-rs = { version = "0.1", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = ["json-fallback", "bulk-http", "bulk-gzip"]
+json-fallback = []
+# Phase 7 source features:
+# - bulk-http:    WikidataSparqlSource + OpenAlexApiSource (network).
+# - bulk-gzip:    OpenAlexShardSource (local .jsonl.gz shards).
+# - bulk-dump:    WikidataDumpSource (local latest-all.json.bz2 stream).
+# - bulk-dbpedia: DBpediaTtlSource (three .ttl.bz2 files, ~1 GB total).
+bulk-http = ["ureq"]
+bulk-gzip = ["flate2"]
+bulk-dump = ["bzip2-rs"]
+bulk-dbpedia = ["bzip2-rs"]

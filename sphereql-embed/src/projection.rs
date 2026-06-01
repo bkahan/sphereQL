@@ -39,6 +39,11 @@ pub enum ProjectionError {
     /// `fit_with_sigma` was given a non-positive Gaussian bandwidth.
     #[error("kernel bandwidth σ must be positive, got {got}")]
     InvalidSigma { got: f64 },
+
+    /// A parallel slice (e.g. category labels) did not have the same length
+    /// as the embedding slice.
+    #[error("auxiliary slice has length {got}, expected {expected}")]
+    SliceLengthMismatch { expected: usize, got: usize },
 }
 
 /// Maps high-dimensional embeddings to spherical coordinates.
@@ -237,6 +242,9 @@ impl PcaProjection {
 
 impl Projection for PcaProjection {
     fn project(&self, embedding: &Embedding) -> SphericalPoint {
+        // Caller contract: embedding must have the same dimensionality as the
+        // fitted projection. Violated only by mixing projections with corpora —
+        // a programming error, not a runtime condition.
         assert_eq!(
             embedding.dimension(),
             self.dim,
@@ -267,6 +275,7 @@ impl Projection for PcaProjection {
     }
 
     fn project_rich(&self, embedding: &Embedding) -> ProjectedPoint {
+        // Same caller contract as `project`: dimension must match the fitted projection.
         assert_eq!(
             embedding.dimension(),
             self.dim,
@@ -321,6 +330,9 @@ pub struct RandomProjection {
 
 impl RandomProjection {
     pub fn new(dim: usize, radial: RadialStrategy, seed: u64) -> Self {
+        // Caller contract: random projection needs ≥3 dimensions to produce
+        // a non-degenerate 3×n matrix (all three rows would be identical
+        // zero-padded otherwise). This parallels PcaProjection::fit's check.
         assert!(dim >= 3, "embedding dimension must be >= 3");
         let mut rng = SplitMix64::new(seed);
         let matrix = std::array::from_fn(|_| (0..dim).map(|_| rng.normal()).collect());

@@ -2,6 +2,15 @@ use std::sync::Arc;
 
 use sphereql_core::SphericalPoint;
 
+/// A high-dimensional embedding vector.
+///
+/// Wraps a `Vec<f64>` with projection-oriented helpers: `magnitude`,
+/// `normalized` (L2 unit vector with a [1, 0, …] fallback for the zero
+/// vector), and `From<Vec<f64>>` / `From<&[f64]>` for ergonomic construction.
+///
+/// All projection families normalize embeddings to the unit hypersphere
+/// before extracting angular structure, so raw magnitude is preserved
+/// separately as the radial coordinate via [`RadialStrategy`].
 #[derive(Debug, Clone)]
 pub struct Embedding {
     pub values: Vec<f64>,

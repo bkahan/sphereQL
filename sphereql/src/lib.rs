@@ -1,3 +1,17 @@
+//! Umbrella crate for SphereQL.
+//!
+//! Re-exports each sub-crate behind a feature gate of the same name.
+//! Enable only the features your binary needs to keep compile times short.
+//!
+//! | Feature | Crate |
+//! |---------|-------|
+//! | `core` | [`sphereql_core`] — spherical geometry primitives |
+//! | `index` | [`sphereql_index`] — spatial index structures |
+//! | `layout` | [`sphereql_layout`] — projection & layout utilities |
+//! | `embed` | [`sphereql_embed`] — embedding pipeline + tuner |
+//! | `graphql` | [`sphereql_graphql`] — GraphQL schema layer |
+//! | `vectordb` | [`sphereql_vectordb`] — vector store backend |
+
 #[cfg(feature = "core")]
 pub mod core {
     pub use sphereql_core::*;

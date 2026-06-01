@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use sphereql_core::spatial::*;
 use sphereql_core::{SphericalPoint, angular_distance};
 
-use crate::category::CategoryLayer;
+use crate::category::{BridgeItem, CategoryLayer};
 
 // ── §1: Antipodal Analysis ───────────────────────────────────────────
 
@@ -421,6 +421,18 @@ pub struct CategoryCurvatureSignature {
     pub mean_excess: f64,
     pub max_excess: f64,
     pub min_excess: f64,
+    /// Z-score of `mean_excess` against the corpus-wide distribution of
+    /// per-category mean excesses. Positive means this category sits in
+    /// triangles that bow more than average; negative, less than average.
+    ///
+    /// Raw `mean_excess` values cluster tightly when centroids span the
+    /// sphere (everything has area ≈ 2π/3), making them poor for
+    /// comparison. The z-score amplifies the residual signal.
+    pub mean_excess_z: f64,
+    /// `(max_excess − min_excess)` divided by the global max excess. A
+    /// dimensionless measure of how varied this category's triangle
+    /// excesses are, robust to overall sphere scale.
+    pub relative_spread: f64,
 }
 
 pub fn curvature_analysis(layer: &CategoryLayer, top_n: usize) -> CurvatureReport {
@@ -453,20 +465,44 @@ pub fn curvature_analysis(layer: &CategoryLayer, top_n: usize) -> CurvatureRepor
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let signatures: Vec<CategoryCurvatureSignature> = (0..n)
+    // First pass: raw stats per category.
+    let raw: Vec<(f64, f64, f64)> = (0..n)
         .map(|target| {
             let sig = curvature_signature(target, &centroids);
-            let (mean, min, max) = if sig.is_empty() {
+            if sig.is_empty() {
                 (0.0, 0.0, 0.0)
             } else {
                 let sum: f64 = sig.iter().sum();
                 (sum / sig.len() as f64, sig[0], sig[sig.len() - 1])
+            }
+        })
+        .collect();
+
+    // Corpus-wide stats of per-category means → z-score basis.
+    let (corpus_mean, corpus_std) = mean_and_std(raw.iter().map(|t| t.0));
+    let global_max_excess = raw.iter().map(|t| t.2).fold(0.0_f64, f64::max);
+
+    let signatures: Vec<CategoryCurvatureSignature> = raw
+        .iter()
+        .enumerate()
+        .map(|(target, &(mean, min, max))| {
+            let mean_excess_z = if corpus_std > f64::EPSILON {
+                (mean - corpus_mean) / corpus_std
+            } else {
+                0.0
+            };
+            let relative_spread = if global_max_excess > f64::EPSILON {
+                (max - min) / global_max_excess
+            } else {
+                0.0
             };
             CategoryCurvatureSignature {
                 category_name: layer.summaries[target].name.clone(),
                 mean_excess: mean,
                 max_excess: max,
                 min_excess: min,
+                mean_excess_z,
+                relative_spread,
             }
         })
         .collect();
@@ -475,6 +511,20 @@ pub fn curvature_analysis(layer: &CategoryLayer, top_n: usize) -> CurvatureRepor
         top_triples: triples.into_iter().take(top_n).collect(),
         signatures,
     }
+}
+
+/// Population mean and standard deviation of an `f64` stream. Returns
+/// `(0.0, 0.0)` on empty input. Used by `curvature_analysis` to
+/// z-normalize per-category mean excesses against the corpus.
+fn mean_and_std<I: Iterator<Item = f64>>(values: I) -> (f64, f64) {
+    let collected: Vec<f64> = values.collect();
+    if collected.is_empty() {
+        return (0.0, 0.0);
+    }
+    let n = collected.len() as f64;
+    let mean = collected.iter().sum::<f64>() / n;
+    let var = collected.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
+    (mean, var.sqrt())
 }
 
 // ── §7: Lune Decomposition ─────────────────────────────────────────
@@ -490,7 +540,7 @@ pub struct LuneReport {
     pub bisector_voronoi_divergence: f64,
 }
 
-pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) -> Vec<LuneReport> {
+pub fn lune_analysis(layer: &CategoryLayer, _all_positions: &[SphericalPoint]) -> Vec<LuneReport> {
     let n = layer.summaries.len();
     let mut reports = Vec::new();
 
@@ -499,13 +549,10 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let bridges_ij = layer.graph.bridges.get(&(i, j));
             let bridges_ji = layer.graph.bridges.get(&(j, i));
 
-            let all_bridge_indices: Vec<usize> = bridges_ij
-                .into_iter()
-                .chain(bridges_ji)
-                .flat_map(|list| list.iter().map(|b| b.item_index))
-                .collect();
+            let ij_items: &[BridgeItem] = bridges_ij.map(|v| v.as_slice()).unwrap_or(&[]);
+            let ji_items: &[BridgeItem] = bridges_ji.map(|v| v.as_slice()).unwrap_or(&[]);
 
-            if all_bridge_indices.is_empty() {
+            if ij_items.is_empty() && ji_items.is_empty() {
                 continue;
             }
 
@@ -513,11 +560,20 @@ pub fn lune_analysis(layer: &CategoryLayer, all_positions: &[SphericalPoint]) ->
             let cb = &layer.summaries[j].centroid_position;
 
             let (mut a_count, mut b_count, mut on_count) = (0usize, 0usize, 0usize);
-            for &idx in &all_bridge_indices {
-                match lune_classify(ca, cb, &all_positions[idx]) {
-                    LuneSide::CloserToA => a_count += 1,
-                    LuneSide::CloserToB => b_count += 1,
-                    LuneSide::OnBisector => on_count += 1,
+            // (i,j) bridges: source=i=A, target=j=B
+            for b in ij_items {
+                match b.affinity_to_source.partial_cmp(&b.affinity_to_target) {
+                    Some(std::cmp::Ordering::Greater) => a_count += 1,
+                    Some(std::cmp::Ordering::Less) => b_count += 1,
+                    _ => on_count += 1,
+                }
+            }
+            // (j,i) bridges: source=j=B, target=i=A — home wins when source > target
+            for b in ji_items {
+                match b.affinity_to_source.partial_cmp(&b.affinity_to_target) {
+                    Some(std::cmp::Ordering::Greater) => b_count += 1,
+                    Some(std::cmp::Ordering::Less) => a_count += 1,
+                    _ => on_count += 1,
                 }
             }
 
@@ -747,7 +803,19 @@ mod tests {
         assert_eq!(report.signatures.len(), 3);
         for sig in &report.signatures {
             assert!(sig.mean_excess >= 0.0);
+            assert!(sig.relative_spread >= 0.0 && sig.relative_spread <= 1.0);
+            assert!(
+                sig.mean_excess_z.is_finite(),
+                "mean_excess_z must be finite, got {}",
+                sig.mean_excess_z
+            );
         }
+        // Population z-scores sum to zero by construction.
+        let z_sum: f64 = report.signatures.iter().map(|s| s.mean_excess_z).sum();
+        assert!(
+            z_sum.abs() < 1e-9,
+            "z-scores should sum to zero, got {z_sum}"
+        );
     }
 
     #[test]

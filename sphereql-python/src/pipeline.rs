@@ -331,6 +331,8 @@ impl Pipeline {
                             "id": s.id,
                             "category": s.category,
                             "cumulative_distance": s.cumulative_distance,
+                            "hop_distance": s.hop_distance,
+                            "bridge_strength": s.bridge_strength,
                         })
                     })
                     .collect();

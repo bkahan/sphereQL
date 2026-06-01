@@ -13,20 +13,6 @@ pub struct SphericalPointOutput {
 }
 
 #[derive(async_graphql::SimpleObject, Debug, Clone)]
-pub struct CartesianPointOutput {
-    pub x: f64,
-    pub y: f64,
-    pub z: f64,
-}
-
-#[derive(async_graphql::SimpleObject, Debug, Clone)]
-pub struct GeoPointOutput {
-    pub lat: f64,
-    pub lon: f64,
-    pub alt: f64,
-}
-
-#[derive(async_graphql::SimpleObject, Debug, Clone)]
 pub struct SpatialQueryResultOutput {
     pub items: Vec<SphericalPointOutput>,
     pub total_scanned: i32,
@@ -36,13 +22,6 @@ pub struct SpatialQueryResultOutput {
 pub struct NearestResultOutput {
     pub point: SphericalPointOutput,
     pub distance: f64,
-}
-
-#[derive(async_graphql::SimpleObject, Debug, Clone)]
-pub struct DistanceResultOutput {
-    pub angular: f64,
-    pub great_circle: Option<f64>,
-    pub chord: f64,
 }
 
 // --- Input types ---

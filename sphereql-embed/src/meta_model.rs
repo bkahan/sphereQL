@@ -401,6 +401,10 @@ impl MetaModel for NearestNeighborMetaModel {
     }
 
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
+        // Invariant: callers are expected to call fit() before predict().
+        // The trait contract documents this requirement, and the panic is
+        // intentional — a silent wrong prediction (returning Default) would
+        // be much harder to diagnose than a clear failure at the call site.
         assert!(
             !self.records.is_empty(),
             "NearestNeighborMetaModel::predict called before fit(); \
@@ -522,6 +526,10 @@ impl MetaModel for DistanceWeightedMetaModel {
     }
 
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
+        // Invariant: callers are expected to call fit() before predict().
+        // The trait contract documents this requirement, and the panic is
+        // intentional — a silent wrong prediction (returning Default) would
+        // be much harder to diagnose than a clear failure at the call site.
         assert!(
             !self.records.is_empty(),
             "DistanceWeightedMetaModel::predict called before fit(); \

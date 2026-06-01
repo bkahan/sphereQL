@@ -5,7 +5,9 @@ use sphereql_core::{SphericalPoint, angular_distance};
 
 use crate::types::LayoutQuality;
 
-const MAX_QUALITY_N: usize = 5000;
+pub(crate) const MAX_QUALITY_N: usize = 5000;
+/// Angular distance below which two points are considered overlapping.
+pub(crate) const OVERLAP_THRESHOLD: f64 = 0.01;
 /// Below this point count, the outer pair-scan loop stays serial —
 /// rayon's thread-pool startup dominates for small inputs.
 const SERIAL_THRESHOLD: usize = 128;
@@ -84,7 +86,7 @@ pub fn compute_overlap(positions: &[SphericalPoint], threshold: f64) -> f64 {
 pub fn compute_quality(positions: &[SphericalPoint]) -> LayoutQuality {
     LayoutQuality {
         dispersion_score: compute_dispersion(positions),
-        overlap_score: compute_overlap(positions, 0.01),
+        overlap_score: compute_overlap(positions, OVERLAP_THRESHOLD),
         silhouette_score: 0.0,
     }
 }

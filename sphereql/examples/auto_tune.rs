@@ -77,7 +77,7 @@ fn main() {
         "Budget: {} random trials (seed = 0x{:X})\n",
         RANDOM_BUDGET, RANDOM_SEED
     );
-    let _ = corpus; // keep for future per-concept reporting; not used past this point
+    drop(corpus);
 
     let space = SearchSpace::default();
     // Small budget chosen deliberately so Bayesian's sample-efficiency

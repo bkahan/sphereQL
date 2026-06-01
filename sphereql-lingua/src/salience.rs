@@ -1,6 +1,7 @@
 use crate::concept::Concept;
 use std::collections::HashMap;
 
+/// Computes per-concept salience and maps it to a radial value r ∈ [r_min, r_max].
 pub struct SalienceScorer {
     pub r_min: f64,
     pub r_max: f64,
@@ -19,6 +20,24 @@ impl SalienceScorer {
             r_max: 1.0,
             commonality: Self::default_commonality(),
         }
+    }
+
+    /// Construct with a custom radial range. Returns `Err` if `r_min >= r_max`
+    /// or if either bound is outside `[0.0, 1.0]`.
+    pub fn with_range(r_min: f64, r_max: f64) -> Result<Self, String> {
+        if r_min >= r_max {
+            return Err(format!("r_min ({r_min}) must be less than r_max ({r_max})"));
+        }
+        if !(0.0..=1.0).contains(&r_min) || !(0.0..=1.0).contains(&r_max) {
+            return Err(format!(
+                "r_min ({r_min}) and r_max ({r_max}) must both be in [0.0, 1.0]"
+            ));
+        }
+        Ok(Self {
+            r_min,
+            r_max,
+            commonality: Self::default_commonality(),
+        })
     }
     pub fn score_all(&self, concepts: &mut [Concept], text: &str) {
         if concepts.is_empty() {

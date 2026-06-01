@@ -2,7 +2,7 @@
 
 Vector embedding projection engine for the [sphereQL](https://github.com/bkahan/sphereQL) project.
 
-Projects high-dimensional embeddings onto S² via one of four families — PCA, Kernel PCA (Gaussian/RBF), Laplacian eigenmap (connectivity-preserving), or random projection — unified behind a `ConfiguredProjection` enum so the pipeline can switch families without touching generics.
+Projects high-dimensional embeddings onto S² via one of four families — PCA, Kernel PCA (Gaussian/RBF), Laplacian eigenmap (connectivity-preserving), or UMAP-on-sphere (tangent-bundle Adam optimizer, kNN attractive + uniform-negative repulsive, optional category supervision) — unified behind a `ConfiguredProjection` enum so the pipeline can switch families without touching generics.
 
 Provides a query pipeline (`SphereQLPipeline`) with k-NN search, similarity thresholds, concept paths, glob detection, local manifold fitting, and a Category Enrichment Layer: inter-category graph, bridge detection with `Genuine` / `OverlapArtifact` / `Weak` classification, automatic inner spheres, drill-down, and hierarchical domain-group routing for low-EVR regimes (`hierarchical_nearest`).
 

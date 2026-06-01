@@ -172,7 +172,7 @@ in the browser.
 | `sphereql-vectordb` | Vector store bridge (InMemory, Qdrant, Pinecone) with hybrid search. |
 | `sphereql-python` | Python bindings via PyO3/maturin. |
 | `sphereql-wasm` | WASM bindings via wasm-bindgen. |
-| `sphereql-corpus` | Shared example corpora (775-concept built-in + 300-concept stress). |
+| `sphereql-corpus` | Shared example corpora: 775-concept built-in (31 academic domains) and 300-concept stress corpus, plus bulk-ingested parquet corpora from DBpedia (500K) and Wikidata (50K). |
 
 Full dependency graph and crate-by-crate description in
 [architecture.md](docs/architecture.md).

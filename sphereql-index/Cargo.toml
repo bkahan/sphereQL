@@ -6,6 +6,8 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
+keywords = ["spherical", "spatial-index", "knn", "geometry", "query"]
+categories = ["data-structures", "mathematics"]
 
 [dependencies]
 sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }

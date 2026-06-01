@@ -46,18 +46,6 @@ impl MergedQueryRoot {
     }
 }
 
-impl Default for SphericalQueryRoot {
-    fn default() -> Self {
-        SphericalQueryRoot
-    }
-}
-
-impl Default for CategoryQueryRoot {
-    fn default() -> Self {
-        CategoryQueryRoot
-    }
-}
-
 /// Schema flavor that exposes both spatial and category queries.
 pub type UnifiedSchema =
     async_graphql::Schema<MergedQueryRoot, async_graphql::EmptyMutation, SphericalSubscriptionRoot>;
