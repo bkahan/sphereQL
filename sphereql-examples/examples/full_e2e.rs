@@ -35,16 +35,108 @@ use dialoguer::MultiSelect;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use sphereql::core::SphericalPoint;
+use sphereql::core::angular_distance;
 use sphereql::core::spatial::*;
 use sphereql::embed::{
-    BridgeClassification, CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, Embedding,
-    FeedbackAggregator, FeedbackEvent, MetaModel, MetaTrainingRecord, NavigatorConfig,
-    NearestNeighborMetaModel, PipelineConfig, PipelineInput, PipelineQuery, Projection,
-    ProjectionKind, QualityMetric, SearchSpace, SearchStrategy, SphereQLOutput, SphereQLQuery,
-    auto_tune, category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
+    BridgeClassification, CategoryLayer, CompositeMetric, CorpusFeatures,
+    DistanceWeightedMetaModel, Embedding, FeedbackAggregator, FeedbackEvent, MetaModel,
+    MetaTrainingRecord, NavigatorConfig, NearestNeighborMetaModel, PipelineConfig, PipelineInput,
+    PipelineQuery, Projection, ProjectionKind, QualityMetric, SearchSpace, SearchStrategy,
+    SphereQLOutput, SphereQLQuery, auto_tune, category_geodesic_sweep, category_path_deviation,
+    gap_confidence, run_full_analysis,
 };
 use sphereql_corpus::axes::*;
 use sphereql_corpus::{Concept, CorpusId, DIM, embed};
+
+/// Runtime-discovered category samples used across the demo. Replaces
+/// the previous hand-written `"physics"` / `"music"` / `"computer_science"`
+/// literals so the example runs against any corpus (HandCrafted, Stress,
+/// Wikidata, custom Parquet).
+///
+/// Entries are sorted descending by member count; the picker layers
+/// "most populous" on top of that ordering and computes "pairwise most
+/// distinct" via greedy farthest-point sampling against the projected
+/// centroids.
+struct CategoryPicker {
+    by_count: Vec<(String, SphericalPoint)>,
+}
+
+impl CategoryPicker {
+    fn new(layer: &CategoryLayer) -> Self {
+        let mut entries: Vec<(String, usize, SphericalPoint)> = layer
+            .summaries
+            .iter()
+            .map(|s| (s.name.clone(), s.member_count, s.centroid_position))
+            .collect();
+        entries.sort_by_key(|e| std::cmp::Reverse(e.1));
+        Self {
+            by_count: entries.into_iter().map(|(n, _, c)| (n, c)).collect(),
+        }
+    }
+
+    fn most_populous(&self, k: usize) -> Vec<String> {
+        self.by_count
+            .iter()
+            .take(k)
+            .map(|(n, _)| n.clone())
+            .collect()
+    }
+
+    /// Greedy farthest-point set on S²: start from the most populous
+    /// centroid, then repeatedly add the centroid whose nearest already-
+    /// picked centroid is the furthest away. Produces k pairwise-distant
+    /// category names while still rooting the selection in a category
+    /// big enough to be meaningful.
+    fn distinct_set(&self, k: usize) -> Vec<String> {
+        if self.by_count.is_empty() {
+            return Vec::new();
+        }
+        let cap = k.min(self.by_count.len());
+        let mut picked: Vec<usize> = Vec::with_capacity(cap);
+        picked.push(0);
+        while picked.len() < cap {
+            let mut best_i = 0;
+            let mut best_min = f64::NEG_INFINITY;
+            for i in 0..self.by_count.len() {
+                if picked.contains(&i) {
+                    continue;
+                }
+                let min_d = picked
+                    .iter()
+                    .map(|&p| angular_distance(&self.by_count[i].1, &self.by_count[p].1))
+                    .fold(f64::INFINITY, f64::min);
+                if min_d > best_min {
+                    best_min = min_d;
+                    best_i = i;
+                }
+            }
+            picked.push(best_i);
+        }
+        picked
+            .into_iter()
+            .map(|i| self.by_count[i].0.clone())
+            .collect()
+    }
+
+    fn distinct_pair(&self) -> Option<(String, String)> {
+        let set = self.distinct_set(2);
+        match set.as_slice() {
+            [a, b] => Some((a.clone(), b.clone())),
+            _ => None,
+        }
+    }
+
+    /// Build k cross-domain pairs by drawing 2k pairwise-distant
+    /// categories from [`Self::distinct_set`] and chunking them into
+    /// disjoint pairs. Each returned pair has internal angular distance
+    /// inherited from the diversity of the underlying set.
+    fn distinct_pairs(&self, k: usize) -> Vec<(String, String)> {
+        let set = self.distinct_set((2 * k).min(self.by_count.len()));
+        set.chunks_exact(2)
+            .map(|c| (c[0].clone(), c[1].clone()))
+            .collect()
+    }
+}
 
 fn main() {
     let selected = select_corpora();
@@ -437,22 +529,18 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
         .collect();
 
-    let sample_cats = [
-        "physics",
-        "music",
-        "computer_science",
-        "biology",
-        "philosophy",
-    ];
+    let layer = pipeline.category_layer();
+    let picker = CategoryPicker::new(layer);
+
+    let sample_cats = picker.distinct_set(5);
     println!(
         "  {:<30} {:<18} {:>7} {:>7} {:>9} {:>9}",
         "Concept", "Category", "θ (°)", "φ (°)", "Certainty", "Intensity"
     );
     println!("  {}", "─".repeat(85));
 
-    let layer = pipeline.category_layer();
-    for &cat in &sample_cats {
-        if let Some(s) = layer.summaries.iter().find(|s| s.name == cat)
+    for cat in &sample_cats {
+        if let Some(s) = layer.summaries.iter().find(|s| &s.name == cat)
             && let Some(&idx) = s.member_indices.first()
         {
             let p = &exported[idx];
@@ -544,11 +632,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("  ── §4c. GEODESIC SWEEPS ────────────────────────────────────");
     println!("  What lies between two ideas on the great circle?\n");
 
-    let sweep_pairs = [
-        ("physics", "music"),
-        ("computer_science", "philosophy"),
-        ("biology", "economics"),
-    ];
+    let sweep_pairs = picker.distinct_pairs(3);
     for (src, tgt) in &sweep_pairs {
         if let Some(sweep) = category_geodesic_sweep(
             layer,
@@ -669,19 +753,14 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
 
     println!("\n  ── §5b. CROSS-DOMAIN CONCEPT PATHS ────────────────────────");
 
-    let path_queries = [
-        (
-            "nanotechnology",
-            "economics",
-            "How does nanotech impact the economy?",
-        ),
-        ("music", "biology", "Musical patterns in living systems?"),
-        (
-            "philosophy",
-            "computer_science",
-            "From abstract thought to computation",
-        ),
-    ];
+    let path_queries: Vec<(String, String, String)> = picker
+        .distinct_pairs(3)
+        .into_iter()
+        .map(|(src, tgt)| {
+            let q = format!("How does {} relate to {}?", src, tgt);
+            (src, tgt, q)
+        })
+        .collect();
 
     for (src, tgt, question) in &path_queries {
         println!("\n  Q: \"{}\"", question);
@@ -723,12 +802,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  ── §5c. BRIDGE CONCEPTS ───────────────────────────────────\n");
-    let bridge_pairs = [
-        ("physics", "computer_science"),
-        ("biology", "philosophy"),
-        ("music", "psychology"),
-        ("nanotechnology", "medicine"),
-    ];
+    let bridge_pairs = picker.distinct_pairs(4);
     for (src, tgt) in &bridge_pairs {
         let bridges = pipeline.bridge_items(src, tgt, 3);
         let rev = pipeline.bridge_items(tgt, src, 3);
@@ -842,11 +916,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  ── §6b. DRILL-DOWN ───────────────────────────────────────");
-    for cat in ["physics", "computer_science", "mathematics"] {
+    for cat in picker.most_populous(3) {
         let drill = pipeline
             .query(
                 SphereQLQuery::DrillDown {
-                    category: cat,
+                    category: &cat,
                     k: 3,
                 },
                 &pq,
@@ -883,8 +957,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             .zip(pipeline.categories().iter())
             .find_map(|(id, cat)| (cat == target).then(|| id.clone()))
     };
-    let src_id = pick_id_by_category("physics").expect("physics item in corpus");
-    let tgt_id = pick_id_by_category("computer_science").expect("CS item in corpus");
+    let (src_cat, tgt_cat) = picker
+        .distinct_pair()
+        .expect("corpus needs at least 2 categories for §6c");
+    let src_id = pick_id_by_category(&src_cat).expect("source category has no items");
+    let tgt_id = pick_id_by_category(&tgt_cat).expect("target category has no items");
     println!(
         "  Path: {} ({}) → {} ({})",
         src_id,
@@ -993,43 +1070,31 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("\n  ── §7a. KNOWLEDGE GAP CARTOGRAPHY ─────────────────────────");
     println!("  Where on the sphere does knowledge run out?\n");
 
+    let (gap_a, gap_b) = picker
+        .distinct_pair()
+        .expect("corpus needs at least 2 categories for §7a");
+    let centroid_of = |name: &str| -> SphericalPoint {
+        layer
+            .summaries
+            .iter()
+            .find(|s| s.name == name)
+            .map(|s| s.centroid_position)
+            .expect("picker returned a name absent from the layer")
+    };
     let test_points = [
+        (format!("At {} centroid", gap_a), centroid_of(&gap_a)),
+        (format!("At {} centroid", gap_b), centroid_of(&gap_b)),
         (
-            "At physics centroid",
-            layer
-                .summaries
-                .iter()
-                .find(|s| s.name == "physics")
-                .unwrap()
-                .centroid_position,
-        ),
-        (
-            "At music centroid",
-            layer
-                .summaries
-                .iter()
-                .find(|s| s.name == "music")
-                .unwrap()
-                .centroid_position,
-        ),
-        (
-            "North pole (void?)",
+            "North pole (void?)".to_string(),
             SphericalPoint::new_unchecked(1.0, 0.0, 0.01),
         ),
         (
-            "South pole (void?)",
+            "South pole (void?)".to_string(),
             SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01),
         ),
         (
-            "Physics antipode",
-            antipode(
-                &layer
-                    .summaries
-                    .iter()
-                    .find(|s| s.name == "physics")
-                    .unwrap()
-                    .centroid_position,
-            ),
+            format!("{} antipode", gap_a),
+            antipode(&centroid_of(&gap_a)),
         ),
     ];
 
@@ -1085,12 +1150,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("\n  ── §7c. GEODESIC DEVIATION ───────────────────────────────");
     println!("  Graph path vs. direct great-circle arc (0 = perfect alignment)\n");
 
-    let dev_pairs = [
-        ("physics", "music"),
-        ("computer_science", "religion"),
-        ("biology", "law"),
-        ("nanotechnology", "culinary_arts"),
-    ];
+    let dev_pairs = picker.distinct_pairs(4);
     for (src, tgt) in &dev_pairs {
         if let Some(dev) = category_path_deviation(layer, src, tgt) {
             let quality = if dev < 0.1 {
@@ -1148,19 +1208,24 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  ── §7e. SYNTHESIZED REASONING CHAIN ─────────────────────");
-    println!("  Simulating how an AI answers: \"How does music relate to physics?\"\n");
-
-    let question_vec = embed(
-        &[
-            (SOUND, 0.6),
-            (WAVE, 0.7),
-            (MATH, 0.4),
-            (ENERGY, 0.3),
-            (HARMONY, 0.5),
-        ],
-        7777,
+    let (chain_src, chain_tgt) = picker
+        .distinct_pair()
+        .expect("corpus needs at least 2 categories for §7e");
+    println!(
+        "  Simulating how an AI answers: \"How does {} relate to {}?\"\n",
+        chain_src, chain_tgt
     );
-    let question_emb = Embedding::new(question_vec.clone());
+
+    // Anchor the synthesized question at the source category's centroid
+    // rather than a hardcoded "music"-flavored feature combo, so the
+    // routing step actually finds it on every corpus.
+    let question_emb = Embedding::new(
+        layer
+            .get_category(&chain_src)
+            .expect("src category present")
+            .centroid_embedding
+            .clone(),
+    );
 
     let nearby =
         layer.categories_near_embedding(&question_emb, pipeline.projection(), std::f64::consts::PI);
@@ -1174,7 +1239,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  Step 2 — Category path:");
-    if let Some(path) = pipeline.category_path("music", "physics") {
+    if let Some(path) = pipeline.category_path(&chain_src, &chain_tgt) {
         let chain: Vec<&str> = path
             .steps
             .iter()
@@ -1232,7 +1297,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             }
         }
 
-        if let Some(dev) = category_path_deviation(layer, "music", "physics") {
+        if let Some(dev) = category_path_deviation(layer, &chain_src, &chain_tgt) {
             println!(
                 "\n  Step 5 — Path deviation from geodesic: {:.4} rad ({:.1}°)",
                 dev,
@@ -1274,29 +1339,24 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             "quite distant"
         };
 
-        println!("\n  ┌──────────────────────────────────────────────────────────┐");
-        println!("  │  SYNTHESIZED ANSWER                                      │");
-        println!("  │                                                          │");
+        let n_hops = path.steps.len().saturating_sub(1);
+        println!("\n  SYNTHESIZED ANSWER");
         println!(
-            "  │  Music and physics are {} on the semantic  │",
-            closeness
+            "    {} and {} are {} on the semantic sphere",
+            chain_src, chain_tgt, closeness
         );
         println!(
-            "  │  sphere (distance {:.3} / π). The connection runs     │",
-            path.total_distance / std::f64::consts::PI
+            "    (distance {:.3} / π, {} hop{}).",
+            path.total_distance / std::f64::consts::PI,
+            n_hops,
+            if n_hops == 1 { "" } else { "s" }
         );
-        println!("  │  through shared mathematical structure — waves,        │");
-        println!("  │  harmonics, and resonance are native to both fields.   │");
-        println!("  │                                                          │");
-        println!("  │  Bridge concepts at each transition provide specific    │");
-        println!("  │  jumping-off points for cross-domain reasoning. The    │");
         println!(
-            "  │  projection preserves {:.1}% of the original semantic    │",
+            "    The projection preserves {:.1}% of the original semantic",
             evr * 100.0
         );
-        println!("  │  structure, giving confidence that these spatial        │");
-        println!("  │  relationships reflect genuine conceptual affinity.     │");
-        println!("  └──────────────────────────────────────────────────────────┘");
+        println!("    structure; bridge concepts at each transition provide");
+        println!("    concrete jumping-off points for cross-domain reasoning.");
     }
 
     // ════════════════════════════════════════════════════════════════════════
