@@ -119,6 +119,7 @@ fn run_demo(corpus: &[Concept]) {
         SearchStrategy::Random {
             budget: BUDGET,
             seed: 0x00C0_FFEE,
+            max_wall_secs: None,
         },
     )
     .expect("warm-start tune failed");

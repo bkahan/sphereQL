@@ -59,12 +59,17 @@ fn resolve_strategy(
 ) -> PyResult<SearchStrategy> {
     match kind {
         "grid" => Ok(SearchStrategy::Grid),
-        "random" => Ok(SearchStrategy::Random { budget, seed }),
+        "random" => Ok(SearchStrategy::Random {
+            budget,
+            seed,
+            max_wall_secs: None,
+        }),
         "bayesian" => Ok(SearchStrategy::Bayesian {
             budget,
             warmup,
             gamma,
             seed,
+            max_wall_secs: None,
         }),
         other => Err(PyValueError::new_err(format!(
             "unknown strategy {other:?}; expected one of: grid, random, bayesian"

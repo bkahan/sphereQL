@@ -874,12 +874,17 @@ fn resolve_strategy_wasm(
 ) -> Result<SearchStrategy, JsError> {
     match kind {
         "grid" => Ok(SearchStrategy::Grid),
-        "random" => Ok(SearchStrategy::Random { budget, seed }),
+        "random" => Ok(SearchStrategy::Random {
+            budget,
+            seed,
+            max_wall_secs: None,
+        }),
         "bayesian" => Ok(SearchStrategy::Bayesian {
             budget,
             warmup,
             gamma,
             seed,
+            max_wall_secs: None,
         }),
         other => Err(JsError::new(&format!(
             "unknown strategy {other:?}; expected grid, random, or bayesian"

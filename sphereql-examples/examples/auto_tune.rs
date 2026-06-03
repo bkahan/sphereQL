@@ -182,6 +182,7 @@ fn main() {
         SearchStrategy::Random {
             budget: small_budget,
             seed: RANDOM_SEED,
+            max_wall_secs: None,
         },
     );
     let (bayes_best, bayes_trials_to_best) = run_strategy(
@@ -194,6 +195,7 @@ fn main() {
             warmup,
             gamma: 0.25,
             seed: RANDOM_SEED,
+            max_wall_secs: None,
         },
     );
 
@@ -317,6 +319,7 @@ fn run_tune(
         SearchStrategy::Random {
             budget: RANDOM_BUDGET,
             seed: RANDOM_SEED,
+            max_wall_secs: None,
         },
         &PipelineConfig::default(),
     )

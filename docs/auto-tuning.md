@@ -42,7 +42,7 @@ plus a `TuneReport`:
 ```rust
 let space = SearchSpace::default();       // sweeps PCA + Laplacian by default
 let metric = CompositeMetric::default_composite();
-let strategy = SearchStrategy::Random { budget: 24, seed: 0xCAFE };
+let strategy = SearchStrategy::Random { budget: 24, seed: 0xCAFE, max_wall_secs: None };
 
 let (tuned, report) =
     auto_tune(input.clone(), &space, &metric, strategy, &base).unwrap();

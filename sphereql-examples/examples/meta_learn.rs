@@ -177,6 +177,7 @@ fn tune_and_record(
         SearchStrategy::Random {
             budget: BUDGET,
             seed: BASE_SEED.wrapping_add(corpus_id.len() as u64),
+            max_wall_secs: None,
         },
         &PipelineConfig::default(),
     )

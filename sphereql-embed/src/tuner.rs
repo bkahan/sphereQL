@@ -382,7 +382,15 @@ pub enum SearchStrategy {
     /// grid cardinality — see [`SearchSpace::grid_cardinality`].
     Grid,
     /// Uniform random sampling for `budget` trials.
-    Random { budget: usize, seed: u64 },
+    Random {
+        budget: usize,
+        seed: u64,
+        /// Optional wall-time cap in seconds. When set, the tuner stops
+        /// proposing new trials once cumulative elapsed time exceeds
+        /// this limit. Already-running trials are not interrupted.
+        /// `None` = unlimited (legacy behavior).
+        max_wall_secs: Option<u64>,
+    },
     /// Sequential Bayesian-ish search. After `warmup` uniform random
     /// trials, subsequent trials pick each knob's value by the ratio of
     /// per-value probabilities between the top-`gamma`-fraction trials
@@ -403,7 +411,21 @@ pub enum SearchStrategy {
         /// larger = more explore.
         gamma: f64,
         seed: u64,
+        /// Optional wall-time cap in seconds. Same semantics as
+        /// [`Self::Random::max_wall_secs`].
+        max_wall_secs: Option<u64>,
     },
+}
+
+impl SearchStrategy {
+    /// Extract the wall-time cap, if one was set.
+    fn max_wall_secs(&self) -> Option<u64> {
+        match self {
+            Self::Random { max_wall_secs, .. } => *max_wall_secs,
+            Self::Bayesian { max_wall_secs, .. } => *max_wall_secs,
+            Self::Grid => None,
+        }
+    }
 }
 
 /// One trial's observation.
@@ -529,6 +551,15 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         }
     };
 
+    let wall_start = Instant::now();
+    let max_wall = strategy.max_wall_secs();
+    let wall_exceeded = |max_wall: Option<u64>| -> bool {
+        match max_wall {
+            Some(max_secs) => wall_start.elapsed().as_secs() >= max_secs,
+            None => false,
+        }
+    };
+
     match &strategy {
         SearchStrategy::Grid => {
             for i in 0..space.grid_cardinality() {
@@ -537,11 +568,14 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                 }
             }
         }
-        SearchStrategy::Random { budget, seed } => {
+        SearchStrategy::Random { budget, seed, .. } => {
             let mut rng = SplitMix64::new(*seed);
             for _ in 0..*budget {
                 let cfg = space.sample(&mut rng, base_config);
                 run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                if wall_exceeded(max_wall) {
+                    break;
+                }
             }
         }
         SearchStrategy::Bayesian {
@@ -549,6 +583,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             warmup,
             gamma,
             seed,
+            ..
         } => {
             // budget/warmup/gamma already validated above by space.validate(&strategy).
             let budget = *budget;
@@ -560,11 +595,19 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             for _ in 0..warmup {
                 let cfg = space.sample(&mut rng, base_config);
                 run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                if wall_exceeded(max_wall) {
+                    break;
+                }
             }
             // Acquisition: axis-parallel TPE-lite.
-            for _ in warmup..budget {
-                let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
-                run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+            if !wall_exceeded(max_wall) {
+                for _ in warmup..budget {
+                    let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
+                    run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                    if wall_exceeded(max_wall) {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -896,12 +939,17 @@ mod tests {
         s.projection_kinds.clear();
         for strategy in [
             SearchStrategy::Grid,
-            SearchStrategy::Random { budget: 4, seed: 1 },
+            SearchStrategy::Random {
+                budget: 4,
+                seed: 1,
+                max_wall_secs: None,
+            },
             SearchStrategy::Bayesian {
                 budget: 4,
                 warmup: 2,
                 gamma: 0.25,
                 seed: 1,
+                max_wall_secs: None,
             },
         ] {
             match s.validate(&strategy) {
@@ -951,6 +999,7 @@ mod tests {
                     warmup: 2,
                     gamma: 0.25,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "budget",
             ),
@@ -960,6 +1009,7 @@ mod tests {
                     warmup: 1,
                     gamma: 0.25,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "warmup",
             ),
@@ -969,6 +1019,7 @@ mod tests {
                     warmup: 2,
                     gamma: 0.0,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "gamma",
             ),
@@ -978,6 +1029,7 @@ mod tests {
                     warmup: 2,
                     gamma: f64::NAN,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "gamma",
             ),
@@ -1128,11 +1180,60 @@ mod tests {
             SearchStrategy::Random {
                 budget: 5,
                 seed: 42,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
         .unwrap();
         assert_eq!(report.trials.len(), 5);
+    }
+
+    #[test]
+    fn random_search_respects_wall_time_cap() {
+        let input = make_input(24, 8);
+        let space = SearchSpace::default();
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Random {
+                budget: 1000,
+                seed: 42,
+                max_wall_secs: Some(1),
+            },
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert!(
+            report.trials.len() < 1000,
+            "wall time cap should have stopped early, got {} trials",
+            report.trials.len()
+        );
+        assert!(
+            !report.trials.is_empty(),
+            "should complete at least one trial before checking wall time"
+        );
+    }
+
+    #[test]
+    fn none_wall_time_is_unlimited() {
+        let input = make_input(24, 8);
+        let space = full_search_space();
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Random {
+                budget: 3,
+                seed: 1,
+                max_wall_secs: None,
+            },
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(report.trials.len(), 3);
     }
 
     #[test]
@@ -1146,7 +1247,11 @@ mod tests {
                 input,
                 &space,
                 &metric,
-                SearchStrategy::Random { budget: 8, seed },
+                SearchStrategy::Random {
+                    budget: 8,
+                    seed,
+                    max_wall_secs: None,
+                },
                 &PipelineConfig::default(),
             )
             .unwrap()
@@ -1187,6 +1292,7 @@ mod tests {
             SearchStrategy::Random {
                 budget: 6,
                 seed: 99,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1205,7 +1311,11 @@ mod tests {
             input,
             &SearchSpace::default(),
             &metric,
-            SearchStrategy::Random { budget: 4, seed: 1 },
+            SearchStrategy::Random {
+                budget: 4,
+                seed: 1,
+                max_wall_secs: None,
+            },
             &PipelineConfig::default(),
         )
         .unwrap();
@@ -1306,6 +1416,7 @@ mod tests {
                 warmup: 4,
                 gamma: 0.25,
                 seed: 42,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1327,6 +1438,7 @@ mod tests {
                     warmup: 3,
                     gamma: 0.25,
                     seed,
+                    max_wall_secs: None,
                 },
                 &PipelineConfig::default(),
             )
@@ -1358,6 +1470,7 @@ mod tests {
                 warmup: 4,
                 gamma: 0.25,
                 seed: 0xC0FFEE,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1380,6 +1493,7 @@ mod tests {
                 warmup: 100,
                 gamma: 0.25,
                 seed: 1,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1398,6 +1512,7 @@ mod tests {
             SearchStrategy::Random {
                 budget: 4,
                 seed: 11,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )

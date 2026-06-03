@@ -358,7 +358,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         },
         &space,
         &metric,
-        SearchStrategy::Random { budget, seed },
+        SearchStrategy::Random {
+            budget,
+            seed,
+            max_wall_secs: None,
+        },
         &PipelineConfig::default(),
     )
     .expect("auto_tune failed");
