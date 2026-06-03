@@ -553,11 +553,9 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
 
     let wall_start = Instant::now();
     let max_wall = strategy.max_wall_secs();
-    let wall_exceeded = |max_wall: Option<u64>| -> bool {
-        match max_wall {
-            Some(max_secs) => wall_start.elapsed().as_secs() >= max_secs,
-            None => false,
-        }
+    let wall_exceeded = || match max_wall {
+        Some(max_secs) => wall_start.elapsed().as_secs() >= max_secs,
+        None => false,
     };
 
     match &strategy {
@@ -573,7 +571,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             for _ in 0..*budget {
                 let cfg = space.sample(&mut rng, base_config);
                 run_trial(cfg, &mut prefit, &mut trials, &mut failures);
-                if wall_exceeded(max_wall) {
+                if wall_exceeded() {
                     break;
                 }
             }
@@ -595,16 +593,16 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             for _ in 0..warmup {
                 let cfg = space.sample(&mut rng, base_config);
                 run_trial(cfg, &mut prefit, &mut trials, &mut failures);
-                if wall_exceeded(max_wall) {
+                if wall_exceeded() {
                     break;
                 }
             }
             // Acquisition: axis-parallel TPE-lite.
-            if !wall_exceeded(max_wall) {
+            if !wall_exceeded() {
                 for _ in warmup..budget {
                     let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
                     run_trial(cfg, &mut prefit, &mut trials, &mut failures);
-                    if wall_exceeded(max_wall) {
+                    if wall_exceeded() {
                         break;
                     }
                 }

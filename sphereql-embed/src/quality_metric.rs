@@ -75,6 +75,13 @@ impl QualityMetric for TerritorialHealth {
 
 // ── Bridge coherence ───────────────────────────────────────────────────
 
+/// Neutral score returned by [`BridgeCoherence`] when bridges exist but
+/// none are classified `Genuine`. A 0.0 in that case dominates the
+/// composite (weight 0.40) and flattens the tuner landscape on lossy
+/// projections; the midpoint preserves rank ordering for downstream
+/// metrics.
+pub const BRIDGE_COHERENCE_NEUTRAL: f64 = 0.5;
+
 /// Fraction of bridges classified as [`BridgeClassification::Genuine`].
 ///
 /// High = the projection surfaces meaningful cross-domain connectors.
@@ -104,13 +111,9 @@ impl QualityMetric for BridgeCoherence {
             // No bridges at all — nothing to be incoherent about.
             1.0
         } else if genuine == 0 {
-            // Bridges exist but none are `Genuine`. This happens when
-            // EVR is below the classification threshold (all labeled
-            // `Weak`) or when territorial overlap is extreme on a low-
-            // EVR projection. Return a neutral score so this metric
-            // doesn't dominate the composite and flatten the tuner
-            // landscape.
-            0.5
+            // Bridges exist but none are `Genuine` — see
+            // [`BRIDGE_COHERENCE_NEUTRAL`] for why this isn't 0.0.
+            BRIDGE_COHERENCE_NEUTRAL
         } else {
             genuine as f64 / total as f64
         }
@@ -521,8 +524,8 @@ mod tests {
         let score = BridgeCoherence.score(&p);
         if has_bridges {
             assert!(
-                (score - 0.5).abs() < 1e-12,
-                "expected neutral 0.5 when bridges exist but none Genuine, got {score}"
+                (score - BRIDGE_COHERENCE_NEUTRAL).abs() < 1e-12,
+                "expected neutral {BRIDGE_COHERENCE_NEUTRAL} when bridges exist but none Genuine, got {score}"
             );
         } else {
             // No bridges at all → the original "nothing to be

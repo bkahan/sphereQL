@@ -98,24 +98,22 @@ pub struct PcaProjection {
     total_variance: f64,
 }
 
+/// Minimum embedding dimensionality required by PCA fits.
+const PCA_MIN_DIM: usize = 3;
+
 impl PcaProjection {
-    /// Fit the top-3 principal components on `embeddings`.
-    ///
-    /// Returns [`ProjectionError::EmptyCorpus`] if the slice is empty,
-    /// [`ProjectionError::DimensionTooLow`] if `dim < 3`, and
-    /// [`ProjectionError::InconsistentDimension`] if any row's
-    /// dimensionality disagrees with the first. Previously these paths
-    /// panicked via `assert!`, which surfaced as a `PanicException` in
-    /// Python / WASM bindings.
-    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
+    /// Validate that the corpus is non-empty, every row shares the same
+    /// dimensionality, and that dimensionality is at least
+    /// [`PCA_MIN_DIM`]. Returns the shared dimension on success.
+    fn validate_embeddings(embeddings: &[Embedding]) -> Result<usize, ProjectionError> {
         if embeddings.is_empty() {
             return Err(ProjectionError::EmptyCorpus);
         }
         let dim = embeddings[0].dimension();
-        if dim < 3 {
+        if dim < PCA_MIN_DIM {
             return Err(ProjectionError::DimensionTooLow {
                 got: dim,
-                required: 3,
+                required: PCA_MIN_DIM,
             });
         }
         for (i, e) in embeddings.iter().enumerate() {
@@ -127,6 +125,50 @@ impl PcaProjection {
                 });
             }
         }
+        Ok(dim)
+    }
+
+    /// Assemble a `PcaProjection` from the eigendecomposition outputs.
+    /// Padding shorter eigenvalue/component lists with zeros keeps the
+    /// fixed-arity arrays well-defined when [`top_k_eigenvectors`]
+    /// returns fewer than 3 components.
+    fn from_eigendecomp(
+        components: Vec<Vec<f64>>,
+        eigenvalues: Vec<f64>,
+        mean: Vec<f64>,
+        dim: usize,
+        radial: RadialStrategy,
+        total_variance: f64,
+    ) -> Self {
+        Self {
+            components: [
+                components[0].clone(),
+                components[1].clone(),
+                components[2].clone(),
+            ],
+            mean,
+            dim,
+            radial,
+            volumetric: false,
+            eigenvalues: [
+                eigenvalues.first().copied().unwrap_or(0.0),
+                eigenvalues.get(1).copied().unwrap_or(0.0),
+                eigenvalues.get(2).copied().unwrap_or(0.0),
+            ],
+            total_variance,
+        }
+    }
+
+    /// Fit the top-3 principal components on `embeddings`.
+    ///
+    /// Returns [`ProjectionError::EmptyCorpus`] if the slice is empty,
+    /// [`ProjectionError::DimensionTooLow`] if `dim < 3`, and
+    /// [`ProjectionError::InconsistentDimension`] if any row's
+    /// dimensionality disagrees with the first. Previously these paths
+    /// panicked via `assert!`, which surfaced as a `PanicException` in
+    /// Python / WASM bindings.
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
+        let dim = Self::validate_embeddings(embeddings)?;
 
         let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
         let n = normalized.len();
@@ -160,23 +202,14 @@ impl PcaProjection {
             .sum::<f64>()
             / centered.len() as f64;
 
-        Ok(Self {
-            components: [
-                components[0].clone(),
-                components[1].clone(),
-                components[2].clone(),
-            ],
+        Ok(Self::from_eigendecomp(
+            components,
+            eigenvalues,
             mean,
             dim,
             radial,
-            volumetric: false,
-            eigenvalues: [
-                eigenvalues.first().copied().unwrap_or(0.0),
-                eigenvalues.get(1).copied().unwrap_or(0.0),
-                eigenvalues.get(2).copied().unwrap_or(0.0),
-            ],
             total_variance,
-        })
+        ))
     }
 
     pub fn fit_default(embeddings: &[Embedding]) -> Result<Self, ProjectionError> {
@@ -204,31 +237,15 @@ impl PcaProjection {
         weights: &[f64],
         radial: RadialStrategy,
     ) -> Result<Self, ProjectionError> {
-        if embeddings.is_empty() {
-            return Err(ProjectionError::EmptyCorpus);
-        }
+        // SliceLengthMismatch is the only error specific to the weighted
+        // path; the rest is shared with `fit`.
         if weights.len() != embeddings.len() {
             return Err(ProjectionError::SliceLengthMismatch {
                 expected: embeddings.len(),
                 got: weights.len(),
             });
         }
-        let dim = embeddings[0].dimension();
-        if dim < 3 {
-            return Err(ProjectionError::DimensionTooLow {
-                got: dim,
-                required: 3,
-            });
-        }
-        for (i, e) in embeddings.iter().enumerate() {
-            if e.dimension() != dim {
-                return Err(ProjectionError::InconsistentDimension {
-                    index: i,
-                    expected: dim,
-                    got: e.dimension(),
-                });
-            }
-        }
+        let dim = Self::validate_embeddings(embeddings)?;
 
         let clamped: Vec<f64> = weights.iter().map(|&w| w.max(0.0)).collect();
         let w_sum: f64 = clamped.iter().sum();
@@ -278,23 +295,14 @@ impl PcaProjection {
             .sum::<f64>()
             / scaled.len() as f64;
 
-        Ok(Self {
-            components: [
-                components[0].clone(),
-                components[1].clone(),
-                components[2].clone(),
-            ],
+        Ok(Self::from_eigendecomp(
+            components,
+            eigenvalues,
             mean,
             dim,
             radial,
-            volumetric: false,
-            eigenvalues: [
-                eigenvalues.first().copied().unwrap_or(0.0),
-                eigenvalues.get(1).copied().unwrap_or(0.0),
-                eigenvalues.get(2).copied().unwrap_or(0.0),
-            ],
             total_variance,
-        })
+        ))
     }
 
     /// Enable volumetric mode: r comes from the PCA projection magnitude

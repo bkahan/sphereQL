@@ -409,11 +409,14 @@ fn add3_scaled(a: &mut [f64; 3], b: &[f64; 3], s: f64) {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
+/// Corpus size at which the ANN index amortizes its build cost.
+/// Below this, brute-force is faster and gives exact answers; above it,
+/// the all-pairs O(N²) cost dominates.
+const ANN_BRUTE_FORCE_THRESHOLD: usize = 2000;
+
 fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> Vec<Vec<usize>> {
     let n = normalized.len();
-    // Tree overhead dominates below ~2000 items; brute force is faster
-    // and gives exact answers for free.
-    if n < 2000 {
+    if n < ANN_BRUTE_FORCE_THRESHOLD {
         return (0..n)
             .map(|i| {
                 let mut sims: Vec<(usize, f64)> = (0..n)
@@ -428,13 +431,12 @@ fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> Vec<Vec<usize>> {
             .collect();
     }
 
-    // n_trees=8, max_leaf_size=40 gives >95% recall at N=500k.
-    let config = crate::ann::AnnConfig {
-        n_trees: 8,
-        max_leaf_size: 40,
-        seed: 0xAAFF_AABB,
-    };
-    let index = crate::ann::AnnIndex::build_normalized(normalized.to_vec(), &config);
+    // AnnConfig defaults (n_trees=8, max_leaf_size=40) give >95% recall
+    // at N=500k for cosine kNN — the regime that drives this branch.
+    let index = crate::ann::AnnIndex::build_normalized(
+        normalized.to_vec(),
+        &crate::ann::AnnConfig::default(),
+    );
     index.knn_graph(k)
 }
 
