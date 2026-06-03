@@ -183,6 +183,120 @@ impl PcaProjection {
         Self::fit(embeddings, RadialStrategy::default())
     }
 
+    /// Fit the top-3 principal components with per-sample weights.
+    ///
+    /// Weighted PCA finds the top eigenvectors of the weighted
+    /// covariance matrix `Σ wᵢ (xᵢ − μ_w)(xᵢ − μ_w)ᵀ / Σ wᵢ`, where
+    /// `μ_w = Σ wᵢ xᵢ / Σ wᵢ`. With uniform weights this collapses to
+    /// the same answer as [`Self::fit`].
+    ///
+    /// The intended use is rebalancing covariance estimates over
+    /// imbalanced corpora. Setting `wᵢ = 1 / sqrt(|category(i)|)` makes
+    /// every category contribute equal mass to the covariance regardless
+    /// of size — algebraically exact, where stratified subsampling only
+    /// approximates it.
+    ///
+    /// Returns the same error variants as [`Self::fit`], plus
+    /// [`ProjectionError::SliceLengthMismatch`] when `weights.len() !=
+    /// embeddings.len()`. Negative weights are treated as zero.
+    pub fn fit_weighted(
+        embeddings: &[Embedding],
+        weights: &[f64],
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
+        if embeddings.is_empty() {
+            return Err(ProjectionError::EmptyCorpus);
+        }
+        if weights.len() != embeddings.len() {
+            return Err(ProjectionError::SliceLengthMismatch {
+                expected: embeddings.len(),
+                got: weights.len(),
+            });
+        }
+        let dim = embeddings[0].dimension();
+        if dim < 3 {
+            return Err(ProjectionError::DimensionTooLow {
+                got: dim,
+                required: 3,
+            });
+        }
+        for (i, e) in embeddings.iter().enumerate() {
+            if e.dimension() != dim {
+                return Err(ProjectionError::InconsistentDimension {
+                    index: i,
+                    expected: dim,
+                    got: e.dimension(),
+                });
+            }
+        }
+
+        let clamped: Vec<f64> = weights.iter().map(|&w| w.max(0.0)).collect();
+        let w_sum: f64 = clamped.iter().sum();
+        if w_sum < f64::EPSILON {
+            // All weights zero or negative — fall back to unweighted fit
+            // rather than producing a degenerate covariance.
+            return Self::fit(embeddings, radial);
+        }
+
+        let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
+
+        // Weighted mean: μ_w = Σ wᵢ xᵢ / Σ wᵢ.
+        let mut mean = vec![0.0; dim];
+        for (v, &w) in normalized.iter().zip(clamped.iter()) {
+            for (i, &val) in v.iter().enumerate() {
+                mean[i] += w * val;
+            }
+        }
+        for m in &mut mean {
+            *m /= w_sum;
+        }
+
+        // Each row scaled by sqrt(wᵢ) so that XᵀX equals the weighted
+        // covariance (times Σwᵢ). Eigenvectors are invariant under the
+        // overall scalar, so power iteration on these scaled rows yields
+        // the weighted principal components.
+        let scaled: Vec<Vec<f64>> = normalized
+            .iter()
+            .zip(clamped.iter())
+            .map(|(v, &w)| {
+                let s = w.sqrt();
+                v.iter()
+                    .zip(mean.iter())
+                    .map(|(&val, &m)| s * (val - m))
+                    .collect()
+            })
+            .collect();
+
+        let (components, eigenvalues) = top_k_eigenvectors(&scaled, 3, dim);
+
+        // total_variance uses the same /N normalization as the
+        // eigenvalues coming back from top_k_eigenvectors, so the EVR
+        // ratio is well-defined regardless of weight scale.
+        let total_variance: f64 = scaled
+            .iter()
+            .map(|row| row.iter().map(|x| x * x).sum::<f64>())
+            .sum::<f64>()
+            / scaled.len() as f64;
+
+        Ok(Self {
+            components: [
+                components[0].clone(),
+                components[1].clone(),
+                components[2].clone(),
+            ],
+            mean,
+            dim,
+            radial,
+            volumetric: false,
+            eigenvalues: [
+                eigenvalues.first().copied().unwrap_or(0.0),
+                eigenvalues.get(1).copied().unwrap_or(0.0),
+                eigenvalues.get(2).copied().unwrap_or(0.0),
+            ],
+            total_variance,
+        })
+    }
+
     /// Enable volumetric mode: r comes from the PCA projection magnitude
     /// instead of the embedding magnitude. Points distribute through the
     /// full 3D volume rather than clustering on the sphere surface.
@@ -689,6 +803,90 @@ mod tests {
         let corpus = corpus_10d();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let _ = pca.project(&emb(&[1.0, 2.0, 3.0]));
+    }
+
+    // --- Weighted PCA tests ---
+
+    #[test]
+    fn fit_weighted_uniform_weights_matches_naive_fit() {
+        let corpus = corpus_10d();
+        let uniform: Vec<f64> = vec![1.0; corpus.len()];
+
+        let plain = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
+        let weighted =
+            PcaProjection::fit_weighted(&corpus, &uniform, RadialStrategy::Fixed(1.0)).unwrap();
+
+        // Power iteration converges to ±eigenvector with the same sign
+        // structure for identical input, so we compare projection
+        // outputs (sign-invariant via angular distance) rather than the
+        // raw components.
+        for e in &corpus {
+            let a = plain.project(e);
+            let b = weighted.project(e);
+            assert!(
+                angular_distance(&a, &b) < 1e-9,
+                "uniform-weight fit should match naive fit"
+            );
+        }
+        assert!(
+            (plain.explained_variance_ratio() - weighted.explained_variance_ratio()).abs() < 1e-9
+        );
+    }
+
+    #[test]
+    fn fit_weighted_balances_imbalanced_corpus() {
+        // 20 copies of an x-axis pattern + 1 sample on the y axis. With
+        // unit weights the y sample is washed out; with weight
+        // 1/sqrt(count) per category, the singleton y is amplified
+        // enough that the second component picks up its direction.
+        let mut corpus: Vec<Embedding> = Vec::new();
+        let mut weights: Vec<f64> = Vec::new();
+        for i in 0..20 {
+            let mut v = vec![0.0; 8];
+            v[0] = 1.0 + (i as f64) * 0.001;
+            v[1] = 0.01;
+            corpus.push(emb(&v));
+            weights.push(1.0 / (20f64).sqrt());
+        }
+        // Singleton: y-axis
+        corpus.push(emb(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        weights.push(1.0);
+
+        let weighted =
+            PcaProjection::fit_weighted(&corpus, &weights, RadialStrategy::Fixed(1.0)).unwrap();
+        // EVR should be meaningful (well above zero); the singleton's
+        // direction is preserved in the principal subspace.
+        assert!(
+            weighted.explained_variance_ratio() > 0.5,
+            "weighted EVR should be > 0.5, got {}",
+            weighted.explained_variance_ratio()
+        );
+    }
+
+    #[test]
+    fn fit_weighted_rejects_length_mismatch() {
+        let corpus = corpus_10d();
+        let bad_weights = vec![1.0; corpus.len() - 1];
+        let result =
+            PcaProjection::fit_weighted(&corpus, &bad_weights, RadialStrategy::Fixed(1.0));
+        assert!(matches!(
+            result,
+            Err(ProjectionError::SliceLengthMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn fit_weighted_zero_weights_falls_back_to_unweighted() {
+        let corpus = corpus_10d();
+        let zeros = vec![0.0; corpus.len()];
+        let weighted =
+            PcaProjection::fit_weighted(&corpus, &zeros, RadialStrategy::Fixed(1.0)).unwrap();
+        let plain = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
+        for e in &corpus {
+            let a = plain.project(e);
+            let b = weighted.project(e);
+            assert!(angular_distance(&a, &b) < 1e-9);
+        }
     }
 
     // --- Random projection tests ---

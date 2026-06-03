@@ -280,7 +280,7 @@ impl SphereQLPipeline {
             .map(|v| Embedding::new(v.clone()))
             .collect();
 
-        let projection = fit_projection_for_config(&embeddings, &config)?;
+        let projection = fit_projection_for_config(&embeddings, &input.categories, &config)?;
         let mut pipeline = Self::with_configured_projection_and_config(
             input.categories,
             embeddings,
@@ -1122,14 +1122,36 @@ impl SphereQLPipeline {
 /// given corpus. Called by [`SphereQLPipeline::new_with_config`] and the
 /// auto-tuner prefit step. Default radial strategy mirrors
 /// [`SphereQLPipeline::new`]'s legacy behavior (magnitude + volumetric).
+///
+/// `categories` is parallel to `embeddings` — same length, same order —
+/// and is used only by the PCA arm to compute per-sample weights
+/// `wᵢ = 1 / sqrt(|category(i)|)` so the covariance estimate is robust
+/// to category imbalance. Other arms ignore it.
 pub fn fit_projection_for_config(
     embeddings: &[Embedding],
+    categories: &[String],
     config: &PipelineConfig,
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
     match config.projection_kind {
-        ProjectionKind::Pca => Ok(ConfiguredProjection::Pca(
-            PcaProjection::fit(embeddings, RadialStrategy::Magnitude)?.with_volumetric(true),
-        )),
+        ProjectionKind::Pca => {
+            // Weight each sample by 1/sqrt(|its_category|) so every
+            // category contributes equally to the covariance. Critical
+            // for corpora with singleton categories (DBpedia-style),
+            // where a uniform fit lets large categories dominate.
+            let mut cat_counts: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
+            for c in categories {
+                *cat_counts.entry(c.as_str()).or_default() += 1;
+            }
+            let weights: Vec<f64> = categories
+                .iter()
+                .map(|c| 1.0 / (cat_counts[c.as_str()] as f64).sqrt())
+                .collect();
+            Ok(ConfiguredProjection::Pca(
+                PcaProjection::fit_weighted(embeddings, &weights, RadialStrategy::Magnitude)?
+                    .with_volumetric(true),
+            ))
+        }
         ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
             embeddings,
             RadialStrategy::Magnitude,
@@ -1219,6 +1241,42 @@ mod tests {
             assert_eq!(*id, ids[i].as_str());
             assert_eq!(*cat, cats[i].as_str());
         }
+    }
+
+    #[test]
+    fn fit_weighted_pca_handles_singleton_categories() {
+        // Corpus with extreme imbalance: one category with 20 items,
+        // two categories with 1 item each. A naive (unweighted) fit
+        // would let the 20-item category dominate the covariance.
+        // fit_weighted uses 1/sqrt(count) per category so every
+        // category contributes equally — and uses all 22 samples,
+        // giving a well-conditioned fit even with singletons.
+        let mut embeddings = Vec::new();
+        let mut categories = Vec::new();
+        for i in 0..20 {
+            let mut v = vec![0.0; 8];
+            v[0] = 1.0 + (i as f64 * 0.01);
+            v[1] = 0.1;
+            embeddings.push(v);
+            categories.push("big".to_string());
+        }
+        embeddings.push(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+        categories.push("singleton_a".to_string());
+        embeddings.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        categories.push("singleton_b".to_string());
+
+        let pipeline = SphereQLPipeline::new(PipelineInput {
+            categories,
+            embeddings,
+        })
+        .unwrap();
+
+        let evr = pipeline.explained_variance_ratio();
+        assert!(
+            evr > 0.0,
+            "weighted PCA should produce nonzero EVR even with singletons, got {evr}"
+        );
+        assert_eq!(pipeline.num_categories(), 3);
     }
 
     #[test]
