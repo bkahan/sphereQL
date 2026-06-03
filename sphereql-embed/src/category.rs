@@ -595,28 +595,39 @@ impl CategoryLayer {
 
         // Classification pass: compare each bridge against the corpus-wide
         // median strength and the pair's territorial separation on S².
-        let mut all_strengths: Vec<f64> = bridges
-            .values()
-            .flat_map(|list| list.iter().map(|b| b.bridge_strength))
-            .collect();
-        let median_strength = if all_strengths.is_empty() {
-            0.0
-        } else {
-            all_strengths.sort_by(|a, b| a.total_cmp(b));
-            all_strengths[all_strengths.len() / 2]
-        };
+        //
+        // When EVR is below `min_evr_for_classification`, the projection
+        // is too lossy for territorial factors to distinguish genuine
+        // bridges from overlap artifacts — every factor collapses to
+        // near-zero, every bridge gets labeled OverlapArtifact, and the
+        // tuner landscape flattens. Skip the territorial check entirely
+        // in that regime and leave the default `Weak` label on each
+        // bridge (honest uncertainty).
+        if spatial.evr >= config.bridges.min_evr_for_classification {
+            let mut all_strengths: Vec<f64> = bridges
+                .values()
+                .flat_map(|list| list.iter().map(|b| b.bridge_strength))
+                .collect();
+            let median_strength = if all_strengths.is_empty() {
+                0.0
+            } else {
+                all_strengths.sort_by(|a, b| a.total_cmp(b));
+                all_strengths[all_strengths.len() / 2]
+            };
 
-        let overlap_threshold = config.bridges.overlap_artifact_territorial;
-        for list in bridges.values_mut() {
-            for b in list.iter_mut() {
-                let tf = spatial.territorial_factor(b.source_category, b.target_category);
-                b.classification = if tf < overlap_threshold {
-                    BridgeClassification::OverlapArtifact
-                } else if b.bridge_strength >= median_strength {
-                    BridgeClassification::Genuine
-                } else {
-                    BridgeClassification::Weak
-                };
+            let overlap_threshold = config.bridges.overlap_artifact_territorial;
+            for list in bridges.values_mut() {
+                for b in list.iter_mut() {
+                    let tf =
+                        spatial.territorial_factor(b.source_category, b.target_category);
+                    b.classification = if tf < overlap_threshold {
+                        BridgeClassification::OverlapArtifact
+                    } else if b.bridge_strength >= median_strength {
+                        BridgeClassification::Genuine
+                    } else {
+                        BridgeClassification::Weak
+                    };
+                }
             }
         }
 
@@ -1539,6 +1550,42 @@ mod tests {
                     b.classification == BridgeClassification::Genuine
                         || b.classification == BridgeClassification::OverlapArtifact
                         || b.classification == BridgeClassification::Weak
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn low_evr_skips_territorial_classification() {
+        // When `spatial.evr` falls below `min_evr_for_classification`,
+        // every bridge should fall back to `Weak`. We force the gate
+        // by raising the threshold above the measured EVR rather than
+        // synthesizing a low-EVR projection.
+        let (categories, embeddings) = test_corpus();
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+
+        let mut config = PipelineConfig::default();
+        // Set the gate above the natural ceiling so the early-skip
+        // branch is exercised regardless of corpus EVR.
+        config.bridges.min_evr_for_classification = 1.5;
+
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            0.10,
+            &config,
+        );
+
+        for bridges in layer.graph.bridges.values() {
+            for b in bridges {
+                assert_eq!(
+                    b.classification,
+                    BridgeClassification::Weak,
+                    "low EVR should label every bridge Weak, got {:?}",
+                    b.classification
                 );
             }
         }

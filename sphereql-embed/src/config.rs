@@ -158,6 +158,14 @@ pub struct BridgeConfig {
     /// affinity to both sides as the bottom-25% of items have to
     /// their own home category.
     pub balanced_affinity_quantile: f64,
+    /// EVR below which bridge classification is unreliable. When the
+    /// outer projection's EVR is below this threshold, all bridges
+    /// are labeled `Weak` (honest uncertainty) rather than attempting
+    /// territorial-factor-based classification — which collapses to
+    /// 100% `OverlapArtifact` when caps overlap everywhere on a
+    /// low-EVR projection, flattening the tuner landscape. Default
+    /// 0.20.
+    pub min_evr_for_classification: f64,
 }
 
 impl Default for BridgeConfig {
@@ -167,6 +175,7 @@ impl Default for BridgeConfig {
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
             balanced_affinity_quantile: 0.25,
+            min_evr_for_classification: 0.20,
         }
     }
 }
@@ -288,6 +297,8 @@ mod tests {
         assert!((c.bridges.threshold_base - 0.5).abs() < 1e-12);
         assert!((c.bridges.threshold_evr_penalty - 0.4).abs() < 1e-12);
         assert!((c.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12);
+        assert!((c.bridges.balanced_affinity_quantile - 0.25).abs() < 1e-12);
+        assert!((c.bridges.min_evr_for_classification - 0.20).abs() < 1e-12);
         assert_eq!(c.routing.num_domain_groups, 5);
         assert!((c.routing.low_evr_threshold - 0.35).abs() < 1e-12);
         assert_eq!(c.laplacian.k_neighbors, 15);

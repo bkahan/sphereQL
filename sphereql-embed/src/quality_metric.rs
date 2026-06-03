@@ -101,7 +101,16 @@ impl QualityMetric for BridgeCoherence {
             }
         }
         if total == 0 {
+            // No bridges at all — nothing to be incoherent about.
             1.0
+        } else if genuine == 0 {
+            // Bridges exist but none are `Genuine`. This happens when
+            // EVR is below the classification threshold (all labeled
+            // `Weak`) or when territorial overlap is extreme on a low-
+            // EVR projection. Return a neutral score so this metric
+            // doesn't dominate the composite and flatten the tuner
+            // landscape.
+            0.5
         } else {
             genuine as f64 / total as f64
         }
@@ -464,6 +473,62 @@ mod tests {
         let p = make_pipeline();
         let s = BridgeCoherence.score(&p);
         assert!((0.0..=1.0).contains(&s), "got {s}");
+    }
+
+    #[test]
+    fn bridge_coherence_returns_neutral_when_no_genuine() {
+        // BridgeCoherence returns 0.5 (not 0.0) when bridges exist but
+        // none are Genuine. Force that state by setting
+        // `min_evr_for_classification` above any achievable EVR — every
+        // bridge falls back to Weak and we exercise the neutral arm.
+        use crate::config::PipelineConfig;
+        let n = 30;
+        let dim = 10;
+        let mut embeddings = Vec::new();
+        let mut categories = Vec::new();
+        for i in 0..n {
+            let mut v = vec![0.0; dim];
+            if i < n / 2 {
+                v[0] = 1.0 + (i as f64 * 0.01);
+                v[1] = 0.1;
+                categories.push("alpha".to_string());
+            } else {
+                v[0] = 0.1;
+                v[1] = 1.0 + (i as f64 * 0.01);
+                categories.push("beta".to_string());
+            }
+            v[2] = 0.05 * i as f64;
+            embeddings.push(v);
+        }
+        let mut config = PipelineConfig::default();
+        config.bridges.min_evr_for_classification = 1.5;
+        let p = SphereQLPipeline::new_with_config(
+            PipelineInput {
+                categories,
+                embeddings,
+            },
+            config,
+        )
+        .expect("pipeline build failed");
+
+        let has_bridges = p
+            .category_layer()
+            .graph
+            .bridges
+            .values()
+            .any(|v| !v.is_empty());
+
+        let score = BridgeCoherence.score(&p);
+        if has_bridges {
+            assert!(
+                (score - 0.5).abs() < 1e-12,
+                "expected neutral 0.5 when bridges exist but none Genuine, got {score}"
+            );
+        } else {
+            // No bridges at all → the original "nothing to be
+            // incoherent about" path returns 1.0.
+            assert!((score - 1.0).abs() < 1e-12);
+        }
     }
 
     #[test]
