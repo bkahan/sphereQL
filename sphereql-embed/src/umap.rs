@@ -411,18 +411,31 @@ fn add3_scaled(a: &mut [f64; 3], b: &[f64; 3], s: f64) {
 
 fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> Vec<Vec<usize>> {
     let n = normalized.len();
-    (0..n)
-        .map(|i| {
-            let mut sims: Vec<(usize, f64)> = (0..n)
-                .filter(|&j| j != i)
-                .map(|j| (j, dot(&normalized[i], &normalized[j])))
-                .collect();
-            sims.sort_unstable_by(|a, b| {
-                b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            sims.into_iter().take(k).map(|(j, _)| j).collect()
-        })
-        .collect()
+    // Tree overhead dominates below ~2000 items; brute force is faster
+    // and gives exact answers for free.
+    if n < 2000 {
+        return (0..n)
+            .map(|i| {
+                let mut sims: Vec<(usize, f64)> = (0..n)
+                    .filter(|&j| j != i)
+                    .map(|j| (j, dot(&normalized[i], &normalized[j])))
+                    .collect();
+                sims.sort_unstable_by(|a, b| {
+                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                sims.into_iter().take(k).map(|(j, _)| j).collect()
+            })
+            .collect();
+    }
+
+    // n_trees=8, max_leaf_size=40 gives >95% recall at N=500k.
+    let config = crate::ann::AnnConfig {
+        n_trees: 8,
+        max_leaf_size: 40,
+        seed: 0xAAFF_AABB,
+    };
+    let index = crate::ann::AnnIndex::build_normalized(normalized.to_vec(), &config);
+    index.knn_graph(k)
 }
 
 fn pca_warm_start(
@@ -578,6 +591,41 @@ mod tests {
                 required: 4
             })
         ));
+    }
+
+    #[test]
+    fn ann_backed_knn_routes_to_correct_cluster() {
+        // The 2000-item threshold in build_knn_graph routes this corpus
+        // through brute force; here we directly exercise the ANN module
+        // to confirm its k-NN graph respects cluster structure.
+        //
+        // cluster_corpus() builds two orthogonal clusters of 8 items.
+        // The leaf size must be >= cluster size so every query routes
+        // into a leaf containing all of its true neighbors — at this
+        // tiny N, smaller leaves cause sub-leaf fragmentation that
+        // would surface as recall holes only at this scale.
+        use crate::ann::{AnnConfig, AnnIndex};
+
+        let corpus = cluster_corpus();
+        let normalized: Vec<Vec<f64>> = corpus.iter().map(|e| e.normalized()).collect();
+
+        let config = AnnConfig {
+            n_trees: 8,
+            max_leaf_size: 8,
+            seed: 42,
+        };
+        let index = AnnIndex::build_normalized(normalized.clone(), &config);
+        let ann: Vec<Vec<usize>> = index.knn_graph(5);
+
+        for (i, neighbors) in ann.iter().enumerate() {
+            let own_cluster = if i < 8 { 0..8 } else { 8..16 };
+            for &n in neighbors {
+                assert!(
+                    own_cluster.contains(&n),
+                    "item {i} got neighbor {n} from the wrong cluster"
+                );
+            }
+        }
     }
 
     #[test]

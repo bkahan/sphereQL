@@ -34,6 +34,7 @@
 //! [`SphereQLPipeline::new_from_metamodel_tuned`] for the
 //! tune-or-recall entry points.
 
+pub mod ann;
 pub mod category;
 pub mod confidence;
 pub mod config;
