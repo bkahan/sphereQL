@@ -53,9 +53,10 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use sphereql_core::SphericalPoint;
+use sphereql_embed::umap::UmapConfig;
 use sphereql_embed::{
     Embedding, KernelPcaProjection, LaplacianEigenmapProjection, LogicalConfidence, PcaProjection,
-    Projection, RadialStrategy, UmapConfig, UmapSphereProjection, UnimplementedLogicalConfidence,
+    Projection, RadialStrategy, UmapSphereProjection, UnimplementedLogicalConfidence,
 };
 
 // ── Corpus 1: text e2e (mirrors sphereql-vectordb/tests/e2e_text_to_sphereql) ──

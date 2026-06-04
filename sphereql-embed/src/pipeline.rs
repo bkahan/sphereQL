@@ -1167,14 +1167,42 @@ pub fn fit_projection_for_config(
                 )?,
             ))
         }
-        ProjectionKind::UmapSphere => Ok(ConfiguredProjection::UmapSphere(
-            crate::umap::UmapSphereProjection::fit(
-                embeddings,
-                None,
-                RadialStrategy::Magnitude,
-                crate::umap::UmapConfig::default(),
-            )?,
-        )),
+        ProjectionKind::UmapSphere => {
+            // Compact each unique category string to a u32 index so UMAP's
+            // supervised term can operate on dense ids. First-seen wins.
+            let mut cat_map: std::collections::HashMap<&str, u32> =
+                std::collections::HashMap::new();
+            let mut next_id: u32 = 0;
+            let cat_indices: Vec<u32> = categories
+                .iter()
+                .map(|c| {
+                    *cat_map.entry(c.as_str()).or_insert_with(|| {
+                        let id = next_id;
+                        next_id += 1;
+                        id
+                    })
+                })
+                .collect();
+
+            let uc = &config.umap;
+            let umap_config = crate::umap::UmapConfig {
+                n_neighbors: uc.n_neighbors,
+                n_epochs: uc.n_epochs,
+                learning_rate: 0.05,
+                negative_sample_rate: 5,
+                category_weight: uc.category_weight,
+                seed: uc.seed,
+            };
+
+            Ok(ConfiguredProjection::UmapSphere(
+                crate::umap::UmapSphereProjection::fit(
+                    embeddings,
+                    Some(&cat_indices),
+                    RadialStrategy::Magnitude,
+                    umap_config,
+                )?,
+            ))
+        }
     }
 }
 
@@ -1779,6 +1807,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3], // NOT the predicted 0.123

@@ -283,20 +283,27 @@ fn load_and_embed(id: &CorpusId) -> Option<(Vec<Concept>, Vec<Vec<f64>>)> {
 
 /// Returns `(budget, search_space)` scaled to corpus size.
 ///
-/// Laplacian eigenmap requires an O(n²) k-NN graph; at 10k+ concepts a
-/// single trial takes minutes. PCA stays under a second per trial at any
-/// practical scale, so large corpora drop to PCA-only with a smaller budget.
+/// Laplacian eigenmap needs an O(n²) affinity matrix and drops out above
+/// 10k concepts. UMAP-on-sphere uses the ANN-backed kNN graph, so it stays
+/// affordable into the 10k–100k range — that bucket uses
+/// [`SearchSpace::large_corpus`], which sweeps PCA + UMAP. Beyond 100k the
+/// per-trial UMAP epoch loop dominates, so the largest bucket drops to
+/// PCA-only with a smaller budget.
 fn tuning_params(n: usize) -> (usize, SearchSpace) {
     if n <= 10_000 {
-        (16, SearchSpace::default())
-    } else if n <= 100_000 {
         (
-            8,
+            16,
             SearchSpace {
-                projection_kinds: vec![ProjectionKind::Pca],
+                projection_kinds: vec![
+                    ProjectionKind::Pca,
+                    ProjectionKind::LaplacianEigenmap,
+                    ProjectionKind::UmapSphere,
+                ],
                 ..SearchSpace::default()
             },
         )
+    } else if n <= 100_000 {
+        (8, SearchSpace::large_corpus())
     } else {
         (
             4,

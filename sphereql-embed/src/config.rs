@@ -29,6 +29,9 @@ pub struct PipelineConfig {
     /// Laplacian eigenmap hyperparameters (only consulted if that
     /// projection is selected).
     pub laplacian: LaplacianConfig,
+    /// UMAP-on-sphere hyperparameters (only consulted if that
+    /// projection is selected).
+    pub umap: UmapConfig,
     /// Spatial quality Monte Carlo sample counts.
     pub spatial: SpatialConfig,
 }
@@ -249,6 +252,39 @@ impl Default for LaplacianConfig {
     }
 }
 
+// ── UMAP-on-sphere ─────────────────────────────────────────────────────
+
+/// Hyperparameters for [`UmapSphereProjection`](crate::umap::UmapSphereProjection).
+///
+/// These are the tunable knobs exposed to the auto-tuner. Non-tunable
+/// constants (`learning_rate`, `negative_sample_rate`) stay at their
+/// canonical UMAP defaults inside [`fit_projection_for_config`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct UmapConfig {
+    /// k in the kNN graph (attractive term). Higher = more global structure.
+    pub n_neighbors: usize,
+    /// Adam optimization epochs. ~200 for corpora < 10k, ~400 for 50k+.
+    pub n_epochs: usize,
+    /// Weight on the category supervision term. 0.0 = unsupervised UMAP.
+    /// Positive values pull same-category items together and push
+    /// different-category items apart. 1.0–3.0 is typical.
+    pub category_weight: f64,
+    /// PRNG seed for negative sampling and tie-breaking.
+    pub seed: u64,
+}
+
+impl Default for UmapConfig {
+    fn default() -> Self {
+        Self {
+            n_neighbors: 15,
+            n_epochs: 200,
+            category_weight: 1.5,
+            seed: 0xA1B2_C3D4,
+        }
+    }
+}
+
 // ── Spatial quality ────────────────────────────────────────────────────
 
 /// Monte Carlo sample counts for [`SpatialQuality::compute`](crate::spatial_quality::SpatialQuality::compute).
@@ -303,6 +339,9 @@ mod tests {
         assert!((c.routing.low_evr_threshold - 0.35).abs() < 1e-12);
         assert_eq!(c.laplacian.k_neighbors, 15);
         assert!((c.laplacian.active_threshold - 0.05).abs() < 1e-12);
+        assert_eq!(c.umap.n_neighbors, 15);
+        assert_eq!(c.umap.n_epochs, 200);
+        assert!((c.umap.category_weight - 1.5).abs() < 1e-12);
         assert_eq!(c.spatial.coverage_samples, 100_000);
         assert_eq!(c.spatial.exclusivity_samples, 30_000);
         assert_eq!(c.spatial.voronoi_samples, 100_000);

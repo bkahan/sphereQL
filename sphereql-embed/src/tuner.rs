@@ -18,6 +18,7 @@ use std::time::Instant;
 
 use crate::config::{
     BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind, RoutingConfig,
+    UmapConfig,
 };
 use crate::configured_projection::ConfiguredProjection;
 use crate::pipeline::{PipelineError, PipelineInput, SphereQLPipeline, fit_projection_for_config};
@@ -57,6 +58,17 @@ pub struct SearchSpace {
     /// `projection_kinds`.
     pub laplacian_active_threshold: Vec<f64>,
 
+    /// Candidate values for [`UmapConfig::n_neighbors`]. Only explored
+    /// when [`ProjectionKind::UmapSphere`] is in `projection_kinds`.
+    pub umap_n_neighbors: Vec<usize>,
+    /// Candidate values for [`UmapConfig::n_epochs`]. Only explored
+    /// when [`ProjectionKind::UmapSphere`] is in `projection_kinds`.
+    pub umap_n_epochs: Vec<usize>,
+    /// Candidate values for [`UmapConfig::category_weight`]. Only
+    /// explored when [`ProjectionKind::UmapSphere`] is in
+    /// `projection_kinds`.
+    pub umap_category_weight: Vec<f64>,
+
     // ── Kind-agnostic knobs ───────────────────────────────────────────
     /// Candidate values for [`RoutingConfig::num_domain_groups`].
     pub num_domain_groups: Vec<usize>,
@@ -72,6 +84,33 @@ pub struct SearchSpace {
     pub min_evr_improvement: Vec<f64>,
 }
 
+impl SearchSpace {
+    /// Search space optimized for large corpora (> 5000 items).
+    ///
+    /// Includes PCA and UMAP (but not Laplacian eigenmap, which is O(N²)
+    /// on the affinity matrix). UMAP uses the ANN-backed kNN graph,
+    /// making it O(N log N) for graph construction.
+    pub fn large_corpus() -> Self {
+        Self {
+            projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::UmapSphere],
+            // Laplacian is excluded — kept as singletons so the axes
+            // exist if a caller swaps the kind in later, but they cost
+            // nothing at grid time because Laplacian isn't enumerated.
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10, 15, 30],
+            umap_n_epochs: vec![150, 300],
+            umap_category_weight: vec![0.0, 1.5, 3.0],
+            num_domain_groups: vec![3, 5, 7],
+            low_evr_threshold: vec![0.25, 0.35],
+            overlap_artifact_territorial: vec![0.2, 0.3],
+            threshold_base: vec![0.4, 0.5],
+            threshold_evr_penalty: vec![0.3, 0.5],
+            min_evr_improvement: vec![0.05, 0.10],
+        }
+    }
+}
+
 impl Default for SearchSpace {
     fn default() -> Self {
         Self {
@@ -84,6 +123,9 @@ impl Default for SearchSpace {
             // actually move the projection's geometry.
             laplacian_k_neighbors: vec![10, 15, 25],
             laplacian_active_threshold: vec![0.03, 0.05, 0.10],
+            umap_n_neighbors: vec![10, 15, 30],
+            umap_n_epochs: vec![150, 250],
+            umap_category_weight: vec![0.0, 1.5, 3.0],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
             overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
@@ -177,6 +219,23 @@ impl SearchSpace {
                 ));
             }
         }
+        if matches!(kind, ProjectionKind::UmapSphere) {
+            if self.umap_n_neighbors.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_n_neighbors` is empty".into(),
+                ));
+            }
+            if self.umap_n_epochs.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_n_epochs` is empty".into(),
+                ));
+            }
+            if self.umap_category_weight.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_category_weight` is empty".into(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -211,7 +270,13 @@ impl SearchSpace {
             ProjectionKind::LaplacianEigenmap => {
                 common * self.laplacian_k_neighbors.len() * self.laplacian_active_threshold.len()
             }
-            ProjectionKind::Pca | ProjectionKind::KernelPca | ProjectionKind::UmapSphere => common,
+            ProjectionKind::UmapSphere => {
+                common
+                    * self.umap_n_neighbors.len()
+                    * self.umap_n_epochs.len()
+                    * self.umap_category_weight.len()
+            }
+            ProjectionKind::Pca | ProjectionKind::KernelPca => common,
         }
     }
 
@@ -291,6 +356,18 @@ impl SearchSpace {
             };
         }
 
+        if matches!(kind, ProjectionKind::UmapSphere) {
+            let i_nn = take(&mut idx, self.umap_n_neighbors.len());
+            let i_ne = take(&mut idx, self.umap_n_epochs.len());
+            let i_cw = take(&mut idx, self.umap_category_weight.len());
+            cfg.umap = UmapConfig {
+                n_neighbors: self.umap_n_neighbors[i_nn],
+                n_epochs: self.umap_n_epochs[i_ne],
+                category_weight: self.umap_category_weight[i_cw],
+                ..base.umap.clone()
+            };
+        }
+
         cfg
     }
 
@@ -338,6 +415,15 @@ impl SearchSpace {
             };
         }
 
+        if matches!(cfg.projection_kind, ProjectionKind::UmapSphere) {
+            cfg.umap = UmapConfig {
+                n_neighbors: pick_uniform(rng, &self.umap_n_neighbors),
+                n_epochs: pick_uniform(rng, &self.umap_n_epochs),
+                category_weight: pick_uniform(rng, &self.umap_category_weight),
+                ..base.umap.clone()
+            };
+        }
+
         cfg
     }
 }
@@ -355,8 +441,15 @@ impl SearchSpace {
 enum ProjectionFitKey {
     Pca,
     KernelPca,
-    Laplacian { k: usize, threshold_bits: u64 },
-    UmapSphere,
+    Laplacian {
+        k: usize,
+        threshold_bits: u64,
+    },
+    UmapSphere {
+        n_neighbors: usize,
+        n_epochs: usize,
+        category_weight_bits: u64,
+    },
 }
 
 impl ProjectionFitKey {
@@ -368,7 +461,11 @@ impl ProjectionFitKey {
                 k: cfg.laplacian.k_neighbors,
                 threshold_bits: cfg.laplacian.active_threshold.to_bits(),
             },
-            ProjectionKind::UmapSphere => Self::UmapSphere,
+            ProjectionKind::UmapSphere => Self::UmapSphere {
+                n_neighbors: cfg.umap.n_neighbors,
+                n_epochs: cfg.umap.n_epochs,
+                category_weight_bits: cfg.umap.category_weight.to_bits(),
+            },
         }
     }
 }
@@ -807,6 +904,45 @@ fn tpe_propose(
         }
     }
 
+    if matches!(kind, ProjectionKind::UmapSphere) {
+        let good_u: Vec<&TrialRecord> = good
+            .iter()
+            .copied()
+            .filter(|t| t.config.projection_kind == ProjectionKind::UmapSphere)
+            .collect();
+        let bad_u: Vec<&TrialRecord> = bad
+            .iter()
+            .copied()
+            .filter(|t| t.config.projection_kind == ProjectionKind::UmapSphere)
+            .collect();
+        if good_u.is_empty() || bad_u.is_empty() {
+            cfg.umap = UmapConfig {
+                n_neighbors: space.umap_n_neighbors
+                    [(rng.next_u64() as usize) % space.umap_n_neighbors.len()],
+                n_epochs: space.umap_n_epochs
+                    [(rng.next_u64() as usize) % space.umap_n_epochs.len()],
+                category_weight: space.umap_category_weight
+                    [(rng.next_u64() as usize) % space.umap_category_weight.len()],
+                ..base.umap.clone()
+            };
+        } else {
+            let nn_g = hist_usize(&good_u, &space.umap_n_neighbors, |c| c.umap.n_neighbors);
+            let nn_b = hist_usize(&bad_u, &space.umap_n_neighbors, |c| c.umap.n_neighbors);
+            let ne_g = hist_usize(&good_u, &space.umap_n_epochs, |c| c.umap.n_epochs);
+            let ne_b = hist_usize(&bad_u, &space.umap_n_epochs, |c| c.umap.n_epochs);
+            let cw_g =
+                hist_f64(&good_u, &space.umap_category_weight, |c| c.umap.category_weight);
+            let cw_b =
+                hist_f64(&bad_u, &space.umap_category_weight, |c| c.umap.category_weight);
+            cfg.umap = UmapConfig {
+                n_neighbors: space.umap_n_neighbors[pick_idx(rng, &nn_g, &nn_b)],
+                n_epochs: space.umap_n_epochs[pick_idx(rng, &ne_g, &ne_b)],
+                category_weight: space.umap_category_weight[pick_idx(rng, &cw_g, &cw_b)],
+                ..base.umap.clone()
+            };
+        }
+    }
+
     cfg
 }
 
@@ -922,6 +1058,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.3],
             overlap_artifact_territorial: vec![0.3],
@@ -1091,6 +1230,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.3, 0.4],
             overlap_artifact_territorial: vec![0.3],
@@ -1119,6 +1261,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1142,6 +1287,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1335,6 +1483,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
             laplacian_k_neighbors: vec![10, 20],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1380,6 +1531,9 @@ mod tests {
             projection_kinds: vec![ProjectionKind::LaplacianEigenmap],
             laplacian_k_neighbors: vec![10, 20],
             laplacian_active_threshold: vec![0.03, 0.08],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1497,6 +1651,76 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.trials.len(), 5);
+    }
+
+    #[test]
+    fn umap_search_space_cardinality() {
+        let s = SearchSpace::large_corpus();
+        let common = s.num_domain_groups.len()
+            * s.low_evr_threshold.len()
+            * s.overlap_artifact_territorial.len()
+            * s.threshold_base.len()
+            * s.threshold_evr_penalty.len()
+            * s.min_evr_improvement.len();
+        let umap_specific =
+            s.umap_n_neighbors.len() * s.umap_n_epochs.len() * s.umap_category_weight.len();
+        // PCA contributes `common`, UMAP contributes `common * umap_specific`.
+        let expected = common + common * umap_specific;
+        assert_eq!(s.grid_cardinality(), expected);
+    }
+
+    #[test]
+    fn umap_trials_produce_umap_configs() {
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::UmapSphere],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10, 20],
+            umap_n_epochs: vec![50],
+            umap_category_weight: vec![1.0],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 2);
+        for t in &report.trials {
+            assert_eq!(t.config.projection_kind, ProjectionKind::UmapSphere);
+        }
+        let nn_values: std::collections::HashSet<usize> = report
+            .trials
+            .iter()
+            .map(|t| t.config.umap.n_neighbors)
+            .collect();
+        assert_eq!(nn_values.len(), 2);
+    }
+
+    #[test]
+    fn validate_rejects_empty_umap_axis_only_when_kind_present() {
+        let mut s = full_search_space();
+        s.umap_n_neighbors.clear();
+        // PCA-only space: missing UMAP axis is fine.
+        assert!(s.validate(&SearchStrategy::Grid).is_ok());
+        s.projection_kinds.push(ProjectionKind::UmapSphere);
+        match s.validate(&SearchStrategy::Grid) {
+            Err(PipelineError::InvalidSearchSpace(msg)) => {
+                assert!(msg.contains("umap_n_neighbors"), "msg = {msg:?}");
+            }
+            other => panic!("expected InvalidSearchSpace, got {other:?}"),
+        }
     }
 
     #[test]
