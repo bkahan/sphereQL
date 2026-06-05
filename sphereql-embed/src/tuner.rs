@@ -17,11 +17,13 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::config::{
-    BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind, RoutingConfig,
-    UmapConfig,
+    BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind,
+    RoutingConfig, UmapConfig,
 };
 use crate::configured_projection::ConfiguredProjection;
-use crate::pipeline::{PipelineError, PipelineInput, SphereQLPipeline, fit_projection_for_config};
+use crate::pipeline::{
+    PipelineError, PipelineInput, SphereQLPipeline, fit_projection_for_config, fit_umap_from_graph,
+};
 use crate::projection::SplitMix64;
 use crate::quality_metric::QualityMetric;
 use crate::types::Embedding;
@@ -601,6 +603,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let embeddings: Vec<Embedding> = input.embeddings.into_iter().map(Embedding::new).collect();
 
     let mut prefit: HashMap<ProjectionFitKey, ConfiguredProjection> = HashMap::new();
+    // UMAP kNN graphs are reusable across configs that share `n_neighbors`
+    // but differ in `n_epochs` / `category_weight`. Building the graph
+    // dominates UMAP fit cost (O(N log N) for the ANN-backed graph plus
+    // PCA warm-start), so caching it collapses the per-config sweep onto
+    // a handful of graph builds.
+    let mut umap_graph_cache: HashMap<usize, crate::umap::UmapGraph> = HashMap::new();
     let mut trials: Vec<TrialRecord> = Vec::new();
     let mut failures: Vec<(PipelineConfig, String)> = Vec::new();
 
@@ -609,21 +617,60 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     // propose configs.
     let run_trial = |cfg: PipelineConfig,
                      prefit: &mut HashMap<ProjectionFitKey, ConfiguredProjection>,
+                     umap_graph_cache: &mut HashMap<usize, crate::umap::UmapGraph>,
                      trials: &mut Vec<TrialRecord>,
                      failures: &mut Vec<(PipelineConfig, String)>| {
         let key = ProjectionFitKey::from_config(&cfg);
-        let projection = match prefit.get(&key) {
-            Some(p) => p.clone(),
-            None => match fit_projection_for_config(&embeddings, &categories, &cfg) {
-                Ok(p) => {
-                    prefit.insert(key, p.clone());
-                    p
+        let projection = if cfg.projection_kind == ProjectionKind::UmapSphere {
+            // UMAP fast path: build the kNN graph once per `n_neighbors`
+            // and reuse it across `(n_epochs, category_weight)` variations.
+            // The fully-realized projection still goes into `prefit` so
+            // the final pipeline rebuild and any exact-config repeats are
+            // free.
+            match prefit.get(&key) {
+                Some(p) => p.clone(),
+                None => {
+                    let k = cfg.umap.n_neighbors;
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        umap_graph_cache.entry(k)
+                    {
+                        match crate::umap::UmapGraph::build(&embeddings, k) {
+                            Ok(g) => {
+                                entry.insert(g);
+                            }
+                            Err(err) => {
+                                failures.push((cfg, err.to_string()));
+                                return;
+                            }
+                        }
+                    }
+                    let graph = &umap_graph_cache[&k];
+                    match fit_umap_from_graph(graph, &categories, &cfg) {
+                        Ok(p) => {
+                            prefit.insert(key, p.clone());
+                            p
+                        }
+                        Err(e) => {
+                            failures.push((cfg, e.to_string()));
+                            return;
+                        }
+                    }
                 }
-                Err(e) => {
-                    failures.push((cfg, e.to_string()));
-                    return;
-                }
-            },
+            }
+        } else {
+            match prefit.get(&key) {
+                Some(p) => p.clone(),
+                None => match fit_projection_for_config(&embeddings, &categories, &cfg) {
+                    Ok(p) => {
+                        prefit.insert(key, p.clone());
+                        p
+                    }
+                    Err(e) => {
+                        failures.push((cfg, e.to_string()));
+                        return;
+                    }
+                },
+            }
         };
 
         let start = Instant::now();
@@ -659,7 +706,13 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         SearchStrategy::Grid => {
             for i in 0..space.grid_cardinality() {
                 if let Some(cfg) = space.config_at_index(i, base_config) {
-                    run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut trials,
+                        &mut failures,
+                    );
                 }
             }
         }
@@ -667,7 +720,13 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             let mut rng = SplitMix64::new(*seed);
             for _ in 0..*budget {
                 let cfg = space.sample(&mut rng, base_config);
-                run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                run_trial(
+                    cfg,
+                    &mut prefit,
+                    &mut umap_graph_cache,
+                    &mut trials,
+                    &mut failures,
+                );
                 if wall_exceeded() {
                     break;
                 }
@@ -689,7 +748,13 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             // Warmup: uniform random.
             for _ in 0..warmup {
                 let cfg = space.sample(&mut rng, base_config);
-                run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                run_trial(
+                    cfg,
+                    &mut prefit,
+                    &mut umap_graph_cache,
+                    &mut trials,
+                    &mut failures,
+                );
                 if wall_exceeded() {
                     break;
                 }
@@ -698,7 +763,13 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             if !wall_exceeded() {
                 for _ in warmup..budget {
                     let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
-                    run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut trials,
+                        &mut failures,
+                    );
                     if wall_exceeded() {
                         break;
                     }
@@ -930,10 +1001,12 @@ fn tpe_propose(
             let nn_b = hist_usize(&bad_u, &space.umap_n_neighbors, |c| c.umap.n_neighbors);
             let ne_g = hist_usize(&good_u, &space.umap_n_epochs, |c| c.umap.n_epochs);
             let ne_b = hist_usize(&bad_u, &space.umap_n_epochs, |c| c.umap.n_epochs);
-            let cw_g =
-                hist_f64(&good_u, &space.umap_category_weight, |c| c.umap.category_weight);
-            let cw_b =
-                hist_f64(&bad_u, &space.umap_category_weight, |c| c.umap.category_weight);
+            let cw_g = hist_f64(&good_u, &space.umap_category_weight, |c| {
+                c.umap.category_weight
+            });
+            let cw_b = hist_f64(&bad_u, &space.umap_category_weight, |c| {
+                c.umap.category_weight
+            });
             cfg.umap = UmapConfig {
                 n_neighbors: space.umap_n_neighbors[pick_idx(rng, &nn_g, &nn_b)],
                 n_epochs: space.umap_n_epochs[pick_idx(rng, &ne_g, &ne_b)],

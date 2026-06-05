@@ -80,7 +80,10 @@ impl AnnIndex {
     /// dimensionality. Panics if `data` is empty or dimensions
     /// disagree.
     pub fn build(data: &[Vec<f64>], config: &AnnConfig) -> Self {
-        assert!(!data.is_empty(), "AnnIndex::build requires at least one vector");
+        assert!(
+            !data.is_empty(),
+            "AnnIndex::build requires at least one vector"
+        );
         let dim = data[0].len();
         for (i, v) in data.iter().enumerate() {
             assert_eq!(
@@ -117,8 +120,13 @@ impl AnnIndex {
 
         let trees: Vec<RpTree> = (0..config.n_trees)
             .map(|_| {
-                let root =
-                    build_tree(&normalized, &all_indices, dim, config.max_leaf_size, &mut rng);
+                let root = build_tree(
+                    &normalized,
+                    &all_indices,
+                    dim,
+                    config.max_leaf_size,
+                    &mut rng,
+                );
                 RpTree { root }
             })
             .collect();
@@ -149,9 +157,7 @@ impl AnnIndex {
             .iter()
             .map(|&i| (i, dot(&q, &self.normalized[i])))
             .collect();
-        scored.sort_unstable_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(k);
         scored
     }
@@ -172,9 +178,7 @@ impl AnnIndex {
             .filter(|&&i| i != index)
             .map(|&i| (i, dot(q, &self.normalized[i])))
             .collect();
-        scored.sort_unstable_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored.truncate(k);
         scored
     }

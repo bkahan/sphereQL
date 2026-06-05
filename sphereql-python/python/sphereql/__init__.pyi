@@ -699,8 +699,8 @@ def auto_tune(categories: typing.Sequence[builtins.str], embeddings: typing.Any,
         categories: Category label per embedding.
         embeddings: List of embedding vectors.
         metric: Quality metric name. One of `territorial_health`,
-            `bridge_coherence`, `cluster_silhouette`, `graph_modularity`,
-            `default_composite`, `connectivity_composite`.
+            `bridge_coherence`, `bridge_diversity`, `cluster_silhouette`,
+            `graph_modularity`, `default_composite`, `connectivity_composite`.
             Default: `default_composite`.
         strategy: One of `grid`, `random`, `bayesian`. Default: `random`.
         budget: Number of trials for `random` / `bayesian`. Default: 24.

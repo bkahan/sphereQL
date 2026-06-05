@@ -875,8 +875,7 @@ mod tests {
     fn fit_weighted_rejects_length_mismatch() {
         let corpus = corpus_10d();
         let bad_weights = vec![1.0; corpus.len() - 1];
-        let result =
-            PcaProjection::fit_weighted(&corpus, &bad_weights, RadialStrategy::Fixed(1.0));
+        let result = PcaProjection::fit_weighted(&corpus, &bad_weights, RadialStrategy::Fixed(1.0));
         assert!(matches!(
             result,
             Err(ProjectionError::SliceLengthMismatch { .. })

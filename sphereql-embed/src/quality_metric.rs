@@ -120,6 +120,53 @@ impl QualityMetric for BridgeCoherence {
     }
 }
 
+// ── Bridge diversity ───────────────────────────────────────────────────
+
+/// Fraction of distinct category pairs connected by at least one
+/// [`BridgeClassification::Genuine`] bridge.
+///
+/// High = the projection creates genuine cross-domain connectors across
+/// many category boundaries. Low = genuine bridges are concentrated in
+/// a few pairs or absent entirely. Returns `1.0` if there are fewer
+/// than 2 categories (no pairs to connect).
+///
+/// This replaces [`BridgeCoherence`] in the default composite because
+/// `genuine / total` converges to ~0.50 under the quantile-based
+/// classification floor regardless of projection quality.
+/// `BridgeDiversity` has real variance across projection configurations
+/// and directly measures the breadth of cross-domain connectivity that
+/// globetrot's marble dynamics and reasoning traces depend on.
+pub struct BridgeDiversity;
+
+impl QualityMetric for BridgeDiversity {
+    fn name(&self) -> &str {
+        "bridge_diversity"
+    }
+
+    fn score(&self, pipeline: &SphereQLPipeline) -> f64 {
+        let layer = pipeline.category_layer();
+        let n_cats = layer.num_categories();
+        if n_cats < 2 {
+            return 1.0;
+        }
+
+        let total_pairs = n_cats * (n_cats - 1) / 2;
+
+        let mut pairs_with_genuine: HashSet<(usize, usize)> = HashSet::new();
+        for (&(src, tgt), bridges) in &layer.graph.bridges {
+            if bridges
+                .iter()
+                .any(|b| b.classification == BridgeClassification::Genuine)
+            {
+                let pair = if src < tgt { (src, tgt) } else { (tgt, src) };
+                pairs_with_genuine.insert(pair);
+            }
+        }
+
+        (pairs_with_genuine.len() as f64 / total_pairs as f64).clamp(0.0, 1.0)
+    }
+}
+
 // ── Cluster silhouette ─────────────────────────────────────────────────
 
 /// Simplified silhouette score of the category assignment on S²,
@@ -368,22 +415,30 @@ impl CompositeMetric {
         }
     }
 
-    /// Default composite: 40% bridge coherence + 35% territorial health +
-    /// 25% cluster silhouette. Emphasizes what PCA-on-sparse-data tends to
-    /// sacrifice first.
+    /// Default composite: 30% bridge diversity + 25% territorial health +
+    /// 25% cluster silhouette + 20% graph modularity.
+    ///
+    /// Bridge diversity replaces bridge coherence (which converges to ~0.50
+    /// under quantile-based classification). Graph modularity is included
+    /// to reward connectivity-preserving projections (UMAP, Laplacian)
+    /// alongside variance-centric ones (PCA).
     pub fn default_composite() -> Self {
         Self::new(
             "default_composite",
             vec![
-                (Box::new(BridgeCoherence) as Box<dyn QualityMetric>, 0.40),
-                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.35),
+                (Box::new(BridgeDiversity) as Box<dyn QualityMetric>, 0.30),
+                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.25),
                 (Box::new(ClusterSilhouette) as Box<dyn QualityMetric>, 0.25),
+                (
+                    Box::new(GraphModularity::default()) as Box<dyn QualityMetric>,
+                    0.20,
+                ),
             ],
         )
     }
 
-    /// Connectivity-native composite: 50% graph modularity + 30% bridge
-    /// coherence + 20% territorial health. Designed as a counter-hypothesis
+    /// Connectivity-native composite: 40% graph modularity + 35% bridge
+    /// diversity + 25% territorial health. Designed as a counter-hypothesis
     /// to [`Self::default_composite`] — which weights the variance-centric
     /// [`ClusterSilhouette`] and systematically rewards PCA-style spread.
     /// This composite instead rewards projections that preserve
@@ -395,10 +450,10 @@ impl CompositeMetric {
             vec![
                 (
                     Box::new(GraphModularity::default()) as Box<dyn QualityMetric>,
-                    0.50,
+                    0.40,
                 ),
-                (Box::new(BridgeCoherence) as Box<dyn QualityMetric>, 0.30),
-                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.20),
+                (Box::new(BridgeDiversity) as Box<dyn QualityMetric>, 0.35),
+                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.25),
             ],
         )
     }
@@ -595,6 +650,7 @@ mod tests {
     fn metric_names_stable() {
         assert_eq!(TerritorialHealth.name(), "territorial_health");
         assert_eq!(BridgeCoherence.name(), "bridge_coherence");
+        assert_eq!(BridgeDiversity.name(), "bridge_diversity");
         assert_eq!(ClusterSilhouette.name(), "cluster_silhouette");
         assert_eq!(GraphModularity::default().name(), "graph_modularity");
         assert_eq!(
@@ -604,6 +660,53 @@ mod tests {
         assert_eq!(
             CompositeMetric::connectivity_composite().name(),
             "connectivity_composite"
+        );
+    }
+
+    #[test]
+    fn bridge_diversity_in_range() {
+        let p = make_pipeline();
+        let s = BridgeDiversity.score(&p);
+        assert!((0.0..=1.0).contains(&s), "got {s}");
+    }
+
+    #[test]
+    fn bridge_diversity_is_deterministic() {
+        let p = make_pipeline();
+        let a = BridgeDiversity.score(&p);
+        let b = BridgeDiversity.score(&p);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn default_composite_includes_bridge_diversity_not_coherence() {
+        let p = make_pipeline();
+        let m = CompositeMetric::default_composite();
+        let breakdown = m.score_components(&p);
+        let names: Vec<&str> = breakdown.iter().map(|(n, _, _)| n.as_str()).collect();
+        assert!(
+            names.contains(&"bridge_diversity"),
+            "default composite should include bridge_diversity, got {names:?}"
+        );
+        assert!(
+            !names.contains(&"bridge_coherence"),
+            "default composite should NOT include bridge_coherence, got {names:?}"
+        );
+        assert!(
+            names.contains(&"graph_modularity"),
+            "default composite should include graph_modularity, got {names:?}"
+        );
+    }
+
+    #[test]
+    fn default_composite_has_four_components() {
+        let p = make_pipeline();
+        let m = CompositeMetric::default_composite();
+        let breakdown = m.score_components(&p);
+        assert_eq!(
+            breakdown.len(),
+            4,
+            "default composite should have 4 components"
         );
     }
 
@@ -688,6 +791,6 @@ mod tests {
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .unwrap();
         assert_eq!(heaviest.0, "graph_modularity");
-        assert!((heaviest.1 - 0.50).abs() < 1e-12);
+        assert!((heaviest.1 - 0.40).abs() < 1e-12);
     }
 }

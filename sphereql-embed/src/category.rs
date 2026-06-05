@@ -618,8 +618,7 @@ impl CategoryLayer {
             let overlap_threshold = config.bridges.overlap_artifact_territorial;
             for list in bridges.values_mut() {
                 for b in list.iter_mut() {
-                    let tf =
-                        spatial.territorial_factor(b.source_category, b.target_category);
+                    let tf = spatial.territorial_factor(b.source_category, b.target_category);
                     b.classification = if tf < overlap_threshold {
                         BridgeClassification::OverlapArtifact
                     } else if b.bridge_strength >= median_strength {

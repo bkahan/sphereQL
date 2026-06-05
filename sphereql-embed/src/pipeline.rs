@@ -1206,6 +1206,50 @@ pub fn fit_projection_for_config(
     }
 }
 
+/// Fit a UMAP projection from a prebuilt kNN graph.
+///
+/// Used by the tuner to avoid rebuilding the kNN graph across trials
+/// that share `n_neighbors` but differ in `n_epochs` / `category_weight`.
+/// The graph build is the expensive part of UMAP fit; the Adam optimizer
+/// that runs on top of it is comparatively cheap.
+pub fn fit_umap_from_graph(
+    graph: &crate::umap::UmapGraph,
+    categories: &[String],
+    config: &PipelineConfig,
+) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
+    let mut cat_map: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+    let mut next_id: u32 = 0;
+    let cat_indices: Vec<u32> = categories
+        .iter()
+        .map(|c| {
+            *cat_map.entry(c.as_str()).or_insert_with(|| {
+                let id = next_id;
+                next_id += 1;
+                id
+            })
+        })
+        .collect();
+
+    let uc = &config.umap;
+    let umap_config = crate::umap::UmapConfig {
+        n_neighbors: uc.n_neighbors,
+        n_epochs: uc.n_epochs,
+        learning_rate: 0.05,
+        negative_sample_rate: 5,
+        category_weight: uc.category_weight,
+        seed: uc.seed,
+    };
+
+    Ok(ConfiguredProjection::UmapSphere(
+        crate::umap::UmapSphereProjection::fit_from_graph(
+            graph,
+            Some(&cat_indices),
+            RadialStrategy::Magnitude,
+            umap_config,
+        )?,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

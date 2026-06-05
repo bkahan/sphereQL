@@ -57,15 +57,22 @@ println!(
 Metrics implement the `QualityMetric` trait:
 
 - `TerritorialHealth` — mean territorial_factor across category pairs.
+- `BridgeDiversity` — fraction of distinct category pairs connected by at
+  least one `Genuine` bridge. Used by both default composites because it
+  varies meaningfully across projections.
 - `BridgeCoherence` — fraction of bridges classified `Genuine` versus
-  `OverlapArtifact` / `Weak`.
+  `OverlapArtifact` / `Weak`. Available standalone; excluded from the
+  default composites because it converges to ~0.50 under the
+  quantile-based classification floor.
 - `ClusterSilhouette` — silhouette score of the category assignment on
   S², remapped to `[0, 1]`.
 - `GraphModularity` — modularity of the category assignment on a
   k-NN graph over projected positions.
 - `CompositeMetric` — weight-normalized linear combination.
-  `default_composite()` and `connectivity_composite()` cover the common
-  cases.
+  `default_composite()` (30% bridge_diversity / 25% territorial_health /
+  25% cluster_silhouette / 20% graph_modularity) and
+  `connectivity_composite()` (40% graph_modularity / 35% bridge_diversity
+  / 25% territorial_health) cover the common cases.
 
 ## L2: `MetaModel`
 

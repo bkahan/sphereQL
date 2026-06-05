@@ -58,6 +58,73 @@ impl Default for UmapConfig {
     }
 }
 
+/// Precomputed kNN graph for UMAP. Cacheable across configs that
+/// share the same `n_neighbors` but differ in `n_epochs` or
+/// `category_weight`.
+#[derive(Clone)]
+pub struct UmapGraph {
+    /// kNN adjacency list: `knn[i]` = indices of k nearest neighbors of item i.
+    pub(crate) knn: Vec<Vec<usize>>,
+    /// L2-normalized embeddings used for graph construction.
+    /// Retained for the Adam optimizer's similarity lookups.
+    pub(crate) normalized: Vec<Vec<f64>>,
+    /// PCA warm-start positions on S² (unit vectors in ℝ³).
+    pub(crate) warm_start: Vec<[f64; 3]>,
+    /// Embedding dimensionality.
+    pub(crate) dim: usize,
+    /// Number of neighbors.
+    pub(crate) k: usize,
+}
+
+impl UmapGraph {
+    /// Build the kNN graph and PCA warm-start from embeddings.
+    ///
+    /// This is the expensive part of UMAP fit — O(N·log N·d) for the
+    /// ANN-backed graph + O(N·d) for PCA warm-start. The result is
+    /// reusable across all UMAP configs that share `n_neighbors`.
+    pub fn build(embeddings: &[Embedding], n_neighbors: usize) -> Result<Self, ProjectionError> {
+        if embeddings.is_empty() {
+            return Err(ProjectionError::EmptyCorpus);
+        }
+        let dim = embeddings[0].dimension();
+        if dim < 3 {
+            return Err(ProjectionError::DimensionTooLow {
+                got: dim,
+                required: 3,
+            });
+        }
+        for (i, e) in embeddings.iter().enumerate() {
+            if e.dimension() != dim {
+                return Err(ProjectionError::InconsistentDimension {
+                    index: i,
+                    expected: dim,
+                    got: e.dimension(),
+                });
+            }
+        }
+        let n = embeddings.len();
+        if n < 4 {
+            return Err(ProjectionError::TooFewEmbeddings {
+                got: n,
+                required: 4,
+            });
+        }
+
+        let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
+        let k = n_neighbors.min(n - 1).max(1);
+        let knn = build_knn_graph(&normalized, k);
+        let warm_start = pca_warm_start(embeddings, &normalized)?;
+
+        Ok(Self {
+            knn,
+            normalized,
+            warm_start,
+            dim,
+            k,
+        })
+    }
+}
+
 /// UMAP-style projection that lives on S² and transforms new points by
 /// kNN-weighted averaging over the fitted positions.
 #[derive(Clone)]
@@ -85,6 +152,125 @@ impl UmapSphereProjection {
             RadialStrategy::default(),
             UmapConfig::default(),
         )
+    }
+
+    /// Optimize from a prebuilt kNN graph. This is the cheap part of UMAP
+    /// fit — O(N·k·epochs) for the Adam optimizer. The graph is not rebuilt.
+    ///
+    /// Use this when the tuner has already built the graph via
+    /// [`UmapGraph::build`] and is sweeping `n_epochs` / `category_weight`.
+    pub fn fit_from_graph(
+        graph: &UmapGraph,
+        categories: Option<&[u32]>,
+        radial: RadialStrategy,
+        config: UmapConfig,
+    ) -> Result<Self, ProjectionError> {
+        let n = graph.normalized.len();
+
+        if let Some(cats) = categories
+            && cats.len() != n
+        {
+            return Err(ProjectionError::SliceLengthMismatch {
+                expected: n,
+                got: cats.len(),
+            });
+        }
+
+        let mut points = graph.warm_start.clone();
+        let mut rng = SplitMix64::new(config.seed);
+        let cat_active = config
+            .category_weight
+            .partial_cmp(&0.0)
+            .map(|o| o.is_gt())
+            .unwrap_or(false)
+            && categories.is_some();
+
+        let mut m = vec![[0.0f64; 3]; n];
+        let mut v = vec![[0.0f64; 3]; n];
+        let beta1 = 0.9;
+        let beta2 = 0.999;
+        let eps = 1e-8;
+
+        for epoch in 1..=config.n_epochs {
+            let lr = config.learning_rate * (1.0 - (epoch as f64 / config.n_epochs as f64));
+            let mut grads = vec![[0.0f64; 3]; n];
+
+            for (i, neighbors) in graph.knn.iter().enumerate() {
+                for &j in neighbors {
+                    let (gi, gj) = attractive_grad(&points[i], &points[j]);
+                    add3(&mut grads[i], &gi);
+                    add3(&mut grads[j], &gj);
+
+                    for _ in 0..config.negative_sample_rate {
+                        let nj = (rng.next_u64() as usize) % n;
+                        if nj == i {
+                            continue;
+                        }
+                        let (gi_r, gj_r) = repulsive_grad(&points[i], &points[nj]);
+                        add3(&mut grads[i], &gi_r);
+                        add3(&mut grads[nj], &gj_r);
+                    }
+                }
+            }
+
+            if cat_active {
+                let cats = categories.unwrap();
+                for i in 0..n {
+                    let j = (rng.next_u64() as usize) % n;
+                    if j == i {
+                        continue;
+                    }
+                    let (gi, gj) = if cats[i] == cats[j] {
+                        attractive_grad(&points[i], &points[j])
+                    } else {
+                        repulsive_grad(&points[i], &points[j])
+                    };
+                    let w = config.category_weight;
+                    add3_scaled(&mut grads[i], &gi, w);
+                    add3_scaled(&mut grads[j], &gj, w);
+                }
+            }
+
+            for i in 0..n {
+                let g_tan = project_to_tangent(&points[i], &grads[i]);
+                for d in 0..3 {
+                    m[i][d] = beta1 * m[i][d] + (1.0 - beta1) * g_tan[d];
+                    v[i][d] = beta2 * v[i][d] + (1.0 - beta2) * g_tan[d] * g_tan[d];
+                }
+                let t = epoch as f64;
+                let bc1 = 1.0 - beta1.powf(t);
+                let bc2 = 1.0 - beta2.powf(t);
+                let mut step = [0.0f64; 3];
+                for d in 0..3 {
+                    let m_hat = m[i][d] / bc1;
+                    let v_hat = v[i][d] / bc2;
+                    step[d] = lr * m_hat / (v_hat.sqrt() + eps);
+                }
+                let mut next = [
+                    points[i][0] - step[0],
+                    points[i][1] - step[1],
+                    points[i][2] - step[2],
+                ];
+                let mag = (next[0] * next[0] + next[1] * next[1] + next[2] * next[2]).sqrt();
+                if mag > f64::EPSILON {
+                    next[0] /= mag;
+                    next[1] /= mag;
+                    next[2] /= mag;
+                    points[i] = next;
+                }
+            }
+        }
+
+        let quality = neighbor_preservation_score(&points, &graph.knn);
+
+        Ok(Self {
+            fitted_points: points,
+            fitted_normalized: graph.normalized.clone(),
+            dim: graph.dim,
+            radial,
+            n_neighbors: graph.k,
+            quality,
+        })
     }
 
     /// Fit with custom config. `categories` is parallel to `embeddings`
@@ -707,5 +893,61 @@ mod tests {
         let corpus = cluster_corpus();
         let proj = UmapSphereProjection::fit_default(&corpus).unwrap();
         assert_eq!(proj.dimensionality(), 6);
+    }
+
+    #[test]
+    fn fit_from_graph_matches_full_fit() {
+        let corpus = cluster_corpus();
+        let config = UmapConfig {
+            n_epochs: 50,
+            category_weight: 0.0,
+            seed: 42,
+            ..UmapConfig::default()
+        };
+
+        let full =
+            UmapSphereProjection::fit(&corpus, None, RadialStrategy::Fixed(1.0), config.clone())
+                .unwrap();
+
+        let graph = UmapGraph::build(&corpus, config.n_neighbors).unwrap();
+        let split =
+            UmapSphereProjection::fit_from_graph(&graph, None, RadialStrategy::Fixed(1.0), config)
+                .unwrap();
+
+        assert!(
+            (full.explained_variance_ratio() - split.explained_variance_ratio()).abs() < 1e-6,
+            "full={}, split={}",
+            full.explained_variance_ratio(),
+            split.explained_variance_ratio()
+        );
+    }
+
+    #[test]
+    fn graph_reusable_across_configs() {
+        let corpus = cluster_corpus();
+        let graph = UmapGraph::build(&corpus, 5).unwrap();
+
+        let config1 = UmapConfig {
+            n_epochs: 30,
+            category_weight: 0.0,
+            seed: 1,
+            ..UmapConfig::default()
+        };
+        let config2 = UmapConfig {
+            n_epochs: 60,
+            category_weight: 1.0,
+            seed: 2,
+            ..UmapConfig::default()
+        };
+
+        let p1 =
+            UmapSphereProjection::fit_from_graph(&graph, None, RadialStrategy::Fixed(1.0), config1)
+                .unwrap();
+        let p2 =
+            UmapSphereProjection::fit_from_graph(&graph, None, RadialStrategy::Fixed(1.0), config2)
+                .unwrap();
+
+        assert!((0.0..=1.0).contains(&p1.explained_variance_ratio()));
+        assert!((0.0..=1.0).contains(&p2.explained_variance_ratio()));
     }
 }

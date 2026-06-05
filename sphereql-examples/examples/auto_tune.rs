@@ -2,11 +2,13 @@
 //! Auto-tune the SphereQL pipeline against the built-in 775-concept corpus,
 //! under two contrasting quality metrics:
 //!
-//! 1. `default_composite` — 40% bridge coherence / 35% territorial health /
-//!    25% cluster silhouette. Silhouette is variance-centric and typically
-//!    rewards PCA's spread.
-//! 2. `connectivity_composite` — 50% graph modularity / 30% bridge
-//!    coherence / 20% territorial health. Modularity evaluates the k-NN
+//! 1. `default_composite` — 30% bridge diversity / 25% territorial health /
+//!    25% cluster silhouette / 20% graph modularity. Silhouette is
+//!    variance-centric and typically rewards PCA's spread; modularity is
+//!    weighted in to keep connectivity-preserving projections (UMAP,
+//!    Laplacian) competitive.
+//! 2. `connectivity_composite` — 40% graph modularity / 35% bridge
+//!    diversity / 25% territorial health. Modularity evaluates the k-NN
 //!    graph of projected positions; a projection that preserves
 //!    same-category adjacency scores well regardless of total variance.
 //!
@@ -141,7 +143,7 @@ fn main() {
         run_tune(&categories, &embeddings, &space, &default_metric);
 
     println!("\n================================================================");
-    println!("  Metric 1: default_composite (silhouette 25%)");
+    println!("  Metric 1: default_composite (bridge_diversity 30% / silhouette 25%)");
     println!("================================================================");
     print_report(
         &default_pipeline,
@@ -156,7 +158,7 @@ fn main() {
     let (conn_pipeline, conn_report) = run_tune(&categories, &embeddings, &space, &conn_metric);
 
     println!("\n================================================================");
-    println!("  Metric 2: connectivity_composite (graph modularity 50%)");
+    println!("  Metric 2: connectivity_composite (graph modularity 40%)");
     println!("================================================================");
     print_report(
         &conn_pipeline,

@@ -111,6 +111,12 @@ amplitude) — the same tuner pipeline flips the winner:
 | `default_composite` (bridge coherence 40% / territorial 35% / silhouette 25%) | 0.9606 | **1.0000** |
 | `connectivity_composite` (modularity 50% / bridge 30% / territorial 20%) | 0.9265 | **0.9500** |
 
+These scores were measured under the pre-`BridgeDiversity` composite
+weights. The current `default_composite` is 30% bridge_diversity / 25%
+territorial / 25% silhouette / 20% modularity, and `connectivity_composite`
+is 40% modularity / 35% bridge_diversity / 25% territorial. The
+winner-flip on the stress corpus is robust to that reweighting.
+
 Same pipeline, same tuner, opposite winners. This is the motivation for the
 `MetaModel` layer: given a new corpus's 10-feature profile, predict which
 projection (and which knob values) will win before running the full tuner.
