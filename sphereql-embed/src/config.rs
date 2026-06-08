@@ -15,7 +15,7 @@
 ///
 /// Every field is a sub-config grouped by area. [`Self::default`] returns
 /// the values the crate shipped with before the config surface existed.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct PipelineConfig {
     /// Outer-sphere projection family.
@@ -34,6 +34,35 @@ pub struct PipelineConfig {
     pub umap: UmapConfig,
     /// Spatial quality Monte Carlo sample counts.
     pub spatial: SpatialConfig,
+    /// Minimum number of items a category must have to participate in
+    /// category-level analysis (bridges, domain groups, spatial quality,
+    /// Voronoi tessellation). Categories below this threshold are excluded
+    /// from the enrichment layer but their items remain projected, indexed,
+    /// and queryable on the sphere.
+    ///
+    /// Default 1 (no filtering — every category participates).
+    /// Set to 5–10 for corpora with many singleton categories.
+    #[serde(default = "default_min_category_size")]
+    pub min_category_size: usize,
+}
+
+fn default_min_category_size() -> usize {
+    1
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            projection_kind: ProjectionKind::default(),
+            inner_sphere: InnerSphereConfig::default(),
+            bridges: BridgeConfig::default(),
+            routing: RoutingConfig::default(),
+            laplacian: LaplacianConfig::default(),
+            umap: UmapConfig::default(),
+            spatial: SpatialConfig::default(),
+            min_category_size: default_min_category_size(),
+        }
+    }
 }
 
 // ── Projection kind ────────────────────────────────────────────────────
@@ -345,6 +374,7 @@ mod tests {
         assert_eq!(c.spatial.coverage_samples, 100_000);
         assert_eq!(c.spatial.exclusivity_samples, 30_000);
         assert_eq!(c.spatial.voronoi_samples, 100_000);
+        assert_eq!(c.min_category_size, 1);
     }
 
     #[test]

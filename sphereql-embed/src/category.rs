@@ -354,22 +354,42 @@ impl CategoryLayer {
         assert_eq!(n, embeddings.len());
         assert_eq!(n, projected_positions.len());
 
-        // 1. Discover unique categories and group member indices
+        // 1. Discover unique categories in first-seen order, then drop any
+        //    whose member count falls below `min_category_size`. Items in
+        //    excluded categories remain projected and indexed on the sphere
+        //    — they just don't get a CategorySummary, don't produce bridges,
+        //    and don't participate in domain groups or spatial quality.
+        let min_size = config.min_category_size;
+
         let mut name_to_index: HashMap<String, usize> = HashMap::new();
         let mut cat_names: Vec<String> = Vec::new();
         let mut cat_members: Vec<Vec<usize>> = Vec::new();
 
+        // Single pass: insert in first-seen order, but defer the size filter.
+        let mut raw_index: HashMap<&str, usize> = HashMap::new();
+        let mut raw_names: Vec<&str> = Vec::new();
+        let mut raw_members: Vec<Vec<usize>> = Vec::new();
         for (i, cat) in categories.iter().enumerate() {
-            let idx = if let Some(&idx) = name_to_index.get(cat) {
+            let idx = if let Some(&idx) = raw_index.get(cat.as_str()) {
                 idx
             } else {
-                let idx = cat_names.len();
-                name_to_index.insert(cat.clone(), idx);
-                cat_names.push(cat.clone());
-                cat_members.push(Vec::new());
+                let idx = raw_names.len();
+                raw_index.insert(cat.as_str(), idx);
+                raw_names.push(cat.as_str());
+                raw_members.push(Vec::new());
                 idx
             };
-            cat_members[idx].push(i);
+            raw_members[idx].push(i);
+        }
+
+        for (raw_name, members) in raw_names.iter().zip(raw_members) {
+            if members.len() < min_size {
+                continue;
+            }
+            let idx = cat_names.len();
+            name_to_index.insert((*raw_name).to_string(), idx);
+            cat_names.push((*raw_name).to_string());
+            cat_members.push(members);
         }
 
         let num_cats = cat_names.len();
@@ -1914,5 +1934,109 @@ mod tests {
             .collect();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(InnerProjection::LinearPca(pca).dimensionality(), 5);
+    }
+
+    // ======== min_category_size filtering ========
+
+    #[test]
+    fn min_category_size_excludes_small_categories() {
+        let (categories, embeddings) = test_corpus(); // 3 categories × 4 items each
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let evr = pca.explained_variance_ratio();
+
+        let config = PipelineConfig {
+            min_category_size: 5,
+            ..Default::default()
+        };
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            evr,
+            &config,
+        );
+
+        assert_eq!(
+            layer.num_categories(),
+            0,
+            "all categories below threshold should be excluded"
+        );
+        assert!(layer.graph.adjacency.is_empty());
+        assert!(layer.graph.bridges.is_empty());
+    }
+
+    #[test]
+    fn min_category_size_one_includes_everything() {
+        let (categories, embeddings) = test_corpus();
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let evr = pca.explained_variance_ratio();
+
+        let config = PipelineConfig {
+            min_category_size: 1,
+            ..Default::default()
+        };
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            evr,
+            &config,
+        );
+
+        assert_eq!(
+            layer.num_categories(),
+            3,
+            "all categories should be included at min_size=1"
+        );
+    }
+
+    #[test]
+    fn min_category_size_partial_filter() {
+        // One large category (10 items) and two small ones (2 each).
+        let mut categories = Vec::new();
+        let mut embeddings = Vec::new();
+        for i in 0..10 {
+            categories.push("big".to_string());
+            let mut v = vec![0.0; 5];
+            v[0] = 1.0 + i as f64 * 0.01;
+            embeddings.push(emb(&v));
+        }
+        for i in 0..2 {
+            categories.push("small_a".to_string());
+            let mut v = vec![0.0; 5];
+            v[1] = 1.0 + i as f64 * 0.01;
+            embeddings.push(emb(&v));
+        }
+        for i in 0..2 {
+            categories.push("small_b".to_string());
+            let mut v = vec![0.0; 5];
+            v[2] = 1.0 + i as f64 * 0.01;
+            embeddings.push(emb(&v));
+        }
+
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let evr = pca.explained_variance_ratio();
+
+        let config = PipelineConfig {
+            min_category_size: 5,
+            ..Default::default()
+        };
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            evr,
+            &config,
+        );
+
+        assert_eq!(layer.num_categories(), 1);
+        assert_eq!(layer.summaries[0].name, "big");
+        assert_eq!(layer.summaries[0].member_count, 10);
     }
 }
