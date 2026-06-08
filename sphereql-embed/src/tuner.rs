@@ -548,6 +548,12 @@ pub struct TuneReport {
     /// combination rejected by a downstream validator). Each entry is
     /// `(config, error_message)`.
     pub failures: Vec<(PipelineConfig, String)>,
+    /// Number of distinct UMAP kNN graphs built during the run. The
+    /// tuner caches graphs by `n_neighbors`, so this equals the number
+    /// of unique `n_neighbors` values tried across UMAP trials. Lower
+    /// than the count of UMAP trials means the cache hit — a metric
+    /// for verifying the reuse path is actually firing.
+    pub umap_graph_builds: usize,
 }
 
 impl TuneReport {
@@ -609,6 +615,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     // PCA warm-start), so caching it collapses the per-config sweep onto
     // a handful of graph builds.
     let mut umap_graph_cache: HashMap<usize, crate::umap::UmapGraph> = HashMap::new();
+    let mut umap_graph_builds: usize = 0;
     let mut trials: Vec<TrialRecord> = Vec::new();
     let mut failures: Vec<(PipelineConfig, String)> = Vec::new();
 
@@ -618,6 +625,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let run_trial = |cfg: PipelineConfig,
                      prefit: &mut HashMap<ProjectionFitKey, ConfiguredProjection>,
                      umap_graph_cache: &mut HashMap<usize, crate::umap::UmapGraph>,
+                     umap_graph_builds: &mut usize,
                      trials: &mut Vec<TrialRecord>,
                      failures: &mut Vec<(PipelineConfig, String)>| {
         let key = ProjectionFitKey::from_config(&cfg);
@@ -637,6 +645,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                         match crate::umap::UmapGraph::build(&embeddings, k) {
                             Ok(g) => {
                                 entry.insert(g);
+                                *umap_graph_builds += 1;
                             }
                             Err(err) => {
                                 failures.push((cfg, err.to_string()));
@@ -710,6 +719,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                         cfg,
                         &mut prefit,
                         &mut umap_graph_cache,
+                        &mut umap_graph_builds,
                         &mut trials,
                         &mut failures,
                     );
@@ -724,6 +734,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                     cfg,
                     &mut prefit,
                     &mut umap_graph_cache,
+                    &mut umap_graph_builds,
                     &mut trials,
                     &mut failures,
                 );
@@ -752,6 +763,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                     cfg,
                     &mut prefit,
                     &mut umap_graph_cache,
+                    &mut umap_graph_builds,
                     &mut trials,
                     &mut failures,
                 );
@@ -767,6 +779,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                         cfg,
                         &mut prefit,
                         &mut umap_graph_cache,
+                        &mut umap_graph_builds,
                         &mut trials,
                         &mut failures,
                     );
@@ -823,6 +836,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         best_config,
         trials,
         failures,
+        umap_graph_builds,
     };
 
     Ok((best_pipeline, report))
@@ -1779,6 +1793,113 @@ mod tests {
             .map(|t| t.config.umap.n_neighbors)
             .collect();
         assert_eq!(nn_values.len(), 2);
+    }
+
+    #[test]
+    fn umap_graph_cache_reuses_across_trials_sharing_n_neighbors() {
+        // Six UMAP configs all share `n_neighbors = 10` and differ only in
+        // `n_epochs` × `category_weight`. The kNN graph + PCA warm-start
+        // should be built once, then reused — `umap_graph_builds` must
+        // equal the number of distinct `n_neighbors` values (= 1), not
+        // the number of trials.
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::UmapSphere],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10],
+            umap_n_epochs: vec![30, 60],
+            umap_category_weight: vec![0.0, 1.0, 2.0],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 6, "6 UMAP configs in the grid");
+        assert_eq!(
+            report.umap_graph_builds, 1,
+            "all 6 configs share n_neighbors=10, so the cache should build the graph exactly once"
+        );
+    }
+
+    #[test]
+    fn umap_graph_cache_builds_one_per_unique_n_neighbors() {
+        // Two distinct `n_neighbors` values × two `n_epochs` = 4 UMAP
+        // trials. The cache builds the graph once per unique
+        // `n_neighbors`, so `umap_graph_builds` should equal 2.
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::UmapSphere],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10, 20],
+            umap_n_epochs: vec![30, 60],
+            umap_category_weight: vec![0.0],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 4);
+        assert_eq!(
+            report.umap_graph_builds, 2,
+            "n_neighbors ∈ {{10, 20}} should produce exactly 2 graph builds"
+        );
+    }
+
+    #[test]
+    fn umap_graph_cache_zero_when_no_umap_trials() {
+        // PCA-only search space — no UMAP trials, no graph builds.
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10],
+            umap_n_epochs: vec![30],
+            umap_category_weight: vec![0.0],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.umap_graph_builds, 0);
     }
 
     #[test]

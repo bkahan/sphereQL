@@ -144,6 +144,11 @@ fn main() {
         println!("No corpora selected. Exiting.");
         return;
     }
+    let projection_kinds = select_projection_kinds();
+    if projection_kinds.is_empty() {
+        println!("No projection kinds selected. Exiting.");
+        return;
+    }
     let total = selected.len();
     for (i, id) in selected.iter().enumerate() {
         if total > 1 {
@@ -152,7 +157,7 @@ fn main() {
             println!("{}\n", "═".repeat(66));
         }
         match load_and_embed(id) {
-            Some((corpus, embeddings)) => run_corpus(id, corpus, embeddings),
+            Some((corpus, embeddings)) => run_corpus(id, corpus, embeddings, &projection_kinds),
             None => eprintln!("  Skipping {} (load failed).", id.name()),
         }
     }
@@ -198,6 +203,47 @@ fn select_corpora() -> Vec<CorpusId> {
         Err(_) => {
             eprintln!("Not running interactively — defaulting to HandCrafted corpus.");
             vec![CorpusId::HandCrafted]
+        }
+    }
+}
+
+fn select_projection_kinds() -> Vec<ProjectionKind> {
+    let candidates: &[(ProjectionKind, &str)] = &[
+        (
+            ProjectionKind::Pca,
+            "PCA                 fast · variance-maximizing  · default",
+        ),
+        (
+            ProjectionKind::LaplacianEigenmap,
+            "Laplacian Eigenmap  connectivity-preserving     · O(N²) — small corpora only",
+        ),
+        (
+            ProjectionKind::UmapSphere,
+            "UMAP-on-Sphere      angular structure preserving · ANN kNN · cache reuse across configs",
+        ),
+        (
+            ProjectionKind::KernelPca,
+            "Kernel PCA          nonlinear manifold           · O(n²·d) fit",
+        ),
+    ];
+
+    let items: Vec<&str> = candidates.iter().map(|(_, l)| *l).collect();
+    let defaults: Vec<bool> = candidates
+        .iter()
+        .map(|(k, _)| *k == ProjectionKind::Pca)
+        .collect();
+
+    let result = MultiSelect::new()
+        .with_prompt("Select projection kinds  (↑/↓ move · space toggle · enter confirm)")
+        .items(&items)
+        .defaults(&defaults)
+        .interact();
+
+    match result {
+        Ok(indices) => indices.into_iter().map(|i| candidates[i].0).collect(),
+        Err(_) => {
+            eprintln!("Not running interactively — defaulting to PCA.");
+            vec![ProjectionKind::Pca]
         }
     }
 }
@@ -283,14 +329,14 @@ fn load_and_embed(id: &CorpusId) -> Option<(Vec<Concept>, Vec<Vec<f64>>)> {
 
 /// Returns `(budget, search_space)` scaled to corpus size.
 ///
-/// Laplacian eigenmap needs an O(n²) affinity matrix and drops out above
-/// 10k concepts. UMAP-on-sphere uses the ANN-backed kNN graph, so it stays
-/// affordable into the 10k–100k range — that bucket uses
-/// [`SearchSpace::large_corpus`], which sweeps PCA + UMAP. Beyond 100k the
-/// per-trial UMAP epoch loop dominates, so the largest bucket drops to
-/// PCA-only with a smaller budget.
-fn tuning_params(n: usize) -> (usize, SearchSpace) {
-    if n <= 10_000 {
+/// Laplacian eigenmap needs an O(n²) affinity matrix and is automatically
+/// filtered out above 10k concepts even if the user requested it. UMAP
+/// uses the ANN-backed kNN graph, so it stays affordable into the 10k–100k
+/// range. The base search space comes from the size bucket; the caller's
+/// `selected_kinds` then narrows `projection_kinds` (intersection with
+/// what's feasible at this corpus size).
+fn tuning_params(n: usize, selected_kinds: &[ProjectionKind]) -> (usize, SearchSpace) {
+    let (budget, mut space) = if n <= 10_000 {
         (
             16,
             SearchSpace {
@@ -298,6 +344,7 @@ fn tuning_params(n: usize) -> (usize, SearchSpace) {
                     ProjectionKind::Pca,
                     ProjectionKind::LaplacianEigenmap,
                     ProjectionKind::UmapSphere,
+                    ProjectionKind::KernelPca,
                 ],
                 ..SearchSpace::default()
             },
@@ -308,16 +355,42 @@ fn tuning_params(n: usize) -> (usize, SearchSpace) {
         (
             4,
             SearchSpace {
-                projection_kinds: vec![ProjectionKind::Pca],
+                projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::UmapSphere],
                 ..SearchSpace::default()
             },
         )
+    };
+
+    // Intersect the user's selection with what this corpus size supports.
+    let feasible: Vec<ProjectionKind> = space.projection_kinds.clone();
+    space.projection_kinds = selected_kinds
+        .iter()
+        .copied()
+        .filter(|k| feasible.contains(k))
+        .collect();
+
+    // Fall back to PCA if every selected kind was filtered out (e.g. user
+    // picked only Laplacian on a 500k corpus). Better to run something
+    // than to crash the demo with an empty search space.
+    if space.projection_kinds.is_empty() {
+        eprintln!(
+            "  Note: none of the selected projections are feasible at n={}; falling back to PCA.",
+            n
+        );
+        space.projection_kinds = vec![ProjectionKind::Pca];
     }
+
+    (budget, space)
 }
 
 // ─── Main demo (7 phases) ─────────────────────────────────────────────────────
 
-fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
+fn run_corpus(
+    id: &CorpusId,
+    corpus: Vec<Concept>,
+    embeddings: Vec<Vec<f64>>,
+    selected_kinds: &[ProjectionKind],
+) {
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let labels: Vec<&str> = corpus.iter().map(|c| c.label).collect();
@@ -340,7 +413,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("  Optimize pipeline parameters against a quality metric");
     println!("================================================================\n");
 
-    let (budget, space) = tuning_params(n);
+    let (budget, space) = tuning_params(n, selected_kinds);
     let metric = CompositeMetric::default_composite();
     let seed = 0x0A17_CABE_CAFE_u64;
 
@@ -392,7 +465,21 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("  Best score:   {:.4}", tune_report.best_score);
     println!("  Mean score:   {:.4}", tune_report.mean_score());
     println!("  Projection:   {}", pipeline.projection_kind().name());
-    println!("  EVR:          {:.1}% variance explained\n", evr * 100.0);
+    println!("  EVR:          {:.1}% variance explained", evr * 100.0);
+    let umap_trials = tune_report
+        .trials
+        .iter()
+        .filter(|t| t.config.projection_kind == ProjectionKind::UmapSphere)
+        .count();
+    if umap_trials > 0 {
+        println!(
+            "  UMAP cache:   {} graph build(s) for {} UMAP trial(s) ({} cache hit(s))",
+            tune_report.umap_graph_builds,
+            umap_trials,
+            umap_trials.saturating_sub(tune_report.umap_graph_builds),
+        );
+    }
+    println!();
 
     println!("Top 5 trials:");
     println!(

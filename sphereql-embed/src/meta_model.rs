@@ -723,6 +723,7 @@ mod tests {
             best_config: cfg.clone(),
             trials: Vec::new(),
             failures: Vec::new(),
+            umap_graph_builds: 0,
         };
         let r = MetaTrainingRecord::from_tune_result(
             "test_corpus",
@@ -751,6 +752,7 @@ mod tests {
             best_config: PipelineConfig::default(),
             trials: Vec::new(),
             failures: Vec::new(),
+            umap_graph_builds: 0,
         };
         let r = MetaTrainingRecord::from_tune_result("c", feat(10, 2, 0.1, 0.3), &report, "s")
             .with_timestamp("2026-04-22T12:00:00Z");

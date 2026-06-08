@@ -161,6 +161,7 @@ fn mock_report(cfg: PipelineConfig, score: f64, metric_name: &str) -> sphereql::
         best_config: cfg,
         trials: Vec::new(),
         failures: Vec::new(),
+        umap_graph_builds: 0,
     }
 }
 
