@@ -91,7 +91,8 @@ pub struct PcaProjection {
     dim: usize,
     radial: RadialStrategy,
     volumetric: bool,
-    /// Top-3 eigenvalues from PCA (descending). Used to compute per-point certainty.
+    /// Top-3 eigenvalues from PCA (descending). Summed against
+    /// `total_variance` in [`Self::explained_variance_ratio`].
     eigenvalues: [f64; 3],
     /// Total variance across all dimensions. eigenvalues[0..3].sum() / total_variance
     /// gives the global explained variance ratio.
@@ -224,10 +225,13 @@ impl PcaProjection {
     /// the same answer as [`Self::fit`].
     ///
     /// The intended use is rebalancing covariance estimates over
-    /// imbalanced corpora. Setting `wᵢ = 1 / sqrt(|category(i)|)` makes
-    /// every category contribute equal mass to the covariance regardless
-    /// of size — algebraically exact, where stratified subsampling only
-    /// approximates it.
+    /// imbalanced corpora. Setting `wᵢ = 1 / sqrt(|category(i)|)` gives
+    /// a category of size `m` total covariance mass `m · (1/√m) = √m`,
+    /// compressing category influence from linear to square-root in its
+    /// size. For *exactly* equal per-category mass use
+    /// `wᵢ = 1 / |category(i)|`; the square-root compromise keeps large
+    /// categories' internal variance structure from being washed out
+    /// entirely while still letting small categories register.
     ///
     /// Returns the same error variants as [`Self::fit`], plus
     /// [`ProjectionError::SliceLengthMismatch`] when `weights.len() !=
