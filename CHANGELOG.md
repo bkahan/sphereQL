@@ -6,6 +6,33 @@ versions.
 
 ## [Unreleased]
 
+### Changed — review pass on the 500k-corpus branch
+
+- **`GraphModularity` scales to large corpora** — k-NN edge construction
+  switches to the RP-forest ANN index at ≥ 2000 items (the exact
+  all-pairs scan remains below that, so small-corpus scores are
+  bit-identical). Previously the metric was O(N²) in angular-distance
+  evaluations, which made every `default_composite` tuner trial
+  infeasible at 100k–500k items.
+- **`UmapSphereProjection::fit` deduplicated** — now delegates to
+  `UmapGraph::build` + `fit_from_graph` instead of carrying a duplicate
+  copy of the validation block and Adam optimizer loop. Numerically
+  identical (pinned by `fit_from_graph_matches_full_fit`).
+- **`AnnIndex::build_normalized` validates per-row dimensionality** like
+  `build`; ragged input now fails fast with a clear panic message
+  instead of an index error deep in `dot()`.
+- **Weighted-PCA documentation corrected** — `w = 1/sqrt(|category|)`
+  gives a category of size m total covariance mass √m (square-root
+  softening of imbalance), not the previously documented "equal mass";
+  exactly equal mass would require `w = 1/|category|`. Behavior is
+  unchanged.
+- **`default_nearest` docs match the code again** — the high-EVR
+  routing bypass is documented and its threshold is the named constant
+  `HIGH_EVR_ROUTING_BYPASS` (0.90) instead of an inline literal.
+- Sort comparators in `ann.rs` / `umap.rs` use `total_cmp` (matching
+  the wave-3 convention); tuner module docs updated for the Bayesian
+  TPE-lite strategy and the UMAP prefit/graph-cache contract.
+
 ### Added — corpus and bulk ingestion
 
 - **DBpedia 500K corpus** — `sphereql-corpus/data/dbpedia_500k.parquet` with
