@@ -8,8 +8,8 @@
 //! Deterministic for a given seed (uses [`SplitMix64`]).
 //!
 //! Complexity:
-//! - Build: O(N · d · n_trees · log N)
-//! - Query: O(n_trees · log N · d + |candidates| · d)
+//! - Build: O(N · d · trees · log N)
+//! - Query: O(trees · log N · d + |candidates| · d)
 //!
 //! Designed for cosine similarity (all vectors are L2-normalized
 //! internally). Reusable across UMAP graph construction,
@@ -108,9 +108,22 @@ impl AnnIndex {
 
     /// Build from pre-normalized vectors (avoids a redundant
     /// normalization pass when the caller already has unit vectors).
+    /// Enforces the same contract as [`Self::build`]: panics if
+    /// `normalized` is empty or dimensions disagree.
     pub fn build_normalized(normalized: Vec<Vec<f64>>, config: &AnnConfig) -> Self {
-        assert!(!normalized.is_empty());
+        assert!(
+            !normalized.is_empty(),
+            "AnnIndex::build_normalized requires at least one vector"
+        );
         let dim = normalized[0].len();
+        for (i, v) in normalized.iter().enumerate() {
+            assert_eq!(
+                v.len(),
+                dim,
+                "AnnIndex::build_normalized: vector {i} has dim {}, expected {dim}",
+                v.len()
+            );
+        }
         Self::build_from_normalized(normalized, dim, config)
     }
 
@@ -157,7 +170,7 @@ impl AnnIndex {
             .iter()
             .map(|&i| (i, dot(&q, &self.normalized[i])))
             .collect();
-        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
         scored.truncate(k);
         scored
     }
@@ -178,7 +191,7 @@ impl AnnIndex {
             .filter(|&&i| i != index)
             .map(|&i| (i, dot(q, &self.normalized[i])))
             .collect();
-        scored.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
         scored.truncate(k);
         scored
     }
@@ -247,7 +260,7 @@ fn build_tree(
 
     // Median projection gives a balanced split.
     let mut projections: Vec<f64> = indices.iter().map(|&i| dot(&data[i], &normal)).collect();
-    projections.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    projections.sort_unstable_by(|a, b| a.total_cmp(b));
     let offset = projections[projections.len() / 2];
 
     let mut left_idx = Vec::new();
@@ -298,7 +311,7 @@ fn collect_leaf(node: &RpNode, query: &[f64], out: &mut Vec<usize>) {
     }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -395,5 +408,16 @@ mod tests {
             AnnIndex::build(&[], &AnnConfig::default());
         });
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn build_normalized_ragged_input_panics() {
+        let result = std::panic::catch_unwind(|| {
+            AnnIndex::build_normalized(
+                vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0]],
+                &AnnConfig::default(),
+            );
+        });
+        assert!(result.is_err(), "ragged input must be rejected");
     }
 }

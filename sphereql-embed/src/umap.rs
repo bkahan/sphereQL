@@ -178,163 +178,9 @@ impl UmapSphereProjection {
 
         let mut points = graph.warm_start.clone();
         let mut rng = SplitMix64::new(config.seed);
-        let cat_active = config
-            .category_weight
-            .partial_cmp(&0.0)
-            .map(|o| o.is_gt())
-            .unwrap_or(false)
-            && categories.is_some();
-
-        let mut m = vec![[0.0f64; 3]; n];
-        let mut v = vec![[0.0f64; 3]; n];
-        let beta1 = 0.9;
-        let beta2 = 0.999;
-        let eps = 1e-8;
-
-        for epoch in 1..=config.n_epochs {
-            let lr = config.learning_rate * (1.0 - (epoch as f64 / config.n_epochs as f64));
-            let mut grads = vec![[0.0f64; 3]; n];
-
-            for (i, neighbors) in graph.knn.iter().enumerate() {
-                for &j in neighbors {
-                    let (gi, gj) = attractive_grad(&points[i], &points[j]);
-                    add3(&mut grads[i], &gi);
-                    add3(&mut grads[j], &gj);
-
-                    for _ in 0..config.negative_sample_rate {
-                        let nj = (rng.next_u64() as usize) % n;
-                        if nj == i {
-                            continue;
-                        }
-                        let (gi_r, gj_r) = repulsive_grad(&points[i], &points[nj]);
-                        add3(&mut grads[i], &gi_r);
-                        add3(&mut grads[nj], &gj_r);
-                    }
-                }
-            }
-
-            if cat_active {
-                let cats = categories.unwrap();
-                for i in 0..n {
-                    let j = (rng.next_u64() as usize) % n;
-                    if j == i {
-                        continue;
-                    }
-                    let (gi, gj) = if cats[i] == cats[j] {
-                        attractive_grad(&points[i], &points[j])
-                    } else {
-                        repulsive_grad(&points[i], &points[j])
-                    };
-                    let w = config.category_weight;
-                    add3_scaled(&mut grads[i], &gi, w);
-                    add3_scaled(&mut grads[j], &gj, w);
-                }
-            }
-
-            for i in 0..n {
-                let g_tan = project_to_tangent(&points[i], &grads[i]);
-                for d in 0..3 {
-                    m[i][d] = beta1 * m[i][d] + (1.0 - beta1) * g_tan[d];
-                    v[i][d] = beta2 * v[i][d] + (1.0 - beta2) * g_tan[d] * g_tan[d];
-                }
-                let t = epoch as f64;
-                let bc1 = 1.0 - beta1.powf(t);
-                let bc2 = 1.0 - beta2.powf(t);
-                let mut step = [0.0f64; 3];
-                for d in 0..3 {
-                    let m_hat = m[i][d] / bc1;
-                    let v_hat = v[i][d] / bc2;
-                    step[d] = lr * m_hat / (v_hat.sqrt() + eps);
-                }
-                let mut next = [
-                    points[i][0] - step[0],
-                    points[i][1] - step[1],
-                    points[i][2] - step[2],
-                ];
-                let mag = (next[0] * next[0] + next[1] * next[1] + next[2] * next[2]).sqrt();
-                if mag > f64::EPSILON {
-                    next[0] /= mag;
-                    next[1] /= mag;
-                    next[2] /= mag;
-                    points[i] = next;
-                }
-            }
-        }
-
-        let quality = neighbor_preservation_score(&points, &graph.knn);
-
-        Ok(Self {
-            fitted_points: points,
-            fitted_normalized: graph.normalized.clone(),
-            dim: graph.dim,
-            radial,
-            n_neighbors: graph.k,
-            quality,
-        })
-    }
-
-    /// Fit with custom config. `categories` is parallel to `embeddings`
-    /// when supplied; pass `None` to disable the supervised term even
-    /// if `config.category_weight > 0`.
-    pub fn fit(
-        embeddings: &[Embedding],
-        categories: Option<&[u32]>,
-        radial: RadialStrategy,
-        config: UmapConfig,
-    ) -> Result<Self, ProjectionError> {
-        if embeddings.is_empty() {
-            return Err(ProjectionError::EmptyCorpus);
-        }
-        let dim = embeddings[0].dimension();
-        if dim < 3 {
-            return Err(ProjectionError::DimensionTooLow {
-                got: dim,
-                required: 3,
-            });
-        }
-        for (i, e) in embeddings.iter().enumerate() {
-            if e.dimension() != dim {
-                return Err(ProjectionError::InconsistentDimension {
-                    index: i,
-                    expected: dim,
-                    got: e.dimension(),
-                });
-            }
-        }
-        let n = embeddings.len();
-        if n < 4 {
-            return Err(ProjectionError::TooFewEmbeddings {
-                got: n,
-                required: 4,
-            });
-        }
-        if let Some(cats) = categories
-            && cats.len() != n
-        {
-            return Err(ProjectionError::SliceLengthMismatch {
-                expected: n,
-                got: cats.len(),
-            });
-        }
-
-        let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
-        let k = config.n_neighbors.min(n - 1).max(1);
-        let knn = build_knn_graph(&normalized, k);
-
-        // PCA warm-start: project to 3D with the existing PCA path,
-        // then push each result onto S² as a unit vector. Reusing the
-        // crate's PCA keeps the warm start consistent with the rest of
-        // the projection family.
-        let warm = pca_warm_start(embeddings, &normalized)?;
-        let mut points = warm;
-
-        let mut rng = SplitMix64::new(config.seed);
-        let cat_active = config
-            .category_weight
-            .partial_cmp(&0.0)
-            .map(|o| o.is_gt())
-            .unwrap_or(false)
-            && categories.is_some();
+        // NaN category_weight compares false, exactly like the old
+        // partial_cmp().map(is_gt).unwrap_or(false) chain.
+        let cat_active = config.category_weight > 0.0 && categories.is_some();
 
         // Adam state, three components per point.
         let mut m = vec![[0.0f64; 3]; n];
@@ -353,7 +199,7 @@ impl UmapSphereProjection {
             // `negative_sample_rate` repulsive samples for the source
             // endpoint (UMAP's standard per-edge negative sampling, not
             // per-point).
-            for (i, neighbors) in knn.iter().enumerate() {
+            for (i, neighbors) in graph.knn.iter().enumerate() {
                 for &j in neighbors {
                     let (gi, gj) = attractive_grad(&points[i], &points[j]);
                     add3(&mut grads[i], &gi);
@@ -424,16 +270,34 @@ impl UmapSphereProjection {
             }
         }
 
-        let quality = neighbor_preservation_score(&points, &knn);
+        let quality = neighbor_preservation_score(&points, &graph.knn);
 
         Ok(Self {
             fitted_points: points,
-            fitted_normalized: normalized,
-            dim,
+            fitted_normalized: graph.normalized.clone(),
+            dim: graph.dim,
             radial,
-            n_neighbors: k,
+            n_neighbors: graph.k,
             quality,
         })
+    }
+
+    /// Fit with custom config. `categories` is parallel to `embeddings`
+    /// when supplied; pass `None` to disable the supervised term even
+    /// if `config.category_weight > 0`.
+    ///
+    /// Equivalent to [`UmapGraph::build`] followed by
+    /// [`Self::fit_from_graph`] — the tuner calls those two halves
+    /// directly so it can reuse graphs across configs that share
+    /// `n_neighbors`; this entry point serves every other caller.
+    pub fn fit(
+        embeddings: &[Embedding],
+        categories: Option<&[u32]>,
+        radial: RadialStrategy,
+        config: UmapConfig,
+    ) -> Result<Self, ProjectionError> {
+        let graph = UmapGraph::build(embeddings, config.n_neighbors)?;
+        Self::fit_from_graph(&graph, categories, radial, config)
     }
 
     /// Post-fit quality: fraction of attractive edges whose final
@@ -454,7 +318,7 @@ impl UmapSphereProjection {
             .enumerate()
             .map(|(i, v)| (i, dot(normalized, v)))
             .collect();
-        sims.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        sims.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
         sims.truncate(self.n_neighbors);
         sims
     }
@@ -544,7 +408,7 @@ impl Projection for UmapSphereProjection {
     }
 }
 
-// ── Gradients ─────────────────────────────────────────────────────────
+// ── Gradients ───────────────────────────────────────────────────────
 //
 // Loss decomposition mirrors the standard UMAP form, evaluated in ℝ³ on
 // the embedded points and projected to the tangent at step time. The
@@ -593,7 +457,7 @@ fn add3_scaled(a: &mut [f64; 3], b: &[f64; 3], s: f64) {
     a[2] += s * b[2];
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────
 
 /// Corpus size at which the ANN index amortizes its build cost.
 /// Below this, brute-force is faster and gives exact answers; above it,
@@ -609,9 +473,7 @@ fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> Vec<Vec<usize>> {
                     .filter(|&j| j != i)
                     .map(|j| (j, dot(&normalized[i], &normalized[j])))
                     .collect();
-                sims.sort_unstable_by(|a, b| {
-                    b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-                });
+                sims.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
                 sims.into_iter().take(k).map(|(j, _)| j).collect()
             })
             .collect();
@@ -679,7 +541,7 @@ fn neighbor_preservation_score(points: &[[f64; 3]], knn: &[Vec<usize>]) -> f64 {
             sq_dist(&points[i], &points[j])
         })
         .collect();
-    sample_d2.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sample_d2.sort_by(|a, b| a.total_cmp(b));
     let median = sample_d2
         .get(sample_d2.len() / 2)
         .copied()
