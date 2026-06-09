@@ -6,6 +6,39 @@ versions.
 
 ## [Unreleased]
 
+### Changed — training loop (self-tune controller + metalearning)
+
+- **Self-tune closes the quality→geometry loop** — `run_self_tune`'s
+  PCA builds now weight each concept's covariance contribution by its
+  current `quality` (floored, combined with the `1/√|category|`
+  rebalancing). Previously reweighting mutated a field the pipeline
+  never read, so the composite could only move via pruning and the
+  plateau stop fired at iteration 2 by construction.
+- **Reweighting is idempotent** — quality is recomputed from the
+  run-entry base each iteration instead of compounding; the static
+  attenuation (home affinity / source confidence) applies once per
+  run, not once per iteration. `SelfTuneReport` gains
+  `final_composite` — the score of the corpus actually persisted.
+- **`CorpusQuality` bridge sub-score delegates to the canonical
+  `BridgeCoherence`** (neutral floor included): low-EVR corpora no
+  longer pin 30% of the controller objective at zero.
+- **`TrialRecord` gains per-component metric breakdowns**
+  (`components: Vec<(name, weight, score)>`) recorded in one pass via
+  the new `QualityMetric::score_with_components` — flat-landscape
+  diagnosis straight from the `TuneReport`.
+- **`MetaTrainingRecord` gains `score_lift`** — `(best − mean)/(1 −
+  mean)` over the run's trial distribution; cross-corpus-comparable
+  evidence that `DistanceWeightedMetaModel` now ranks on (raw
+  `best_score` fallback for legacy records, which keep deserializing
+  via `#[serde(default)]`).
+- **Meta-models**: scale features (`n_items`, `n_categories`, `dim`,
+  `mean_members_per_category`) are `ln(1+x)`-compressed before
+  z-scoring; mixed-metric training sets are stratified to the dominant
+  `metric_name` at fit time; new
+  `NearestNeighborMetaModel::predict_blended(features, k)` aggregates
+  per-knob medians + majority projection kind over the k nearest
+  records (`k = 1` reproduces `predict`).
+
 ### Changed — review pass on the 500k-corpus branch
 
 - **`GraphModularity` scales to large corpora** — k-NN edge construction
