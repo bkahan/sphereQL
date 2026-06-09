@@ -540,6 +540,13 @@ pub struct TrialRecord {
     /// Wall-clock build time for this trial (pipeline rebuild only —
     /// projection fit is amortized across the tuner run).
     pub build_ms: u128,
+    /// Per-component metric breakdown as `(name, weight, score)`.
+    /// Populated when the metric is a composite (see
+    /// [`QualityMetric::score_with_components`]); empty for leaf
+    /// metrics. The fastest way to diagnose a flat tuner landscape:
+    /// a component whose score barely varies across trials carries no
+    /// signal for the knobs being swept.
+    pub components: Vec<(String, f64, f64)>,
 }
 
 /// Full tuner output.
@@ -695,12 +702,13 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             cfg.clone(),
         ) {
             Ok(pipeline) => {
-                let score = metric.score(&pipeline);
+                let (score, components) = metric.score_with_components(&pipeline);
                 let build_ms = start.elapsed().as_millis();
                 trials.push(TrialRecord {
                     config: cfg,
                     score,
                     build_ms,
+                    components,
                 });
             }
             Err(e) => {
@@ -1404,6 +1412,51 @@ mod tests {
         assert!(pipeline.num_categories() > 0);
         assert_eq!(report.metric_name, "territorial_health");
         assert!(report.failures.is_empty());
+    }
+
+    #[test]
+    fn trial_records_carry_component_breakdown_for_composites() {
+        let input = make_input(24, 8);
+        let metric = CompositeMetric::default_composite();
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert!(!report.trials.is_empty());
+        for t in &report.trials {
+            assert_eq!(
+                t.components.len(),
+                4,
+                "composite trials must record the 4-component breakdown"
+            );
+            let recomposed: f64 = t.components.iter().map(|(_, w, s)| w * s).sum();
+            assert!(
+                (t.score - recomposed).abs() < 1e-12,
+                "breakdown must recompose to the recorded score"
+            );
+        }
+    }
+
+    #[test]
+    fn trial_records_have_empty_components_for_leaf_metrics() {
+        let input = make_input(24, 8);
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert!(!report.trials.is_empty());
+        for t in &report.trials {
+            assert!(t.components.is_empty());
+        }
     }
 
     #[test]

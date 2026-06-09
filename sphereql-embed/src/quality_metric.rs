@@ -35,6 +35,21 @@ pub trait QualityMetric: Send + Sync {
     fn name(&self) -> &str;
     /// Evaluate the pipeline. Must return a value in `[0, 1]`.
     fn score(&self, pipeline: &SphereQLPipeline) -> f64;
+
+    /// Evaluate the pipeline and report any per-component breakdown in
+    /// the same pass. Returns `(score, components)` where each
+    /// component is `(name, weight, component_score)`.
+    ///
+    /// The default implementation returns the scalar score with no
+    /// components — correct for leaf metrics. [`CompositeMetric`]
+    /// overrides it so the tuner can record *which* sub-metric moved
+    /// on each trial without paying for a second evaluation. A
+    /// component whose score barely varies across trials carries no
+    /// signal for the knobs being swept — the fastest diagnosis for a
+    /// flat tuner landscape.
+    fn score_with_components(&self, pipeline: &SphereQLPipeline) -> (f64, Vec<(String, f64, f64)>) {
+        (self.score(pipeline), Vec::new())
+    }
 }
 
 // ── Territorial health ─────────────────────────────────────────────
@@ -525,6 +540,17 @@ impl QualityMetric for CompositeMetric {
             .sum();
         total.clamp(0.0, 1.0)
     }
+
+    fn score_with_components(&self, pipeline: &SphereQLPipeline) -> (f64, Vec<(String, f64, f64)>) {
+        if self.components.is_empty() {
+            return (0.0, Vec::new());
+        }
+        // Each component is evaluated exactly once; the composite total
+        // is recomposed from the breakdown so the two always agree.
+        let breakdown = self.score_components(pipeline);
+        let total: f64 = breakdown.iter().map(|(_, w, s)| w * s).sum();
+        (total.clamp(0.0, 1.0), breakdown)
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -685,6 +711,25 @@ mod tests {
         let weighted: f64 = breakdown.iter().map(|(_, w, s)| w * s).sum();
         let total = m.score(&p);
         assert!((weighted - total).abs() < 1e-12);
+    }
+
+    #[test]
+    fn score_with_components_matches_score() {
+        let p = make_pipeline();
+        let m = CompositeMetric::default_composite();
+        let (total, components) = m.score_with_components(&p);
+        assert!((total - m.score(&p)).abs() < 1e-12);
+        assert_eq!(components.len(), 4);
+        let recomposed: f64 = components.iter().map(|(_, w, s)| w * s).sum();
+        assert!((total - recomposed).abs() < 1e-12);
+    }
+
+    #[test]
+    fn score_with_components_default_is_empty_for_leaf_metrics() {
+        let p = make_pipeline();
+        let (total, components) = TerritorialHealth.score_with_components(&p);
+        assert!((total - TerritorialHealth.score(&p)).abs() < 1e-12);
+        assert!(components.is_empty());
     }
 
     #[test]
