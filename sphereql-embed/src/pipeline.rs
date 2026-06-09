@@ -71,7 +71,7 @@ pub enum PipelineError {
     InvalidInput(String),
 }
 
-// ── Input contract ──────────────────────────────────────────────────────────
+// ── Input contract ──────────────────────────────────────────────────────────────
 
 /// Input to construct a SphereQL pipeline.
 ///
@@ -89,7 +89,7 @@ pub struct PipelineQuery {
     pub embedding: Vec<f64>,
 }
 
-// ── Output types ────────────────────────────────────────────────────────────
+// ── Output types ────────────────────────────────────────────────────────────────
 
 /// One item returned from a nearest-neighbor or similarity query.
 ///
@@ -163,7 +163,7 @@ pub enum SphereQLOutput {
     ConceptPath(Option<PathResult>),
     Globs(Vec<GlobSummary>),
     LocalManifold(ManifoldResult),
-    // ── Phase 3: category-level outputs ─────────────────────────────────
+    // ── Phase 3: category-level outputs ─────────────────────────
     /// Result of a category-level concept path query.
     CategoryConceptPath(Option<CategoryPath>),
     /// Nearest neighbor categories to a given category.
@@ -193,7 +193,7 @@ pub enum SphereQLQuery<'a> {
     DetectGlobs { k: Option<usize>, max_k: usize },
     /// Fit a local manifold around the query point.
     LocalManifold { neighborhood_k: usize },
-    // ── Phase 3: category-level queries ─────────────────────────────────
+    // ── Phase 3: category-level queries ─────────────────────────
     /// Find the shortest path between two categories through the category graph.
     CategoryConceptPath {
         source_category: &'a str,
@@ -223,7 +223,16 @@ pub struct ExportedPoint {
     pub intensity: f64,
 }
 
-// ── Pipeline ──────────────────────────────────────────────────────────────
+// ── Pipeline ──────────────────────────────────────────────────────────────────
+
+/// Outer-projection EVR at or above which [`SphereQLPipeline::default_nearest`]
+/// skips group-inner-sphere routing entirely. At this fidelity the outer
+/// angular distances are more accurate than any inner re-projection
+/// (observed: UMAP at 99.7% EVR routed correct outer-sphere neighbors
+/// away through a lossy group PCA). Group routing only helps when the
+/// outer sphere is unreliable and the inner re-projection recovers lost
+/// structure.
+const HIGH_EVR_ROUTING_BYPASS: f64 = 0.90;
 
 /// The main SphereQL pipeline: fitted projection + spatial index +
 /// category enrichment layer + optional tunable config.
@@ -760,7 +769,7 @@ impl SphereQLPipeline {
             .collect()
     }
 
-    // ── Phase 3: category-level accessors ──────────────────────────────
+    // ── Phase 3: category-level accessors ──────────────────────────
 
     /// Access the category enrichment layer directly.
     pub fn category_layer(&self) -> &CategoryLayer {
@@ -887,7 +896,7 @@ impl SphereQLPipeline {
         Some(Ok(scored))
     }
 
-    // ── Phase 5: hierarchical domain groups ────────────────────────────
+    // ── Phase 5: hierarchical domain groups ────────────────────────
 
     /// Coarse-grained domain groups detected from Voronoi adjacency + cap overlap.
     /// Single source of truth: the same vector used by `default_nearest`'s
@@ -989,23 +998,18 @@ impl SphereQLPipeline {
 
     /// Default `nearest` path (v2 routing).
     ///
-    /// Routes the query to its closest domain group when that choice is
-    /// unambiguous (`d_nearest / d_second_nearest < group_routing_alpha`)
+    /// Routes the query to its closest domain group when the outer
+    /// projection's EVR is below [`HIGH_EVR_ROUTING_BYPASS`], the choice
+    /// is unambiguous (`d_nearest / d_second_nearest < group_routing_alpha`),
     /// and the group has an inner sphere; otherwise falls back to plain
-    /// outer-sphere k-NN. EVR no longer gates routing — only the
-    /// distance-ratio rule does — so high-fidelity projections still
-    /// benefit from the inner-sphere refinement.
+    /// outer-sphere k-NN. At EVR ≥ [`HIGH_EVR_ROUTING_BYPASS`] routing is
+    /// bypassed entirely — the outer angular distances are already more
+    /// accurate than any inner-sphere re-projection.
     pub fn default_nearest(&self, embedding: &Embedding, k: usize) -> Vec<NearestResult> {
         let evr = self.projection.explained_variance_ratio();
         let alpha = self.config.routing.group_routing_alpha;
 
-        // When the outer projection is high-fidelity (EVR ≥ 0.90), its
-        // angular distances are more accurate than any inner-sphere
-        // re-projection. Bypass group routing entirely — the outer-sphere
-        // k-NN is the best answer. Group routing only helps when the outer
-        // sphere is unreliable (low EVR) and the inner re-projection
-        // recovers lost structure.
-        let route = if alpha > 0.0 && evr < 0.90 {
+        let route = if alpha > 0.0 && evr < HIGH_EVR_ROUTING_BYPASS {
             let pos = self.projection.project(embedding);
             self.category_layer
                 .nearest_group(&pos)
@@ -1129,10 +1133,12 @@ impl SphereQLPipeline {
 /// auto-tuner prefit step. Default radial strategy mirrors
 /// [`SphereQLPipeline::new`]'s legacy behavior (magnitude + volumetric).
 ///
-/// `categories` is parallel to `embeddings` — same length, same order —
-/// and is used only by the PCA arm to compute per-sample weights
-/// `wᵢ = 1 / sqrt(|category(i)|)` so the covariance estimate is robust
-/// to category imbalance. Other arms ignore it.
+/// `categories` is parallel to `embeddings` — same length, same order.
+/// The PCA arm uses it to compute per-sample weights
+/// `wᵢ = 1 / sqrt(|category(i)|)` (square-root rebalancing of the
+/// covariance — see [`PcaProjection::fit_weighted`]); the UMAP arm uses
+/// it as supervision labels for the category term. Kernel PCA and
+/// Laplacian ignore it.
 pub fn fit_projection_for_config(
     embeddings: &[Embedding],
     categories: &[String],
@@ -1140,10 +1146,11 @@ pub fn fit_projection_for_config(
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
     match config.projection_kind {
         ProjectionKind::Pca => {
-            // Weight each sample by 1/sqrt(|its_category|) so every
-            // category contributes equally to the covariance. Critical
-            // for corpora with singleton categories (DBpedia-style),
-            // where a uniform fit lets large categories dominate.
+            // Weight each sample by 1/sqrt(|its_category|) so a category's
+            // covariance mass grows as √size instead of linearly — softens
+            // (not equalizes) imbalance. Critical for corpora with
+            // singleton categories (DBpedia-style), where a uniform fit
+            // lets large categories dominate.
             let mut cat_counts: std::collections::HashMap<&str, usize> =
                 std::collections::HashMap::new();
             for c in categories {
@@ -1174,38 +1181,13 @@ pub fn fit_projection_for_config(
             ))
         }
         ProjectionKind::UmapSphere => {
-            // Compact each unique category string to a u32 index so UMAP's
-            // supervised term can operate on dense ids. First-seen wins.
-            let mut cat_map: std::collections::HashMap<&str, u32> =
-                std::collections::HashMap::new();
-            let mut next_id: u32 = 0;
-            let cat_indices: Vec<u32> = categories
-                .iter()
-                .map(|c| {
-                    *cat_map.entry(c.as_str()).or_insert_with(|| {
-                        let id = next_id;
-                        next_id += 1;
-                        id
-                    })
-                })
-                .collect();
-
-            let uc = &config.umap;
-            let umap_config = crate::umap::UmapConfig {
-                n_neighbors: uc.n_neighbors,
-                n_epochs: uc.n_epochs,
-                learning_rate: 0.05,
-                negative_sample_rate: 5,
-                category_weight: uc.category_weight,
-                seed: uc.seed,
-            };
-
+            let cat_indices = compact_category_indices(categories);
             Ok(ConfiguredProjection::UmapSphere(
                 crate::umap::UmapSphereProjection::fit(
                     embeddings,
                     Some(&cat_indices),
                     RadialStrategy::Magnitude,
-                    umap_config,
+                    umap_fit_config(config),
                 )?,
             ))
         }
@@ -1223,9 +1205,25 @@ pub fn fit_umap_from_graph(
     categories: &[String],
     config: &PipelineConfig,
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
+    let cat_indices = compact_category_indices(categories);
+    Ok(ConfiguredProjection::UmapSphere(
+        crate::umap::UmapSphereProjection::fit_from_graph(
+            graph,
+            Some(&cat_indices),
+            RadialStrategy::Magnitude,
+            umap_fit_config(config),
+        )?,
+    ))
+}
+
+/// Compact each unique category string to a dense `u32` id, first-seen
+/// order, for UMAP's supervised term. Shared by
+/// [`fit_projection_for_config`] and [`fit_umap_from_graph`] so both fit
+/// paths label items identically.
+fn compact_category_indices(categories: &[String]) -> Vec<u32> {
     let mut cat_map: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
     let mut next_id: u32 = 0;
-    let cat_indices: Vec<u32> = categories
+    categories
         .iter()
         .map(|c| {
             *cat_map.entry(c.as_str()).or_insert_with(|| {
@@ -1234,26 +1232,24 @@ pub fn fit_umap_from_graph(
                 id
             })
         })
-        .collect();
+        .collect()
+}
 
+/// Translate the tunable [`UmapConfig`](crate::config::UmapConfig)
+/// section of a [`PipelineConfig`] into the fitter's own config. The
+/// non-tunable optimizer constants (`learning_rate`,
+/// `negative_sample_rate`) are pinned to their canonical UMAP defaults
+/// here — the single place they're set for pipeline-driven fits.
+fn umap_fit_config(config: &PipelineConfig) -> crate::umap::UmapConfig {
     let uc = &config.umap;
-    let umap_config = crate::umap::UmapConfig {
+    crate::umap::UmapConfig {
         n_neighbors: uc.n_neighbors,
         n_epochs: uc.n_epochs,
         learning_rate: 0.05,
         negative_sample_rate: 5,
         category_weight: uc.category_weight,
         seed: uc.seed,
-    };
-
-    Ok(ConfiguredProjection::UmapSphere(
-        crate::umap::UmapSphereProjection::fit_from_graph(
-            graph,
-            Some(&cat_indices),
-            RadialStrategy::Magnitude,
-            umap_config,
-        )?,
-    ))
+    }
 }
 
 #[cfg(test)]
@@ -1289,7 +1285,7 @@ mod tests {
         )
     }
 
-    // ── Existing tests (unchanged) ─────────────────────────────────────
+    // ── Existing tests (unchanged) ─────────────────────────────────
 
     #[test]
     fn ids_are_insertion_order_aligned_with_categories_and_points() {
@@ -1326,9 +1322,10 @@ mod tests {
         // Corpus with extreme imbalance: one category with 20 items,
         // two categories with 1 item each. A naive (unweighted) fit
         // would let the 20-item category dominate the covariance.
-        // fit_weighted uses 1/sqrt(count) per category so every
-        // category contributes equally — and uses all 22 samples,
-        // giving a well-conditioned fit even with singletons.
+        // fit_weighted uses 1/sqrt(count) per category, compressing the
+        // big category's mass from 20× to √20 ≈ 4.5× a singleton's —
+        // and uses all 22 samples, giving a well-conditioned fit even
+        // with singletons.
         let mut embeddings = Vec::new();
         let mut categories = Vec::new();
         for i in 0..20 {
@@ -1521,7 +1518,7 @@ mod tests {
         assert_eq!(pipeline.num_categories(), 2);
     }
 
-    // ── Phase 3 tests: category layer integration ──────────────────────
+    // ── Phase 3 tests: category layer integration ────────────────────
 
     #[test]
     fn pipeline_builds_category_layer() {
@@ -1664,7 +1661,7 @@ mod tests {
         assert!(layer.get_category("group_b").is_some());
     }
 
-    // ── Phase 5: domain groups ────────────────────────────────────────
+    // ── Phase 5: domain groups ────────────────────────────────────
 
     #[test]
     fn domain_groups_detected() {
@@ -2008,7 +2005,7 @@ mod tests {
         .unwrap();
 
         let evr = pipeline.explained_variance_ratio();
-        if evr >= 0.90 {
+        if evr >= HIGH_EVR_ROUTING_BYPASS {
             // High EVR: routing should be bypassed, outer-sphere k-NN used.
             // The query is [1.0, 0.05, 0, 0, 0, 0, 0, 0] → closest to cluster "a".
             let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
@@ -2022,9 +2019,9 @@ mod tests {
                 );
             }
         }
-        // If EVR < 0.90 on this synthetic data, the test is a no-op.
-        // That's fine — the important path is tested by the existing
-        // routing tests at lower EVR.
+        // If EVR < HIGH_EVR_ROUTING_BYPASS on this synthetic data, the
+        // test is a no-op. That's fine — the important path is tested by
+        // the existing routing tests at lower EVR.
     }
 
     #[test]
@@ -2049,7 +2046,7 @@ mod tests {
         assert!(!results.is_empty());
     }
 
-    // ── retain-embeddings tests ──────────────────────────────────────────
+    // ── retain-embeddings tests ──────────────────────────────────────
 
     #[test]
     #[cfg(feature = "retain-embeddings")]
