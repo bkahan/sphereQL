@@ -3,7 +3,7 @@
 //! Auto-tuning needs a scalar objective to optimize. EVR alone is a bad
 //! target — a high-EVR projection can still produce a geometry where every
 //! bridge is an `OverlapArtifact`, so the "quality" the user experiences
-//! is low. This module defines a [`QualityMetric`] trait and four concrete
+//! is low. This module defines a [`QualityMetric`] trait and five concrete
 //! metrics that each measure a distinct slice of pipeline quality.
 //!
 //! Compose them via [`CompositeMetric`] for a weighted objective.
@@ -13,8 +13,9 @@
 
 use std::collections::HashSet;
 
-use sphereql_core::{SphericalPoint, angular_distance};
+use sphereql_core::{SphericalPoint, angular_distance, spherical_to_cartesian};
 
+use crate::ann::{AnnConfig, AnnIndex};
 use crate::category::BridgeClassification;
 use crate::pipeline::SphereQLPipeline;
 
@@ -36,7 +37,7 @@ pub trait QualityMetric: Send + Sync {
     fn score(&self, pipeline: &SphereQLPipeline) -> f64;
 }
 
-// ── Territorial health ─────────────────────────────────────────────────
+// ── Territorial health ─────────────────────────────────────────────
 
 /// Mean pairwise `territorial_factor` across every category pair.
 ///
@@ -73,7 +74,7 @@ impl QualityMetric for TerritorialHealth {
     }
 }
 
-// ── Bridge coherence ───────────────────────────────────────────────────
+// ── Bridge coherence ───────────────────────────────────────────────
 
 /// Neutral score returned by [`BridgeCoherence`] when bridges exist but
 /// none are classified `Genuine`. A 0.0 in that case dominates the
@@ -120,7 +121,7 @@ impl QualityMetric for BridgeCoherence {
     }
 }
 
-// ── Bridge diversity ───────────────────────────────────────────────────
+// ── Bridge diversity ───────────────────────────────────────────────
 
 /// Fraction of distinct category pairs connected by at least one
 /// [`BridgeClassification::Genuine`] bridge.
@@ -167,7 +168,7 @@ impl QualityMetric for BridgeDiversity {
     }
 }
 
-// ── Cluster silhouette ─────────────────────────────────────────────────
+// ── Cluster silhouette ─────────────────────────────────────────────
 
 /// Simplified silhouette score of the category assignment on S²,
 /// remapped to `[0, 1]`.
@@ -251,7 +252,58 @@ impl QualityMetric for ClusterSilhouette {
     }
 }
 
-// ── Graph modularity ───────────────────────────────────────────────────
+// ── Graph modularity ───────────────────────────────────────────────
+
+/// Corpus size at which [`GraphModularity`] switches its k-NN edge
+/// construction from the exact O(N²) scan to the RP-forest ANN index.
+/// Mirrors the brute-force/ANN crossover used by UMAP's graph builder.
+const MODULARITY_ANN_THRESHOLD: usize = 2000;
+
+/// Build the symmetric k-NN edge set over projected positions: edge
+/// `{i, j}` exists if `j ∈ top-k(i)` OR `i ∈ top-k(j)`, keyed as
+/// `(min(i, j), max(i, j))` in a `HashSet` to dedupe the union.
+///
+/// `exact` selects the all-pairs angular-distance scan; otherwise the
+/// RP-forest [`AnnIndex`] is used. The two rankings are interchangeable:
+/// `angular_distance` depends only on each point's direction (its
+/// `unit_cartesian`), and cosine similarity over those directions is
+/// strictly monotone with the angle, so descending ANN similarity
+/// reproduces the ascending-angular ordering up to ANN recall. The ANN
+/// index is seed-deterministic, preserving the [`QualityMetric`]
+/// determinism contract.
+fn knn_edges(positions: &[SphericalPoint], k: usize, exact: bool) -> HashSet<(usize, usize)> {
+    let n = positions.len();
+    let mut edges: HashSet<(usize, usize)> = HashSet::new();
+    if exact {
+        for i in 0..n {
+            let mut dists: Vec<(usize, f64)> = (0..n)
+                .filter(|&j| j != i)
+                .map(|j| (j, angular_distance(&positions[i], &positions[j])))
+                .collect();
+            dists.sort_by(|a, b| a.1.total_cmp(&b.1));
+            for &(j, _) in dists.iter().take(k) {
+                let e = if i < j { (i, j) } else { (j, i) };
+                edges.insert(e);
+            }
+        }
+    } else {
+        let coords: Vec<Vec<f64>> = positions
+            .iter()
+            .map(|p| {
+                let c = spherical_to_cartesian(p);
+                vec![c.x, c.y, c.z]
+            })
+            .collect();
+        let index = AnnIndex::build(&coords, &AnnConfig::default());
+        for i in 0..n {
+            for (j, _) in index.query_by_index(i, k) {
+                let e = if i < j { (i, j) } else { (j, i) };
+                edges.insert(e);
+            }
+        }
+    }
+    edges
+}
 
 /// Modularity of the category assignment on the k-NN graph of projected
 /// positions on S².
@@ -278,6 +330,10 @@ impl QualityMetric for ClusterSilhouette {
 /// [`LaplacianEigenmapProjection`](crate::laplacian::LaplacianEigenmapProjection),
 /// which otherwise get discounted by variance-centric metrics
 /// ([`ClusterSilhouette`]) that reward PCA's spread.
+///
+/// Edge construction is exact (all-pairs) below
+/// [`MODULARITY_ANN_THRESHOLD`] items and ANN-backed above it, keeping
+/// the metric usable inside tuner loops on 100k–500k corpora.
 pub struct GraphModularity {
     /// Number of nearest neighbors per node in the k-NN graph.
     ///
@@ -328,22 +384,7 @@ impl QualityMetric for GraphModularity {
             .collect();
 
         let k = self.k.min(n - 1).max(1);
-
-        // Symmetric k-NN graph: edge {i, j} exists if j ∈ top-k(i) OR
-        // i ∈ top-k(j). Keyed by (min(i,j), max(i,j)) in a HashSet to
-        // dedupe the union.
-        let mut edges: HashSet<(usize, usize)> = HashSet::new();
-        for i in 0..n {
-            let mut dists: Vec<(usize, f64)> = (0..n)
-                .filter(|&j| j != i)
-                .map(|j| (j, angular_distance(&positions[i], &positions[j])))
-                .collect();
-            dists.sort_by(|a, b| a.1.total_cmp(&b.1));
-            for &(j, _) in dists.iter().take(k) {
-                let e = if i < j { (i, j) } else { (j, i) };
-                edges.insert(e);
-            }
-        }
+        let edges = knn_edges(&positions, k, n < MODULARITY_ANN_THRESHOLD);
 
         let m = edges.len() as f64;
         if m < 1.0 {
@@ -385,7 +426,7 @@ impl QualityMetric for GraphModularity {
     }
 }
 
-// ── Composite ──────────────────────────────────────────────────────────
+// ── Composite ──────────────────────────────────────────────────────
 
 /// Weighted linear combination of multiple [`QualityMetric`]s.
 ///
@@ -486,7 +527,7 @@ impl QualityMetric for CompositeMetric {
     }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -775,6 +816,43 @@ mod tests {
         // and the score is corpus-dependent, so we only check validity.
         assert!((0.0..=1.0).contains(&s_small));
         assert!((0.0..=1.0).contains(&s_large));
+    }
+
+    #[test]
+    fn knn_edges_ann_path_respects_cluster_structure() {
+        // Two tight, well-separated caps on S². Both the exact and the
+        // ANN edge builders must keep every edge inside its own cap —
+        // the ANN path is otherwise only reachable at >= 2000 items, so
+        // this drives it directly through the helper.
+        let mut positions = Vec::new();
+        for i in 0..60 {
+            let t = i as f64;
+            positions.push(SphericalPoint::new_unchecked(
+                1.0,
+                0.3 + t * 0.001,
+                1.2 + t * 0.0005,
+            ));
+        }
+        for i in 0..60 {
+            let t = i as f64;
+            positions.push(SphericalPoint::new_unchecked(
+                1.0,
+                3.5 + t * 0.001,
+                1.8 + t * 0.0005,
+            ));
+        }
+
+        for exact in [true, false] {
+            let edges = knn_edges(&positions, 5, exact);
+            assert!(!edges.is_empty(), "edge set empty (exact={exact})");
+            for &(a, b) in &edges {
+                assert_eq!(
+                    a < 60,
+                    b < 60,
+                    "edge ({a}, {b}) crosses caps (exact={exact})"
+                );
+            }
+        }
     }
 
     #[test]
