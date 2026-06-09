@@ -5,11 +5,16 @@
 //! 1. **EVR** — variance explained by the projection. Pulled from
 //!    [`SphereQLPipeline::explained_variance_ratio`]. Already in `[0, 1]`.
 //!
-//! 2. **Bridge coherence** — fraction of bridges classified as
-//!    [`BridgeClassification::Genuine`] rather than `OverlapArtifact` or
-//!    `Weak`. Iterates `CategoryLayer::graph.bridges` directly so the
-//!    metric is bit-identical to [`crate::quality_metric::BridgeCoherence`]
-//!    when run in isolation.
+//! 2. **Bridge coherence** — delegates to
+//!    [`crate::quality_metric::BridgeCoherence`], so the sub-score is
+//!    bit-identical to the standalone metric, including its
+//!    neutral-when-no-Genuine floor
+//!    ([`BRIDGE_COHERENCE_NEUTRAL`](crate::quality_metric::BRIDGE_COHERENCE_NEUTRAL)).
+//!    The floor matters here: under
+//!    `BridgeConfig::min_evr_for_classification`, low-EVR corpora have
+//!    zero `Genuine` bridges, and a raw `genuine/total` would pin this
+//!    0.30-weighted term at 0 — freezing the self-tune objective on
+//!    exactly the bulk corpora it exists for.
 //!
 //! 3. **Curvature health** — corpus mean of `1 - clamp(|mean_excess_z|,
 //!    0, 1)` across the per-category curvature signatures returned by
@@ -37,10 +42,9 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::category::BridgeClassification;
 use crate::navigator::curvature_analysis;
 use crate::pipeline::SphereQLPipeline;
-use crate::quality_metric::QualityMetric;
+use crate::quality_metric::{BridgeCoherence, QualityMetric};
 
 /// Weights for the four sub-scores. Must be finite, non-negative, and
 /// not all zero. They do NOT need to sum to 1 — [`CorpusQuality`]
@@ -190,23 +194,13 @@ impl QualityMetric for CorpusQuality {
 
 // ── Sub-score computations ─────────────────────────────────────────────
 
+/// Delegates to the canonical [`BridgeCoherence`] metric — one
+/// implementation, one set of edge-case rules. This used to be a local
+/// copy of the `genuine/total` loop that predated the
+/// neutral-when-no-Genuine floor; under the EVR classification gate
+/// that copy pinned the sub-score at 0 on every low-EVR corpus.
 fn compute_bridge_coherence(pipeline: &SphereQLPipeline) -> f64 {
-    let layer = pipeline.category_layer();
-    let mut genuine = 0usize;
-    let mut total = 0usize;
-    for bridges in layer.graph.bridges.values() {
-        for b in bridges {
-            total += 1;
-            if b.classification == BridgeClassification::Genuine {
-                genuine += 1;
-            }
-        }
-    }
-    if total == 0 {
-        1.0
-    } else {
-        genuine as f64 / total as f64
-    }
+    BridgeCoherence.score(pipeline)
 }
 
 fn compute_curvature_health(pipeline: &SphereQLPipeline) -> f64 {
@@ -257,7 +251,7 @@ fn compute_category_balance(categories: &[String]) -> f64 {
     }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -310,10 +304,7 @@ mod tests {
         assert_eq!(m.name(), "corpus_quality");
     }
 
-    /// End-to-end smoke: build a tiny pipeline, score it, check the
-    /// breakdown is populated and composite is in `[0, 1]`.
-    #[test]
-    fn smoke_score_on_synthetic_input() {
+    fn synthetic_pipeline() -> SphereQLPipeline {
         let n_per = 12usize;
         let n_cats = 8usize;
         let dim = 16usize;
@@ -335,11 +326,18 @@ mod tests {
                 embeddings.push(v);
             }
         }
-        let input = PipelineInput {
+        SphereQLPipeline::new(PipelineInput {
             categories,
             embeddings,
-        };
-        let pipeline = SphereQLPipeline::new(input).expect("build pipeline");
+        })
+        .expect("build pipeline")
+    }
+
+    /// End-to-end smoke: build a tiny pipeline, score it, check the
+    /// breakdown is populated and composite is in `[0, 1]`.
+    #[test]
+    fn smoke_score_on_synthetic_input() {
+        let pipeline = synthetic_pipeline();
         let m = CorpusQuality::default();
         let s = m.score(&pipeline);
         assert!((0.0..=1.0).contains(&s), "composite out of range: {s}");
@@ -349,6 +347,19 @@ mod tests {
         assert!((0.0..=1.0).contains(&bd.curvature_health));
         assert!((0.0..=1.0).contains(&bd.category_balance));
         assert!((bd.composite - s).abs() < 1e-12);
+    }
+
+    #[test]
+    fn bridge_subscore_matches_canonical_bridge_coherence() {
+        // The sub-score must be bit-identical to the standalone metric
+        // (including its neutral floor) — there is exactly one
+        // implementation now.
+        let pipeline = synthetic_pipeline();
+        let m = CorpusQuality::default();
+        let _ = m.score(&pipeline);
+        let bd = m.last_breakdown().unwrap();
+        let standalone = BridgeCoherence.score(&pipeline);
+        assert_eq!(bd.bridge_coherence, standalone);
     }
 
     #[test]
