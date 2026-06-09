@@ -145,12 +145,15 @@ want.
 ## Design notes
 
 - Projections are fit **once per distinct fit-affecting hyperparameter
-  tuple** inside `auto_tune` and reused across trials, so projection
-  fitting contributes only a one-time prefit cost per unique
-  (`ProjectionKind`, Laplacian params) combination.
+  tuple** inside `auto_tune` and reused across trials. PCA and Kernel
+  PCA key per kind; Laplacian keys on `(k_neighbors, active_threshold)`;
+  UMAP keys on `(n_neighbors, n_epochs, category_weight)`, and its kNN
+  graph + PCA warm-start are additionally cached per `n_neighbors` so
+  epoch/weight sweeps don't rebuild the graph
+  (`TuneReport::umap_graph_builds` reports the cache's effectiveness).
 - `SearchSpace` is kind-conditional: trials for `ProjectionKind::Pca`
-  don't iterate over Laplacian hyperparameters, and vice versa. The
-  grid cardinality reflects the union, not the product.
+  don't iterate over Laplacian or UMAP hyperparameters, and vice versa.
+  The grid cardinality reflects the union, not the product.
 - `CorpusFeatures::to_vec()` returns a fixed-order feature vector; the
   `category_separation_ratio` field is deliberately excluded because
   it's a derived ratio of two other features already in the vector.

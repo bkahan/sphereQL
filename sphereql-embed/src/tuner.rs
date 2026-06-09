@@ -3,15 +3,20 @@
 //! This is the first usable rung of the metalearning ladder. Given a corpus
 //! and a scalar objective, the tuner enumerates or samples candidate
 //! configurations, builds a full pipeline for each, and records the score.
-//! No gradients, no surrogate models — just a reproducible random / grid
-//! sweep that establishes a baseline for higher-order tuners (Bayesian
-//! optimization, CMA-ES, meta-learning) to beat.
+//! Three strategies ship: exhaustive [`SearchStrategy::Grid`], uniform
+//! [`SearchStrategy::Random`], and the axis-parallel TPE-lite
+//! [`SearchStrategy::Bayesian`] acquisition — all reproducible under a
+//! fixed seed, establishing baselines for higher-order tuners (CMA-ES,
+//! meta-learning) to beat.
 //!
-//! Projections are fit **once per kind** from the input corpus (PCA,
-//! Kernel PCA, and/or Laplacian eigenmap as dictated by the
-//! [`SearchSpace`]) and reused across every trial — only the downstream
-//! config knobs (bridge thresholds, inner-sphere gates, domain-group
-//! counts, etc.) vary per trial.
+//! Projections are fit **once per distinct fit-affecting hyperparameter
+//! tuple** from the input corpus and reused across every trial: PCA and
+//! Kernel PCA key per kind, Laplacian per `(k_neighbors,
+//! active_threshold)`, and UMAP per `(n_neighbors, n_epochs,
+//! category_weight)` — with UMAP's kNN graph additionally cached per
+//! `n_neighbors` (see [`TuneReport::umap_graph_builds`]). Only the
+//! downstream config knobs (bridge thresholds, inner-sphere gates,
+//! domain-group counts, etc.) vary per trial.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -28,7 +33,7 @@ use crate::projection::SplitMix64;
 use crate::quality_metric::QualityMetric;
 use crate::types::Embedding;
 
-// ── Search space ───────────────────────────────────────────────────────
+// ── Search space ─────────────────────────────────────────────────────
 
 /// Discrete candidate values for each tunable knob.
 ///
@@ -46,7 +51,7 @@ pub struct SearchSpace {
     /// [`auto_tune`]; trials pick the prefit matching their config.
     pub projection_kinds: Vec<ProjectionKind>,
 
-    // ── Projection-kind-specific knobs ────────────────────────────────
+    // ── Projection-kind-specific knobs ────────────────────────────
     // These only take effect when the trial's projection_kind matches.
     // PCA trials ignore them (no waste — grid enumeration is
     // kind-conditional, so PCA trials don't multiply against these
@@ -71,7 +76,7 @@ pub struct SearchSpace {
     /// `projection_kinds`.
     pub umap_category_weight: Vec<f64>,
 
-    // ── Kind-agnostic knobs ───────────────────────────────────────────
+    // ── Kind-agnostic knobs ───────────────────────────────────────
     /// Candidate values for [`RoutingConfig::num_domain_groups`].
     pub num_domain_groups: Vec<usize>,
     /// Candidate values for [`RoutingConfig::low_evr_threshold`].
@@ -430,7 +435,7 @@ impl SearchSpace {
     }
 }
 
-// ── Prefit cache key ──────────────────────────────────────────────────
+// ── Prefit cache key ─────────────────────────────────────────────────
 
 /// Identifies a single fittable projection configuration.
 ///
@@ -472,7 +477,7 @@ impl ProjectionFitKey {
     }
 }
 
-// ── Strategy, report, trial record ─────────────────────────────────────
+// ── Strategy, report, trial record ───────────────────────────────────────
 
 /// Which enumeration to use over the [`SearchSpace`].
 #[derive(Debug, Clone)]
@@ -579,7 +584,7 @@ impl TuneReport {
     }
 }
 
-// ── The tuner itself ───────────────────────────────────────────────────
+// ── The tuner itself ─────────────────────────────────────────────────
 
 /// Run the auto-tuner and return the best pipeline plus a report.
 ///
@@ -1106,7 +1111,7 @@ fn sample_categorical(rng: &mut SplitMix64, weights: &[f64]) -> usize {
     weights.len() - 1
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
