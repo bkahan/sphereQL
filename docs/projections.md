@@ -1,7 +1,7 @@
 # Projections
 
 sphereQL projects high-dimensional vectors (e.g. 384-d sentence-transformer
-output) down to 3D spherical coordinates via one of four families.
+output) down to 3D spherical coordinates via one of five families.
 
 ## The core pipeline
 
@@ -23,6 +23,13 @@ The **radial coordinate** is configurable via `RadialStrategy`:
 
 Linear PCA on the centered corpus. The 3 principal components become the
 3D coordinates. Fast, deterministic, zero hyperparameters.
+
+When built through `PipelineConfig` (`fit_projection_for_config`), the
+fit is **category-weighted**: each sample carries `w = 1/√|category|`,
+so a category of size m contributes √m covariance mass instead of m —
+square-root softening of imbalance that keeps singleton-heavy corpora
+(DBpedia-style) from collapsing to a large-category-only subspace.
+`PcaProjection::fit` remains the unweighted fit for direct callers.
 
 Strength: dense low-noise embeddings where variance tracks meaning.
 Failure mode: sparse corpora where most per-item variance comes from
@@ -62,6 +69,30 @@ Hyperparameters live in `LaplacianConfig` (`k_neighbors`,
 [`sphereql-embed/src/laplacian.rs`](../sphereql-embed/src/laplacian.rs)
 for construction details.
 
+## UMAP-on-sphere
+
+UMAP optimized directly on S². A kNN graph over the normalized
+embeddings supplies the attractive term (brute-force below 2000 items,
+RP-forest ANN above — see [`sphereql-embed/src/ann.rs`](../sphereql-embed/src/ann.rs)),
+uniformly sampled negatives supply repulsion, and each Adam step runs
+in the local tangent space `T_x S²` with retraction back to the sphere
+by normalization. PCA provides the warm start. An optional supervised
+term (`category_weight > 0`) pulls same-category points together and
+pushes different categories apart.
+
+Hyperparameters live in `UmapConfig` (`n_neighbors`, `n_epochs`,
+`category_weight`) and are first-class auto-tuner axes; the tuner also
+caches the kNN graph + warm start per `n_neighbors` so epoch/weight
+sweeps only pay for optimization. UMAP is non-parametric — unseen
+points are transformed by kNN-weighted interpolation over the fitted
+positions, so far-from-corpus queries degrade gracefully rather than
+extrapolating. See [`sphereql-embed/src/umap.rs`](../sphereql-embed/src/umap.rs).
+
+Strength: preserving local neighborhood structure at scale (O(N log N)
+graph construction with ANN). Failure mode: global distances between
+far-apart clusters are not meaningful, and transform quality depends on
+the fitted corpus covering the query region.
+
 ## Random projection
 
 The Johnson–Lindenstrauss baseline. Useful for ablations: if PCA doesn't
@@ -73,11 +104,17 @@ dimensions.
 Every projection reports an `explained_variance_ratio()` in `[0, 1]`.
 PCA returns the classical EVR; Kernel PCA returns its kernel-space
 EVR; Laplacian returns a compatible connectivity ratio (mean of the
-retained eigenvalues). All three feed the EVR-adaptive thresholds
-downstream — bridge threshold, `RoutingConfig::low_evr_threshold`, and
-confidence scoring all consult this value.
+retained eigenvalues); UMAP-on-sphere returns a neighbor-preservation
+proxy (fraction of attractive edges whose final spherical distance is
+below the median pairwise distance) — not a variance ratio, but bounded
+and comparable for tuner purposes. All of them feed the EVR-adaptive
+thresholds downstream — bridge threshold, `RoutingConfig::low_evr_threshold`,
+the high-EVR routing bypass in `default_nearest`, and confidence scoring
+all consult this value.
 
-**Typical values:** 2–5% EVR for transformer embeddings at 3 dimensions.
+**Typical values:** 2–5% EVR for transformer embeddings at 3 dimensions
+under PCA; supervised UMAP routinely reports much higher
+neighbor-preservation scores on category-structured corpora.
 This projection is inherently lossy; sphereQL compensates with **hybrid
 search** (angular candidates in projected space → cosine re-ranking in
 the original space) and, for low-EVR corpora,
@@ -89,4 +126,5 @@ spheres instead of the outer sphere.
 The right choice is corpus-dependent. See
 [empirical findings](empirical-findings.md) for measured scores across
 both built-in corpora, and [auto-tuning](auto-tuning.md) for how the
-tuner picks for you.
+tuner picks for you — including the PCA + UMAP
+`SearchSpace::large_corpus()` space used above 10k items.
