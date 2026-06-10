@@ -909,7 +909,11 @@ fn tpe_propose(
     let pk_b = hist_kind(&bad, &space.projection_kinds);
     let kind = space.projection_kinds[pick_idx(rng, &pk_g, &pk_b)];
 
-    // Kind-agnostic knobs.
+    // Kind-agnostic knobs: histograms deliberately pool ALL trials
+    // regardless of projection kind. Conditioning each knob on the
+    // sampled kind would shrink the histograms to near-uselessness at
+    // typical budgets — accepting cross-kind aliasing is the
+    // axis-parallel TPE simplification.
     let ndg_g = hist_usize(&good, &space.num_domain_groups, |c| {
         c.routing.num_domain_groups
     });
@@ -977,10 +981,8 @@ fn tpe_propose(
         if good_l.is_empty() || bad_l.is_empty() {
             // Not enough Laplacian trials on both sides — uniform fallback.
             cfg.laplacian = LaplacianConfig {
-                k_neighbors: space.laplacian_k_neighbors
-                    [(rng.next_u64() as usize) % space.laplacian_k_neighbors.len()],
-                active_threshold: space.laplacian_active_threshold
-                    [(rng.next_u64() as usize) % space.laplacian_active_threshold.len()],
+                k_neighbors: pick_uniform(rng, &space.laplacian_k_neighbors),
+                active_threshold: pick_uniform(rng, &space.laplacian_active_threshold),
             };
         } else {
             let k_g = hist_usize(&good_l, &space.laplacian_k_neighbors, |c| {
@@ -1015,12 +1017,9 @@ fn tpe_propose(
             .collect();
         if good_u.is_empty() || bad_u.is_empty() {
             cfg.umap = UmapConfig {
-                n_neighbors: space.umap_n_neighbors
-                    [(rng.next_u64() as usize) % space.umap_n_neighbors.len()],
-                n_epochs: space.umap_n_epochs
-                    [(rng.next_u64() as usize) % space.umap_n_epochs.len()],
-                category_weight: space.umap_category_weight
-                    [(rng.next_u64() as usize) % space.umap_category_weight.len()],
+                n_neighbors: pick_uniform(rng, &space.umap_n_neighbors),
+                n_epochs: pick_uniform(rng, &space.umap_n_epochs),
+                category_weight: pick_uniform(rng, &space.umap_category_weight),
                 ..base.umap.clone()
             };
         } else {
@@ -1100,13 +1099,17 @@ fn hist_f64(
 /// empty case would be a programmer error rather than a recoverable
 /// input.
 fn pick_uniform<T: Copy>(rng: &mut SplitMix64, vals: &[T]) -> T {
-    vals[(rng.next_u64() as usize) % vals.len()]
+    // next_f64 instead of next_u64 % len: the modulo form is biased
+    // toward low indices whenever len doesn't divide 2^64. The min
+    // guards the next_f64 == 1.0 edge.
+    vals[((rng.next_f64() * vals.len() as f64) as usize).min(vals.len() - 1)]
 }
 
 fn sample_categorical(rng: &mut SplitMix64, weights: &[f64]) -> usize {
     let total: f64 = weights.iter().sum();
     if total <= 0.0 || !total.is_finite() {
-        return (rng.next_u64() as usize) % weights.len().max(1);
+        let n = weights.len().max(1);
+        return ((rng.next_f64() * n as f64) as usize).min(n - 1);
     }
     let r = rng.next_f64() * total;
     let mut acc = 0.0;
@@ -1973,6 +1976,70 @@ mod tests {
             }
             other => panic!("expected InvalidSearchSpace, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn tpe_proposes_dominating_value_more_often_than_uniform() {
+        // Hand-crafted history: every top-gamma trial used
+        // num_domain_groups = 7, every bad trial used 3 or 5. The
+        // acquisition should propose 7 far more often than the uniform
+        // 1/3 baseline.
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            num_domain_groups: vec![3, 5, 7],
+            low_evr_threshold: vec![0.3],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let base = PipelineConfig::default();
+
+        let trial = |ndg: usize, score: f64| -> TrialRecord {
+            let mut config = base.clone();
+            config.projection_kind = ProjectionKind::Pca;
+            config.routing.num_domain_groups = ndg;
+            TrialRecord {
+                config,
+                score,
+                build_ms: 0,
+                components: Vec::new(),
+            }
+        };
+
+        let mut trials = Vec::new();
+        for i in 0..4 {
+            trials.push(trial(7, 0.9 + i as f64 * 0.01));
+        }
+        for i in 0..6 {
+            trials.push(trial(3, 0.1 + i as f64 * 0.01));
+            trials.push(trial(5, 0.1 + i as f64 * 0.005));
+        }
+
+        let mut rng = SplitMix64::new(42);
+        let n_proposals = 300;
+        let mut count_7 = 0usize;
+        for _ in 0..n_proposals {
+            let cfg = tpe_propose(&space, &base, &trials, 0.25, &mut rng);
+            if cfg.routing.num_domain_groups == 7 {
+                count_7 += 1;
+            }
+        }
+
+        // Uniform would land near 100/300. The good/bad ratio for 7 puts
+        // its sampling probability above 0.9, so 180 is a comfortable
+        // margin that still fails if the acquisition stops conditioning
+        // on the split.
+        assert!(
+            count_7 > 180,
+            "dominating value proposed only {count_7}/{n_proposals} times (uniform ≈ {})",
+            n_proposals / 3
+        );
     }
 
     #[test]

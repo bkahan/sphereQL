@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use sphereql_core::*;
 use sphereql_index::SpatialItem;
 
@@ -223,6 +225,16 @@ pub struct ExportedPoint {
     pub intensity: f64,
 }
 
+/// Per-item projected positions and category indices shared by the
+/// geometry metrics ([`ClusterSilhouette`](crate::quality_metric::ClusterSilhouette),
+/// [`GraphModularity`](crate::quality_metric::GraphModularity)). Built
+/// lazily once per pipeline — unlike [`SphereQLPipeline::exported_points`],
+/// which clones every id and category string per call.
+pub(crate) struct MetricPoints {
+    pub(crate) positions: Vec<SphericalPoint>,
+    pub(crate) category_indices: Vec<Option<usize>>,
+}
+
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
 /// Outer-projection EVR at or above which [`SphereQLPipeline::default_nearest`]
@@ -259,6 +271,11 @@ pub struct SphereQLPipeline {
     /// full-dimensional similarity (e.g., priming, concept extraction).
     /// Only populated when the `retain-embeddings` feature is active.
     raw_embeddings: Option<Vec<Vec<f64>>>,
+    /// Lazily-built positions + category indices for the geometry
+    /// metrics. Safe to cache: positions and categories are fixed at
+    /// construction (the only `&mut self` method is
+    /// [`Self::set_quality_config`], which touches neither).
+    metric_points: OnceLock<MetricPoints>,
 }
 
 impl SphereQLPipeline {
@@ -465,6 +482,7 @@ impl SphereQLPipeline {
             projection_warnings,
             config,
             raw_embeddings: None,
+            metric_points: OnceLock::new(),
         })
     }
 
@@ -743,6 +761,34 @@ impl SphereQLPipeline {
                 }
             })
             .collect()
+    }
+
+    /// Cached per-item positions and category indices for the geometry
+    /// metrics. Positions come from the same per-item index records as
+    /// [`Self::exported_points`] (with the same `(0, 0, 0)` fallback for
+    /// missing items), so the two views always agree.
+    pub(crate) fn metric_points(&self) -> &MetricPoints {
+        self.metric_points.get_or_init(|| {
+            let positions = self
+                .ids
+                .iter()
+                .map(|id| {
+                    self.index
+                        .get(id)
+                        .map(|it| *it.position())
+                        .unwrap_or_else(|| SphericalPoint::new_unchecked(0.0, 0.0, 0.0))
+                })
+                .collect();
+            let category_indices = self
+                .categories
+                .iter()
+                .map(|c| self.category_layer.name_to_index.get(c).copied())
+                .collect();
+            MetricPoints {
+                positions,
+                category_indices,
+            }
+        })
     }
 
     /// The active projection's explained-variance-ratio-equivalent

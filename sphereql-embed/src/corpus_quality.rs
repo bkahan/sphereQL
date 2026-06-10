@@ -163,6 +163,10 @@ impl QualityMetric for CorpusQuality {
     }
 
     fn score(&self, pipeline: &SphereQLPipeline) -> f64 {
+        self.score_with_components(pipeline).0
+    }
+
+    fn score_with_components(&self, pipeline: &SphereQLPipeline) -> (f64, Vec<(String, f64, f64)>) {
         let evr = pipeline.explained_variance_ratio().clamp(0.0, 1.0);
         let bridge_coherence = compute_bridge_coherence(pipeline);
         let curvature_health = compute_curvature_health(pipeline);
@@ -188,7 +192,28 @@ impl QualityMetric for CorpusQuality {
                 composite,
             });
         }
-        composite
+
+        // Same shape as CompositeMetric's breakdown: weights normalized
+        // to sum to 1, so sum(w * s) recomposes the score.
+        let components = vec![
+            ("evr".to_string(), self.weights.w_evr / total, evr),
+            (
+                "bridge_coherence".to_string(),
+                self.weights.w_bridge / total,
+                bridge_coherence,
+            ),
+            (
+                "curvature_health".to_string(),
+                self.weights.w_curvature / total,
+                curvature_health,
+            ),
+            (
+                "category_balance".to_string(),
+                self.weights.w_balance / total,
+                category_balance,
+            ),
+        ];
+        (composite, components)
     }
 }
 
@@ -347,6 +372,29 @@ mod tests {
         assert!((0.0..=1.0).contains(&bd.curvature_health));
         assert!((0.0..=1.0).contains(&bd.category_balance));
         assert!((bd.composite - s).abs() < 1e-12);
+    }
+
+    #[test]
+    fn score_with_components_reports_four_subscores() {
+        let pipeline = synthetic_pipeline();
+        let m = CorpusQuality::default();
+        let (total, components) = m.score_with_components(&pipeline);
+        assert_eq!(components.len(), 4);
+        let names: Vec<&str> = components.iter().map(|(n, _, _)| n.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "evr",
+                "bridge_coherence",
+                "curvature_health",
+                "category_balance"
+            ]
+        );
+        let weight_sum: f64 = components.iter().map(|(_, w, _)| w).sum();
+        assert!((weight_sum - 1.0).abs() < 1e-12);
+        let recomposed: f64 = components.iter().map(|(_, w, s)| w * s).sum();
+        assert!((total - recomposed.clamp(0.0, 1.0)).abs() < 1e-12);
+        assert!((total - m.score(&pipeline)).abs() < 1e-12);
     }
 
     #[test]

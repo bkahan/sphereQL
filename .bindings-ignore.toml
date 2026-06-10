@@ -238,10 +238,6 @@ reason = "internal SpatialQuality field"
 name = "OverlapReport"
 reason = "internal; aggregated into run_navigator report"
 
-[[exempt]]
-name = "PairIntersection"
-reason = "internal SpatialQuality field"
-
 # ── Concept-graph internals (aggregated into ConceptPath / DetectGlobs) ──
 
 [[exempt]]

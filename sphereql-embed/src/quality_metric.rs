@@ -214,8 +214,8 @@ impl QualityMetric for ClusterSilhouette {
             return 1.0;
         }
 
-        let exported = pipeline.exported_points();
-        if exported.len() < 2 {
+        let points = pipeline.metric_points();
+        if points.positions.len() < 2 {
             return 1.0;
         }
 
@@ -230,14 +230,18 @@ impl QualityMetric for ClusterSilhouette {
         let mut silhouette_sum = 0.0;
         let mut scored_points = 0usize;
 
-        for ep in &exported {
-            let Some(&ci) = layer.name_to_index.get(&ep.category) else {
+        for (sp, cat) in points.positions.iter().zip(&points.category_indices) {
+            let Some(ci) = *cat else {
                 continue;
             };
-            let sp = SphericalPoint::new_unchecked(ep.r, ep.theta, ep.phi);
 
             // a(i): distance to own category centroid (simplified silhouette).
-            let a = angular_distance(&sp, &centroids[ci]);
+            let a = angular_distance(sp, &centroids[ci]);
+            // Items coinciding with their centroid would contribute a
+            // guaranteed s = 1.0 regardless of separation — skip them.
+            if a < 1e-12 {
+                continue;
+            }
 
             // b(i): minimum distance to any other category's centroid.
             let mut b = f64::INFINITY;
@@ -245,7 +249,7 @@ impl QualityMetric for ClusterSilhouette {
                 if j == ci {
                     continue;
                 }
-                let d = angular_distance(&sp, centroid);
+                let d = angular_distance(sp, centroid);
                 if d < b {
                     b = d;
                 }
@@ -382,24 +386,15 @@ impl QualityMetric for GraphModularity {
             return 1.0;
         }
 
-        let exported = pipeline.exported_points();
-        let n = exported.len();
+        let points = pipeline.metric_points();
+        let n = points.positions.len();
         if n < 2 {
             return 1.0;
         }
-
-        // Positions + per-item category index.
-        let positions: Vec<SphericalPoint> = exported
-            .iter()
-            .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
-            .collect();
-        let item_cats: Vec<Option<usize>> = exported
-            .iter()
-            .map(|p| layer.name_to_index.get(&p.category).copied())
-            .collect();
+        let item_cats = &points.category_indices;
 
         let k = self.k.min(n - 1).max(1);
-        let edges = knn_edges(&positions, k, n < MODULARITY_ANN_THRESHOLD);
+        let edges = knn_edges(&points.positions, k, n < MODULARITY_ANN_THRESHOLD);
 
         let m = edges.len() as f64;
         if m < 1.0 {
