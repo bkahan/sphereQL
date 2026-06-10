@@ -200,13 +200,19 @@ impl AnnIndex {
     /// `knn[i]` = indices of the k nearest neighbors of item `i`
     /// (excluding self), sorted by descending similarity.
     pub fn knn_graph(&self, k: usize) -> Vec<Vec<usize>> {
+        self.knn_graph_with_sims(k)
+            .into_iter()
+            .map(|row| row.into_iter().map(|(j, _)| j).collect())
+            .collect()
+    }
+
+    /// Like [`Self::knn_graph`], but keeps each neighbor's cosine
+    /// similarity: `graph[i]` = `(index, similarity)` pairs for the k
+    /// nearest neighbors of item `i` (excluding self), sorted by
+    /// descending similarity.
+    pub fn knn_graph_with_sims(&self, k: usize) -> Vec<Vec<(usize, f64)>> {
         (0..self.normalized.len())
-            .map(|i| {
-                self.query_by_index(i, k)
-                    .into_iter()
-                    .map(|(j, _)| j)
-                    .collect()
-            })
+            .map(|i| self.query_by_index(i, k))
             .collect()
     }
 
@@ -355,6 +361,25 @@ mod tests {
         assert_eq!(knn.len(), 50);
         for neighbors in &knn {
             assert_eq!(neighbors.len(), 5);
+        }
+    }
+
+    #[test]
+    fn knn_graph_with_sims_matches_knn_graph() {
+        let data = random_vectors(50, 16, 99);
+        let index = AnnIndex::build(&data, &AnnConfig::default());
+        let plain = index.knn_graph(5);
+        let with_sims = index.knn_graph_with_sims(5);
+        assert_eq!(plain.len(), with_sims.len());
+        for (row, srow) in plain.iter().zip(&with_sims) {
+            assert_eq!(row.len(), srow.len());
+            for (j, (sj, sim)) in row.iter().zip(srow) {
+                assert_eq!(j, sj);
+                assert!(sim.is_finite() && *sim <= 1.0 + 1e-12);
+            }
+            for w in srow.windows(2) {
+                assert!(w[0].1 >= w[1].1);
+            }
         }
     }
 

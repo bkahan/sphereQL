@@ -354,7 +354,13 @@ const SPHEREQL_BASELINE: &[(&str, f64)] = &[
     ("pca", 0.55),
     ("kernel_pca", 0.54),
     ("laplacian", 1.02),
-    ("umap_sphere", 0.51),
+    // Loosened 0.51 → 0.57 when fuzzy simplicial set edge weights
+    // landed in `umap.rs`: low-weight edges to barely-related sparse
+    // neighbors no longer pull at full strength, which trades a little
+    // global intra/inter compactness (0.46 → 0.5142 here) for honest
+    // local scaling. kNN recall on this corpus stayed at parity
+    // (0.4169 weighted vs 0.4261 unweighted).
+    ("umap_sphere", 0.57),
 ];
 
 /// Relative-spread guard: no projection's cluster score may exceed

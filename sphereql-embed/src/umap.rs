@@ -9,6 +9,18 @@
 //! categories add a third term that pulls same-category points together
 //! and pushes different-category points apart.
 //!
+//! Attractive edges carry the canonical fuzzy simplicial set weights:
+//! per-point local distance scaling (`rho_i` = nearest-neighbor distance,
+//! `sigma_i` solved so membership strengths sum to `log2 k`) followed by
+//! fuzzy-union symmetrization, so a dense cluster's 15th neighbor pulls
+//! hard while a sparse region's 15th neighbor barely pulls at all.
+//! The `epochs_per_sample` machinery is intentionally not implemented:
+//! negatives stay uniformly drawn at `negative_sample_rate` per
+//! attractive edge, and both the attractive gradient and the edge's
+//! negative-draw gradients are scaled by the edge weight — equivalent in
+//! expectation to canonical UMAP, where an edge fires (and draws its
+//! negatives) proportionally to its weight.
+//!
 //! `project()` on a fitted training embedding returns its exact
 //! optimized position (the Adam output, not an interpolation). For
 //! genuinely unseen embeddings it uses a kNN-weighted slerp-ish
@@ -75,6 +87,12 @@ impl Default for UmapConfig {
 pub struct UmapGraph {
     /// kNN adjacency list: `knn[i]` = indices of k nearest neighbors of item i.
     pub(crate) knn: Vec<Vec<usize>>,
+    /// Fuzzy simplicial set edge weights aligned with `knn`:
+    /// `weights[i][idx]` is the symmetrized (fuzzy-union) membership
+    /// strength of edge `i → knn[i][idx]`, in `[0, 1]`. Like `knn`, this
+    /// depends only on the data and `n_neighbors`, so the tuner's
+    /// per-`n_neighbors` graph cache contract is unchanged.
+    pub(crate) weights: Vec<Vec<f64>>,
     /// L2-normalized embeddings used for graph construction.
     /// Retained for the Adam optimizer's similarity lookups.
     pub(crate) normalized: Vec<Vec<f64>>,
@@ -128,11 +146,13 @@ impl UmapGraph {
 
         let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
         let k = n_neighbors.min(n - 1).max(1);
-        let (knn, ann) = build_knn_graph(&normalized, k);
+        let (knn, dists, ann) = build_knn_graph(&normalized, k);
+        let weights = fuzzy_simplicial_weights(&knn, &dists);
         let warm_start = pca_warm_start(embeddings, &normalized)?;
 
         Ok(Self {
             knn,
+            weights,
             normalized,
             warm_start,
             dim,
@@ -234,6 +254,30 @@ impl UmapSphereProjection {
             (buckets, bucket_of)
         });
 
+        // Effective weight per directed edge. The loop below walks
+        // directed edges, so a mutual kNN pair — present in both
+        // adjacency rows with the same symmetrized weight — would fire
+        // twice; halving those edges keeps every pair's total
+        // contribution at w_sym.
+        let attract: Vec<Vec<f64>> = graph
+            .knn
+            .iter()
+            .enumerate()
+            .map(|(i, neighbors)| {
+                neighbors
+                    .iter()
+                    .zip(&graph.weights[i])
+                    .map(|(&j, &w)| {
+                        if graph.knn[j].contains(&i) {
+                            0.5 * w
+                        } else {
+                            w
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
         // Adam state, three components per point.
         let mut m = vec![[0.0f64; 3]; n];
         let mut v = vec![[0.0f64; 3]; n];
@@ -250,12 +294,18 @@ impl UmapSphereProjection {
             // contributes its own attractive force AND draws
             // `negative_sample_rate` repulsive samples for the source
             // endpoint (UMAP's standard per-edge negative sampling, not
-            // per-point).
+            // per-point). Both gradients carry the edge's fuzzy weight:
+            // canonical UMAP fires an edge — and that edge's negative
+            // draws — proportionally to its weight, so scaling only the
+            // attraction would tilt the global balance toward repulsion
+            // by ~1/mean(w) (measured: kNN recall halved on the
+            // 775-concept benchmark corpus).
             for (i, neighbors) in graph.knn.iter().enumerate() {
-                for &j in neighbors {
+                for (idx, &j) in neighbors.iter().enumerate() {
+                    let w = attract[i][idx];
                     let (gi, gj) = attractive_grad(&points[i], &points[j]);
-                    add3(&mut grads[i], &gi);
-                    add3(&mut grads[j], &gj);
+                    add3_scaled(&mut grads[i], &gi, w);
+                    add3_scaled(&mut grads[j], &gj, w);
 
                     for _ in 0..config.negative_sample_rate {
                         let nj = (rng.next_u64() as usize) % n;
@@ -263,8 +313,8 @@ impl UmapSphereProjection {
                             continue;
                         }
                         let (gi_r, gj_r) = repulsive_grad(&points[i], &points[nj]);
-                        add3(&mut grads[i], &gi_r);
-                        add3(&mut grads[nj], &gj_r);
+                        add3_scaled(&mut grads[i], &gi_r, w);
+                        add3_scaled(&mut grads[nj], &gj_r, w);
                     }
                 }
             }
@@ -551,12 +601,6 @@ fn project_to_tangent(x: &[f64; 3], g: &[f64; 3]) -> [f64; 3] {
     ]
 }
 
-fn add3(a: &mut [f64; 3], b: &[f64; 3]) {
-    a[0] += b[0];
-    a[1] += b[1];
-    a[2] += b[2];
-}
-
 fn add3_scaled(a: &mut [f64; 3], b: &[f64; 3], s: f64) {
     a[0] += s * b[0];
     a[1] += s * b[1];
@@ -576,6 +620,20 @@ const MAX_CROSS_CATEGORY_DRAWS: usize = 8;
 /// the all-pairs O(N²) cost dominates.
 const ANN_BRUTE_FORCE_THRESHOLD: usize = 2000;
 
+/// Iterations for the per-point sigma binary search. 64 halvings from
+/// the initial bracket pin sigma to f64 resolution.
+const SIGMA_SEARCH_ITERS: usize = 64;
+
+/// Early-exit tolerance on `|sum - log2(k)|` in the sigma search
+/// (umap-learn's SMOOTH_K_TOLERANCE).
+const SMOOTH_K_TOLERANCE: f64 = 1e-5;
+
+/// Sigma floor as a fraction of the point's mean neighbor distance
+/// (umap-learn's MIN_K_DIST_SCALE), with [`SIGMA_ABS_FLOOR`] as the
+/// absolute backstop for duplicate-heavy corpora where the mean is 0.
+const MIN_K_DIST_SCALE: f64 = 1e-3;
+const SIGMA_ABS_FLOOR: f64 = 1e-8;
+
 /// FNV-1a over the bit patterns of the components. Exact bit equality
 /// is the right key: training embeddings re-projected through the
 /// pipeline pass through the same deterministic `Embedding::normalized`,
@@ -589,20 +647,44 @@ fn hash_normalized(v: &[f64]) -> u64 {
     h
 }
 
-fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> (Vec<Vec<usize>>, Option<Arc<AnnIndex>>) {
+/// Cosine distance from a similarity on L2-normalized vectors. The
+/// `max(0.0)` clamps fp overshoot past sim = 1 for (near-)duplicates.
+fn cosine_distance(sim: f64) -> f64 {
+    (1.0 - sim).max(0.0)
+}
+
+/// Split `(index, similarity)` rows into the adjacency list plus a
+/// parallel cosine-distance list for the fuzzy weight calibration.
+fn split_knn_rows(rows: Vec<Vec<(usize, f64)>>) -> (Vec<Vec<usize>>, Vec<Vec<f64>>) {
+    let mut knn = Vec::with_capacity(rows.len());
+    let mut dists = Vec::with_capacity(rows.len());
+    for row in rows {
+        knn.push(row.iter().map(|&(j, _)| j).collect());
+        dists.push(row.iter().map(|&(_, s)| cosine_distance(s)).collect());
+    }
+    (knn, dists)
+}
+
+#[allow(clippy::type_complexity)]
+fn build_knn_graph(
+    normalized: &[Vec<f64>],
+    k: usize,
+) -> (Vec<Vec<usize>>, Vec<Vec<f64>>, Option<Arc<AnnIndex>>) {
     let n = normalized.len();
     if n < ANN_BRUTE_FORCE_THRESHOLD {
-        let knn = (0..n)
+        let rows: Vec<Vec<(usize, f64)>> = (0..n)
             .map(|i| {
                 let mut sims: Vec<(usize, f64)> = (0..n)
                     .filter(|&j| j != i)
                     .map(|j| (j, dot(&normalized[i], &normalized[j])))
                     .collect();
                 sims.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
-                sims.into_iter().take(k).map(|(j, _)| j).collect()
+                sims.truncate(k);
+                sims
             })
             .collect();
-        return (knn, None);
+        let (knn, dists) = split_knn_rows(rows);
+        return (knn, dists, None);
     }
 
     // AnnConfig defaults (n_trees=8, max_leaf_size=40) give >95% recall
@@ -611,8 +693,90 @@ fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> (Vec<Vec<usize>>, Optio
         normalized.to_vec(),
         &AnnConfig::default(),
     ));
-    let knn = index.knn_graph(k);
-    (knn, Some(index))
+    let (knn, dists) = split_knn_rows(index.knn_graph_with_sims(k));
+    (knn, dists, Some(index))
+}
+
+/// Smooth-kNN calibration for one point's neighbor distances. Returns
+/// `(rho, sigma)`: `rho` is the nearest-neighbor distance
+/// (local_connectivity = 1, so each point's closest edge always gets
+/// weight 1.0 — the connectivity floor) and `sigma` is the bandwidth
+/// found by binary search so that
+/// `sum_j exp(-max(0, d_j - rho) / sigma) = log2(k)`.
+///
+/// On (near-)tie distances — duplicate-heavy corpora — the sum sticks at
+/// k for every sigma and the search collapses toward zero; the
+/// MIN_K_DIST_SCALE-style floor keeps sigma positive so the weights stay
+/// finite (they all come out ≈ 1.0, the right answer for duplicates).
+fn smooth_knn_calibrate(dists: &[f64]) -> (f64, f64) {
+    let rho = dists.iter().copied().fold(f64::INFINITY, f64::min);
+    let target = (dists.len() as f64).log2();
+    let mut lo = 0.0f64;
+    let mut hi = f64::INFINITY;
+    let mut sigma = 1.0f64;
+    for _ in 0..SIGMA_SEARCH_ITERS {
+        let sum: f64 = dists
+            .iter()
+            .map(|&d| (-((d - rho).max(0.0)) / sigma).exp())
+            .sum();
+        if (sum - target).abs() < SMOOTH_K_TOLERANCE {
+            break;
+        }
+        if sum > target {
+            hi = sigma;
+        } else {
+            lo = sigma;
+        }
+        sigma = if hi.is_finite() {
+            (lo + hi) / 2.0
+        } else {
+            sigma * 2.0
+        };
+    }
+    let mean = dists.iter().sum::<f64>() / dists.len() as f64;
+    (
+        rho,
+        sigma.max((MIN_K_DIST_SCALE * mean).max(SIGMA_ABS_FLOOR)),
+    )
+}
+
+/// Directed membership strengths per point, then fuzzy-union
+/// symmetrization `w = a + b - a·b` (reverse weight 0 when `j` does not
+/// list `i`). Each mutual pair appears in both adjacency rows carrying
+/// the same symmetrized weight; the optimizer halves those edges so a
+/// pair's total contribution is `w` regardless of mutuality.
+fn fuzzy_simplicial_weights(knn: &[Vec<usize>], dists: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let directed: Vec<Vec<f64>> = dists
+        .iter()
+        .map(|d| {
+            if d.is_empty() {
+                return Vec::new();
+            }
+            let (rho, sigma) = smooth_knn_calibrate(d);
+            d.iter()
+                .map(|&x| (-((x - rho).max(0.0)) / sigma).exp())
+                .collect()
+        })
+        .collect();
+
+    knn.iter()
+        .enumerate()
+        .map(|(i, neighbors)| {
+            neighbors
+                .iter()
+                .enumerate()
+                .map(|(idx, &j)| {
+                    let a = directed[i][idx];
+                    let b = knn[j]
+                        .iter()
+                        .position(|&x| x == i)
+                        .map_or(0.0, |p| directed[j][p]);
+                    // min() guards fp overshoot past 1 in the union.
+                    (a + b - a * b).min(1.0)
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn pca_warm_start(
@@ -976,6 +1140,110 @@ mod tests {
         } else {
             total / count as f64
         }
+    }
+
+    #[test]
+    fn sigma_calibration_hits_log2_k() {
+        let dists = [0.1, 0.2, 0.3, 0.4, 0.5];
+        let (rho, sigma) = smooth_knn_calibrate(&dists);
+        assert_eq!(rho, 0.1);
+        let sum: f64 = dists
+            .iter()
+            .map(|&d| (-((d - rho).max(0.0)) / sigma).exp())
+            .sum();
+        let target = 5.0f64.log2();
+        assert!((sum - target).abs() < 1e-4, "sum={sum}, target={target}");
+    }
+
+    #[test]
+    fn nearest_neighbor_weight_is_one() {
+        let corpus = cluster_corpus();
+        let graph = UmapGraph::build(&corpus, 5).unwrap();
+        for (i, neighbors) in graph.knn.iter().enumerate() {
+            assert!(!neighbors.is_empty());
+            // Rows are sorted by descending similarity, so index 0 is
+            // the nearest neighbor — its distance equals rho, and the
+            // fuzzy union preserves a directed weight of 1.
+            let w = graph.weights[i][0];
+            assert!((w - 1.0).abs() < 1e-9, "point {i}: nearest weight {w}");
+        }
+    }
+
+    #[test]
+    fn duplicate_heavy_corpus_fits_with_finite_weights() {
+        // Six exact copies of the first cluster point on top of the
+        // normal corpus — rho = 0 and all-tie neighbor distances push
+        // the sigma search to its floor.
+        let mut corpus = vec![emb(&[1.0, 0.5, 0.0, 0.0, 0.0, 0.0]); 6];
+        corpus.extend(cluster_corpus());
+
+        let graph = UmapGraph::build(&corpus, 5).unwrap();
+        for row in &graph.weights {
+            for &w in row {
+                assert!(w.is_finite() && (0.0..=1.0).contains(&w), "weight {w}");
+            }
+        }
+
+        let proj = UmapSphereProjection::fit_from_graph(
+            &graph,
+            None,
+            RadialStrategy::Fixed(1.0),
+            UmapConfig {
+                n_neighbors: 5,
+                n_epochs: 30,
+                ..UmapConfig::default()
+            },
+        )
+        .unwrap();
+        for p in &proj.fitted_points {
+            assert!(p.iter().all(|c| c.is_finite()));
+        }
+        assert!(proj.explained_variance_ratio().is_finite());
+    }
+
+    #[test]
+    fn dense_cluster_edges_outweigh_diffuse_cluster_edges() {
+        // A duplicate-tight cluster is the density extreme: every
+        // neighbor sits at rho, so calibration leaves every intra edge
+        // at weight ~1. The diffuse cluster's spread distances calibrate
+        // sigma instead, so its directed weights sum to log2(k) and the
+        // non-nearest edges decay below 1 — the local scaling an
+        // unweighted graph lacked.
+        let mut corpus = vec![emb(&[1.0, 0.2, 0.0, 0.0, 0.0, 0.0]); 8];
+        for i in 0..8 {
+            let mut v = vec![0.0; 6];
+            v[3] = 1.0;
+            v[4] = 0.15 * i as f64;
+            corpus.push(emb(&v));
+        }
+        let graph = UmapGraph::build(&corpus, 5).unwrap();
+
+        let mean_intra = |range: std::ops::Range<usize>| {
+            let mut total = 0.0;
+            let mut count = 0usize;
+            for i in range.clone() {
+                for (idx, &j) in graph.knn[i].iter().enumerate() {
+                    if range.contains(&j) {
+                        total += graph.weights[i][idx];
+                        count += 1;
+                    }
+                }
+            }
+            assert!(count > 0, "no intra-cluster edges in {range:?}");
+            total / count as f64
+        };
+
+        let tight = mean_intra(0..8);
+        let diffuse = mean_intra(8..16);
+        assert!(
+            tight >= diffuse,
+            "tight mean weight {tight} < diffuse mean weight {diffuse}"
+        );
+        assert!(
+            tight > 0.99,
+            "duplicate-cluster edges should be ~1, got {tight}"
+        );
+        assert!(diffuse < 0.95, "diffuse edges should decay, got {diffuse}");
     }
 
     #[test]
