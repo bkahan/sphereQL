@@ -6,6 +6,41 @@ versions.
 
 ## [Unreleased]
 
+### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)
+
+- **Training items keep their optimized positions** — `project()` on a
+  fitted corpus embedding returns the exact Adam-optimized position
+  (certainty 1.0) via a bit-pattern fast path instead of re-deriving a
+  softmax kNN average. Pipeline builds on UMAP's own corpus drop from
+  O(N²·d) to O(N·d), and the tuner now scores the actual embedding
+  rather than a kNN-smeared copy. Unseen embeddings transform through
+  the RP-forest index the graph build already constructs (retained on
+  `UmapGraph` at ≥ 2000 items).
+- **EVR proxy replaced with kNN recall** — `explained_variance_ratio`
+  now reports trustworthiness-style neighborhood preservation (mean
+  overlap between spherical and original-space kNN sets) instead of
+  the saturating fraction-below-median-random-distance proxy. UMAP
+  records stored under the old proxy are not score-comparable.
+- **Fuzzy simplicial edge weights** (canonical local distance scaling)
+  — per-point ρ/σ calibration (`Σ exp(−(d−ρ)/σ) = log₂ k`, nearest
+  edge weight 1.0), fuzzy-union symmetrization, with both attraction
+  and per-edge negative draws scaled by the weight (matching
+  `epochs_per_sample` in expectation; scaling attraction alone
+  measurably halved recall).
+- **Tunable `min_dist`** (default 0.1) — deterministic least-squares
+  (a, b) curve fit, canonical generalized gradients (pinned to the old
+  forms at a = b = 1), new `umap_min_dist` tuner axis, and a
+  `ProjectionFitKey` component so prefit projections never collide
+  across min_dist values. The 775-concept benchmark improved under
+  the new default.
+- **Stratified category term** — one same-category cohesion pair and
+  one different-category separation pair per point per epoch; the old
+  single uniform draw was ~97% repulsion at realistic category counts.
+- **`warm_start_anchor`** (opt-in, default 0.0 = bit-identical no-op)
+  — weak pull toward each point's PCA warm-start position so
+  disconnected kNN components on sparse corpora keep their global
+  arrangement instead of drifting under unopposed repulsion.
+
 ### Changed — ML-framework audit (tuner, metalearning, controller, pipeline)
 
 - **`auto_tune` warm-starts from the meta-model** — Random and Bayesian
