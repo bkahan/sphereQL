@@ -9,13 +9,19 @@
 //! categories add a third term that pulls same-category points together
 //! and pushes different-category points apart.
 //!
-//! `project()` for unseen embeddings uses a kNN-weighted slerp-ish
+//! `project()` on a fitted training embedding returns its exact
+//! optimized position (the Adam output, not an interpolation). For
+//! genuinely unseen embeddings it uses a kNN-weighted slerp-ish
 //! average over the fitted positions — UMAP itself is non-parametric, so
 //! transforms hand new points to their nearest fitted neighbors and
 //! interpolate on the sphere.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use sphereql_core::SphericalPoint;
 
+use crate::ann::{AnnConfig, AnnIndex};
 use crate::projection::{
     Projection, ProjectionError, SplitMix64, dot, normalize_vec, project_xyz_to_spherical,
 };
@@ -74,6 +80,12 @@ pub struct UmapGraph {
     pub(crate) dim: usize,
     /// Number of neighbors.
     pub(crate) k: usize,
+    /// ANN index retained from kNN-graph construction (only built when
+    /// `n >= ANN_BRUTE_FORCE_THRESHOLD`). Depends solely on `normalized`
+    /// and the default [`AnnConfig`] — never on `n_neighbors` — so the
+    /// tuner's per-`n_neighbors` graph cache stays sound. Carried
+    /// through to the projection for transform-time neighbor queries.
+    pub(crate) ann: Option<Arc<AnnIndex>>,
 }
 
 impl UmapGraph {
@@ -112,7 +124,7 @@ impl UmapGraph {
 
         let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
         let k = n_neighbors.min(n - 1).max(1);
-        let knn = build_knn_graph(&normalized, k);
+        let (knn, ann) = build_knn_graph(&normalized, k);
         let warm_start = pca_warm_start(embeddings, &normalized)?;
 
         Ok(Self {
@@ -121,6 +133,7 @@ impl UmapGraph {
             warm_start,
             dim,
             k,
+            ann,
         })
     }
 }
@@ -134,6 +147,19 @@ pub struct UmapSphereProjection {
     /// L2-normalized copies of the original embeddings, kept for
     /// kNN lookup at transform time (UMAP is non-parametric).
     fitted_normalized: Vec<Vec<f64>>,
+    /// Exact-match lookup: hash of the normalized embedding's bit
+    /// pattern → fitted indices with that hash (verified by full vector
+    /// comparison on hit, so hash collisions are safe). Projecting a
+    /// training embedding returns its exact fitted position with
+    /// certainty 1.0 — the optimizer computed that position, so it is
+    /// known, not interpolated. Exact duplicates map to the first
+    /// fitted index: their post-optimization positions may differ
+    /// slightly, and first-index keeps the choice deterministic.
+    exact_lookup: HashMap<u64, Vec<usize>>,
+    /// ANN index over `fitted_normalized` for transform-time neighbor
+    /// queries when the corpus is at or above
+    /// `ANN_BRUTE_FORCE_THRESHOLD`; `None` means brute force.
+    ann: Option<Arc<AnnIndex>>,
     dim: usize,
     radial: RadialStrategy,
     n_neighbors: usize,
@@ -272,9 +298,19 @@ impl UmapSphereProjection {
 
         let quality = neighbor_preservation_score(&points, &graph.knn);
 
+        let mut exact_lookup: HashMap<u64, Vec<usize>> = HashMap::new();
+        for (i, vec) in graph.normalized.iter().enumerate() {
+            let bucket = exact_lookup.entry(hash_normalized(vec)).or_default();
+            if !bucket.iter().any(|&j| graph.normalized[j] == *vec) {
+                bucket.push(i);
+            }
+        }
+
         Ok(Self {
             fitted_points: points,
             fitted_normalized: graph.normalized.clone(),
+            exact_lookup,
+            ann: graph.ann.clone(),
             dim: graph.dim,
             radial,
             n_neighbors: graph.k,
@@ -312,6 +348,9 @@ impl UmapSphereProjection {
     /// (cosine similarity in the original space) and return their
     /// indices with similarity weights.
     fn nearest_fitted(&self, normalized: &[f64]) -> Vec<(usize, f64)> {
+        if let Some(ann) = &self.ann {
+            return ann.query(normalized, self.n_neighbors);
+        }
         let mut sims: Vec<(usize, f64)> = self
             .fitted_normalized
             .iter()
@@ -323,8 +362,19 @@ impl UmapSphereProjection {
         sims
     }
 
+    fn exact_fitted(&self, normalized: &[f64]) -> Option<usize> {
+        self.exact_lookup
+            .get(&hash_normalized(normalized))?
+            .iter()
+            .copied()
+            .find(|&i| self.fitted_normalized[i] == normalized)
+    }
+
     fn project_xyz(&self, embedding: &Embedding) -> ([f64; 3], f64) {
         let normalized = embedding.normalized();
+        if let Some(idx) = self.exact_fitted(&normalized) {
+            return (self.fitted_points[idx], 1.0);
+        }
         let neighbors = self.nearest_fitted(&normalized);
 
         // Softmax over similarities to get a stable weighted average.
@@ -464,10 +514,23 @@ fn add3_scaled(a: &mut [f64; 3], b: &[f64; 3], s: f64) {
 /// the all-pairs O(N²) cost dominates.
 const ANN_BRUTE_FORCE_THRESHOLD: usize = 2000;
 
-fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> Vec<Vec<usize>> {
+/// FNV-1a over the bit patterns of the components. Exact bit equality
+/// is the right key: training embeddings re-projected through the
+/// pipeline pass through the same deterministic `Embedding::normalized`,
+/// so they reproduce identical bits.
+fn hash_normalized(v: &[f64]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    for &x in v {
+        h ^= x.to_bits();
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> (Vec<Vec<usize>>, Option<Arc<AnnIndex>>) {
     let n = normalized.len();
     if n < ANN_BRUTE_FORCE_THRESHOLD {
-        return (0..n)
+        let knn = (0..n)
             .map(|i| {
                 let mut sims: Vec<(usize, f64)> = (0..n)
                     .filter(|&j| j != i)
@@ -477,15 +540,17 @@ fn build_knn_graph(normalized: &[Vec<f64>], k: usize) -> Vec<Vec<usize>> {
                 sims.into_iter().take(k).map(|(j, _)| j).collect()
             })
             .collect();
+        return (knn, None);
     }
 
     // AnnConfig defaults (n_trees=8, max_leaf_size=40) give >95% recall
     // at N=500k for cosine kNN — the regime that drives this branch.
-    let index = crate::ann::AnnIndex::build_normalized(
+    let index = Arc::new(AnnIndex::build_normalized(
         normalized.to_vec(),
-        &crate::ann::AnnConfig::default(),
-    );
-    index.knn_graph(k)
+        &AnnConfig::default(),
+    ));
+    let knn = index.knn_graph(k);
+    (knn, Some(index))
 }
 
 fn pca_warm_start(
@@ -811,5 +876,109 @@ mod tests {
 
         assert!((0.0..=1.0).contains(&p1.explained_variance_ratio()));
         assert!((0.0..=1.0).contains(&p2.explained_variance_ratio()));
+    }
+
+    fn assert_projects_to_fitted(proj: &UmapSphereProjection, e: &Embedding, idx: usize) {
+        use sphereql_core::spherical_to_cartesian;
+
+        let pp = proj.project_rich(e);
+        assert_eq!(pp.certainty, 1.0, "exact match must report certainty 1.0");
+        let cart = spherical_to_cartesian(&pp.position);
+        let expected = proj.fitted_points[idx];
+        assert!((cart.x - expected[0]).abs() < 1e-12);
+        assert!((cart.y - expected[1]).abs() < 1e-12);
+        assert!((cart.z - expected[2]).abs() < 1e-12);
+    }
+
+    #[test]
+    fn projecting_training_embedding_returns_exact_fitted_position() {
+        let corpus = cluster_corpus();
+        let proj = UmapSphereProjection::fit(
+            &corpus,
+            None,
+            RadialStrategy::Fixed(1.0),
+            UmapConfig::default(),
+        )
+        .unwrap();
+
+        // Default n_neighbors=15 on a 16-point corpus means the old
+        // interpolation path averaged nearly every fitted point, so a
+        // smeared result would be visibly off the per-point positions
+        // checked here.
+        for (i, e) in corpus.iter().enumerate() {
+            assert_projects_to_fitted(&proj, e, i);
+        }
+    }
+
+    #[test]
+    fn duplicate_training_embedding_maps_to_first_fitted_index() {
+        let mut corpus = cluster_corpus();
+        corpus.push(corpus[0].clone());
+        let proj = UmapSphereProjection::fit(
+            &corpus,
+            None,
+            RadialStrategy::Fixed(1.0),
+            UmapConfig::default(),
+        )
+        .unwrap();
+
+        assert_projects_to_fitted(&proj, &corpus[0], 0);
+        assert_projects_to_fitted(&proj, &corpus[16], 0);
+
+        let a = proj.project_rich(&corpus[0]);
+        let b = proj.project_rich(&corpus[16]);
+        assert_eq!(a.position.theta, b.position.theta);
+        assert_eq!(a.position.phi, b.position.phi);
+        assert_eq!(a.position.r, b.position.r);
+    }
+
+    #[test]
+    fn unseen_embedding_interpolates_on_sphere() {
+        let corpus = cluster_corpus();
+        let proj = UmapSphereProjection::fit(
+            &corpus,
+            None,
+            RadialStrategy::Fixed(1.0),
+            UmapConfig::default(),
+        )
+        .unwrap();
+
+        let unseen = emb(&[1.0, 0.55, 0.02, 0.0, 0.0, 0.0]);
+        let pp = proj.project_rich(&unseen);
+        assert!(pp.certainty > 0.0 && pp.certainty < 1.0);
+        assert!(pp.position.theta.is_finite());
+        assert!(pp.position.phi.is_finite());
+        assert!((pp.position.r - 1.0).abs() < 1e-12);
+        assert!(pp.projection_magnitude > 0.0 && pp.projection_magnitude <= 1.0 + 1e-12);
+    }
+
+    #[test]
+    fn ann_backed_transform_above_threshold() {
+        let mut rng = SplitMix64::new(0x5EED);
+        let mut random_emb = |dim: usize| {
+            let vals: Vec<f64> = (0..dim).map(|_| rng.normal()).collect();
+            emb(&vals)
+        };
+        let corpus: Vec<Embedding> = (0..ANN_BRUTE_FORCE_THRESHOLD)
+            .map(|_| random_emb(8))
+            .collect();
+        let config = UmapConfig {
+            n_neighbors: 5,
+            n_epochs: 2,
+            negative_sample_rate: 1,
+            ..UmapConfig::default()
+        };
+        let proj =
+            UmapSphereProjection::fit(&corpus, None, RadialStrategy::Fixed(1.0), config).unwrap();
+        assert!(proj.ann.is_some(), "expected ANN index above threshold");
+
+        assert_projects_to_fitted(&proj, &corpus[1234], 1234);
+
+        let unseen = random_emb(8);
+        let pp = proj.project_rich(&unseen);
+        assert!(pp.certainty > 0.0 && pp.certainty <= 1.0);
+        assert!(pp.position.theta.is_finite());
+        assert!(pp.position.phi.is_finite());
+        assert!(pp.position.r.is_finite());
     }
 }
