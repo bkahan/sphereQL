@@ -26,60 +26,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
 
-use indexmap::IndexMap;
-
-/// Hard cap on the number of distinct canonicalized paths we keep
-/// migration locks for. Long-running processes that touch many
-/// feedback files would otherwise grow the lock map unboundedly. The
-/// per-path lock is only contended during the one-shot legacy-JSON →
-/// JSONL migration, so evicting an idle entry is safe — the next
-/// migration on that path just allocates a fresh lock.
-const MIGRATION_LOCK_CAPACITY: usize = 128;
-
-/// In-process serialization for the legacy-JSON → JSONL migration in
-/// [`FeedbackEvent::append_to`]. Two threads racing the migration would
-/// otherwise duplicate the migrated bytes (each reads the legacy array,
-/// each writes its own copy back). Keyed per canonical path so unrelated
-/// stores don't contend. Bounded LRU so a long-running daemon that
-/// rotates through many files doesn't leak.
-fn migration_lock(path: &Path) -> Arc<Mutex<()>> {
-    static LOCKS: OnceLock<Mutex<IndexMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
-    let key = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let map = LOCKS.get_or_init(|| Mutex::new(IndexMap::new()));
-    // Panics only if another thread panicked while holding this lock, which
-    // indicates an unrecoverable process state — re-panicking is correct.
-    let mut guard = map.lock().expect("migration lock map poisoned");
-    if let Some(existing) = guard.shift_remove(&key) {
-        guard.insert(key, existing.clone());
-        return existing;
-    }
-    while guard.len() >= MIGRATION_LOCK_CAPACITY {
-        guard.shift_remove_index(0);
-    }
-    let lock = Arc::new(Mutex::new(()));
-    guard.insert(key, lock.clone());
-    lock
-}
-
-fn first_non_ws_byte(path: &Path) -> io::Result<Option<u8>> {
-    let mut f = fs::File::open(path)?;
-    let mut buf = [0u8; 64];
-    loop {
-        let n = f.read(&mut buf)?;
-        if n == 0 {
-            return Ok(None);
-        }
-        if let Some(&b) = buf[..n].iter().find(|b| !b.is_ascii_whitespace()) {
-            return Ok(Some(b));
-        }
-    }
-}
-
-use crate::util::{default_timestamp, sphereql_home_dir};
+use crate::util::{default_timestamp, migrate_legacy_array_to_jsonl, sphereql_home_dir};
 
 /// One user-supplied satisfaction signal attached to a specific query.
 ///
@@ -151,39 +100,20 @@ impl FeedbackEvent {
         // One-time migration: if the store is a legacy JSON array
         // (what FeedbackAggregator::save used to write), rewrite it
         // as JSONL so subsequent appends stay O(1).
-        //
-        // Only the first non-whitespace byte is needed to disambiguate.
-        // Reading the whole file on every append turned this into an
-        // O(file_size) hot path on busy event streams.
-        //
-        // Migration is serialized per-path and re-checks the format
-        // under the lock so concurrent appenders don't double-migrate.
-        // Writes go through a sibling temp file + rename so a crash
-        // mid-migration leaves either the legacy array or the migrated
-        // JSONL — never a half-written mix.
-        if path.exists() && first_non_ws_byte(path)? == Some(b'[') {
-            let lock = migration_lock(path);
-            // Same reasoning as above — mutex poisoning means unrecoverable state.
-            let _g = lock.lock().expect("migration lock poisoned");
-            if path.exists() && first_non_ws_byte(path)? == Some(b'[') {
-                let head = fs::read_to_string(path)?;
-                let events: Vec<Self> = serde_json::from_str(head.trim_start())
+        migrate_legacy_array_to_jsonl(path, |head| {
+            let events: Vec<Self> = serde_json::from_str(head.trim_start())
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let mut migrated = String::with_capacity(head.len());
+            for e in &events {
+                serde_json::to_string(e)
+                    .map(|line| {
+                        migrated.push_str(&line);
+                        migrated.push('\n');
+                    })
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                let mut migrated = String::with_capacity(head.len());
-                for e in &events {
-                    serde_json::to_string(e)
-                        .map(|line| {
-                            migrated.push_str(&line);
-                            migrated.push('\n');
-                        })
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                }
-                let parent = path.parent().unwrap_or_else(|| Path::new("."));
-                let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-                io::Write::write_all(&mut tmp, migrated.as_bytes())?;
-                tmp.persist(path).map_err(io::Error::other)?;
             }
-        }
+            Ok(migrated)
+        })?;
 
         let mut f = fs::OpenOptions::new()
             .create(true)
@@ -385,6 +315,11 @@ impl FeedbackAggregator {
 
     /// Save this aggregator (event list) to a JSON file. Creates parent
     /// directories as needed.
+    ///
+    /// Writes a pretty-printed JSON array — the legacy store format.
+    /// If you save to [`Self::default_store_path`], the next
+    /// [`FeedbackEvent::append_to_default_store`] call will migrate
+    /// the file back to JSONL.
     pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent()

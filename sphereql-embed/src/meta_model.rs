@@ -48,7 +48,7 @@ use crate::config::{PipelineConfig, ProjectionKind};
 use crate::corpus_features::{CORPUS_FEATURE_COUNT, CorpusFeatures};
 use crate::feedback::FeedbackSummary;
 use crate::tuner::TuneReport;
-use crate::util::{default_timestamp, sphereql_home_dir};
+use crate::util::{default_timestamp, migrate_legacy_array_to_jsonl, sphereql_home_dir};
 
 /// One observation for the meta-learner: "on this corpus profile, this
 /// config was found to be best under this metric."
@@ -210,23 +210,20 @@ impl MetaTrainingRecord {
         // Migrate a legacy array file to JSONL on the first append —
         // one-time cost that converts N records, after which appends
         // are O(1). New files skip this path entirely.
-        if path.exists() {
-            let head = fs::read_to_string(path)?;
-            if head.trim_start().starts_with('[') {
-                let records: Vec<Self> = serde_json::from_str(head.trim_start())
+        migrate_legacy_array_to_jsonl(path, |head| {
+            let records: Vec<Self> = serde_json::from_str(head.trim_start())
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            let mut migrated = String::with_capacity(head.len());
+            for r in &records {
+                serde_json::to_string(r)
+                    .map(|line| {
+                        migrated.push_str(&line);
+                        migrated.push('\n');
+                    })
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                let mut migrated = String::with_capacity(head.len());
-                for r in &records {
-                    serde_json::to_string(r)
-                        .map(|line| {
-                            migrated.push_str(&line);
-                            migrated.push('\n');
-                        })
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                }
-                fs::write(path, migrated)?;
             }
-        }
+            Ok(migrated)
+        })?;
 
         let mut f = fs::OpenOptions::new()
             .create(true)
@@ -256,6 +253,11 @@ impl MetaTrainingRecord {
     /// blend — verifying corpus_id alignment is the caller's
     /// responsibility; this keeps the API composable under custom
     /// lookup schemes.
+    ///
+    /// Note: this blends `best_score`, not [`Self::score_lift`]. The
+    /// result is on the raw-score scale, which is not comparable
+    /// across corpora of different difficulty — don't substitute it
+    /// for `score_lift` in cross-corpus comparisons.
     pub fn adjust_score_with_feedback(&self, summary: &FeedbackSummary, alpha: f64) -> f64 {
         let a = alpha.clamp(0.0, 1.0);
         (1.0 - a) * self.best_score + a * summary.mean_score
@@ -354,7 +356,8 @@ fn compute_feature_stats(
     for i in 0..CORPUS_FEATURE_COUNT {
         let mean: f64 = vecs.iter().map(|v| v[i]).sum::<f64>() / n as f64;
         means[i] = mean;
-        let var: f64 = vecs.iter().map(|v| (v[i] - mean).powi(2)).sum::<f64>() / n as f64;
+        let var: f64 =
+            vecs.iter().map(|v| (v[i] - mean).powi(2)).sum::<f64>() / (n - 1).max(1) as f64;
         let sd = var.sqrt();
         stds[i] = if sd > f64::EPSILON { sd } else { 0.0 };
     }
@@ -394,7 +397,7 @@ fn normalized_euclidean(a: &[f64; CORPUS_FEATURE_COUNT], b: &[f64; CORPUS_FEATUR
 /// Upper median of a non-empty value sequence (sorted by `total_cmp`).
 fn median_f64(values: impl Iterator<Item = f64>) -> f64 {
     let mut v: Vec<f64> = values.collect();
-    debug_assert!(!v.is_empty(), "median of empty sequence");
+    assert!(!v.is_empty(), "median of empty sequence");
     v.sort_by(|a, b| a.total_cmp(b));
     v[v.len() / 2]
 }
@@ -402,7 +405,7 @@ fn median_f64(values: impl Iterator<Item = f64>) -> f64 {
 /// Upper median of a non-empty integer sequence.
 fn median_usize(values: impl Iterator<Item = usize>) -> usize {
     let mut v: Vec<usize> = values.collect();
-    debug_assert!(!v.is_empty(), "median of empty sequence");
+    assert!(!v.is_empty(), "median of empty sequence");
     v.sort_unstable();
     v[v.len() / 2]
 }
@@ -508,8 +511,19 @@ impl NearestNeighborMetaModel {
     /// size), picks the majority `projection_kind` (ties break toward
     /// the nearest record), and sets each tuned knob to the median of
     /// the top-k values — kind-specific knobs aggregate over
-    /// kind-matching neighbors only. Everything not aggregated
-    /// inherits from the single nearest record.
+    /// kind-matching neighbors only.
+    ///
+    /// Blended knobs: `routing.num_domain_groups`,
+    /// `routing.low_evr_threshold`, `bridges.threshold_base`,
+    /// `bridges.threshold_evr_penalty`,
+    /// `bridges.overlap_artifact_territorial`,
+    /// `inner_sphere.min_evr_improvement`, plus the kind-specific
+    /// `laplacian.*` / `umap.*` knobs. Everything else
+    /// (`bridges.balanced_affinity_quantile`,
+    /// `bridges.min_evr_for_classification`,
+    /// `routing.group_routing_alpha`, the remaining `inner_sphere.*`
+    /// knobs, `spatial.*`, `min_category_size`) is inherited
+    /// nearest-neighbor from the closest record.
     ///
     /// With `k = 1` this is exactly [`MetaModel::predict`]. Larger `k`
     /// trades sharpness for robustness against a single poorly-tuned
@@ -541,6 +555,13 @@ impl NearestNeighborMetaModel {
             .find(|kk| kind_counts[kk] == max_count)
             .unwrap_or(top[0].best_config.projection_kind);
 
+        // Fields not blended below — bridges.balanced_affinity_quantile,
+        // bridges.min_evr_for_classification, routing.group_routing_alpha,
+        // the remaining inner_sphere.* knobs, spatial.*, and
+        // min_category_size — are intentionally inherited from the
+        // nearest record: they're outside the tuner's SearchSpace, so
+        // every record carries the same defaults and a median across
+        // neighbors would add nothing.
         let mut cfg = top[0].best_config.clone();
         cfg.projection_kind = kind;
 
@@ -962,6 +983,22 @@ mod tests {
     }
 
     #[test]
+    fn filter_dominant_metric_tie_picks_lexicographically_largest() {
+        // Three metrics, one record each — an exact 3-way tie. The
+        // deterministic tie-break is the lexicographically largest name.
+        let mut r1 = record("a", feat(500, 5, 0.05, 0.8), ProjectionKind::Pca, 0.7);
+        r1.metric_name = "alpha".to_string();
+        let mut r2 = record("b", feat(500, 5, 0.50, 0.2), ProjectionKind::Pca, 0.6);
+        r2.metric_name = "beta".to_string();
+        let mut r3 = record("c", feat(500, 5, 0.30, 0.5), ProjectionKind::Pca, 0.5);
+        r3.metric_name = "gamma".to_string();
+
+        let kept = filter_dominant_metric(&[r1, r2, r3]);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].metric_name, "gamma");
+    }
+
+    #[test]
     fn single_metric_training_set_is_untouched() {
         let records = vec![
             record("a", feat(500, 5, 0.05, 0.8), ProjectionKind::Pca, 0.7),
@@ -1087,6 +1124,48 @@ mod tests {
     }
 
     #[test]
+    fn append_to_migrates_legacy_array_file() {
+        let dir =
+            std::env::temp_dir().join(format!("sphereql_meta_migrate_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join("records.json");
+
+        // Seed with a legacy array file (what `save_list` writes).
+        let legacy = vec![
+            record("r1", feat(100, 5, 0.2, 0.5), ProjectionKind::Pca, 0.4),
+            record(
+                "r2",
+                feat(800, 30, 0.05, 0.6),
+                ProjectionKind::LaplacianEigenmap,
+                0.5,
+            ),
+        ];
+        MetaTrainingRecord::save_list(&legacy, &path).unwrap();
+
+        // First append migrates the file to JSONL.
+        record("r3", feat(200, 8, 0.1, 0.4), ProjectionKind::KernelPca, 0.6)
+            .append_to(&path)
+            .unwrap();
+
+        let loaded = MetaTrainingRecord::load_list(&path).unwrap();
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded[0].corpus_id, "r1");
+        assert_eq!(loaded[1].corpus_id, "r2");
+        assert_eq!(loaded[2].corpus_id, "r3");
+        assert_eq!(
+            loaded[1].best_config.projection_kind,
+            ProjectionKind::LaplacianEigenmap
+        );
+
+        // Post-migration shape is JSONL (one record per line).
+        let raw = fs::read_to_string(&path).unwrap();
+        assert!(!raw.trim_start().starts_with('['));
+        assert_eq!(raw.lines().count(), 3);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn from_tune_result_copies_fields() {
         let cfg = PipelineConfig {
             projection_kind: ProjectionKind::LaplacianEigenmap,
@@ -1136,6 +1215,22 @@ mod tests {
         let r = MetaTrainingRecord::from_tune_result("c", feat(10, 2, 0.1, 0.3), &report, "s");
         let lift = r.score_lift.expect("two or more trials produce lift");
         assert!((lift - 0.5).abs() < 1e-12, "got {lift}");
+    }
+
+    #[test]
+    fn from_tune_result_single_trial_has_no_lift() {
+        // Exactly one trial: no distribution to compare against, so
+        // the record carries no lift evidence.
+        let report = TuneReport {
+            metric_name: "m".to_string(),
+            best_score: 0.7,
+            best_config: PipelineConfig::default(),
+            trials: vec![trial(0.7)],
+            failures: Vec::new(),
+            umap_graph_builds: 0,
+        };
+        let r = MetaTrainingRecord::from_tune_result("c", feat(10, 2, 0.1, 0.3), &report, "s");
+        assert!(r.score_lift.is_none());
     }
 
     #[test]
@@ -1252,6 +1347,29 @@ mod tests {
 
         let mut m = DistanceWeightedMetaModel::new();
         m.fit(&[easy, hard]);
+        let predicted = m.predict(&shared_feat);
+        assert_eq!(predicted.projection_kind, ProjectionKind::LaplacianEigenmap);
+    }
+
+    #[test]
+    fn dw_all_records_without_lift_fall_back_to_best_score() {
+        // Legacy training sets predate score_lift entirely. Evidence
+        // must fall back to best_score and still yield a prediction —
+        // the higher-scoring record wins at equal distance.
+        let shared_feat = feat(500, 5, 0.1, 0.5);
+        let lo = record("lo", shared_feat.clone(), ProjectionKind::Pca, 0.2);
+        let hi = record(
+            "hi",
+            shared_feat.clone(),
+            ProjectionKind::LaplacianEigenmap,
+            0.9,
+        );
+        assert!(lo.score_lift.is_none() && hi.score_lift.is_none());
+
+        let mut m = DistanceWeightedMetaModel::new();
+        m.fit(&[lo, hi]);
+        let ranked = m.score_candidates(&shared_feat);
+        assert_eq!(ranked.len(), 2, "no record filtered as non-finite");
         let predicted = m.predict(&shared_feat);
         assert_eq!(predicted.projection_kind, ProjectionKind::LaplacianEigenmap);
     }
