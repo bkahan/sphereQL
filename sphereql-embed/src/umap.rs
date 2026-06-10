@@ -163,9 +163,10 @@ pub struct UmapSphereProjection {
     dim: usize,
     radial: RadialStrategy,
     n_neighbors: usize,
-    /// Post-fit quality proxy in `[0, 1]`: fraction of attractive
-    /// edges whose final spherical distance is below the median —
-    /// higher means the optimizer actually pulled neighbors together.
+    /// Post-fit quality in `[0, 1]`: trustworthiness-style kNN recall —
+    /// mean overlap between each point's neighborhood among the fitted
+    /// 3D positions and its original-space kNN set. 1.0 means the
+    /// sphere preserves every original neighborhood.
     quality: f64,
 }
 
@@ -296,7 +297,7 @@ impl UmapSphereProjection {
             }
         }
 
-        let quality = neighbor_preservation_score(&points, &graph.knn);
+        let quality = knn_recall_score(&points, &graph.knn);
 
         let mut exact_lookup: HashMap<u64, Vec<usize>> = HashMap::new();
         for (i, vec) in graph.normalized.iter().enumerate() {
@@ -336,10 +337,21 @@ impl UmapSphereProjection {
         Self::fit_from_graph(&graph, categories, radial, config)
     }
 
-    /// Post-fit quality: fraction of attractive edges whose final
-    /// great-circle distance is below the median pairwise distance.
-    /// Bounded `[0, 1]`; comparable to PCA's explained-variance ratio
-    /// for the auto-tuner's `MetaModel` consumers.
+    /// Post-fit quality: trustworthiness-style kNN recall. For each
+    /// point, its `k` nearest neighbors among the fitted 3D positions
+    /// (`k` = the graph's `n_neighbors`) are intersected with its
+    /// original-space kNN set; the score is the mean overlap fraction.
+    /// Bounded `[0, 1]`, where 1.0 means every original neighborhood
+    /// survives the projection.
+    ///
+    /// Intentionally exposed under the EVR name so the auto-tuner's
+    /// `MetaModel` consumers can compare projection kinds on one
+    /// scalar. Note the semantics changed: this used to be the fraction
+    /// of kNN edges shorter than the median random pairwise distance, a
+    /// bar that random spherical pairs (≈90° apart) made trivially
+    /// clearable, so scores saturated high and barely discriminated.
+    /// Recall is rank-meaningful across corpora and more honest when
+    /// compared against other projection kinds.
     pub fn explained_variance_ratio(&self) -> f64 {
         self.quality
     }
@@ -590,50 +602,59 @@ fn pca_warm_start(
     Ok(out)
 }
 
-fn neighbor_preservation_score(points: &[[f64; 3]], knn: &[Vec<usize>]) -> f64 {
+/// Trustworthiness-style kNN recall: for each point, compute its kNN
+/// set among the fitted 3D positions and intersect it with the
+/// original-space kNN set from the graph; the score is the mean overlap
+/// fraction. Random placements score near k/n; 1.0 means every original
+/// neighborhood survives the projection.
+///
+/// The fitted points are unit vectors, so cosine order equals angular
+/// order — the same kNN machinery used in the original space applies.
+/// Above `ANN_BRUTE_FORCE_THRESHOLD` a fresh ANN index is built over
+/// the 3D positions (deterministic via the default seed); this is
+/// distinct from the retained high-dimensional index in `UmapGraph`.
+fn knn_recall_score(points: &[[f64; 3]], knn: &[Vec<usize>]) -> f64 {
     let n = points.len();
     if n < 2 {
         return 1.0;
     }
-    // Estimate the median pairwise distance with a small random sample
-    // (cheap proxy for the full O(n²) median).
-    let mut rng = SplitMix64::new(0xBEEF);
-    let sample = (n * 4).min(2000);
-    let mut sample_d2: Vec<f64> = (0..sample)
-        .map(|_| {
-            let i = (rng.next_u64() as usize) % n;
-            let j = (rng.next_u64() as usize) % n;
-            sq_dist(&points[i], &points[j])
-        })
-        .collect();
-    sample_d2.sort_by(|a, b| a.total_cmp(b));
-    let median = sample_d2
-        .get(sample_d2.len() / 2)
-        .copied()
-        .unwrap_or(f64::INFINITY);
 
-    let mut hits = 0usize;
-    let mut total = 0usize;
-    for (i, neigh) in knn.iter().enumerate() {
-        for &j in neigh {
-            if sq_dist(&points[i], &points[j]) <= median {
-                hits += 1;
-            }
-            total += 1;
+    let ann = (n >= ANN_BRUTE_FORCE_THRESHOLD).then(|| {
+        let coords: Vec<Vec<f64>> = points.iter().map(|p| p.to_vec()).collect();
+        AnnIndex::build_normalized(coords, &AnnConfig::default())
+    });
+
+    let mut total = 0.0;
+    let mut counted = 0usize;
+    for (i, original) in knn.iter().enumerate() {
+        let k = original.len();
+        if k == 0 {
+            continue;
         }
+        let spherical: Vec<usize> = match &ann {
+            Some(index) => index
+                .query_by_index(i, k)
+                .into_iter()
+                .map(|(j, _)| j)
+                .collect(),
+            None => {
+                let mut sims: Vec<(usize, f64)> = (0..n)
+                    .filter(|&j| j != i)
+                    .map(|j| (j, dot(&points[i], &points[j])))
+                    .collect();
+                sims.sort_unstable_by(|a, b| b.1.total_cmp(&a.1));
+                sims.into_iter().take(k).map(|(j, _)| j).collect()
+            }
+        };
+        let hits = spherical.iter().filter(|j| original.contains(j)).count();
+        total += hits as f64 / k as f64;
+        counted += 1;
     }
-    if total == 0 {
+    if counted == 0 {
         1.0
     } else {
-        hits as f64 / total as f64
+        total / counted as f64
     }
-}
-
-fn sq_dist(a: &[f64; 3], b: &[f64; 3]) -> f64 {
-    let dx = a[0] - b[0];
-    let dy = a[1] - b[1];
-    let dz = a[2] - b[2];
-    dx * dx + dy * dy + dz * dz
 }
 
 #[cfg(test)]
@@ -677,6 +698,52 @@ mod tests {
         let proj = UmapSphereProjection::fit_default(&corpus).unwrap();
         let q = proj.explained_variance_ratio();
         assert!((0.0..=1.0).contains(&q), "got {q}");
+    }
+
+    #[test]
+    fn well_separated_clusters_score_high_recall() {
+        let corpus = cluster_corpus();
+        let proj = UmapSphereProjection::fit(
+            &corpus,
+            None,
+            RadialStrategy::Fixed(1.0),
+            UmapConfig {
+                n_neighbors: 5,
+                ..UmapConfig::default()
+            },
+        )
+        .unwrap();
+        let q = proj.explained_variance_ratio();
+        assert!(
+            q > 0.5,
+            "expected high recall for separated clusters, got {q}"
+        );
+    }
+
+    #[test]
+    fn shuffled_positions_score_lower_recall() {
+        let corpus = cluster_corpus();
+        let config = UmapConfig {
+            n_neighbors: 5,
+            ..UmapConfig::default()
+        };
+        let graph = UmapGraph::build(&corpus, config.n_neighbors).unwrap();
+        let proj =
+            UmapSphereProjection::fit_from_graph(&graph, None, RadialStrategy::Fixed(1.0), config)
+                .unwrap();
+        let fitted = proj.explained_variance_ratio();
+
+        // Permuting the fitted positions breaks every neighborhood the
+        // optimizer built, so the same scorer must rank them below the
+        // real layout.
+        let mut shuffled = proj.fitted_points.clone();
+        let mut rng = SplitMix64::new(0xD15C);
+        for i in (1..shuffled.len()).rev() {
+            let j = (rng.next_u64() as usize) % (i + 1);
+            shuffled.swap(i, j);
+        }
+        let broken = knn_recall_score(&shuffled, &graph.knn);
+        assert!(broken < fitted, "shuffled={broken}, fitted={fitted}");
     }
 
     #[test]

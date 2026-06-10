@@ -104,17 +104,19 @@ dimensions.
 Every projection reports an `explained_variance_ratio()` in `[0, 1]`.
 PCA returns the classical EVR; Kernel PCA returns its kernel-space
 EVR; Laplacian returns a compatible connectivity ratio (mean of the
-retained eigenvalues); UMAP-on-sphere returns a neighbor-preservation
-proxy (fraction of attractive edges whose final spherical distance is
-below the median pairwise distance) — not a variance ratio, but bounded
-and comparable for tuner purposes. All of them feed the EVR-adaptive
+retained eigenvalues); UMAP-on-sphere returns a trustworthiness-style
+kNN recall (mean overlap between each point's neighborhood among the
+fitted 3D positions and its original-space kNN set) — not a variance
+ratio, but bounded in `[0, 1]` and rank-meaningful across corpora.
+(Earlier versions used a median-distance proxy that saturated near 1.0
+on the sphere; recall replaced it.) All of them feed the EVR-adaptive
 thresholds downstream — bridge threshold, `RoutingConfig::low_evr_threshold`,
 the high-EVR routing bypass in `default_nearest`, and confidence scoring
 all consult this value.
 
 **Typical values:** 2–5% EVR for transformer embeddings at 3 dimensions
-under PCA; supervised UMAP routinely reports much higher
-neighbor-preservation scores on category-structured corpora.
+under PCA; supervised UMAP reports much higher neighborhood-recall
+scores on category-structured corpora.
 This projection is inherently lossy; sphereQL compensates with **hybrid
 search** (angular candidates in projected space → cosine re-ranking in
 the original space) and, for low-EVR corpora,
