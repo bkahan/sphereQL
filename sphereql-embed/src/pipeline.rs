@@ -1376,6 +1376,7 @@ fn umap_fit_config(config: &PipelineConfig) -> crate::umap::UmapConfig {
         negative_sample_rate: 5,
         category_weight: uc.category_weight,
         min_dist: uc.min_dist,
+        warm_start_anchor: uc.warm_start_anchor,
         seed: uc.seed,
     }
 }

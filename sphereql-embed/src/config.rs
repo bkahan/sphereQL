@@ -305,6 +305,13 @@ pub struct UmapConfig {
     /// measure. 0.0 = near-maximal clumping; 0.1 is the canonical UMAP
     /// default.
     pub min_dist: f64,
+    /// Weight on an attractive pull toward each point's PCA warm-start
+    /// position; 0.0 disables. Use small values (~0.01–0.1) on sparse
+    /// corpora whose kNN graphs fragment into disconnected components,
+    /// to keep the components' global arrangement from drifting under
+    /// unopposed repulsion. Intentionally not a tuner axis — it is a
+    /// data-pathology escape hatch, not a search dimension.
+    pub warm_start_anchor: f64,
     /// PRNG seed for negative sampling and tie-breaking.
     pub seed: u64,
 }
@@ -316,6 +323,7 @@ impl Default for UmapConfig {
             n_epochs: 200,
             category_weight: 1.5,
             min_dist: 0.1,
+            warm_start_anchor: 0.0,
             seed: 0xA1B2_C3D4,
         }
     }
@@ -384,6 +392,7 @@ mod tests {
         assert_eq!(c.umap.n_epochs, 200);
         assert!((c.umap.category_weight - 1.5).abs() < 1e-12);
         assert!((c.umap.min_dist - 0.1).abs() < 1e-12);
+        assert_eq!(c.umap.warm_start_anchor, 0.0);
         assert_eq!(c.spatial.coverage_samples, 100_000);
         assert_eq!(c.spatial.exclusivity_samples, 30_000);
         assert_eq!(c.spatial.voronoi_samples, 100_000);

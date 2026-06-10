@@ -70,6 +70,15 @@ pub struct UmapConfig {
     /// reproduces near-maximal clumping (close to the historical
     /// hardcoded `a = b = 1`). UMAP default 0.1.
     pub min_dist: f64,
+    /// Weight on an attractive pull toward each point's PCA
+    /// warm-start position (0.0 = disabled). Use small values
+    /// (~0.01–0.1) on sparse corpora whose kNN graphs fragment into
+    /// disconnected components: the warm start places the components
+    /// sensibly relative to each other, but with zero attraction
+    /// between them, uniform negative sampling drifts them into an
+    /// arbitrary arrangement over many epochs. The anchor keeps that
+    /// global arrangement from drifting under unopposed repulsion.
+    pub warm_start_anchor: f64,
     /// PRNG seed for kNN tie-breaking, negative sampling, and
     /// fallback random init when PCA warm-start is degenerate.
     pub seed: u64,
@@ -84,6 +93,7 @@ impl Default for UmapConfig {
             negative_sample_rate: 5,
             category_weight: 0.0,
             min_dist: 0.1,
+            warm_start_anchor: 0.0,
             seed: 0xA1B2_C3D4,
         }
     }
@@ -245,6 +255,8 @@ impl UmapSphereProjection {
         // NaN category_weight compares false, exactly like the old
         // partial_cmp().map(is_gt).unwrap_or(false) chain.
         let cat_active = config.category_weight > 0.0 && categories.is_some();
+        // Same NaN-safe comparison for the warm-start anchor.
+        let anchor_active = config.warm_start_anchor > 0.0;
 
         // Per-category index buckets for stratified sampling in the
         // supervised term. Category ids may be sparse, so each id is
@@ -368,6 +380,21 @@ impl UmapSphereProjection {
                             break;
                         }
                     }
+                }
+            }
+
+            // Optional warm-start anchor: a weak pull from each point
+            // toward its PCA warm-start position. The anchor end is
+            // fixed — `points` starts as a clone of `warm_start` and
+            // then moves, so the pull reads `graph.warm_start` and
+            // only `grads[i]` receives a gradient (no equal-and-
+            // opposite term). Consumes no RNG, so toggling it never
+            // shifts the negative-sampling stream.
+            if anchor_active {
+                let w = config.warm_start_anchor;
+                for i in 0..n {
+                    let (gi, _) = attractive_grad(&points[i], &graph.warm_start[i], ka, kb);
+                    add3_scaled(&mut grads[i], &gi, w);
                 }
             }
 
@@ -1590,5 +1617,124 @@ mod tests {
             spread > tight,
             "min_dist=0.5 within-class spread {spread} should exceed min_dist=0.0's {tight}"
         );
+    }
+
+    fn mean_warm_start_displacement(graph: &UmapGraph, points: &[[f64; 3]]) -> f64 {
+        points
+            .iter()
+            .zip(&graph.warm_start)
+            .map(|(p, w)| {
+                let cos = (p[0] * w[0] + p[1] * w[1] + p[2] * w[2]).clamp(-1.0, 1.0);
+                cos.acos()
+            })
+            .sum::<f64>()
+            / points.len() as f64
+    }
+
+    #[test]
+    fn zero_anchor_is_bit_identical_and_rng_neutral() {
+        // warm_start_anchor = 0.0 must be a strict no-op: the anchor
+        // block consumes no RNG and adds no gradient, so two split
+        // fits — and the split fit vs the full fit — agree to the bit,
+        // exactly as before the knob existed.
+        let corpus = cluster_corpus();
+        let config = UmapConfig {
+            n_neighbors: 5,
+            n_epochs: 30,
+            warm_start_anchor: 0.0,
+            seed: 42,
+            ..UmapConfig::default()
+        };
+
+        let graph = UmapGraph::build(&corpus, config.n_neighbors).unwrap();
+        let a = UmapSphereProjection::fit_from_graph(
+            &graph,
+            None,
+            RadialStrategy::Fixed(1.0),
+            config.clone(),
+        )
+        .unwrap();
+        let b = UmapSphereProjection::fit_from_graph(
+            &graph,
+            None,
+            RadialStrategy::Fixed(1.0),
+            config.clone(),
+        )
+        .unwrap();
+        let full =
+            UmapSphereProjection::fit(&corpus, None, RadialStrategy::Fixed(1.0), config).unwrap();
+
+        assert_eq!(a.fitted_points, b.fitted_points);
+        assert_eq!(a.fitted_points, full.fitted_points);
+    }
+
+    #[test]
+    fn warm_start_anchor_limits_component_drift() {
+        // cluster_corpus()'s two clusters are orthogonal, so at
+        // n_neighbors = 5 every kNN edge stays inside its own cluster
+        // and the graph splits into two disconnected components — the
+        // regime the anchor exists for. With zero cross-component
+        // attraction, repulsion alone drags the layout away from the
+        // warm-start arrangement; the anchored fit must end closer to
+        // it. Both fits share one RNG stream (the anchor draws
+        // nothing), so this is a paired comparison, not a flaky one.
+        let corpus = cluster_corpus();
+        let graph = UmapGraph::build(&corpus, 5).unwrap();
+        for (i, neighbors) in graph.knn.iter().enumerate() {
+            let own_cluster = if i < 8 { 0..8 } else { 8..16 };
+            for &j in neighbors {
+                assert!(
+                    own_cluster.contains(&j),
+                    "expected disconnected components, but {i} links to {j}"
+                );
+            }
+        }
+
+        let fit_at = |anchor: f64| {
+            UmapSphereProjection::fit_from_graph(
+                &graph,
+                None,
+                RadialStrategy::Fixed(1.0),
+                UmapConfig {
+                    n_neighbors: 5,
+                    n_epochs: 100,
+                    warm_start_anchor: anchor,
+                    seed: 42,
+                    ..UmapConfig::default()
+                },
+            )
+            .unwrap()
+        };
+
+        let free = mean_warm_start_displacement(&graph, &fit_at(0.0).fitted_points);
+        let anchored = mean_warm_start_displacement(&graph, &fit_at(0.05).fitted_points);
+        assert!(
+            anchored < free,
+            "anchored displacement {anchored} should be below unanchored {free}"
+        );
+    }
+
+    #[test]
+    fn anchored_fit_stays_on_sphere_with_valid_quality() {
+        let corpus = cluster_corpus();
+        let proj = UmapSphereProjection::fit(
+            &corpus,
+            None,
+            RadialStrategy::Fixed(1.0),
+            UmapConfig {
+                n_neighbors: 5,
+                n_epochs: 50,
+                warm_start_anchor: 0.05,
+                ..UmapConfig::default()
+            },
+        )
+        .unwrap();
+        for p in &proj.fitted_points {
+            assert!(p.iter().all(|c| c.is_finite()));
+            let mag = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+            assert!((mag - 1.0).abs() < 1e-9, "off-sphere magnitude {mag}");
+        }
+        let q = proj.explained_variance_ratio();
+        assert!((0.0..=1.0).contains(&q), "quality {q}");
     }
 }
