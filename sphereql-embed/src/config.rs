@@ -319,6 +319,11 @@ impl Default for UmapConfig {
 /// Monte Carlo sample counts for [`SpatialQuality::compute`](crate::spatial_quality::SpatialQuality::compute).
 ///
 /// These run once at build time. Higher = more precise but slower.
+///
+/// This config only governs the build-time `SpatialQuality::compute`
+/// pass. The navigator's `run_full_analysis` uses its own
+/// `NavigatorConfig` sample counts (with different defaults) and is
+/// unaffected by these values.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct SpatialConfig {

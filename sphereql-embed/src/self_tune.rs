@@ -76,6 +76,10 @@ pub struct TunableConcept {
 }
 
 /// Per-iteration outcome.
+///
+/// On the plateau-detecting iteration the loop stops **before**
+/// reweighting or pruning, so that record carries `n_pruned = 0` and
+/// `mean_quality_delta = 0.0` — the corpus was not touched.
 #[derive(Debug, Clone)]
 pub struct SelfTuneIteration {
     pub iteration: usize,
@@ -118,7 +122,8 @@ pub struct SelfTuneReport {
 }
 
 /// Configuration for one self-tune run.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct SelfTuneConfig {
     pub max_iterations: usize,
     pub plateau_epsilon: f64,
@@ -149,11 +154,49 @@ impl Default for SelfTuneConfig {
     }
 }
 
+impl SelfTuneConfig {
+    /// Check that every field is in its meaningful range. Run by
+    /// [`run_self_tune`] before touching the corpus.
+    pub fn validate(&self) -> Result<(), String> {
+        fn unit(name: &str, v: f64) -> Result<(), String> {
+            if (0.0..=1.0).contains(&v) {
+                Ok(())
+            } else {
+                Err(format!("{name} must be in [0, 1], got {v}"))
+            }
+        }
+        unit("home_affinity_smoothing", self.home_affinity_smoothing)?;
+        unit(
+            "source_confidence_smoothing",
+            self.source_confidence_smoothing,
+        )?;
+        unit("bridge_artifact_penalty", self.bridge_artifact_penalty)?;
+        unit("curvature_outlier_penalty", self.curvature_outlier_penalty)?;
+        if !self.bridge_genuine_boost.is_finite() || self.bridge_genuine_boost < 1.0 {
+            return Err(format!(
+                "bridge_genuine_boost must be >= 1.0, got {}",
+                self.bridge_genuine_boost
+            ));
+        }
+        if !self.plateau_epsilon.is_finite() || self.plateau_epsilon < 0.0 {
+            return Err(format!(
+                "plateau_epsilon must be finite and >= 0.0, got {}",
+                self.plateau_epsilon
+            ));
+        }
+        if self.max_iterations < 1 {
+            return Err("max_iterations must be >= 1".into());
+        }
+        Ok(())
+    }
+}
+
 /// Run one full self-tune loop.
 ///
-/// Returns the (possibly pruned) corpus and a per-iteration report.
-/// The corpus is consumed by value and the mutated copy is returned —
-/// the caller is responsible for persisting it (e.g. via
+/// Returns the (possibly pruned) corpus and a per-iteration report, or
+/// an error if `cfg` fails [`SelfTuneConfig::validate`]. The corpus is
+/// consumed by value and the mutated copy is returned — the caller is
+/// responsible for persisting it (e.g. via
 /// [`sphereql_corpus::parquet_writer::write_concepts`]).
 ///
 /// `embed_fn` turns sparse features into the dense embedding vector
@@ -166,10 +209,12 @@ pub fn run_self_tune<F>(
     base_pipeline_config: PipelineConfig,
     quality: &CorpusQuality,
     cfg: &SelfTuneConfig,
-) -> (Vec<TunableConcept>, SelfTuneReport)
+) -> Result<(Vec<TunableConcept>, SelfTuneReport), String>
 where
     F: Fn(&[(usize, f64)]) -> Vec<f64>,
 {
+    cfg.validate()?;
+
     // Base qualities: the values each concept entered the run with.
     // Every iteration's reweight starts from these, so multipliers
     // never compound across iterations. Kept index-parallel to
@@ -209,6 +254,27 @@ where
             corpus.iter().map(|c| c.quality).sum::<f64>() / n_before as f64
         };
 
+        // Plateau check happens before this iteration's reweight +
+        // prune: detecting a plateau means the corpus already
+        // converged, so mutating it once more would persist a state
+        // the loop never measured.
+        if iter >= 1 {
+            let prev = iterations[iter - 1].composite_score;
+            if (composite - prev).abs() < cfg.plateau_epsilon {
+                iterations.push(SelfTuneIteration {
+                    iteration: iter,
+                    n_concepts: n_before,
+                    composite_score: composite,
+                    breakdown,
+                    n_pruned: 0,
+                    mean_quality: pre_mean_q,
+                    mean_quality_delta: 0.0,
+                });
+                stopped = StopReason::Plateau;
+                break;
+            }
+        }
+
         reweight_from_base(&mut corpus, &bases, &pipeline, cfg);
         let n_pruned = prune_below_floor_synced(&mut corpus, &mut bases, cfg);
 
@@ -224,14 +290,6 @@ where
             mean_quality: post_mean_q,
             mean_quality_delta: post_mean_q - pre_mean_q,
         });
-
-        if iter >= 1 {
-            let prev = iterations[iter - 1].composite_score;
-            if (composite - prev).abs() < cfg.plateau_epsilon {
-                stopped = StopReason::Plateau;
-                break;
-            }
-        }
     }
 
     // Exit measurement: every per-iteration composite is an entry
@@ -240,14 +298,14 @@ where
     let final_composite =
         build_pipeline(&corpus, &embed_fn, &base_pipeline_config).map(|p| quality.score(&p));
 
-    (
+    Ok((
         corpus,
         SelfTuneReport {
             iterations,
             stopped_reason: stopped,
             final_composite,
         },
-    )
+    ))
 }
 
 // ── Internals ────────────────────────────────────────────────────────
@@ -314,9 +372,11 @@ where
 }
 
 /// Apply all four reweight multipliers, treating each concept's
-/// *current* quality as the base. Single-application semantics — the
-/// run loop uses [`reweight_from_base`] with the run-entry qualities
-/// instead, so multipliers never compound across iterations.
+/// *current* quality as the base. Because the base is snapshotted from
+/// the current qualities on every call, calling this more than once
+/// compounds the multipliers. For idempotent reweighting, hold an
+/// invariant bases vector and call [`reweight_from_base`] — that is
+/// what the run loop does with the run-entry qualities.
 pub fn reweight_in_place(
     corpus: &mut [TunableConcept],
     pipeline: &SphereQLPipeline,
@@ -357,7 +417,9 @@ fn reweight_from_base(
             }
         }
 
-        // 2. Curvature outlier penalty.
+        // 2. Curvature outlier penalty. Category-granular: this is a
+        // trust signal about the concept's whole category, not a
+        // per-concept fitness measure.
         if let Some(z) = curvature_map.get(concept.category.as_str())
             && z.abs() > cfg.curvature_z_threshold
         {
@@ -672,7 +734,8 @@ mod tests {
         let embed_fn = dense_embed(dim);
 
         let (out, report) =
-            run_self_tune(corpus, embed_fn, PipelineConfig::default(), &metric, &cfg);
+            run_self_tune(corpus, embed_fn, PipelineConfig::default(), &metric, &cfg)
+                .expect("default-derived config is valid");
 
         assert!(!report.iterations.is_empty());
         assert_eq!(out.len(), n_total);
@@ -708,7 +771,8 @@ mod tests {
         let metric = CorpusQuality::default();
         let embed_fn = dense_embed(dim);
 
-        let (_, report) = run_self_tune(corpus, embed_fn, PipelineConfig::default(), &metric, &cfg);
+        let (_, report) = run_self_tune(corpus, embed_fn, PipelineConfig::default(), &metric, &cfg)
+            .expect("default-derived config is valid");
 
         // Iteration 0 applies the attenuation once (large delta is
         // expected). Every later iteration recomputes from base, so
@@ -721,5 +785,84 @@ mod tests {
                 it.mean_quality_delta
             );
         }
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_smoothing() {
+        let low = SelfTuneConfig {
+            home_affinity_smoothing: -0.1,
+            ..Default::default()
+        };
+        assert!(low.validate().is_err());
+
+        let high = SelfTuneConfig {
+            home_affinity_smoothing: 1.5,
+            ..Default::default()
+        };
+        assert!(high.validate().is_err());
+
+        assert!(SelfTuneConfig::default().validate().is_ok());
+    }
+
+    #[test]
+    fn run_self_tune_surfaces_invalid_config() {
+        let dim = 16usize;
+        let corpus = synthetic_corpus(6, 8, dim);
+        let cfg = SelfTuneConfig {
+            home_affinity_smoothing: 1.5,
+            ..Default::default()
+        };
+        let metric = CorpusQuality::default();
+        let err = run_self_tune(
+            corpus,
+            dense_embed(dim),
+            PipelineConfig::default(),
+            &metric,
+            &cfg,
+        )
+        .expect_err("out-of-range smoothing must be rejected");
+        assert!(err.contains("home_affinity_smoothing"));
+    }
+
+    #[test]
+    fn plateau_iteration_does_not_mutate_corpus() {
+        // With a huge plateau_epsilon, iteration 1 always detects a
+        // plateau. It must stop before reweighting/pruning, so the
+        // returned corpus is exactly the result of iteration 0's
+        // single reweight pass.
+        let dim = 16usize;
+        let corpus = synthetic_corpus(6, 8, dim);
+        let embed_fn = dense_embed(dim);
+        let cfg = SelfTuneConfig {
+            max_iterations: 5,
+            min_quality_to_keep: 0.0,
+            min_concepts_per_category: 1,
+            plateau_epsilon: 1.0,
+            ..Default::default()
+        };
+        let metric = CorpusQuality::default();
+
+        let mut expected = corpus.clone();
+        let pipeline = build_pipeline(&expected, &embed_fn, &PipelineConfig::default())
+            .expect("pipeline should build");
+        let bases: Vec<f64> = expected.iter().map(|c| c.quality).collect();
+        reweight_from_base(&mut expected, &bases, &pipeline, &cfg);
+
+        let (out, report) =
+            run_self_tune(corpus, embed_fn, PipelineConfig::default(), &metric, &cfg)
+                .expect("config is valid");
+
+        assert!(matches!(report.stopped_reason, StopReason::Plateau));
+        assert_eq!(report.iterations.len(), 2);
+        let plateau_it = report.iterations.last().unwrap();
+        assert_eq!(plateau_it.n_pruned, 0);
+        assert_eq!(plateau_it.mean_quality_delta, 0.0);
+
+        let got: Vec<f64> = out.iter().map(|c| c.quality).collect();
+        let want: Vec<f64> = expected.iter().map(|c| c.quality).collect();
+        assert_eq!(
+            got, want,
+            "plateau iteration must leave qualities untouched"
+        );
     }
 }

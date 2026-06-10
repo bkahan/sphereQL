@@ -196,7 +196,8 @@ fn main() {
     let embed_fn = |f: &[(usize, f64)]| sphereql_corpus::embed(f, EMBED_SEED);
 
     let started = std::time::Instant::now();
-    let (tuned, report) = run_self_tune(tunable, embed_fn, pipeline_config, &metric, &cfg);
+    let (tuned, report) =
+        run_self_tune(tunable, embed_fn, pipeline_config, &metric, &cfg).expect("self-tune config");
     let elapsed = started.elapsed();
 
     println!(

@@ -42,6 +42,7 @@ fn main() {
         features: mock_features(),
         best_config: cfg,
         best_score: 0.72, // automated quality score from the tuner
+        score_lift: None,
         metric_name: "default_composite".to_string(),
         strategy: "random{budget=24}".to_string(),
         timestamp: "0".to_string(),
