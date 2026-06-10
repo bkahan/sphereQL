@@ -421,10 +421,18 @@ pub trait MetaModel {
     /// Fit on a training set. Replacing any prior state.
     fn fit(&mut self, records: &[MetaTrainingRecord]);
 
+    /// True once `fit` has been called with at least one usable record.
+    /// [`Self::predict`] panics when this is false, so Result-returning
+    /// boundaries (e.g. `SphereQLPipeline::new_from_metamodel`) check
+    /// this first. No default impl on purpose: every model must answer
+    /// for its own notion of "fitted" rather than inherit a guess.
+    fn is_fitted(&self) -> bool;
+
     /// Predict the config that should work best on a corpus with the
     /// given profile. Panics if `fit` has not been called with at least
     /// one record — callers should treat `MetaModel` as a trained object
-    /// and front-load `fit`.
+    /// and front-load `fit`, or check [`Self::is_fitted`] when the
+    /// training state isn't statically known.
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig;
 
     /// Short name for logs and model comparison.
@@ -640,6 +648,10 @@ impl MetaModel for NearestNeighborMetaModel {
         };
     }
 
+    fn is_fitted(&self) -> bool {
+        !self.records.is_empty()
+    }
+
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
         // Invariant: callers are expected to call fit() before predict().
         // The trait contract documents this requirement, and the panic is
@@ -775,6 +787,10 @@ impl MetaModel for DistanceWeightedMetaModel {
         };
     }
 
+    fn is_fitted(&self) -> bool {
+        !self.records.is_empty()
+    }
+
     fn predict(&self, features: &CorpusFeatures) -> PipelineConfig {
         // Invariant: callers are expected to call fit() before predict().
         // The trait contract documents this requirement, and the panic is
@@ -884,6 +900,23 @@ mod tests {
                 assert_eq!(ms[i], raw[i], "non-scale feature {i} must pass through");
             }
         }
+    }
+
+    #[test]
+    fn is_fitted_flips_after_fit() {
+        let mut nn = NearestNeighborMetaModel::new();
+        let mut dw = DistanceWeightedMetaModel::new();
+        assert!(!nn.is_fitted());
+        assert!(!dw.is_fitted());
+
+        let r = record("only", feat(500, 20, 0.1, 0.4), ProjectionKind::Pca, 0.7);
+        nn.fit(std::slice::from_ref(&r));
+        dw.fit(std::slice::from_ref(&r));
+        assert!(nn.is_fitted());
+        assert!(dw.is_fitted());
+
+        nn.fit(&[]);
+        assert!(!nn.is_fitted(), "refit on empty set must clear fitted state");
     }
 
     #[test]

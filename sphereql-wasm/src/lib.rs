@@ -254,7 +254,9 @@ impl Pipeline {
 
     /// Export all projected points as JSON.
     pub fn export_json(&self) -> Result<String, JsError> {
-        Ok(self.inner.to_json())
+        self.inner
+            .to_json()
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// PCA explained variance ratio.

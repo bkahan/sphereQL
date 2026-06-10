@@ -470,8 +470,10 @@ impl Pipeline {
         self.inner.unique_categories()
     }
 
-    fn to_json(&self) -> String {
-        self.inner.to_json()
+    fn to_json(&self) -> PyResult<String> {
+        self.inner
+            .to_json()
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     fn to_csv(&self) -> String {

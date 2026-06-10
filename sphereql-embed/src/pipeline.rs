@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::sync::OnceLock;
 
 use sphereql_core::*;
@@ -334,6 +336,7 @@ impl SphereQLPipeline {
         input: PipelineInput,
         model: &M,
     ) -> Result<(Self, CorpusFeatures, PipelineConfig), PipelineError> {
+        require_fitted(model)?;
         let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
             .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
@@ -344,12 +347,14 @@ impl SphereQLPipeline {
     /// Warm-started hybrid: predict a config with `model`, then run a
     /// small-budget tuner pass using that prediction as `base_config`.
     ///
-    /// Non-tuned knobs stay at the model's predicted values; the
-    /// searched knobs explore the given [`SearchSpace`] from there.
-    /// When the meta-model has seen a similar corpus before the
-    /// prediction is usually close to optimal and the tuner only needs
-    /// a handful of trials to confirm or refine it — meaningfully
-    /// cheaper than cold-starting at [`PipelineConfig::default`].
+    /// The prediction supplies values only for knobs NOT enumerated by
+    /// `space` — any knob the space lists is searched cold across its
+    /// axes, and the predicted value for it is ignored. Under
+    /// [`SearchStrategy::Random`] and [`SearchStrategy::Bayesian`] the
+    /// predicted config itself is additionally evaluated as trial 0
+    /// (counted against the budget), so it competes directly with the
+    /// searched candidates; [`SearchStrategy::Grid`] skips that seed
+    /// trial to keep its trial set the exact Cartesian enumeration.
     ///
     /// Returns the winning pipeline, the extracted corpus features, and
     /// the full [`TuneReport`]. Callers can feed the report back into
@@ -366,6 +371,7 @@ impl SphereQLPipeline {
         M: MetaModel,
         Q: QualityMetric,
     {
+        require_fitted(model)?;
         let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
             .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
@@ -416,6 +422,21 @@ impl SphereQLPipeline {
         projection: ConfiguredProjection,
         config: PipelineConfig,
     ) -> Result<Self, PipelineError> {
+        Self::with_projection_parts(categories, &embeddings, projection, config)
+    }
+
+    /// Borrowed-embeddings core shared by the owned constructor and the
+    /// tuner. The pipeline never retains the high-dimensional embeddings
+    /// (only `raw_embeddings` under the `retain-embeddings` feature does,
+    /// and that copy is taken in [`Self::new_with_config`]), so taking a
+    /// slice here lets the tuner run trials without cloning the full
+    /// corpus matrix per trial.
+    pub(crate) fn with_projection_parts(
+        categories: Vec<String>,
+        embeddings: &[Embedding],
+        projection: ConfiguredProjection,
+        config: PipelineConfig,
+    ) -> Result<Self, PipelineError> {
         let n = embeddings.len();
         if n != categories.len() {
             return Err(PipelineError::LengthMismatch {
@@ -459,7 +480,7 @@ impl SphereQLPipeline {
         let evr = projection.explained_variance_ratio();
         let category_layer = CategoryLayer::build_with_config(
             &categories,
-            &embeddings,
+            embeddings,
             &projected_positions,
             &projection,
             evr,
@@ -678,6 +699,16 @@ impl SphereQLPipeline {
         {
             return self.categories[idx].clone();
         }
+        // Every indexed id is generated as `s-{i:04}` at construction, so
+        // reaching this branch means an invariant broke (foreign id leaked
+        // into the index, or an out-of-range index). Surface it loudly in
+        // debug builds; release builds keep the historical soft fallback.
+        debug_assert!(
+            false,
+            "cat_for: id {id:?} does not match the generated `s-{{i:04}}` format \
+             or indexes past {} categories",
+            self.categories.len()
+        );
         "unknown".into()
     }
 
@@ -897,6 +928,10 @@ impl SphereQLPipeline {
     /// Returns `None` if embeddings were not retained.
     /// Returns `Err(DimensionMismatch)` if `query_embedding.len()` differs from
     /// the stored embedding dimensionality.
+    ///
+    /// Cost: scans every retained embedding — O(N·D) similarity
+    /// computations — with a size-`k` heap keeping selection at
+    /// O(N log k) time and O(k) extra allocation.
     pub fn nearest_by_embedding(
         &self,
         query_embedding: &[f64],
@@ -913,31 +948,60 @@ impl SphereQLPipeline {
         }
 
         let query_norm: f64 = query_embedding.iter().map(|x| x * x).sum::<f64>().sqrt();
-        if query_norm < f64::EPSILON {
+        if query_norm < f64::EPSILON || k == 0 {
             return Some(Ok(Vec::new()));
         }
 
-        let mut scored: Vec<(usize, f64)> = embeddings
-            .iter()
-            .enumerate()
-            .map(|(i, emb)| {
-                let emb_norm: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt();
-                let dot: f64 = query_embedding
-                    .iter()
-                    .zip(emb.iter())
-                    .map(|(a, b)| a * b)
-                    .sum();
-                let sim = if emb_norm < f64::EPSILON {
-                    0.0
-                } else {
-                    (dot / (query_norm * emb_norm)).clamp(-1.0, 1.0)
-                };
-                (i, sim)
-            })
-            .collect();
+        // Min-heap ordering: lower similarity is "smaller"; on ties the
+        // higher index is evicted first, matching the stable-sort order
+        // of the old full-materialize implementation.
+        struct Scored {
+            sim: f64,
+            index: usize,
+        }
+        impl Ord for Scored {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.sim
+                    .total_cmp(&other.sim)
+                    .then_with(|| other.index.cmp(&self.index))
+            }
+        }
+        impl PartialOrd for Scored {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl PartialEq for Scored {
+            fn eq(&self, other: &Self) -> bool {
+                self.cmp(other) == std::cmp::Ordering::Equal
+            }
+        }
+        impl Eq for Scored {}
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(k);
+        let mut heap: BinaryHeap<Reverse<Scored>> = BinaryHeap::with_capacity(k + 1);
+        for (i, emb) in embeddings.iter().enumerate() {
+            let emb_norm: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt();
+            let dot: f64 = query_embedding
+                .iter()
+                .zip(emb.iter())
+                .map(|(a, b)| a * b)
+                .sum();
+            let sim = if emb_norm < f64::EPSILON {
+                0.0
+            } else {
+                (dot / (query_norm * emb_norm)).clamp(-1.0, 1.0)
+            };
+            heap.push(Reverse(Scored { sim, index: i }));
+            if heap.len() > k {
+                heap.pop();
+            }
+        }
+
+        let mut scored: Vec<(usize, f64)> = heap
+            .into_iter()
+            .map(|Reverse(s)| (s.index, s.sim))
+            .collect();
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         Some(Ok(scored))
     }
@@ -1143,9 +1207,11 @@ impl SphereQLPipeline {
     }
 
     /// Serialize all projected points as a JSON array string.
-    pub fn to_json(&self) -> String {
+    ///
+    /// Returns `Err` when serialization fails — degenerate projections
+    /// can produce non-finite coordinates, which JSON cannot represent.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(&self.exported_points())
-            .expect("ExportedPoint is always serializable")
     }
 
     /// Serialize all projected points as RFC 4180-compliant CSV with a header row.
@@ -1171,6 +1237,20 @@ impl SphereQLPipeline {
             ));
         }
         out
+    }
+}
+
+/// Shared guard for the meta-model entry points: an unfitted model would
+/// panic inside `predict`, which must not escape a `Result`-returning
+/// boundary.
+fn require_fitted<M: MetaModel>(model: &M) -> Result<(), PipelineError> {
+    if model.is_fitted() {
+        Ok(())
+    } else {
+        Err(PipelineError::InvalidInput(format!(
+            "meta-model {:?} is unfitted; call fit() with at least one record first",
+            model.name()
+        )))
     }
 }
 
@@ -1518,7 +1598,7 @@ mod tests {
     fn test_to_json_parseable() {
         let (input, _) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let json = pipeline.to_json();
+        let json = pipeline.to_json().unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(parsed.len(), 20);
     }
@@ -1935,6 +2015,79 @@ mod tests {
         assert_eq!(pipeline.projection_kind(), ProjectionKind::Pca);
     }
 
+    #[test]
+    fn new_from_metamodel_unfitted_model_returns_err() {
+        use crate::meta_model::NearestNeighborMetaModel;
+
+        let (input, _) = make_input(20, 10);
+        let model = NearestNeighborMetaModel::new();
+        assert!(!model.is_fitted());
+        match SphereQLPipeline::new_from_metamodel(input, &model) {
+            Err(PipelineError::InvalidInput(msg)) => {
+                assert!(msg.contains("unfitted"), "msg = {msg:?}");
+            }
+            Err(other) => panic!("expected InvalidInput, got {other:?}"),
+            Ok(_) => panic!("expected Err for unfitted model"),
+        }
+    }
+
+    #[test]
+    fn new_from_metamodel_tuned_unfitted_model_returns_err() {
+        use crate::meta_model::DistanceWeightedMetaModel;
+        use crate::quality_metric::TerritorialHealth;
+        use crate::tuner::{SearchSpace, SearchStrategy};
+
+        let (input, _) = make_input(20, 10);
+        let model = DistanceWeightedMetaModel::new();
+        match SphereQLPipeline::new_from_metamodel_tuned(
+            input,
+            &model,
+            &SearchSpace::default(),
+            &TerritorialHealth,
+            SearchStrategy::Grid,
+        ) {
+            Err(PipelineError::InvalidInput(msg)) => {
+                assert!(msg.contains("unfitted"), "msg = {msg:?}");
+            }
+            Err(other) => panic!("expected InvalidInput, got {other:?}"),
+            Ok(_) => panic!("expected Err for unfitted model"),
+        }
+    }
+
+    #[test]
+    fn new_from_metamodel_empty_input_maps_to_invalid_input() {
+        use crate::corpus_features::CorpusFeatures;
+        use crate::meta_model::{MetaTrainingRecord, NearestNeighborMetaModel};
+
+        let (seed_input, _) = make_input(20, 10);
+        let features =
+            CorpusFeatures::extract(&seed_input.categories, &seed_input.embeddings).unwrap();
+        let record = MetaTrainingRecord {
+            corpus_id: "seed".into(),
+            features,
+            best_config: PipelineConfig::default(),
+            best_score: 0.5,
+            score_lift: None,
+            metric_name: "test".into(),
+            strategy: "manual".into(),
+            timestamp: "0".into(),
+        };
+        let mut model = NearestNeighborMetaModel::new();
+        model.fit(&[record]);
+
+        let empty = PipelineInput {
+            categories: Vec::new(),
+            embeddings: Vec::new(),
+        };
+        match SphereQLPipeline::new_from_metamodel(empty, &model) {
+            Err(PipelineError::InvalidInput(msg)) => {
+                assert!(msg.contains("empty"), "msg = {msg:?}");
+            }
+            Err(other) => panic!("expected InvalidInput, got {other:?}"),
+            Ok(_) => panic!("expected Err for empty input"),
+        }
+    }
+
     // ── v2 default routing (#3 projection-overhaul) ────────────────────
 
     /// Two well-separated clusters in 6D, 60 items each. min_size=20
@@ -2156,6 +2309,50 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].0, 0);
         assert!(results[0].1 > results[1].1);
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn nearest_by_embedding_handles_ties_and_large_k() {
+        // Items 1 and 2 are identical, so their similarity to any query
+        // ties exactly — the lower index must rank first. k beyond the
+        // corpus size returns everything, sorted descending.
+        let input = PipelineInput {
+            categories: vec!["a".into(), "b".into(), "b".into(), "c".into()],
+            embeddings: vec![
+                vec![0.0, 0.0, 1.0],
+                vec![1.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0],
+                vec![0.5, 0.0, 0.5],
+            ],
+        };
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let results = pipeline
+            .nearest_by_embedding(&[1.0, 0.0, 0.0], 10)
+            .unwrap()
+            .unwrap();
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].0, 1);
+        assert_eq!(results[1].0, 2);
+        for w in results.windows(2) {
+            assert!(w[0].1 >= w[1].1);
+        }
+
+        let top2 = pipeline
+            .nearest_by_embedding(&[1.0, 0.0, 0.0], 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            top2.iter().map(|r| r.0).collect::<Vec<_>>(),
+            vec![1, 2],
+            "bounded heap must keep the lower index on exact ties"
+        );
+
+        let none = pipeline
+            .nearest_by_embedding(&[1.0, 0.0, 0.0], 0)
+            .unwrap()
+            .unwrap();
+        assert!(none.is_empty());
     }
 
     #[test]

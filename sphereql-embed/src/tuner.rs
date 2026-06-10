@@ -602,6 +602,13 @@ impl TuneReport {
 /// thresholds, inner-sphere gates, domain-group counts, etc.) vary per
 /// trial — this keeps per-trial cost dominated by spatial quality
 /// sampling and graph construction rather than projection fitting.
+///
+/// Under [`SearchStrategy::Random`] and [`SearchStrategy::Bayesian`],
+/// `base_config` itself is evaluated as trial 0 (counted against the
+/// budget) so a warm-start prediction competes directly with sampled
+/// candidates. [`SearchStrategy::Grid`] is excluded: its trial set is
+/// defined as the exact Cartesian enumeration of the space, and callers
+/// assert on [`SearchSpace::grid_cardinality`] matching the trial count.
 pub fn auto_tune<M: QualityMetric + ?Sized>(
     input: PipelineInput,
     space: &SearchSpace,
@@ -630,6 +637,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let mut umap_graph_builds: usize = 0;
     let mut trials: Vec<TrialRecord> = Vec::new();
     let mut failures: Vec<(PipelineConfig, String)> = Vec::new();
+    // Only the current best trial's pipeline stays alive — keeping every
+    // trial's pipeline would multiply peak memory by the trial count at
+    // 500k scale. Replaced (and the old one dropped) whenever a trial
+    // scores at least as high, matching the old post-loop `max_by`
+    // selection (last max wins) without rebuilding the winner.
+    let mut best: Option<(f64, SphereQLPipeline)> = None;
 
     // Closure: evaluate one config, update prefit cache, push record or
     // failure. Shared by every strategy so they only differ in how they
@@ -639,7 +652,8 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                      umap_graph_cache: &mut HashMap<usize, crate::umap::UmapGraph>,
                      umap_graph_builds: &mut usize,
                      trials: &mut Vec<TrialRecord>,
-                     failures: &mut Vec<(PipelineConfig, String)>| {
+                     failures: &mut Vec<(PipelineConfig, String)>,
+                     best: &mut Option<(f64, SphereQLPipeline)>| {
         let key = ProjectionFitKey::from_config(&cfg);
         let projection = if cfg.projection_kind == ProjectionKind::UmapSphere {
             // UMAP fast path: build the kNN graph once per `n_neighbors`
@@ -695,9 +709,14 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         };
 
         let start = Instant::now();
-        match SphereQLPipeline::with_configured_projection_and_config(
+        // Embeddings are borrowed (the pipeline doesn't retain them), so
+        // only `categories` — which it does own — is cloned per trial.
+        // TODO: an Arc<[String]> categories field would drop that clone
+        // too (~tens of MB at 500k), but it touches the pipeline's
+        // retained-field accessors and downstream crates.
+        match SphereQLPipeline::with_projection_parts(
             categories.clone(),
-            embeddings.clone(),
+            &embeddings,
             projection,
             cfg.clone(),
         ) {
@@ -710,6 +729,15 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                     build_ms,
                     components,
                 });
+                let replace = match best {
+                    Some((best_score, _)) => {
+                        !matches!(score.partial_cmp(best_score), Some(std::cmp::Ordering::Less))
+                    }
+                    None => true,
+                };
+                if replace {
+                    *best = Some((score, pipeline));
+                }
             }
             Err(e) => {
                 failures.push((cfg, e.to_string()));
@@ -726,6 +754,9 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
 
     match &strategy {
         SearchStrategy::Grid => {
+            // Grid deliberately skips the base-config seed trial: its
+            // contract is "trial set == the exact Cartesian enumeration"
+            // and callers assert on grid_cardinality matching the count.
             for i in 0..space.grid_cardinality() {
                 if let Some(cfg) = space.config_at_index(i, base_config) {
                     run_trial(
@@ -735,24 +766,39 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                         &mut umap_graph_builds,
                         &mut trials,
                         &mut failures,
+                        &mut best,
                     );
                 }
             }
         }
         SearchStrategy::Random { budget, seed, .. } => {
             let mut rng = SplitMix64::new(*seed);
-            for _ in 0..*budget {
-                let cfg = space.sample(&mut rng, base_config);
-                run_trial(
-                    cfg,
-                    &mut prefit,
-                    &mut umap_graph_cache,
-                    &mut umap_graph_builds,
-                    &mut trials,
-                    &mut failures,
-                );
-                if wall_exceeded() {
-                    break;
+            // Trial 0: warm-start seed. base_config competes directly
+            // with the sampled candidates and counts against the budget.
+            run_trial(
+                base_config.clone(),
+                &mut prefit,
+                &mut umap_graph_cache,
+                &mut umap_graph_builds,
+                &mut trials,
+                &mut failures,
+                &mut best,
+            );
+            if !wall_exceeded() {
+                for _ in 1..*budget {
+                    let cfg = space.sample(&mut rng, base_config);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut umap_graph_builds,
+                        &mut trials,
+                        &mut failures,
+                        &mut best,
+                    );
+                    if wall_exceeded() {
+                        break;
+                    }
                 }
             }
         }
@@ -769,19 +815,32 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             let warmup = (*warmup).clamp(2, budget);
             let gamma = gamma.clamp(0.05, 0.95);
 
-            // Warmup: uniform random.
-            for _ in 0..warmup {
-                let cfg = space.sample(&mut rng, base_config);
-                run_trial(
-                    cfg,
-                    &mut prefit,
-                    &mut umap_graph_cache,
-                    &mut umap_graph_builds,
-                    &mut trials,
-                    &mut failures,
-                );
-                if wall_exceeded() {
-                    break;
+            // Trial 0: warm-start seed (counts as the first warmup trial).
+            run_trial(
+                base_config.clone(),
+                &mut prefit,
+                &mut umap_graph_cache,
+                &mut umap_graph_builds,
+                &mut trials,
+                &mut failures,
+                &mut best,
+            );
+            // Remaining warmup: uniform random.
+            if !wall_exceeded() {
+                for _ in 1..warmup {
+                    let cfg = space.sample(&mut rng, base_config);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut umap_graph_builds,
+                        &mut trials,
+                        &mut failures,
+                        &mut best,
+                    );
+                    if wall_exceeded() {
+                        break;
+                    }
                 }
             }
             // Acquisition: axis-parallel TPE-lite.
@@ -795,6 +854,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                         &mut umap_graph_builds,
                         &mut trials,
                         &mut failures,
+                        &mut best,
                     );
                     if wall_exceeded() {
                         break;
@@ -811,37 +871,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         return Err(PipelineError::AllTrialsFailed { failures });
     }
 
-    // Invariant: the `if trials.is_empty()` guard above returned an error,
-    // so by here `trials` is guaranteed to contain at least one element.
-    let best_idx = trials
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| {
-            a.score
-                .partial_cmp(&b.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(i, _)| i)
-        .expect("trials non-empty");
-    let best_config = trials[best_idx].config.clone();
-    let best_score = trials[best_idx].score;
-
-    // Build the winning pipeline fresh so the caller gets it owned.
-    // Winner came from a successful trial, so the prefit cache has its
-    // projection. The unwrap_or is defensive — if the cache entry went
-    // missing somehow, re-fit and propagate any error as a
-    // `PipelineError::Projection`.
-    let best_key = ProjectionFitKey::from_config(&best_config);
-    let best_projection = match prefit.get(&best_key).cloned() {
-        Some(p) => p,
-        None => fit_projection_for_config(&embeddings, &categories, &best_config)?,
-    };
-    let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
-        categories,
-        embeddings,
-        best_projection,
-        best_config.clone(),
-    )?;
+    // Every successful trial offered its pipeline to `best`, so a
+    // non-empty `trials` guarantees one was kept. Returning it directly
+    // saves rebuilding the winner from scratch (a second O(N·d)
+    // projection pass + category-layer build).
+    let (best_score, best_pipeline) = best.expect("non-empty trials imply a kept best pipeline");
+    let best_config = best_pipeline.config().clone();
 
     let report = TuneReport {
         metric_name: metric.name().to_string(),
@@ -2040,6 +2075,90 @@ mod tests {
             "dominating value proposed only {count_7}/{n_proposals} times (uniform ≈ {})",
             n_proposals / 3
         );
+    }
+
+    #[test]
+    fn random_seeds_base_config_as_trial_zero() {
+        let input = make_input(24, 8);
+        let mut base = PipelineConfig::default();
+        base.bridges.overlap_artifact_territorial = 0.123; // off-axis
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Random {
+                budget: 4,
+                seed: 9,
+                max_wall_secs: None,
+            },
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 4, "seed trial counts against budget");
+        assert!(
+            (report.trials[0].config.bridges.overlap_artifact_territorial - 0.123).abs() < 1e-12,
+            "trial 0 must be base_config itself"
+        );
+        for t in &report.trials[1..] {
+            assert!(
+                (t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12,
+                "sampled trials must come from the space's axes"
+            );
+        }
+    }
+
+    #[test]
+    fn bayesian_seeds_base_config_as_trial_zero() {
+        let input = make_input(24, 8);
+        let mut base = PipelineConfig::default();
+        base.bridges.overlap_artifact_territorial = 0.123;
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Bayesian {
+                budget: 5,
+                warmup: 2,
+                gamma: 0.25,
+                seed: 9,
+                max_wall_secs: None,
+            },
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 5);
+        assert!(
+            (report.trials[0].config.bridges.overlap_artifact_territorial - 0.123).abs() < 1e-12
+        );
+    }
+
+    #[test]
+    fn grid_does_not_seed_base_config() {
+        let input = make_input(24, 8);
+        let mut base = PipelineConfig::default();
+        base.bridges.overlap_artifact_territorial = 0.123;
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Grid,
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.trials.len(),
+            full_search_space().grid_cardinality(),
+            "grid trial count must stay the exact enumeration"
+        );
+        for t in &report.trials {
+            assert!((t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12);
+        }
     }
 
     #[test]
