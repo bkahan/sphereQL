@@ -730,9 +730,10 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                     components,
                 });
                 let replace = match best {
-                    Some((best_score, _)) => {
-                        !matches!(score.partial_cmp(best_score), Some(std::cmp::Ordering::Less))
-                    }
+                    Some((best_score, _)) => !matches!(
+                        score.partial_cmp(best_score),
+                        Some(std::cmp::Ordering::Less)
+                    ),
                     None => true,
                 };
                 if replace {

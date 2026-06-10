@@ -545,16 +545,16 @@ impl NearestNeighborMetaModel {
         );
         let ranked = self.rank_candidates(features);
         let k = k.clamp(1, ranked.len());
-        let top: Vec<&MetaTrainingRecord> = ranked[..k]
-            .iter()
-            .map(|&(i, _)| &self.records[i])
-            .collect();
+        let top: Vec<&MetaTrainingRecord> =
+            ranked[..k].iter().map(|&(i, _)| &self.records[i]).collect();
 
         // Majority projection kind; `top` is nearest-first so `find`
         // breaks ties toward the closest record.
         let mut kind_counts: HashMap<ProjectionKind, usize> = HashMap::new();
         for r in &top {
-            *kind_counts.entry(r.best_config.projection_kind).or_default() += 1;
+            *kind_counts
+                .entry(r.best_config.projection_kind)
+                .or_default() += 1;
         }
         let max_count = kind_counts.values().copied().max().unwrap_or(0);
         let kind = top
@@ -615,14 +615,10 @@ impl NearestNeighborMetaModel {
                     );
                 }
                 ProjectionKind::UmapSphere => {
-                    cfg.umap.n_neighbors = median_usize(
-                        kind_matching
-                            .iter()
-                            .map(|r| r.best_config.umap.n_neighbors),
-                    );
-                    cfg.umap.n_epochs = median_usize(
-                        kind_matching.iter().map(|r| r.best_config.umap.n_epochs),
-                    );
+                    cfg.umap.n_neighbors =
+                        median_usize(kind_matching.iter().map(|r| r.best_config.umap.n_neighbors));
+                    cfg.umap.n_epochs =
+                        median_usize(kind_matching.iter().map(|r| r.best_config.umap.n_epochs));
                     cfg.umap.category_weight = median_f64(
                         kind_matching
                             .iter()
@@ -916,7 +912,10 @@ mod tests {
         assert!(dw.is_fitted());
 
         nn.fit(&[]);
-        assert!(!nn.is_fitted(), "refit on empty set must clear fitted state");
+        assert!(
+            !nn.is_fitted(),
+            "refit on empty set must clear fitted state"
+        );
     }
 
     #[test]
@@ -999,12 +998,7 @@ mod tests {
         // features predicts an m1 config.
         let r1 = record("a", feat(500, 5, 0.05, 0.8), ProjectionKind::Pca, 0.7);
         let r2 = record("b", feat(500, 5, 0.50, 0.2), ProjectionKind::Pca, 0.6);
-        let mut alien = record(
-            "c",
-            feat(500, 5, 0.30, 0.5),
-            ProjectionKind::KernelPca,
-            0.9,
-        );
+        let mut alien = record("c", feat(500, 5, 0.30, 0.5), ProjectionKind::KernelPca, 0.9);
         alien.metric_name = "other_metric".to_string();
 
         let mut m = NearestNeighborMetaModel::new();
@@ -1068,9 +1062,7 @@ mod tests {
             blended.routing.num_domain_groups,
             single.routing.num_domain_groups
         );
-        assert!(
-            (blended.bridges.threshold_base - single.bridges.threshold_base).abs() < 1e-12
-        );
+        assert!((blended.bridges.threshold_base - single.bridges.threshold_base).abs() < 1e-12);
     }
 
     #[test]
@@ -1363,12 +1355,7 @@ mod tests {
         // wide margin — lift 0.8). The hard-won config is the better
         // evidence and must win.
         let shared_feat = feat(500, 5, 0.1, 0.5);
-        let mut easy = record(
-            "easy",
-            shared_feat.clone(),
-            ProjectionKind::KernelPca,
-            0.9,
-        );
+        let mut easy = record("easy", shared_feat.clone(), ProjectionKind::KernelPca, 0.9);
         easy.score_lift = Some(0.0);
         let mut hard = record(
             "hard",
