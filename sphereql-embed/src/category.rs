@@ -50,6 +50,104 @@ pub struct CategorySummary {
 
 // ── Bridge items ───────────────────────────────────────────────────────
 
+/// Semantic relation type for a bridge edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum RelationType {
+    Studies,
+    AppliesTo,
+    Enables,
+    CausedBy,
+    Contains,
+    SharedMethod,
+    HistoricalLink,
+}
+
+impl RelationType {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Studies => "studies",
+            Self::AppliesTo => "applies_to",
+            Self::Enables => "enables",
+            Self::CausedBy => "caused_by",
+            Self::Contains => "contains",
+            Self::SharedMethod => "shared_method",
+            Self::HistoricalLink => "historical_link",
+        }
+    }
+}
+
+/// Infer a [`RelationType`] for a bridge from its concept label.
+///
+/// Source and target category names are accepted for future use but
+/// currently unused — keyword cues in the label drive the inference.
+fn infer_relation(
+    concept_label: &str,
+    _source_category: &str,
+    _target_category: &str,
+) -> Option<RelationType> {
+    let label = concept_label.to_lowercase();
+
+    if label.contains("history of")
+        || label.contains("historical")
+        || label.contains("origins of")
+        || label.contains("evolution of")
+    {
+        return Some(RelationType::HistoricalLink);
+    }
+
+    if label.contains("method")
+        || label.contains("technique")
+        || label.contains("analysis")
+        || label.contains("spectroscop")
+        || label.contains("microscop")
+        || label.contains("imaging")
+        || label.contains("modeling")
+        || label.contains("simulation")
+        || label.contains("measurement")
+    {
+        return Some(RelationType::SharedMethod);
+    }
+
+    if label.contains("applications")
+        || label.contains("applied")
+        || label.contains(" in ")
+        || label.contains(" for ")
+    {
+        return Some(RelationType::AppliesTo);
+    }
+
+    if label.contains("studies")
+        || label.contains("research")
+        || label.contains("science of")
+        || label.contains("theory of")
+    {
+        return Some(RelationType::Studies);
+    }
+
+    if label.starts_with("bio")
+        || label.starts_with("geo")
+        || label.starts_with("neuro")
+        || label.starts_with("astro")
+        || label.starts_with("electro")
+        || label.starts_with("psycho")
+        || label.starts_with("socio")
+        || label.starts_with("eco")
+    {
+        return Some(RelationType::Contains);
+    }
+
+    if label.contains("foundation")
+        || label.contains("prerequisite")
+        || label.contains("basis")
+        || label.contains("fundamentals")
+        || label.contains("principles")
+    {
+        return Some(RelationType::Enables);
+    }
+
+    None
+}
+
 /// Quality classification for a bridge item.
 ///
 /// Assigned after all bridges are collected, comparing each bridge's
@@ -90,6 +188,8 @@ pub struct BridgeItem {
     pub bridge_strength: f64,
     /// Quality label assigned after the full bridge set is observed.
     pub classification: BridgeClassification,
+    /// Semantic relation type, inferred heuristically. `None` when untyped.
+    pub relation: Option<RelationType>,
 }
 
 // ── Category graph ─────────────────────────────────────────────────────
@@ -530,6 +630,42 @@ impl CategoryLayer {
         }
     }
 
+    /// Annotate every bridge with a heuristically inferred [`RelationType`].
+    ///
+    /// Looks at each bridge item's concept label (indexed into `labels`
+    /// by `BridgeItem::item_index`) along with its source and target
+    /// category names. Bridges whose label doesn't match any cue remain
+    /// `relation: None`.
+    pub fn annotate_bridge_relations(&mut self, labels: &[String]) {
+        for ((src_cat, tgt_cat), bridges) in self.graph.bridges.iter_mut() {
+            let src_name = &self.summaries[*src_cat].name;
+            let tgt_name = &self.summaries[*tgt_cat].name;
+            for bridge in bridges.iter_mut() {
+                if bridge.item_index < labels.len() {
+                    bridge.relation = infer_relation(
+                        &labels[bridge.item_index],
+                        src_name,
+                        tgt_name,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Histogram of relation types across every bridge in the graph.
+    ///
+    /// `None` is included as its own bucket so callers can see how many
+    /// bridges remain unlabeled after annotation.
+    pub fn relation_census(&self) -> std::collections::HashMap<Option<RelationType>, usize> {
+        let mut counts = std::collections::HashMap::new();
+        for bridges in self.graph.bridges.values() {
+            for b in bridges {
+                *counts.entry(b.relation).or_default() += 1;
+            }
+        }
+        counts
+    }
+
     /// Build the inter-category adjacency graph and detect bridge items.
     ///
     /// Bridge detection uses the spatial quality's EVR-adaptive threshold
@@ -607,6 +743,7 @@ impl CategoryLayer {
                             bridge_strength,
                             // Populated in the classification pass below.
                             classification: BridgeClassification::Weak,
+                            relation: None,
                         });
                     }
                 }
@@ -2038,5 +2175,35 @@ mod tests {
         assert_eq!(layer.num_categories(), 1);
         assert_eq!(layer.summaries[0].name, "big");
         assert_eq!(layer.summaries[0].member_count, 10);
+    }
+
+    #[test]
+    fn infer_relation_historical() {
+        assert_eq!(
+            infer_relation("History of technology", "history", "engineering"),
+            Some(RelationType::HistoricalLink)
+        );
+    }
+
+    #[test]
+    fn infer_relation_method() {
+        assert_eq!(
+            infer_relation("Spectroscopy", "chemistry", "physics"),
+            Some(RelationType::SharedMethod)
+        );
+    }
+
+    #[test]
+    fn infer_relation_none() {
+        assert_eq!(
+            infer_relation("Quantum computing", "physics", "cs"),
+            None
+        );
+    }
+
+    #[test]
+    fn relation_type_name_stable() {
+        assert_eq!(RelationType::Studies.name(), "studies");
+        assert_eq!(RelationType::HistoricalLink.name(), "historical_link");
     }
 }

@@ -1087,6 +1087,15 @@ impl SphereQLPipeline {
         self.quality_config = config;
     }
 
+    /// Annotate every bridge in the category layer with an inferred
+    /// [`RelationType`](crate::category::RelationType).
+    ///
+    /// `labels[i]` must correspond to the same item as
+    /// `BridgeItem::item_index == i` — i.e., the pipeline's item list.
+    pub fn annotate_relations(&mut self, labels: &[String]) {
+        self.category_layer.annotate_bridge_relations(labels);
+    }
+
     /// Full tunable configuration this pipeline was built with.
     pub fn config(&self) -> &PipelineConfig {
         &self.config
