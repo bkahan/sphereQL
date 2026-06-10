@@ -6,6 +6,50 @@ versions.
 
 ## [Unreleased]
 
+### Changed — ML-framework audit (tuner, metalearning, controller, pipeline)
+
+- **`auto_tune` warm-starts from the meta-model** — Random and Bayesian
+  strategies evaluate `base_config` as trial 0 (inside the budget; for
+  Bayesian it seeds the TPE history), so a predicted config competes
+  directly with searched ones. Grid keeps its exact-enumeration
+  contract. `new_from_metamodel_tuned` docs now state the real
+  semantics: the prediction supplies values only for knobs *not* in the
+  `SearchSpace`.
+- **Tuner trials stop cloning the corpus** — trials borrow the
+  embedding matrix via an internal constructor instead of cloning it
+  per trial (~3 GB/trial at 500k×768), and the winning pipeline is kept
+  from its trial instead of being rebuilt (one fewer full projection +
+  category-layer build per run).
+- **Metric scoring stops re-exporting the corpus** — `ClusterSilhouette`
+  and `GraphModularity` read a lazily-built, shared positions/category
+  cache on the pipeline instead of allocating a fresh
+  `Vec<ExportedPoint>` (with per-item `String` clones) on every call.
+  `SpatialQuality` stores pairwise cap intersections in a `HashMap`
+  (O(1) lookups; bridge detection was doing O(C²) scans per pair).
+- **Statistical fixes** — meta-model feature z-scores use Bessel-
+  corrected sample variance; tuner uniform sampling drops its modulo
+  bias; `ClusterSilhouette` skips items coinciding with their centroid
+  (a forced `s = 1.0` per category).
+- **`run_self_tune` validates its config and returns `Result`** —
+  smoothings/penalties must be in [0,1], boosts ≥ 1, finite
+  `plateau_epsilon`; out-of-range smoothing can no longer silently zero
+  out corpus quality. Plateau detection now fires *before* the
+  iteration's reweight+prune, so a plateaued corpus is no longer
+  mutated one extra unmeasured time. `SelfTuneConfig` is serializable.
+  `reweight_in_place` docs no longer claim idempotency (repeated calls
+  compound; use `reweight_from_base` with an invariant base).
+- **Hardened API boundaries** — `MetaModel::is_fitted` +
+  `new_from_metamodel{,_tuned}` return `InvalidInput` for unfitted
+  models instead of panicking through a `Result`;
+  `SphereQLPipeline::to_json` returns `Result` instead of panicking on
+  non-finite coordinates (wasm/python bindings updated);
+  `nearest_by_embedding` uses a bounded heap (O(N log k));
+  `MetaTrainingRecord::append_to`'s legacy-store migration shares
+  `feedback`'s locked tempfile+rename path (was an unsynchronized
+  read/rewrite). `CorpusQuality` reports per-component breakdowns to
+  `TrialRecord`; `SpatialQuality::compute` is deprecated in favor of
+  `compute_with_config`.
+
 ### Changed — training loop (self-tune controller + metalearning)
 
 - **Self-tune closes the quality→geometry loop** — `run_self_tune`'s
