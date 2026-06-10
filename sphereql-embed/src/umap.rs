@@ -43,7 +43,11 @@ pub struct UmapConfig {
     pub learning_rate: f64,
     /// Negative samples drawn per attractive edge per epoch.
     pub negative_sample_rate: usize,
-    /// Weight on the category separation term (0.0 = disabled).
+    /// Weight on the supervised category term (0.0 = disabled). When
+    /// active, every epoch samples for each point one same-category
+    /// partner (cohesion, attractive) and one different-category
+    /// partner (separation, repulsive) — stratified so the cohesion
+    /// half fires regardless of how many categories the corpus has.
     /// Only meaningful when `categories` is supplied to `fit`.
     pub category_weight: f64,
     /// PRNG seed for kNN tie-breaking, negative sampling, and
@@ -209,6 +213,27 @@ impl UmapSphereProjection {
         // partial_cmp().map(is_gt).unwrap_or(false) chain.
         let cat_active = config.category_weight > 0.0 && categories.is_some();
 
+        // Per-category index buckets for stratified sampling in the
+        // supervised term. Category ids may be sparse, so each id is
+        // compacted to a dense bucket index up front; `bucket_of[i]`
+        // is point i's bucket.
+        let cat_buckets: Option<(Vec<Vec<usize>>, Vec<usize>)> = cat_active.then(|| {
+            // cat_active is only true when categories.is_some().
+            let cats = categories.unwrap();
+            let mut id_to_bucket: HashMap<u32, usize> = HashMap::new();
+            let mut buckets: Vec<Vec<usize>> = Vec::new();
+            let mut bucket_of = Vec::with_capacity(n);
+            for (i, &c) in cats.iter().enumerate() {
+                let b = *id_to_bucket.entry(c).or_insert_with(|| {
+                    buckets.push(Vec::new());
+                    buckets.len() - 1
+                });
+                buckets[b].push(i);
+                bucket_of.push(b);
+            }
+            (buckets, bucket_of)
+        });
+
         // Adam state, three components per point.
         let mut m = vec![[0.0f64; 3]; n];
         let mut v = vec![[0.0f64; 3]; n];
@@ -244,23 +269,42 @@ impl UmapSphereProjection {
                 }
             }
 
-            // Optional category term: pull same-cat together, push others apart.
-            if cat_active {
-                // cat_active is only true when categories.is_some(), so this is safe.
-                let cats = categories.unwrap();
+            // Optional category term, stratified per point: one
+            // same-category partner (cohesion) and one
+            // different-category partner (separation) per epoch. A
+            // uniform partner draw would be ~(C-1)/C repulsion at C
+            // categories, starving the cohesion half exactly where
+            // territorial scores need it.
+            if let Some((buckets, bucket_of)) = &cat_buckets {
+                let w = config.category_weight;
                 for i in 0..n {
-                    let j = (rng.next_u64() as usize) % n;
-                    if j == i {
-                        continue;
+                    let bucket = &buckets[bucket_of[i]];
+                    if bucket.len() > 1 {
+                        // Uniform over the bucket minus i: draw from the
+                        // first len-1 slots and remap a self-draw to the
+                        // last slot.
+                        let idx = (rng.next_u64() as usize) % (bucket.len() - 1);
+                        let j = if bucket[idx] == i {
+                            bucket[bucket.len() - 1]
+                        } else {
+                            bucket[idx]
+                        };
+                        let (gi, gj) = attractive_grad(&points[i], &points[j]);
+                        add3_scaled(&mut grads[i], &gi, w);
+                        add3_scaled(&mut grads[j], &gj, w);
                     }
-                    let (gi, gj) = if cats[i] == cats[j] {
-                        attractive_grad(&points[i], &points[j])
-                    } else {
-                        repulsive_grad(&points[i], &points[j])
-                    };
-                    let w = config.category_weight;
-                    add3_scaled(&mut grads[i], &gi, w);
-                    add3_scaled(&mut grads[j], &gj, w);
+                    // Rejection-sample the cross-category partner with
+                    // a bounded retry count so a (near-)single-category
+                    // corpus can't spin forever — on exhaustion, skip.
+                    for _ in 0..MAX_CROSS_CATEGORY_DRAWS {
+                        let j = (rng.next_u64() as usize) % n;
+                        if bucket_of[j] != bucket_of[i] {
+                            let (gi, gj) = repulsive_grad(&points[i], &points[j]);
+                            add3_scaled(&mut grads[i], &gi, w);
+                            add3_scaled(&mut grads[j], &gj, w);
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -520,6 +564,12 @@ fn add3_scaled(a: &mut [f64; 3], b: &[f64; 3], s: f64) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+/// Retry bound for the cross-category rejection sampler in the
+/// supervised term. With C ≥ 2 roughly balanced categories the miss
+/// probability per draw is ≤ 1/2, so eight draws fail with probability
+/// ≤ 1/256; only a near-single-category corpus exhausts this.
+const MAX_CROSS_CATEGORY_DRAWS: usize = 8;
 
 /// Corpus size at which the ANN index amortizes its build cost.
 /// Below this, brute-force is faster and gives exact answers; above it,
@@ -846,6 +896,52 @@ mod tests {
         let within_sup = mean_within_class(&supervised.fitted_points, &cats);
         assert!(
             within_sup <= within_unsup + 1e-6,
+            "supervised within-class={within_sup}, unsupervised={within_unsup}"
+        );
+    }
+
+    #[test]
+    fn category_term_tightens_classes_at_many_categories() {
+        // 8 categories x 4 points, each category in its own basis
+        // direction of an 8D space. At C=8 a uniform partner draw is
+        // same-category only ~3/31 of the time, so the old sampling
+        // was almost pure repulsion here — the cohesion half of the
+        // term never fired. Stratified sampling must beat the
+        // unsupervised baseline on within-class spread.
+        let mut corpus = Vec::new();
+        let mut cats: Vec<u32> = Vec::new();
+        for c in 0..8u32 {
+            for i in 0..4 {
+                let mut v = vec![0.0; 8];
+                v[c as usize] = 1.0 + i as f64 * 0.05;
+                v[(c as usize + 1) % 8] = 0.1 + i as f64 * 0.02;
+                corpus.push(emb(&v));
+                cats.push(c);
+            }
+        }
+
+        let config = |category_weight: f64| UmapConfig {
+            n_neighbors: 3,
+            n_epochs: 100,
+            category_weight,
+            ..UmapConfig::default()
+        };
+
+        let unsupervised =
+            UmapSphereProjection::fit(&corpus, None, RadialStrategy::Fixed(1.0), config(0.0))
+                .unwrap();
+        let supervised = UmapSphereProjection::fit(
+            &corpus,
+            Some(&cats),
+            RadialStrategy::Fixed(1.0),
+            config(2.0),
+        )
+        .unwrap();
+
+        let within_unsup = mean_within_class(&unsupervised.fitted_points, &cats);
+        let within_sup = mean_within_class(&supervised.fitted_points, &cats);
+        assert!(
+            within_sup < within_unsup,
             "supervised within-class={within_sup}, unsupervised={within_unsup}"
         );
     }
