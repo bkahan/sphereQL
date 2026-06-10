@@ -100,6 +100,7 @@ fn run_demo(corpus: &[Concept]) {
         umap_n_neighbors: vec![15],
         umap_n_epochs: vec![200],
         umap_category_weight: vec![1.5],
+        umap_min_dist: vec![0.1],
         num_domain_groups: vec![expert_cfg.routing.num_domain_groups], // pin
         low_evr_threshold: vec![expert_cfg.routing.low_evr_threshold], // pin
         overlap_artifact_territorial: vec![0.2, 0.3, 0.4],             // the only tuned axis

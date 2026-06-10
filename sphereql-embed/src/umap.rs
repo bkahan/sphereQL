@@ -62,6 +62,14 @@ pub struct UmapConfig {
     /// half fires regardless of how many categories the corpus has.
     /// Only meaningful when `categories` is supplied to `fit`.
     pub category_weight: f64,
+    /// How tightly neighbors may pack in the layout — the canonical
+    /// UMAP knob. At fit time the kernel parameters `(a, b)` of
+    /// `Phi(d) = 1/(1 + a·d^(2b))` are least-squares fitted from it
+    /// (spread fixed at 1.0). On S², whose total area is fixed, this
+    /// directly sets how much territory a cluster occupies; 0.0
+    /// reproduces near-maximal clumping (close to the historical
+    /// hardcoded `a = b = 1`). UMAP default 0.1.
+    pub min_dist: f64,
     /// PRNG seed for kNN tie-breaking, negative sampling, and
     /// fallback random init when PCA warm-start is degenerate.
     pub seed: u64,
@@ -75,14 +83,16 @@ impl Default for UmapConfig {
             learning_rate: 0.05,
             negative_sample_rate: 5,
             category_weight: 0.0,
+            min_dist: 0.1,
             seed: 0xA1B2_C3D4,
         }
     }
 }
 
 /// Precomputed kNN graph for UMAP. Cacheable across configs that
-/// share the same `n_neighbors` but differ in `n_epochs` or
-/// `category_weight`.
+/// share the same `n_neighbors` but differ in `n_epochs`,
+/// `category_weight`, or `min_dist` — everything here is computed
+/// before the optimizer, which is where those knobs act.
 #[derive(Clone)]
 pub struct UmapGraph {
     /// kNN adjacency list: `knn[i]` = indices of k nearest neighbors of item i.
@@ -229,6 +239,9 @@ impl UmapSphereProjection {
 
         let mut points = graph.warm_start.clone();
         let mut rng = SplitMix64::new(config.seed);
+        // Kernel parameters from min_dist — fitted once per fit, then
+        // closed over by every gradient call below.
+        let (ka, kb) = find_ab_params(config.min_dist);
         // NaN category_weight compares false, exactly like the old
         // partial_cmp().map(is_gt).unwrap_or(false) chain.
         let cat_active = config.category_weight > 0.0 && categories.is_some();
@@ -303,7 +316,7 @@ impl UmapSphereProjection {
             for (i, neighbors) in graph.knn.iter().enumerate() {
                 for (idx, &j) in neighbors.iter().enumerate() {
                     let w = attract[i][idx];
-                    let (gi, gj) = attractive_grad(&points[i], &points[j]);
+                    let (gi, gj) = attractive_grad(&points[i], &points[j], ka, kb);
                     add3_scaled(&mut grads[i], &gi, w);
                     add3_scaled(&mut grads[j], &gj, w);
 
@@ -312,7 +325,7 @@ impl UmapSphereProjection {
                         if nj == i {
                             continue;
                         }
-                        let (gi_r, gj_r) = repulsive_grad(&points[i], &points[nj]);
+                        let (gi_r, gj_r) = repulsive_grad(&points[i], &points[nj], ka, kb);
                         add3_scaled(&mut grads[i], &gi_r, w);
                         add3_scaled(&mut grads[nj], &gj_r, w);
                     }
@@ -339,7 +352,7 @@ impl UmapSphereProjection {
                         } else {
                             bucket[idx]
                         };
-                        let (gi, gj) = attractive_grad(&points[i], &points[j]);
+                        let (gi, gj) = attractive_grad(&points[i], &points[j], ka, kb);
                         add3_scaled(&mut grads[i], &gi, w);
                         add3_scaled(&mut grads[j], &gj, w);
                     }
@@ -349,7 +362,7 @@ impl UmapSphereProjection {
                     for _ in 0..MAX_CROSS_CATEGORY_DRAWS {
                         let j = (rng.next_u64() as usize) % n;
                         if bucket_of[j] != bucket_of[i] {
-                            let (gi, gj) = repulsive_grad(&points[i], &points[j]);
+                            let (gi, gj) = repulsive_grad(&points[i], &points[j], ka, kb);
                             add3_scaled(&mut grads[i], &gi, w);
                             add3_scaled(&mut grads[j], &gj, w);
                             break;
@@ -566,29 +579,105 @@ impl Projection for UmapSphereProjection {
 
 // ── Gradients ───────────────────────────────────────────────────────
 //
-// Loss decomposition mirrors the standard UMAP form, evaluated in ℝ³ on
-// the embedded points and projected to the tangent at step time. The
-// closed-form gradients below are the Euclidean gradients; the caller
-// projects them to the tangent before stepping.
+// Loss decomposition mirrors the standard UMAP form with the rational
+// kernel Phi(d) = 1/(1 + a·d^(2b)), evaluated in ℝ³ on the embedded
+// points and projected to the tangent at step time. The closed-form
+// gradients below are the Euclidean gradients; the caller projects
+// them to the tangent before stepping. (a, b) come from
+// `find_ab_params(min_dist)`; at a = b = 1 both reduce exactly to the
+// historical hardcoded forms.
 
-fn attractive_grad(xi: &[f64; 3], xj: &[f64; 3]) -> ([f64; 3], [f64; 3]) {
-    // L_attr = log(1 + d²) where d = |xi - xj|.
-    // ∂L/∂xi = 2(xi - xj) / (1 + d²); ∂L/∂xj = -∂L/∂xi.
+fn attractive_grad(xi: &[f64; 3], xj: &[f64; 3], a: f64, b: f64) -> ([f64; 3], [f64; 3]) {
+    // L_attr = log(1 + a·d^(2b)) where d = |xi - xj|.
+    // ∂L/∂xi = 2ab·d^(2b-2)·(xi - xj) / (1 + a·d^(2b)); ∂L/∂xj = -∂L/∂xi.
+    // At a = b = 1: 2(xi - xj) / (1 + d²).
     let dx = [xi[0] - xj[0], xi[1] - xj[1], xi[2] - xj[2]];
     let d2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
-    let coef = 2.0 / (1.0 + d2);
+    // d^(2b-2) = (d²)^(b-1), floored so b < 1 stays finite at d → 0.
+    // The floor is a no-op at b = 1 (exponent 0).
+    let coef = 2.0 * a * b * d2.max(1e-6).powf(b - 1.0) / (1.0 + a * d2.powf(b));
     let g = [coef * dx[0], coef * dx[1], coef * dx[2]];
     (g, [-g[0], -g[1], -g[2]])
 }
 
-fn repulsive_grad(xi: &[f64; 3], xj: &[f64; 3]) -> ([f64; 3], [f64; 3]) {
-    // L_rep = -log(1 - 1/(1 + d²)) = log((1 + d²)/d²).
-    // ∂L/∂xi = -2(xi - xj) / (d² (1 + d²)); pushes them apart.
+fn repulsive_grad(xi: &[f64; 3], xj: &[f64; 3], a: f64, b: f64) -> ([f64; 3], [f64; 3]) {
+    // L_rep = -log(1 - Phi(d)) where Phi(d) = 1/(1 + a·d^(2b)).
+    // ∂L/∂xi = -2b·(xi - xj) / (d²·(1 + a·d^(2b))); pushes them apart.
+    // At a = b = 1: -2(xi - xj) / (d²(1 + d²)).
     let dx = [xi[0] - xj[0], xi[1] - xj[1], xi[2] - xj[2]];
     let d2 = (dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2]).max(1e-6);
-    let coef = -2.0 / (d2 * (1.0 + d2));
+    let coef = -2.0 * b / (d2 * (1.0 + a * d2.powf(b)));
     let g = [coef * dx[0], coef * dx[1], coef * dx[2]];
     (g, [-g[0], -g[1], -g[2]])
+}
+
+/// Fit the kernel parameters `(a, b)` of `Phi(d) = 1/(1 + a·d^(2b))`
+/// to the target curve `f(d) = 1 if d <= min_dist, exp(-(d - min_dist))
+/// otherwise` — canonical UMAP's `find_ab_params` with spread fixed at
+/// 1.0, except deterministic: least squares over 300 samples of
+/// `d ∈ [0, 3]`, minimized by a coarse grid over `log₁₀ a ∈ [-3, 1] ×
+/// b ∈ [0.1, 2.5]` followed by grid-shrink refinement around the
+/// incumbent. At `min_dist = 0.1` this lands near the canonical
+/// `(a, b) ≈ (1.577, 0.895)`.
+fn find_ab_params(min_dist: f64) -> (f64, f64) {
+    const SAMPLES: usize = 300;
+    const D_MAX: f64 = 3.0;
+    let targets: Vec<(f64, f64)> = (0..SAMPLES)
+        .map(|i| {
+            let d = D_MAX * i as f64 / (SAMPLES - 1) as f64;
+            let f = if d <= min_dist {
+                1.0
+            } else {
+                (-(d - min_dist)).exp()
+            };
+            (d, f)
+        })
+        .collect();
+    let sse = |a: f64, b: f64| -> f64 {
+        targets
+            .iter()
+            .map(|&(d, f)| {
+                let phi = 1.0 / (1.0 + a * d.powf(2.0 * b));
+                (phi - f) * (phi - f)
+            })
+            .sum()
+    };
+
+    const LA_MIN: f64 = -3.0;
+    const LA_MAX: f64 = 1.0;
+    const B_MIN: f64 = 0.1;
+    const B_MAX: f64 = 2.5;
+    let mut la_lo = LA_MIN;
+    let mut la_hi = LA_MAX;
+    let mut b_lo = B_MIN;
+    let mut b_hi = B_MAX;
+    let mut best = (1.0f64, 1.0f64);
+    let mut best_err = f64::INFINITY;
+    for round in 0..6 {
+        let steps = if round == 0 { 24 } else { 8 };
+        for i in 0..=steps {
+            let la = la_lo + (la_hi - la_lo) * i as f64 / steps as f64;
+            let a = 10f64.powf(la);
+            for j in 0..=steps {
+                let b = b_lo + (b_hi - b_lo) * j as f64 / steps as f64;
+                let err = sse(a, b);
+                if err < best_err {
+                    best_err = err;
+                    best = (a, b);
+                }
+            }
+        }
+        // Halve each window around the incumbent, clamped to the
+        // original bounds.
+        let la_half = (la_hi - la_lo) / 4.0;
+        let la_best = best.0.log10();
+        la_lo = (la_best - la_half).max(LA_MIN);
+        la_hi = (la_best + la_half).min(LA_MAX);
+        let b_half = (b_hi - b_lo) / 4.0;
+        b_lo = (best.1 - b_half).max(B_MIN);
+        b_hi = (best.1 + b_half).min(B_MAX);
+    }
+    best
 }
 
 fn project_to_tangent(x: &[f64; 3], g: &[f64; 3]) -> [f64; 3] {
@@ -1411,5 +1500,95 @@ mod tests {
         assert!(pp.position.theta.is_finite());
         assert!(pp.position.phi.is_finite());
         assert!(pp.position.r.is_finite());
+    }
+
+    #[test]
+    fn gradients_at_unit_ab_match_old_hardcoded_forms() {
+        // The generalized kernel must reduce exactly to the pre-min_dist
+        // forms at a = b = 1: attractive 2(xi-xj)/(1+d²), repulsive
+        // -2(xi-xj)/(d²(1+d²)) with the same 1e-6 floor.
+        let pairs: [([f64; 3], [f64; 3]); 4] = [
+            ([1.0, 0.0, 0.0], [0.6, 0.8, 0.0]),
+            ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            ([1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]),
+            ([0.36, 0.48, 0.8], [0.48, 0.36, 0.8]),
+        ];
+        for (xi, xj) in pairs {
+            let dx = [xi[0] - xj[0], xi[1] - xj[1], xi[2] - xj[2]];
+            let d2 = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+
+            let (gi, gj) = attractive_grad(&xi, &xj, 1.0, 1.0);
+            let coef = 2.0 / (1.0 + d2);
+            for d in 0..3 {
+                assert!((gi[d] - coef * dx[d]).abs() < 1e-12, "attractive gi[{d}]");
+                assert!((gj[d] + coef * dx[d]).abs() < 1e-12, "attractive gj[{d}]");
+            }
+
+            let (ri, rj) = repulsive_grad(&xi, &xj, 1.0, 1.0);
+            let d2f = d2.max(1e-6);
+            let rcoef = -2.0 / (d2f * (1.0 + d2f));
+            for d in 0..3 {
+                assert!((ri[d] - rcoef * dx[d]).abs() < 1e-12, "repulsive ri[{d}]");
+                assert!((rj[d] + rcoef * dx[d]).abs() < 1e-12, "repulsive rj[{d}]");
+            }
+        }
+    }
+
+    #[test]
+    fn ab_fit_matches_canonical_anchor_at_default_min_dist() {
+        // umap-learn's scipy curve_fit gives (1.577, 0.895) for
+        // min_dist = 0.1, spread = 1.0. The grid fit should land in the
+        // same neighborhood.
+        let (a, b) = find_ab_params(0.1);
+        assert!((1.3..=1.9).contains(&a), "a = {a}");
+        assert!((0.78..=1.0).contains(&b), "b = {b}");
+    }
+
+    #[test]
+    fn larger_min_dist_flattens_kernel_near_origin() {
+        // A bigger min_dist must fit a kernel that holds Phi higher
+        // (weaker attraction decay) at short range — that flatter
+        // plateau is what buys territory on the sphere.
+        let (a0, b0) = find_ab_params(0.0);
+        let (a5, b5) = find_ab_params(0.5);
+        let phi = |a: f64, b: f64, d: f64| 1.0 / (1.0 + a * d.powf(2.0 * b));
+        for d in [0.1, 0.25, 0.5, 0.75, 1.0] {
+            assert!(
+                phi(a5, b5, d) > phi(a0, b0, d),
+                "Phi at d={d}: min_dist=0.5 gives {}, min_dist=0.0 gives {}",
+                phi(a5, b5, d),
+                phi(a0, b0, d)
+            );
+        }
+    }
+
+    #[test]
+    fn larger_min_dist_spreads_fitted_points() {
+        // Same corpus, same seed: the only difference is the kernel, so
+        // intra-cluster packing must loosen with min_dist. Fits are
+        // deterministic, so this is a fixed outcome, not a flaky one.
+        let corpus = cluster_corpus();
+        let cats: Vec<u32> = (0..corpus.len())
+            .map(|i| if i < 8 { 0 } else { 1 })
+            .collect();
+        let fit_at = |min_dist: f64| {
+            UmapSphereProjection::fit(
+                &corpus,
+                None,
+                RadialStrategy::Fixed(1.0),
+                UmapConfig {
+                    n_neighbors: 5,
+                    min_dist,
+                    ..UmapConfig::default()
+                },
+            )
+            .unwrap()
+        };
+        let tight = mean_within_class(&fit_at(0.0).fitted_points, &cats);
+        let spread = mean_within_class(&fit_at(0.5).fitted_points, &cats);
+        assert!(
+            spread > tight,
+            "min_dist=0.5 within-class spread {spread} should exceed min_dist=0.0's {tight}"
+        );
     }
 }

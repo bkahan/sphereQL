@@ -1323,7 +1323,8 @@ pub fn fit_projection_for_config(
 /// Fit a UMAP projection from a prebuilt kNN graph.
 ///
 /// Used by the tuner to avoid rebuilding the kNN graph across trials
-/// that share `n_neighbors` but differ in `n_epochs` / `category_weight`.
+/// that share `n_neighbors` but differ in `n_epochs` /
+/// `category_weight` / `min_dist`.
 /// The graph build is the expensive part of UMAP fit; the Adam optimizer
 /// that runs on top of it is comparatively cheap.
 pub fn fit_umap_from_graph(
@@ -1374,6 +1375,7 @@ fn umap_fit_config(config: &PipelineConfig) -> crate::umap::UmapConfig {
         learning_rate: 0.05,
         negative_sample_rate: 5,
         category_weight: uc.category_weight,
+        min_dist: uc.min_dist,
         seed: uc.seed,
     }
 }
@@ -1985,6 +1987,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3], // NOT the predicted 0.123

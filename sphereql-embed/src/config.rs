@@ -299,6 +299,12 @@ pub struct UmapConfig {
     /// Positive values pull same-category items together and push
     /// different-category items apart. 1.0–3.0 is typical.
     pub category_weight: f64,
+    /// How tightly neighbors may pack on the sphere. Larger values
+    /// flatten the embedding kernel near zero, so clusters claim more
+    /// territory — exactly what the territorial/cap-overlap metrics
+    /// measure. 0.0 = near-maximal clumping; 0.1 is the canonical UMAP
+    /// default.
+    pub min_dist: f64,
     /// PRNG seed for negative sampling and tie-breaking.
     pub seed: u64,
 }
@@ -309,6 +315,7 @@ impl Default for UmapConfig {
             n_neighbors: 15,
             n_epochs: 200,
             category_weight: 1.5,
+            min_dist: 0.1,
             seed: 0xA1B2_C3D4,
         }
     }
@@ -376,6 +383,7 @@ mod tests {
         assert_eq!(c.umap.n_neighbors, 15);
         assert_eq!(c.umap.n_epochs, 200);
         assert!((c.umap.category_weight - 1.5).abs() < 1e-12);
+        assert!((c.umap.min_dist - 0.1).abs() < 1e-12);
         assert_eq!(c.spatial.coverage_samples, 100_000);
         assert_eq!(c.spatial.exclusivity_samples, 30_000);
         assert_eq!(c.spatial.voronoi_samples, 100_000);

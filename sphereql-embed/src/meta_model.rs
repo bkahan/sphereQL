@@ -624,6 +624,8 @@ impl NearestNeighborMetaModel {
                             .iter()
                             .map(|r| r.best_config.umap.category_weight),
                     );
+                    cfg.umap.min_dist =
+                        median_f64(kind_matching.iter().map(|r| r.best_config.umap.min_dist));
                 }
                 ProjectionKind::Pca | ProjectionKind::KernelPca => {}
             }

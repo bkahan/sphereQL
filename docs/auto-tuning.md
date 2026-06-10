@@ -147,9 +147,9 @@ want.
 - Projections are fit **once per distinct fit-affecting hyperparameter
   tuple** inside `auto_tune` and reused across trials. PCA and Kernel
   PCA key per kind; Laplacian keys on `(k_neighbors, active_threshold)`;
-  UMAP keys on `(n_neighbors, n_epochs, category_weight)`, and its kNN
-  graph + PCA warm-start are additionally cached per `n_neighbors` so
-  epoch/weight sweeps don't rebuild the graph
+  UMAP keys on `(n_neighbors, n_epochs, category_weight, min_dist)`,
+  and its kNN graph + PCA warm-start are additionally cached per
+  `n_neighbors` so epoch/weight/min_dist sweeps don't rebuild the graph
   (`TuneReport::umap_graph_builds` reports the cache's effectiveness).
 - `SearchSpace` is kind-conditional: trials for `ProjectionKind::Pca`
   don't iterate over Laplacian or UMAP hyperparameters, and vice versa.

@@ -13,8 +13,9 @@
 //! tuple** from the input corpus and reused across every trial: PCA and
 //! Kernel PCA key per kind, Laplacian per `(k_neighbors,
 //! active_threshold)`, and UMAP per `(n_neighbors, n_epochs,
-//! category_weight)` — with UMAP's kNN graph additionally cached per
-//! `n_neighbors` (see [`TuneReport::umap_graph_builds`]). Only the
+//! category_weight, min_dist)` — with UMAP's kNN graph additionally
+//! cached per `n_neighbors` (see [`TuneReport::umap_graph_builds`]).
+//! Only the
 //! downstream config knobs (bridge thresholds, inner-sphere gates,
 //! domain-group counts, etc.) vary per trial.
 
@@ -75,6 +76,9 @@ pub struct SearchSpace {
     /// explored when [`ProjectionKind::UmapSphere`] is in
     /// `projection_kinds`.
     pub umap_category_weight: Vec<f64>,
+    /// Candidate values for [`UmapConfig::min_dist`]. Only explored
+    /// when [`ProjectionKind::UmapSphere`] is in `projection_kinds`.
+    pub umap_min_dist: Vec<f64>,
 
     // ── Kind-agnostic knobs ───────────────────────────────────────
     /// Candidate values for [`RoutingConfig::num_domain_groups`].
@@ -108,6 +112,7 @@ impl SearchSpace {
             umap_n_neighbors: vec![10, 15, 30],
             umap_n_epochs: vec![150, 300],
             umap_category_weight: vec![0.0, 1.5, 3.0],
+            umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35],
             overlap_artifact_territorial: vec![0.2, 0.3],
@@ -133,6 +138,7 @@ impl Default for SearchSpace {
             umap_n_neighbors: vec![10, 15, 30],
             umap_n_epochs: vec![150, 250],
             umap_category_weight: vec![0.0, 1.5, 3.0],
+            umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
             overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
@@ -242,6 +248,11 @@ impl SearchSpace {
                     "axis `umap_category_weight` is empty".into(),
                 ));
             }
+            if self.umap_min_dist.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_min_dist` is empty".into(),
+                ));
+            }
         }
         Ok(())
     }
@@ -282,6 +293,7 @@ impl SearchSpace {
                     * self.umap_n_neighbors.len()
                     * self.umap_n_epochs.len()
                     * self.umap_category_weight.len()
+                    * self.umap_min_dist.len()
             }
             ProjectionKind::Pca | ProjectionKind::KernelPca => common,
         }
@@ -367,10 +379,12 @@ impl SearchSpace {
             let i_nn = take(&mut idx, self.umap_n_neighbors.len());
             let i_ne = take(&mut idx, self.umap_n_epochs.len());
             let i_cw = take(&mut idx, self.umap_category_weight.len());
+            let i_md = take(&mut idx, self.umap_min_dist.len());
             cfg.umap = UmapConfig {
                 n_neighbors: self.umap_n_neighbors[i_nn],
                 n_epochs: self.umap_n_epochs[i_ne],
                 category_weight: self.umap_category_weight[i_cw],
+                min_dist: self.umap_min_dist[i_md],
                 ..base.umap.clone()
             };
         }
@@ -427,6 +441,7 @@ impl SearchSpace {
                 n_neighbors: pick_uniform(rng, &self.umap_n_neighbors),
                 n_epochs: pick_uniform(rng, &self.umap_n_epochs),
                 category_weight: pick_uniform(rng, &self.umap_category_weight),
+                min_dist: pick_uniform(rng, &self.umap_min_dist),
                 ..base.umap.clone()
             };
         }
@@ -456,6 +471,7 @@ enum ProjectionFitKey {
         n_neighbors: usize,
         n_epochs: usize,
         category_weight_bits: u64,
+        min_dist_bits: u64,
     },
 }
 
@@ -472,6 +488,11 @@ impl ProjectionFitKey {
                 n_neighbors: cfg.umap.n_neighbors,
                 n_epochs: cfg.umap.n_epochs,
                 category_weight_bits: cfg.umap.category_weight.to_bits(),
+                // min_dist sets the optimizer's kernel (a, b), so two
+                // configs differing only here must not share a fitted
+                // projection — though they still share the kNN graph,
+                // which is built before the optimizer runs.
+                min_dist_bits: cfg.umap.min_dist.to_bits(),
             },
         }
     }
@@ -629,7 +650,8 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
 
     let mut prefit: HashMap<ProjectionFitKey, ConfiguredProjection> = HashMap::new();
     // UMAP kNN graphs are reusable across configs that share `n_neighbors`
-    // but differ in `n_epochs` / `category_weight`. Building the graph
+    // but differ in `n_epochs` / `category_weight` / `min_dist`. Building
+    // the graph
     // dominates UMAP fit cost (O(N log N) for the ANN-backed graph plus
     // PCA warm-start), so caching it collapses the per-config sweep onto
     // a handful of graph builds.
@@ -657,7 +679,8 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         let key = ProjectionFitKey::from_config(&cfg);
         let projection = if cfg.projection_kind == ProjectionKind::UmapSphere {
             // UMAP fast path: build the kNN graph once per `n_neighbors`
-            // and reuse it across `(n_epochs, category_weight)` variations.
+            // and reuse it across `(n_epochs, category_weight, min_dist)`
+            // variations.
             // The fully-realized projection still goes into `prefit` so
             // the final pipeline rebuild and any exact-config repeats are
             // free.
@@ -1056,6 +1079,7 @@ fn tpe_propose(
                 n_neighbors: pick_uniform(rng, &space.umap_n_neighbors),
                 n_epochs: pick_uniform(rng, &space.umap_n_epochs),
                 category_weight: pick_uniform(rng, &space.umap_category_weight),
+                min_dist: pick_uniform(rng, &space.umap_min_dist),
                 ..base.umap.clone()
             };
         } else {
@@ -1069,10 +1093,13 @@ fn tpe_propose(
             let cw_b = hist_f64(&bad_u, &space.umap_category_weight, |c| {
                 c.umap.category_weight
             });
+            let md_g = hist_f64(&good_u, &space.umap_min_dist, |c| c.umap.min_dist);
+            let md_b = hist_f64(&bad_u, &space.umap_min_dist, |c| c.umap.min_dist);
             cfg.umap = UmapConfig {
                 n_neighbors: space.umap_n_neighbors[pick_idx(rng, &nn_g, &nn_b)],
                 n_epochs: space.umap_n_epochs[pick_idx(rng, &ne_g, &ne_b)],
                 category_weight: space.umap_category_weight[pick_idx(rng, &cw_g, &cw_b)],
+                min_dist: space.umap_min_dist[pick_idx(rng, &md_g, &md_b)],
                 ..base.umap.clone()
             };
         }
@@ -1200,6 +1227,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.3],
             overlap_artifact_territorial: vec![0.3],
@@ -1372,6 +1400,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.3, 0.4],
             overlap_artifact_territorial: vec![0.3],
@@ -1403,6 +1432,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1429,6 +1459,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1670,6 +1701,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1718,6 +1750,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1846,8 +1879,10 @@ mod tests {
             * s.threshold_base.len()
             * s.threshold_evr_penalty.len()
             * s.min_evr_improvement.len();
-        let umap_specific =
-            s.umap_n_neighbors.len() * s.umap_n_epochs.len() * s.umap_category_weight.len();
+        let umap_specific = s.umap_n_neighbors.len()
+            * s.umap_n_epochs.len()
+            * s.umap_category_weight.len()
+            * s.umap_min_dist.len();
         // PCA contributes `common`, UMAP contributes `common * umap_specific`.
         let expected = common + common * umap_specific;
         assert_eq!(s.grid_cardinality(), expected);
@@ -1863,6 +1898,7 @@ mod tests {
             umap_n_neighbors: vec![10, 20],
             umap_n_epochs: vec![50],
             umap_category_weight: vec![1.0],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1907,6 +1943,7 @@ mod tests {
             umap_n_neighbors: vec![10],
             umap_n_epochs: vec![30, 60],
             umap_category_weight: vec![0.0, 1.0, 2.0],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1944,6 +1981,7 @@ mod tests {
             umap_n_neighbors: vec![10, 20],
             umap_n_epochs: vec![30, 60],
             umap_category_weight: vec![0.0],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1969,6 +2007,22 @@ mod tests {
     }
 
     #[test]
+    fn umap_fit_key_distinguishes_min_dist() {
+        // min_dist changes the optimizer's kernel (a, b), so two configs
+        // that differ only there must not share a cached fitted
+        // projection. They still share the kNN graph (keyed by
+        // n_neighbors alone), which is built before the optimizer.
+        let a = PipelineConfig {
+            projection_kind: ProjectionKind::UmapSphere,
+            ..PipelineConfig::default()
+        };
+        let mut b = a.clone();
+        b.umap.min_dist = 0.5;
+        assert!(ProjectionFitKey::from_config(&a) == ProjectionFitKey::from_config(&a.clone()));
+        assert!(ProjectionFitKey::from_config(&a) != ProjectionFitKey::from_config(&b));
+    }
+
+    #[test]
     fn umap_graph_cache_zero_when_no_umap_trials() {
         // PCA-only search space — no UMAP trials, no graph builds.
         let input = make_input(24, 8);
@@ -1979,6 +2033,7 @@ mod tests {
             umap_n_neighbors: vec![10],
             umap_n_epochs: vec![30],
             umap_category_weight: vec![0.0],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -2027,6 +2082,7 @@ mod tests {
             umap_n_neighbors: vec![15],
             umap_n_epochs: vec![200],
             umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.3],
             overlap_artifact_territorial: vec![0.3],
