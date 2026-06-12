@@ -128,6 +128,15 @@ impl AnnIndex {
     }
 
     fn build_from_normalized(normalized: Vec<Vec<f64>>, dim: usize, config: &AnnConfig) -> Self {
+        assert!(
+            config.n_trees > 0,
+            "AnnConfig.n_trees must be > 0 (zero trees yields an index that returns no neighbors)"
+        );
+        assert!(
+            config.max_leaf_size > 0,
+            "AnnConfig.max_leaf_size must be > 0 (zero recurses forever on singleton partitions)"
+        );
+
         let all_indices: Vec<usize> = (0..normalized.len()).collect();
         let mut rng = SplitMix64::new(config.seed);
 

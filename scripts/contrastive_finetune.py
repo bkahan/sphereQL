@@ -193,14 +193,22 @@ def train(
 @torch.no_grad()
 def embed_all(
     model,
-    projection: ProjectionHead,
+    projection: ProjectionHead | None,
     labels: list[str],
     batch_size: int,
     device: torch.device,
 ) -> np.ndarray:
-    """Embed all concept labels through the fine-tuned model + projection."""
+    """Embed all concept labels.
+
+    With ``projection`` set, embeddings pass through the trained head — the
+    deployed representation. With ``projection=None`` the raw encoder output
+    is used (L2-normalized to match the cosine separation metric); this is
+    the honest off-the-shelf baseline, not the encoder pushed through a
+    random head.
+    """
     model.eval()
-    projection.eval()
+    if projection is not None:
+        projection.eval()
     all_embeddings = []
 
     for start in range(0, len(labels), batch_size):
@@ -209,8 +217,8 @@ def embed_all(
         features = {k: v.to(device) for k, v in features.items()}
         model_output = model(features)
         raw = model_output["sentence_embedding"]
-        projected = projection(raw)
-        all_embeddings.append(projected.cpu().numpy())
+        embedded = projection(raw) if projection is not None else F.normalize(raw, dim=-1)
+        all_embeddings.append(embedded.cpu().numpy())
 
     return np.vstack(all_embeddings)
 
@@ -302,10 +310,19 @@ def main():
 
     cat_counts = pd.Series(categories).value_counts()
     train_mask = [cat_counts[c] >= args.min_category_size for c in categories]
-    train_labels = [l for l, m in zip(labels, train_mask) if m]
-    train_categories = [c for c, m in zip(categories, train_mask) if m]
+    train_labels = [label for label, m in zip(labels, train_mask, strict=True) if m]
+    train_categories = [c for c, m in zip(categories, train_mask, strict=True) if m]
     n_skipped = len(labels) - len(train_labels)
     print(f"  Training on {len(train_labels)} concepts ({n_skipped} skipped from small categories)")
+
+    if len(set(train_categories)) < 2:
+        raise ValueError(
+            f"Need at least 2 eligible categories for supervised contrastive training, "
+            f"got {len(set(train_categories))}. Lower --min-category-size "
+            f"(currently {args.min_category_size})."
+        )
+    if len(train_labels) < 2:
+        raise ValueError(f"Need at least 2 eligible training examples, got {len(train_labels)}.")
 
     print(f"Loading model: {args.model}")
     from sentence_transformers import SentenceTransformer
@@ -316,12 +333,17 @@ def main():
     projection = ProjectionHead(raw_dim, args.target_dim).to(device)
 
     dataset = ConceptDataset(train_labels, train_categories)
+    # Clamp the batch to the eligible set and keep the final short batch.
+    # With drop_last=True an eligible set smaller than batch_size yields an
+    # empty loader, so train() would silently take zero optimizer steps yet
+    # still report "success".
+    effective_batch_size = min(args.batch_size, len(dataset))
     dataloader = DataLoader(
         dataset,
-        batch_size=args.batch_size,
+        batch_size=effective_batch_size,
         shuffle=True,
         collate_fn=collate_fn,
-        drop_last=True,
+        drop_last=False,
     )
 
     optimizer = torch.optim.AdamW([
@@ -331,9 +353,11 @@ def main():
 
     criterion = SupConLoss(temperature=args.temperature)
 
-    print("\nBaseline metrics (before fine-tuning):")
-    with torch.no_grad():
-        baseline_embs = embed_all(st_model, projection, labels, args.batch_size, device)
+    # Baseline = the off-the-shelf encoder (no projection head). Measuring it
+    # through the freshly-initialized random head would conflate the
+    # fine-tuning gain with recovery from random initialization.
+    print("\nBaseline metrics (before fine-tuning, raw encoder):")
+    baseline_embs = embed_all(st_model, None, labels, args.batch_size, device)
     baseline_metrics = compute_separation_metrics(baseline_embs, categories)
     for k, v in baseline_metrics.items():
         print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
@@ -360,16 +384,23 @@ def main():
     df.to_parquet(args.output, index=False)
     print(f"  Done. {len(df)} rows written.")
 
+    # Persist both halves of the trained pipeline. The optimizer updates the
+    # encoder weights too (st_model.parameters()), so the projection head
+    # alone cannot reproduce the embeddings written above.
+    model_dir = Path(args.output).with_suffix(".sentence_transformer")
+    st_model.save(str(model_dir))
     head_path = Path(args.output).with_suffix(".projection_head.pt")
     torch.save({
         "projection_state_dict": projection.state_dict(),
         "raw_dim": raw_dim,
         "target_dim": args.target_dim,
         "model_name": args.model,
+        "sentence_transformer_dir": str(model_dir),
         "training_losses": losses,
         "baseline_metrics": baseline_metrics,
         "final_metrics": final_metrics,
     }, head_path)
+    print(f"  Fine-tuned encoder saved to {model_dir}")
     print(f"  Projection head saved to {head_path}")
 
 

@@ -1560,8 +1560,13 @@ mod tests {
             &metric,
             SearchStrategy::Random {
                 budget: 1000,
+                // Some(0) trips the cap deterministically: trial 0 (the
+                // warm-start seed) always runs, then `wall_exceeded()` is
+                // true immediately, so exactly one trial completes
+                // regardless of host throughput. Some(1) would be racy —
+                // a fast machine can finish all 1000 trials under a second.
                 seed: 42,
-                max_wall_secs: Some(1),
+                max_wall_secs: Some(0),
             },
             &PipelineConfig::default(),
         )

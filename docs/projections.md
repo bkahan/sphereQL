@@ -81,7 +81,7 @@ term (`category_weight > 0`) pulls same-category points together and
 pushes different categories apart.
 
 Hyperparameters live in `UmapConfig` (`n_neighbors`, `n_epochs`,
-`category_weight`) and are first-class auto-tuner axes; the tuner also
+`category_weight`, `min_dist`) and are first-class auto-tuner axes; the tuner also
 caches the kNN graph + warm start per `n_neighbors` so epoch/weight
 sweeps only pay for optimization. UMAP is non-parametric — unseen
 points are transformed by kNN-weighted interpolation over the fitted

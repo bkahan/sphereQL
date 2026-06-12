@@ -11,8 +11,8 @@ Python and WASM bindings are at full parity with the Rust surface:
 - Projection families: PCA (category-weighted via `PipelineConfig`),
   Kernel PCA, **Laplacian eigenmap**, Random — plus **UMAP-on-sphere**,
   reachable through `PipelineConfig` / `auto_tune` in every binding
-  (no standalone UMAP class; the pipeline-level config is the
-  supported surface).
+  (no standalone UMAP class in the Python/WASM bindings; the
+  pipeline-level config is the supported surface).
 - Pipeline queries: nearest, similar-above, concept path, glob detection,
   local manifold.
 - Category enrichment: concept paths, category neighbors, drill-down,

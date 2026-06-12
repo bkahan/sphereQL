@@ -2218,24 +2218,26 @@ mod tests {
         )
         .unwrap();
 
+        // Precondition: this fixture must land in the high-EVR regime, or
+        // the test silently stops covering the bypass branch it exists for.
         let evr = pipeline.explained_variance_ratio();
-        if evr >= HIGH_EVR_ROUTING_BYPASS {
-            // High EVR: routing should be bypassed, outer-sphere k-NN used.
-            // The query is [1.0, 0.05, 0, 0, 0, 0, 0, 0] → closest to cluster "a".
-            let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
-            assert!(!results.is_empty());
-            // All results should be from cluster "a" (outer-sphere is accurate).
-            for r in &results {
-                assert_eq!(
-                    r.category, "a",
-                    "high-EVR outer-sphere should find cluster-a items, got category={} id={}",
-                    r.category, r.id
-                );
-            }
+        assert!(
+            evr >= HIGH_EVR_ROUTING_BYPASS,
+            "fixture no longer exercises the high-EVR bypass path (evr={evr})"
+        );
+
+        // High EVR: routing should be bypassed, outer-sphere k-NN used.
+        // The query is [1.0, 0.05, 0, 0, 0, 0, 0, 0] → closest to cluster "a".
+        let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
+        assert!(!results.is_empty());
+        // All results should be from cluster "a" (outer-sphere is accurate).
+        for r in &results {
+            assert_eq!(
+                r.category, "a",
+                "high-EVR outer-sphere should find cluster-a items, got category={} id={}",
+                r.category, r.id
+            );
         }
-        // If EVR < HIGH_EVR_ROUTING_BYPASS on this synthetic data, the
-        // test is a no-op. That's fine — the important path is tested by
-        // the existing routing tests at lower EVR.
     }
 
     #[test]
