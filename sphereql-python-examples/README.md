@@ -1,12 +1,17 @@
-# SphereQL Python Examples
+# sphereQL Python Examples
 
-All examples use the 100-sentence [`dataset.py`](./dataset.py) — 10
-topics, deterministic 64-d FNV-1a hash embeddings. No API keys, no
-external services. Run any of them after `pip install sphereql`.
+Runnable demos for the [sphereQL](https://github.com/bkahan/sphereQL)
+Python bindings (`pip install sphereql`).
+
+Most examples use the 100-sentence [`dataset.py`](./dataset.py) — 10
+topics, deterministic 64-d FNV-1a hash embeddings — and need no API
+keys or external services. The two exceptions are called out below:
+`lingua_e2e.py` needs a feature-gated build, and `qdrant_e2e.py` needs
+a live Qdrant cluster.
 
 ## [`quickstart.py`](./quickstart.py)
 
-5-minute walkthrough of SphereQL's core surface: 3D visualization,
+5-minute walkthrough of sphereQL's core surface: 3D visualization,
 nearest-neighbor search, glob detection, concept paths, local
 manifolds, data export, and a vector-DB bridge demo.
 
@@ -23,6 +28,17 @@ out-of-sample projection.
 
 ```bash
 python kernel_pca.py
+```
+
+## [`category_enrichment_basic.py`](./category_enrichment_basic.py)
+
+Gentler introduction to the category layer on a small hand-built
+corpus: categorized pipeline construction, category concept paths,
+drill-down within one category, category stats, and the inner-sphere
+report.
+
+```bash
+python category_enrichment_basic.py
 ```
 
 ## [`category_enrichment.py`](./category_enrichment.py)
@@ -46,7 +62,7 @@ python category_enrichment.py
 
 ## [`metalearning.py`](./metalearning.py)
 
-End-to-end walkthrough of SphereQL's three-level self-optimization
+End-to-end walkthrough of sphereQL's three-level self-optimization
 hierarchy:
 
 - **L1** `corpus_features` + `auto_tune` over a custom `search_space`.
@@ -79,6 +95,26 @@ Uses `InMemoryStore` for reproducibility. `QdrantBridge` and
 ```bash
 python vectordb_advanced.py
 ```
+
+## [`lingua_e2e.py`](./lingua_e2e.py)
+
+The Rust lingua pipeline from Python: free-form text →
+`LinguaPipeline` → `ConceptGraph` with native sphereQL coordinates.
+Requires the `lingua` feature, which the default wheel doesn't
+include:
+
+```bash
+cd sphereql-python && maturin develop --features lingua
+python ../sphereql-python-examples/lingua_e2e.py
+```
+
+## [`qdrant_e2e.py`](./qdrant_e2e.py)
+
+End-to-end run against a live Qdrant cluster: embed → upsert →
+`QdrantBridge` → hybrid search. Needs a build with the `qdrant`
+feature plus `QDRANT_API_KEY` / `QDRANT_CLUSTER_ENDPOINT` in
+`.env.local` — see the docstring at the top of the file for full
+setup.
 
 ## Dataset
 

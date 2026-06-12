@@ -27,9 +27,38 @@ region instead of the whole point set.
 The `SpatialItem` trait is the integration point: implement it on your
 record type to plug into any of the indexes above.
 
+## Example
+
+```rust
+use sphereql_core::SphericalPoint;
+use sphereql_index::{SpatialIndex, SpatialItem};
+
+#[derive(Debug, Clone)]
+struct Star { id: u64, pos: SphericalPoint }
+
+impl SpatialItem for Star {
+    type Id = u64;
+    fn id(&self) -> &u64 { &self.id }
+    fn position(&self) -> &SphericalPoint { &self.pos }
+}
+
+let mut idx = SpatialIndex::<Star>::builder()
+    .uniform_shells(3, 10.0)
+    .theta_divisions(8)
+    .phi_divisions(4)
+    .build();
+
+idx.insert(Star { id: 1, pos: SphericalPoint::new_unchecked(1.0, 0.5, 0.8) });
+idx.insert(Star { id: 2, pos: SphericalPoint::new_unchecked(1.0, 3.0, 2.0) });
+
+let hits = idx.nearest(&SphericalPoint::new_unchecked(1.0, 0.6, 0.9), 1);
+assert_eq!(*hits[0].item.id(), 1);
+```
+
 ## Versioning
 
-Pre-1.0. `IndexError` is `#[non_exhaustive]`. Builder types are
+Part of the sphereQL workspace, currently `0.2.0-alpha`; API may change
+before 1.0. `IndexError` is `#[non_exhaustive]`. Builder types are
 `#[must_use]` — forgetting `.build()` warns at the use site.
 
 ## Documentation
