@@ -1,7 +1,10 @@
 # Projections
 
 sphereQL projects high-dimensional vectors (e.g. 384-d sentence-transformer
-output) down to 3D spherical coordinates via one of five families.
+output) down to 3D spherical coordinates via one of four pipeline families —
+the `ProjectionKind` enum: PCA, Kernel PCA, Laplacian eigenmap, and
+UMAP-on-sphere. (A random-projection baseline also exists as a low-level
+`Projection` impl; see below.)
 
 ## The core pipeline
 
@@ -15,9 +18,17 @@ output) down to 3D spherical coordinates via one of five families.
 The **radial coordinate** is configurable via `RadialStrategy`:
 
 - `Magnitude` (default) — r = pre-normalization L2 magnitude, encoding
-  "confidence" or specificity.
+  "confidence" or specificity. Degenerates to a constant when inputs are
+  already L2-normalized; pick a projection-side variant in that case.
 - `Fixed(value)` — constant radius; pure angular projection.
-- `MagnitudeTransform(fn)` — custom transform (e.g. log-scaling).
+- `MagnitudeTransform(fn)` — custom transform of the pre-normalization
+  magnitude (e.g. log-scaling).
+- `ProjectionMagnitude` — r = ‖(x, y, z)‖, how much input variance landed
+  in the projected 3-vector. Recommended starting point for normalized
+  embeddings.
+- `Certainty { scale }` — r = scale × the projection's per-point fidelity
+  score in [0, 1].
+- `Custom(fn)` — arbitrary per-point logic over the `RadialContext` signals.
 
 ## PCA
 
@@ -72,39 +83,56 @@ for construction details.
 ## UMAP-on-sphere
 
 UMAP optimized directly on S². A kNN graph over the normalized
-embeddings supplies the attractive term (brute-force below 2000 items,
-RP-forest ANN above — see [`sphereql-embed/src/ann.rs`](../sphereql-embed/src/ann.rs)),
-uniformly sampled negatives supply repulsion, and each Adam step runs
-in the local tangent space `T_x S²` with retraction back to the sphere
-by normalization. PCA provides the warm start. An optional supervised
-term (`category_weight > 0`) pulls same-category points together and
-pushes different categories apart.
+embeddings supplies the attractive term (brute-force below 2000 items —
+an O(n²) build — RP-forest ANN above, O(N log N); see
+[`sphereql-embed/src/ann.rs`](../sphereql-embed/src/ann.rs)). Edges
+carry fuzzy simplicial weights: per-point ρ/σ calibration (nearest edge
+weight 1.0, `Σ exp(−(d−ρ)/σ) = log₂ k`) with fuzzy-union
+symmetrization, and both the attraction and each edge's negative draws
+scale with the weight. Each Adam step runs in the local tangent space
+`T_x S²` with retraction back to the sphere by normalization. PCA
+provides the warm start; an opt-in `warm_start_anchor` weight (default
+0.0 — a bit-identical no-op) adds a weak pull toward the warm-start
+positions so disconnected kNN components on sparse corpora keep their
+global arrangement. An optional supervised term (`category_weight > 0`)
+draws one same-category cohesion pair and one different-category
+separation pair per point per epoch. `min_dist` (default 0.1) controls
+how tightly neighbors may pack — the embedding kernel's (a, b) curve is
+fit to it by deterministic least squares.
 
 Hyperparameters live in `UmapConfig` (`n_neighbors`, `n_epochs`,
-`category_weight`, `min_dist`) and are first-class auto-tuner axes; the tuner also
-caches the kNN graph + warm start per `n_neighbors` so epoch/weight
-sweeps only pay for optimization. UMAP is non-parametric — unseen
-points are transformed by kNN-weighted interpolation over the fitted
-positions, so far-from-corpus queries degrade gracefully rather than
-extrapolating. See [`sphereql-embed/src/umap.rs`](../sphereql-embed/src/umap.rs).
+`category_weight`, `min_dist`, plus `warm_start_anchor` and `seed`);
+the first four are first-class auto-tuner axes, and the tuner caches
+the kNN graph + warm start per `n_neighbors` so epoch/weight/min_dist
+sweeps only pay for optimization. UMAP is non-parametric: corpus items
+return their exact Adam-optimized positions (a bit-pattern fast path,
+certainty 1.0), and unseen embeddings are transformed by kNN-weighted
+interpolation over the fitted positions — looked up through the same
+RP-forest index the graph build retains at ≥ 2000 items — so
+far-from-corpus queries degrade gracefully rather than extrapolating.
+See [`sphereql-embed/src/umap.rs`](../sphereql-embed/src/umap.rs).
 
 Strength: preserving local neighborhood structure at scale (O(N log N)
 graph construction with ANN). Failure mode: global distances between
 far-apart clusters are not meaningful, and transform quality depends on
 the fitted corpus covering the query region.
 
-## Random projection
+## Random projection (low-level baseline)
 
 The Johnson–Lindenstrauss baseline. Useful for ablations: if PCA doesn't
 beat a random 3-axis basis, the corpus has no low-rank structure in 3
-dimensions.
+dimensions. **Not a pipeline family** — there is no
+`ProjectionKind::Random`, so neither `PipelineConfig` nor the auto-tuner
+can select it. `RandomProjection`
+([`sphereql-embed/src/projection.rs`](../sphereql-embed/src/projection.rs))
+implements the low-level `Projection` trait for direct use.
 
 ## Explained variance (EVR)
 
 Every projection reports an `explained_variance_ratio()` in `[0, 1]`.
 PCA returns the classical EVR; Kernel PCA returns its kernel-space
-EVR; Laplacian returns a compatible connectivity ratio (mean of the
-retained eigenvalues); UMAP-on-sphere returns a trustworthiness-style
+EVR; Laplacian returns a compatible connectivity ratio (mean |μ| of the
+three retained eigenvalues); UMAP-on-sphere returns a trustworthiness-style
 kNN recall (mean overlap between each point's neighborhood among the
 fitted 3D positions and its original-space kNN set) — not a variance
 ratio, but bounded in `[0, 1]` and rank-meaningful across corpora.

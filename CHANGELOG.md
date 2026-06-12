@@ -153,7 +153,8 @@ versions.
   the new `DBpediaTtlSource` ingestor.
 - **Wikidata 50K corpus** — `sphereql-corpus/data/wikidata_50k.parquet` with
   checkpoint resume support (`wikidata_50k.parquet.checkpoint.json`).
-- **Bulk ingestion pipeline** (`tools/bulk_ingest`) — end-to-end orchestrator
+- **Bulk ingestion pipeline** (the `bulk_ingest` example in
+  `sphereql-examples`) — end-to-end orchestrator
   covering download → parse → embed → cluster → tune → validate. Corpus sources
   implement a shared trait so DBpedia and Wikidata share the same pipeline path.
 - **Emergent clustering** — density-based cluster discovery on the projected

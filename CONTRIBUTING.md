@@ -40,7 +40,8 @@ effort on PRs that don't align with the project direction.
 ### Prerequisites
 
 - Rust stable (2024 edition) -- install via [rustup](https://rustup.rs)
-- Python 3.12+ and [maturin](https://www.maturin.rs) for Python binding work
+- Python 3.10+ and [maturin](https://www.maturin.rs) for Python binding work
+  (CI tests 3.10 through 3.13)
 - [wasm-pack](https://rustwasm.github.io/wasm-pack/) for WASM binding work
 
 ### Clone and verify
@@ -49,8 +50,10 @@ effort on PRs that don't align with the project direction.
 git clone https://github.com/bkahan/sphereQL.git
 cd sphereQL
 
-# Verify everything builds and passes
-cargo test --workspace --all-features
+# Verify everything builds and passes. sphereql-python is excluded
+# because --all-features enables pyo3's extension-module, which breaks
+# the `cargo test` link step — its tests run via maturin + pytest below.
+cargo test --workspace --all-features --exclude sphereql-python
 cargo clippy --workspace --all-features --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
@@ -97,12 +100,16 @@ pytest -v
    - Include a test plan if the changes aren't covered by automated tests
 
 4. **All CI checks must pass** before merge. The CI pipeline runs:
-   - `cargo test --workspace --all-features` (including doc-tests)
+   - `cargo test --workspace --all-features --exclude sphereql-python`
+     plus a separate doc-test pass
    - `cargo clippy --workspace --all-features --all-targets` with `-D warnings`
-   - `cargo fmt --all -- --check`
+   - `cargo fmt --all -- --check` and `cargo doc --no-deps`
    - Per-feature compilation matrix (core, index, layout, embed, graphql,
      vectordb, full, no-default-features)
-   - Python build + pytest on Python 3.12
+   - Python build + pytest on Python 3.10–3.13, and a stub-freshness
+     check (`gen-stubs` output must match the committed `__init__.pyi`)
+   - WASM build to `wasm32-unknown-unknown` and the bindings drift check
+     (`cargo run -p check-drift`)
 
 5. **Address review feedback** with new commits (don't force-push during review
    unless asked). Once approved, the maintainer will merge.
@@ -165,8 +172,9 @@ This makes review faster and reverts safer.
 # Full workspace (excludes Python/WASM which need special toolchains)
 cargo test --workspace --exclude sphereql-python --exclude sphereql-wasm
 
-# Full workspace with all features (requires Python headers)
-cargo test --workspace --all-features
+# Full workspace with all features (sphereql-python excluded — its
+# extension-module feature breaks the cargo test link step)
+cargo test --workspace --all-features --exclude sphereql-python
 
 # Single crate
 cargo test -p sphereql-core
@@ -190,7 +198,8 @@ cd sphereql-python && maturin develop && pytest -v
 ## Documentation
 
 - Update doc comments when changing public API signatures
-- If you add a new crate feature, update the feature flags table in README.md
+- If you add a new crate feature, update the feature flags table in
+  [docs/architecture.md](docs/architecture.md)
 - Example scripts go in the relevant crate's `examples/` directory
 - Run `cargo doc --workspace --all-features --no-deps` to verify docs build
 

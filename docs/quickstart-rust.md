@@ -100,23 +100,34 @@ use sphereql::embed::*;
 // Prepare embeddings (e.g., 384-dimensional sentence-transformer output)
 let corpus: Vec<Embedding> = vectors.into_iter().map(Embedding::new).collect();
 
-// Fit a projection from a corpus — PCA, Kernel PCA, or Laplacian eigenmap.
-let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude);
-let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Magnitude);
+// Fit a projection from a corpus — PCA, Kernel PCA, Laplacian eigenmap,
+// or UMAP-on-sphere. All `fit` constructors return a Result.
+let pca = PcaProjection::fit(&corpus, RadialStrategy::Magnitude).unwrap();
+let kpca = KernelPcaProjection::fit(&corpus, RadialStrategy::Magnitude).unwrap();
 
 // Project a single embedding to the sphere
 let point = pca.project(&corpus[0]);
 
 // Full pipeline for search, concept paths, category enrichment, etc.
 let input = PipelineInput {
-    categories: categories,    // Vec<String>, one per embedding
+    categories,                // Vec<String>, one per embedding
     embeddings: raw_vectors,   // Vec<Vec<f64>>
 };
 let pipeline = SphereQLPipeline::new(input).unwrap();
 
-// k-NN search
+// Or pick a non-default projection family (Pca is the default; KernelPca,
+// LaplacianEigenmap, and UmapSphere are the others):
+//
+//   let config = PipelineConfig {
+//       projection_kind: ProjectionKind::UmapSphere,
+//       ..Default::default()
+//   };
+//   let pipeline = SphereQLPipeline::new_with_config(input, config).unwrap();
+
+// k-NN search — `query` returns Result<SphereQLOutput, PipelineError>;
+// unknown ids/categories surface as errors, not empty results.
 let query = PipelineQuery { embedding: query_vec };
-let results = pipeline.query(SphereQLQuery::Nearest { k: 5 }, &query);
+let results = pipeline.query(SphereQLQuery::Nearest { k: 5 }, &query).unwrap();
 
 // Concept path between two items
 let path = pipeline.query(
@@ -126,13 +137,13 @@ let path = pipeline.query(
         graph_k: 10,
     },
     &query,
-);
+).unwrap();
 
 // Cluster detection
 let globs = pipeline.query(
     SphereQLQuery::DetectGlobs { k: None, max_k: 10 },
     &query,
-);
+).unwrap();
 
 // --- Category Enrichment Layer ---
 
@@ -143,26 +154,28 @@ let cat_path = pipeline.query(
         target_category: "cooking",
     },
     &query,
-);
+).unwrap();
 
 // Nearest neighbor categories
 let neighbors = pipeline.query(
     SphereQLQuery::CategoryNeighbors { category: "science", k: 3 },
     &query,
-);
+).unwrap();
 
 // Drill down into a category (uses inner sphere if available)
 let drill = pipeline.query(
     SphereQLQuery::DrillDown { category: "science", k: 5 },
     &query,
-);
+).unwrap();
 
 // Category stats
-let stats = pipeline.query(SphereQLQuery::CategoryStats, &query);
+let stats = pipeline.query(SphereQLQuery::CategoryStats, &query).unwrap();
 
-// Export for visualization
+// Export for visualization. The quality score is EVR for PCA / kernel
+// PCA, a connectivity ratio for Laplacian, and kNN-recall
+// trustworthiness for UMAP — same [0, 1] scale, different meaning.
 let points = pipeline.exported_points();
-let evr = pipeline.explained_variance_ratio();
+let quality = pipeline.explained_variance_ratio();
 ```
 
 See [projections.md](projections.md) for a tour of the four projection
@@ -173,8 +186,6 @@ families and [auto-tuning.md](auto-tuning.md) for the `PipelineConfig` +
 
 ```rust
 use sphereql::graphql::*;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 // Build schema with sensible defaults
 let schema = create_schema_with_defaults();

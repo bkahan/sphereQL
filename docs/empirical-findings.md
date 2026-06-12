@@ -23,6 +23,25 @@ real signal is in the co-activation graph: Laplacian wins. This is the
 whole motivation for the auto-tuner + meta-model layer — no single
 projection is right, so the pipeline picks one per corpus.
 
+## UMAP-on-sphere: comparison pending
+
+The projection lineup is now four families (`Pca`, `KernelPca`,
+`LaplacianEigenmap`, `UmapSphere`), and `SearchSpace::default()` sweeps
+**PCA + UMAP** — see [projections.md](projections.md). The table above
+predates `UmapSphere`: no UMAP-vs-PCA or UMAP-vs-Laplacian scores have
+been recorded on either corpus yet. Two things to know before recording
+them:
+
+- UMAP's `explained_variance_ratio` now reports a
+  trustworthiness-style kNN-recall score (mean neighborhood overlap),
+  not the old fraction-below-median-random-distance proxy. Any UMAP
+  quality numbers stored before the overhaul are **not
+  score-comparable** with current ones.
+- The table's PCA / Laplacian scores are unaffected by that change
+  (their EVR semantics are unchanged), but they were measured on
+  pre-overhaul builds of the metrics; treat absolute values as
+  approximate per the weighting caveat above.
+
 ## Reproduce
 
 ```bash
@@ -36,6 +55,11 @@ SPHEREQL_CORPUS=stress \
 # Both corpora at once, with MetaModel verification
 cargo run -p sphereql-examples --example meta_learn --release
 ```
+
+**Caveat:** both examples use `SearchSpace::default()`, which now
+enumerates PCA + UMAP only. To reproduce the PCA-vs-Laplacian
+head-to-head in the table, add `ProjectionKind::LaplacianEigenmap` to
+`projection_kinds` in the example's search space first.
 
 [`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) also
 verifies that a `NearestNeighborMetaModel` fitted on both records can

@@ -20,7 +20,8 @@ topic lives here.
 - [Coordinate system](coordinate-system.md) — physics convention for
   (r, θ, φ); geographic conversion.
 - [Projections](projections.md) — how PCA, Kernel PCA, Laplacian eigenmap,
-  and random projection map embeddings onto S².
+  and UMAP-on-sphere map embeddings onto S² (plus the low-level random
+  projection).
 - [Empirical findings](empirical-findings.md) — when each projection wins,
   with measured scores.
 - [Use cases](use-cases.md) — what problem each feature is meant to solve.

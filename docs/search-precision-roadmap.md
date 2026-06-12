@@ -1,32 +1,37 @@
 # Search Precision Roadmap
 
 Algorithmic improvements to SphereQL's nearest-neighbor search precision,
-ordered by expected impact and implementation effort.
+ordered by expected impact and implementation effort. Items are marked
+**(shipped)** / **(partially shipped)** where the code has since landed.
 
-See [benchmark-analysis.md](benchmark-analysis.md) for the current
-baseline numbers and root cause analysis.
+See [benchmark-analysis.md](benchmark-analysis.md) for the baseline
+numbers (2026-04-10 run, pre-fixes) and root cause analysis.
 
 ---
 
-## 1. Fix hybrid re-ranking (high impact, low effort)
+## 1. Fix hybrid re-ranking (shipped)
 
-**Problem:** Hybrid mode retrieves candidates via ANN, then re-ranks by
-spherical distance. With 2.8% EVR, this re-ranking adds noise and
-demotes correct results.
+**Problem:** Hybrid mode retrieved candidates via ANN, then re-ranked by
+spherical distance. With 2.8% EVR, that re-ranking added noise and
+demoted correct results.
 
-**Fix:** Reverse the flow. Use spherical projection as a cheap pre-filter
-to eliminate obvious non-candidates, then score survivors with original
-cosine similarity. Alternatively, use a weighted combination:
+**What shipped** (commit `e169f59`):
+`VectorStoreBridge::hybrid_search` now re-ranks ANN candidates by
+**original cosine similarity** in the full embedding space
+(`sphereql-vectordb/src/bridge.rs`), so the lossy projection is never
+responsible for final ordering. The same commit accelerated the
+spherical query path itself (unit-Cartesian cosine proxy + sector-pruned
+search in `SpatialIndex::nearest`).
 
-```
-score = alpha * cosine_sim(original) + (1 - alpha) * angular_proximity(sphere)
-```
+**Not implemented:** the spherical-pre-filter inversion (sphere prunes
+candidates, cosine scores survivors) and the EVR-tuned
+`alpha * cosine + (1 - alpha) * angular` blend remain open ideas. The
+pipeline's `default_nearest` does use an EVR gate
+(`HIGH_EVR_ROUTING_BYPASS = 0.90`) for routing decisions, which is the
+same spirit applied to group routing rather than scoring.
 
-where `alpha` is tuned based on EVR (high EVR = trust the sphere more).
-
-**Expected outcome:** Hybrid precision should match or exceed vanilla ANN
-at lower latency, since the pre-filter reduces the candidate set before
-expensive high-dimensional distance computation.
+**Still pending:** re-running the retrieval benchmark — the published
+hybrid numbers predate this fix.
 
 ## 2. Higher-dimensional search projection (high impact, low effort)
 
@@ -50,6 +55,12 @@ to N-dimensional points, or a separate simpler index for the search path.
 
 **Problem:** Brute-force ANN is O(n) per query. The spherical index is
 fast but imprecise.
+
+**Groundwork shipped:** an RP-forest ANN index now exists
+(`sphereql-embed/src/ann.rs`). It currently serves UMAP's kNN-graph
+build / out-of-sample transform and `GraphModularity`'s edge
+construction at ≥ 2000 items — it is *not* yet wired into the
+user-facing query path.
 
 **Fix:** Build an HNSW-style navigable small world graph over the
 original 384D vectors. Use the spherical projection to select entry
@@ -88,24 +99,25 @@ structure, which may compose better with the existing spatial index.
 **Trade-off:** Each stage requires its own index or lookup structure.
 Distance approximation across chained projections adds complexity.
 
-## 5. Product quantization (medium impact, medium effort)
+## 5. Product quantization (shipped)
 
 **Problem:** Compressing 384D to 3D is too aggressive.
 
-**Fix:** Split the 384D space into M subspaces (e.g. 8 groups of 48D).
-Quantize each subspace independently (k-means codebook per subspace).
-Approximate distances via lookup table over codebook indices.
+**What shipped:** native PQ as a sidecar for the full embedding —
+`sphereql-vectordb/src/pq.rs` (`PqConfig`, `PqCodebook`, `PqIndex`,
+`PqStore`, with an LMDB-backed store behind the `pq-lmdb` feature in
+`pq_lmdb.rs`). Standard layout: M subspaces, k-means codebook per
+subspace (default 8 bits → 256 centroids, one byte per subspace per
+item), asymmetric distance via an M × K lookup table. Usable as a
+re-ranker over spherical candidates or as a standalone search path when
+EVR is poor.
 
-This is the approach used by FAISS IVF-PQ and ScaNN. SphereQL could
-either implement PQ natively or integrate as a backend.
+**Still pending:** no precision/latency numbers for the PQ path have
+been recorded in the retrieval benchmark yet.
 
-**Expected outcome:** Asymmetric distance computation (exact query vs
-quantized database) gives high recall at very low memory and compute
-cost.
-
-**Trade-off:** Significant implementation effort. Codebook training adds
-to build time. May overlap with existing vector DB backends (Qdrant,
-Pinecone) that already do PQ internally.
+**Trade-off:** Codebook training adds to build time. Overlaps with
+vector DB backends (Qdrant, Pinecone) that do PQ internally — the
+native path matters mostly for the in-memory store.
 
 ## 6. Locality-sensitive hashing (medium impact, medium effort)
 
@@ -125,14 +137,25 @@ number of tables and hash functions). Sub-linear query time.
 Doesn't compose with the spatial analysis features (globs, paths,
 manifolds).
 
-## 7. Learned projection (high impact, high effort)
+## 7. Learned projection (partially shipped)
 
 **Problem:** PCA is an unsupervised linear projection that maximizes
 variance. It doesn't optimize for neighbor preservation.
 
-**Fix:** Train a small model (linear map or shallow MLP) with a triplet
-or contrastive loss that directly optimizes k-NN preservation in the
-projected space:
+**What shipped since:**
+
+- **UMAP-on-sphere** (`ProjectionKind::UmapSphere`,
+  `sphereql-embed/src/umap.rs`) — a projection whose objective *is*
+  neighborhood preservation, optimized with Adam directly on S², with an
+  optional supervised category term. This delivers most of what this
+  item wanted, in-pipeline and tuner-sweepable.
+- **Offline contrastive fine-tuning**
+  (`scripts/contrastive_finetune.py`) — supervised NT-Xent fine-tuning
+  of the upstream sentence-transformer embeddings so same-category
+  concepts cluster before projection.
+
+**Still open:** a dedicated learned 3D map (linear or shallow MLP)
+trained with a triplet/contrastive loss on k-NN preservation:
 
 ```
 loss = sum over triplets (anchor, positive, negative):
@@ -157,9 +180,10 @@ wins on every corpus regime — variance-based projections degrade on sparse,
 noise-heavy embeddings where connectivity-based ones preserve the signal.
 
 **Fix (shipped):** The `sphereql-embed` crate now carries a
-`ConfiguredProjection` enum (PCA / Kernel PCA / Laplacian eigenmap), a
+`ProjectionKind` enum with four families (PCA / Kernel PCA / Laplacian
+eigenmap / UMAP-on-sphere; `SearchSpace::default()` sweeps PCA + UMAP), a
 `PipelineConfig` hierarchy for every tunable constant, a `QualityMetric`
-trait with four concrete metrics + composite presets, a discrete
+trait with concrete metrics + composite presets, a discrete
 `SearchSpace` sweep via `auto_tune` (Grid / Random / Bayesian TPE-lite),
 a 10-feature `CorpusFeatures` profile, and a `MetaModel` layer
 (`NearestNeighborMetaModel`, `DistanceWeightedMetaModel`) with an on-disk
@@ -185,12 +209,20 @@ Laplacian wins the stress corpus — same pipeline, same tuner).
 
 ## Priority recommendation
 
-**Short term (surgical fixes):**
-1. Fix hybrid scoring (#1) -- biggest precision gain for least code change
-2. Add higher-dimensional search projection (#2) -- keep 3D for viz, use 8-16D for search
+**Done:** hybrid scoring fix (#1), product quantization (#5),
+meta-learned selection (#8), and the UMAP half of #7.
+
+**Next (measurement before more code):** re-run the retrieval benchmark
+on current code — every published number predates the #1 fix, the query
+acceleration, and PQ. Add UMAP and the PQ re-rank path to the harness
+while at it.
+
+**Short term (surgical):**
+1. Higher-dimensional search projection (#2) -- keep 3D for viz, use 8-16D for search
 
 **Medium term (architectural):**
-3. Graph-based index (#3) -- the proven production approach for ANN
+2. Graph-based index (#3) -- the RP-forest in `sphereql-embed/src/ann.rs`
+   is partial groundwork; the query path still needs it
 
 **Exploratory:**
-4. Learned projection (#7) -- highest theoretical ceiling, but most R&D risk
+3. Learned 3D map (#7, remaining half) -- highest theoretical ceiling, most R&D risk

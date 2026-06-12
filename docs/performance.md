@@ -13,29 +13,41 @@ The spatial index uses a two-tier partitioning scheme:
 
 ## Benchmark (10k points, 384 dims, 20 clusters, 200 queries)
 
+Numbers from the 2026-04-10 run of
+[`sphereql-examples/examples/benchmark.rs`](../sphereql-examples/examples/benchmark.rs),
+recorded in full in [benchmark-analysis.md](benchmark-analysis.md). That
+run predates the hybrid re-rank fix and the spatial-index query
+acceleration (commit `e169f59`) and the UMAP projection overhaul — a
+re-run on current code is pending.
+
 | Method | k | Precision@k | nDCG@k | Mean latency |
 |---|---|---|---|---|
-| Brute-force ANN | 5 | 1.000 | 1.000 | 154 ms |
+| Brute-force ANN | 5 | 1.000 | 1.000 | 173 ms |
 | SphereQL PCA | 1 | 1.000 | 1.000 | 1.9 ms |
 | SphereQL PCA | 5 | 0.205 | 0.745 | 2.1 ms |
-| SphereQL KPCA | 5 | 0.204 | 0.746 | 84 ms |
+| SphereQL KPCA | 5 | 0.204 | 0.746 | 84 ms\* |
 | Hybrid (r = k × 2) | 5 | 0.574 | 0.982 | 159 ms |
 
-SphereQL PCA queries run **~90× faster** than brute-force with perfect
-precision at k=1. Precision degrades at higher k due to the lossy
-384-d → 3-d projection (~2.8% explained variance).
+\* KPCA row is from an earlier run whose `benchmark_results.json` is no
+longer in the repo (pre-UMAP-overhaul — re-benchmark pending). The
+headline stands either way: **KPCA query latency is close to brute
+force** (~84 ms vs ~150–175 ms), so KPCA buys nonlinear structure, not
+query speed.
 
-The hybrid approach re-ranks by spherical distance after ANN retrieval,
-which at low EVR can demote correct results. See
-[benchmark-analysis.md](benchmark-analysis.md) for the detailed analysis
-and [search-precision-roadmap.md](search-precision-roadmap.md) for the
-planned fix (invert the hybrid: use angular projection as a pre-filter,
-then score survivors by full cosine similarity).
+SphereQL PCA queries ran **~80–90× faster** than brute-force in that run
+(93× at k=1, 82× at k=5) with perfect precision at k=1. Precision
+degrades at higher k due to the lossy 384-d → 3-d projection (~2.8%
+explained variance) — 20.5% precision@5 even though nDCG@5 stays at
+0.745, so don't read the nDCG column alone.
 
-Improving the speed/precision tradeoff at higher k is an active
-development priority. For the full results see
-[benchmark-analysis.md](benchmark-analysis.md) and
-[search-precision-roadmap.md](search-precision-roadmap.md).
+The hybrid row above was measured under the old behavior (re-rank ANN
+candidates by 3-d spherical distance), which at low EVR demoted correct
+results. That has since been fixed: `VectorStoreBridge::hybrid_search`
+now re-ranks by **original cosine similarity** in the full embedding
+space (commit `e169f59`). Post-fix hybrid numbers have not been recorded
+yet. See [benchmark-analysis.md](benchmark-analysis.md) for the detailed
+analysis and [search-precision-roadmap.md](search-precision-roadmap.md)
+for what has shipped since and what is still planned.
 
 ## Auto-tuner costs
 
@@ -55,8 +67,11 @@ exceeded, but a trial already in flight runs to completion — it is not
 a hard timeout. At 100k+ items, prefer the wall-time cap over a large
 trial budget.
 
-At n=775 (built-in corpus), a random search of budget 24 runs in ~3
-seconds release mode.
+At n=775 (built-in corpus), a random search of budget 24 ran in ~3
+seconds release mode — measured before `UmapSphere` joined the default
+`SearchSpace` (the default now sweeps PCA + UMAP, and UMAP trials pay
+the Adam optimizer per epoch sweep). Expect a budget-24 run to take
+longer today; re-measure pending.
 
 ## Projection fit costs
 

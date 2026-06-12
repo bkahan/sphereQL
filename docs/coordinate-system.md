@@ -28,6 +28,9 @@ latitude/longitude geographic convention for the radial coordinate *r*,
 and because spherical Voronoi + cap geometry (used by the auto-tuner's
 spatial quality metrics) reads cleanly with this parametrization.
 
-If you prefer the mathematics convention (θ polar, φ azimuthal), construct
-your `SphericalPoint`s with the arguments swapped — nothing in the library
-hardcodes the semantic labels, only the value ranges.
+If you come from the mathematics convention (θ polar, φ azimuthal), be
+aware the convention here is not just a labeling choice: `SphericalPoint::new`
+validates θ ∈ [0, 2π) and φ ∈ [0, π], and every conversion
+(`spherical_to_cartesian`, `spherical_to_geo` with lat = 90° − φ°) treats φ as
+the polar angle. Map your angles into this convention at construction time —
+there is no toggle.

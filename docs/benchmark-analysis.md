@@ -2,13 +2,27 @@
 
 ## Setup
 
+- **Harness:** [`sphereql-examples/examples/benchmark.rs`](../sphereql-examples/examples/benchmark.rs)
+  (writes `benchmark_results.json` to the working directory; the JSON
+  for the run below was not retained — this table is the surviving
+  record)
+- **Run date:** 2026-04-10. This run **predates** the hybrid re-rank fix
+  and spatial-index query acceleration (commit `e169f59`, same day) and
+  the UMAP projection overhaul. A re-run on current code is pending.
 - **Dataset:** 10,000 points, 384 dimensions, 20 synthetic clusters
 - **Queries:** 200 random queries with pre-computed ground truth
 - **Metrics:** Precision@k, Recall@k, nDCG@k, latency (mean and p99)
 - **Methods tested:**
   - Vanilla ANN (brute-force cosine similarity)
   - SphereQL-only (search in 3D projected space)
-  - Hybrid (ANN recall + spherical re-ranking, at recall multipliers 2x/4x/8x)
+  - Hybrid (ANN recall + spherical re-ranking — the *old* hybrid
+    behavior, see below — at recall multipliers 2x/4x/8x)
+
+The current harness also measures SphereQL KPCA; no KPCA rows survive
+from this run. An earlier (now-deleted) `benchmark_results.json` put
+KPCA mean query latency at ~84 ms — nearly as slow as brute force —
+which is why KPCA is positioned as a structure tool, not a fast-query
+path. UMAP-on-sphere is not in the retrieval harness yet.
 
 ## Results
 
@@ -63,16 +77,23 @@ dimensions instead of 384. But at current precision levels, this speed
 is only useful for approximate/exploratory queries, not as an ANN
 replacement.
 
-### Hybrid re-ranking is counterproductive
+### Hybrid re-ranking was counterproductive (since fixed)
 
-The hybrid approach pays the full ANN cost (~170ms) and then re-ranks
-by spherical distance, which actively *demotes* correct results. Higher
-recall multipliers make it worse, not better, because more candidates
-means more opportunities for the lossy re-ranking to reorder incorrectly.
+At the time of this run, the hybrid approach paid the full ANN cost
+(~170ms) and then re-ranked by spherical distance, which actively
+*demoted* correct results. Higher recall multipliers made it worse, not
+better, because more candidates meant more opportunities for the lossy
+re-ranking to reorder incorrectly.
 
 The core issue: re-ranking by 3D spherical distance when the 3D
 projection only captures 2.8% of variance is equivalent to adding noise
 to a correct ranking.
+
+**This finding drove a fix that shipped the same day** (commit
+`e169f59`): `VectorStoreBridge::hybrid_search` now re-ranks ANN
+candidates by original cosine similarity in the full embedding space.
+The hybrid rows in the table above measure the superseded behavior; the
+post-fix hybrid has not been re-benchmarked.
 
 ### Build time
 
@@ -97,10 +118,11 @@ Search precision improvements are tracked in
 
 ## Projection choice is corpus-dependent
 
-The benchmark above uses PCA on the 775-concept built-in corpus (EVR ≈ 0.195).
-At that EVR, PCA remains the best of the available projection families: the
-auto-tuner in [`examples/auto_tune.rs`](../sphereql-examples/examples/auto_tune.rs)
-scores Laplacian eigenmap below PCA under every metric tested on this corpus.
+Separate from the retrieval benchmark above (10k synthetic points, EVR
+2.8%), the auto-tuner has been run head-to-head on the 775-concept
+built-in corpus (PCA EVR ≈ 0.195). There, PCA beats Laplacian eigenmap:
+the tuner in [`examples/auto_tune.rs`](../sphereql-examples/examples/auto_tune.rs)
+scores Laplacian below PCA under every metric tested on that corpus.
 
 On a different regime — the synthetic stress corpus (`build_stress_corpus`:
 300 concepts, 10 categories, 2-axis authored signatures, 5× the default noise
@@ -122,3 +144,13 @@ Same pipeline, same tuner, opposite winners. This is the motivation for the
 projection (and which knob values) will win before running the full tuner.
 See [`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) for the
 end-to-end loop.
+
+Two caveats as of the UMAP overhaul:
+
+- `SearchSpace::default()` now sweeps **PCA + UMAP-on-sphere**;
+  Laplacian must be added to `projection_kinds` explicitly to reproduce
+  the head-to-head above.
+- No UMAP-vs-PCA scores have been recorded on these corpora yet, and
+  UMAP quality scores stored before the overhaul used a different
+  `explained_variance_ratio` proxy and are not comparable to current
+  ones. See [empirical-findings.md](empirical-findings.md).

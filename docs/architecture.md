@@ -12,8 +12,8 @@ features; you depend on it with the flags you need.
     +---------------+------+------------------+
     |               |      |                  |
 sphereql-graphql  sphereql-vectordb           |
-    |               |                         |
-    |           sphereql-embed                |
+    |    |          |                         |
+    |    +------sphereql-embed                |
     |               |                         |
     |           sphereql-layout               |
     |               |                         |
@@ -28,8 +28,13 @@ sphereql-graphql  sphereql-vectordb           |
     sphereql-wasm    (wasm-bindgen bindings)
     lingua-spherica  (Python skeleton: types + spherical math only)
 
-    sphereql-corpus  (shared example data, no runtime deps)
+    sphereql-corpus   (shared example data; no sphereql crate deps)
+    sphereql-examples (runnable examples spanning the workspace)
 ```
+
+Both `sphereql-graphql` and `sphereql-vectordb` depend on
+`sphereql-embed` — the GraphQL layer serves the category-enrichment
+surface and embeds query text through the `TextEmbedder` trait.
 
 ## Crates
 
@@ -38,7 +43,7 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-core` | Spherical math primitives: points (`SphericalPoint`, `CartesianPoint`, `GeoPoint`), coordinate conversions, distance metrics (angular, great-circle, chord, cosine), interpolation (slerp, nlerp), and region types (cone, cap, shell, band, wedge). |
 | `sphereql-index` | Spatial indexing with composite shell + sector partitioning, k-NN search, cone/cap/shell/band/wedge/region queries, and cached Cartesian vectors for fast angular-distance proxy. |
 | `sphereql-layout` | Layout engines for distributing items on S²: Fibonacci spiral (uniform), k-means clustering, force-directed simulation, and incremental managed layouts with quality metrics. |
-| `sphereql-embed` | Embedding projection (PCA / Kernel PCA / Laplacian eigenmap / random), query pipeline (k-NN, similarity threshold, concept paths, glob detection, local manifold fitting), Category Enrichment Layer (inter-category graph, bridge classification, inner spheres, drill-down, hierarchical domain-group routing), and a metalearning framework (`PipelineConfig`, `QualityMetric`, `auto_tune`, `MetaModel`, `FeedbackAggregator`). |
+| `sphereql-embed` | Embedding projection (PCA / Kernel PCA / Laplacian eigenmap / UMAP-on-sphere, plus a low-level random-projection baseline), query pipeline (k-NN, similarity threshold, concept paths, glob detection, local manifold fitting), Category Enrichment Layer (inter-category graph, bridge classification, inner spheres, drill-down, hierarchical domain-group routing), and a metalearning framework (`PipelineConfig`, `QualityMetric`, `auto_tune`, `MetaModel`, `FeedbackAggregator`). |
 | `sphereql-graphql` | `async-graphql` schema with spatial queries (cone/shell/band/wedge/region, k-NN, distances), the full category enrichment surface (concept paths, drill-down, domain groups, stats), real-time subscriptions, and a pluggable `TextEmbedder` trait for natural-language query inputs. |
 | `sphereql-vectordb` | Vector store bridge for InMemory, Qdrant (gRPC), and Pinecone backends. Handles sync, PCA fitting, projection, and hybrid search with cosine re-ranking. |
 | `sphereql-lingua` | Six-stage text → `ConceptGraph` pipeline that maps natural language onto SphereQL `(r, θ, φ)` coordinates: concept extraction (pluggable `ConceptExtractor`, regex default), domain taxonomy θ assignment, abstraction φ resolution, salience-driven r weighting, relation encoding (typed geodesic arcs), graph assembly. Built on `sphereql-core` so coordinate convention and distance math match the rest of the workspace. **Rust is the source of truth** — the Python `lingua-spherica` package is a types/math skeleton only. |
@@ -46,7 +51,8 @@ sphereql-graphql  sphereql-vectordb           |
 | `sphereql-wasm` | WebAssembly bindings via `wasm-bindgen`. Typed return values via `tsify` — every pipeline / category / metalearning method returns a TypeScript-typed value, no `JSON.parse` required on the JS side. |
 | `scripts/check-drift` | CI tool that `syn`-parses `sphereql-embed` + `sphereql-layout` public APIs and fails when a new public item isn't bound in Python/WASM and isn't in `.bindings-ignore.toml`. |
 | `sphereql` | Umbrella crate with feature flags for selective imports. |
-| `sphereql-corpus` | Shared test corpora for examples: 775-concept built-in across 31 academic domains, plus a 300-concept low-SNR stress corpus (via `build_stress_corpus` / `embed_with_noise`). Bulk-ingested parquet corpora (DBpedia 500K, Wikidata 50K) live in `sphereql-corpus/data/` and are produced by the `tools/bulk_ingest` pipeline. Used by `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, `meta_learn`, and the full_e2e example. |
+| `sphereql-corpus` | Shared test corpora for examples: 775-concept built-in across 31 academic domains, plus a 300-concept low-SNR stress corpus (via `build_stress_corpus` / `embed_with_noise`). Bulk-ingested parquet corpora (DBpedia 500K, Wikidata 50K) live in `sphereql-corpus/data/` and are produced by the `bulk_ingest` example. Used by `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, `meta_learn`, and the full_e2e example. |
+| `sphereql-examples` | Runnable examples for the whole workspace (`auto_tune`, `meta_learn`, `bulk_ingest`, `corpus_self_tune`, `full_e2e`, `graphql_server`, …). Workspace member; not published. |
 
 ## Feature flags
 
@@ -59,7 +65,8 @@ sphereql-graphql  sphereql-vectordb           |
 | `graphql` | GraphQL schema, subscriptions, event bus | `core`, `index` |
 | `vectordb` | Vector store bridge and hybrid search | `embed` |
 | `pinecone` | Pinecone backend for vectordb | `vectordb` |
-| `full` | All of the above except `pinecone` | All non-backend features |
+| `retain-embeddings` | Keep the original high-dimensional embeddings on the pipeline (`raw_embeddings()`, `pairwise_similarities()`, `nearest_by_embedding()`) | `sphereql-embed/retain-embeddings` |
+| `full` | All of the above except `pinecone` (includes `retain-embeddings`) | All non-backend features |
 
 `full` does not activate `pinecone` because it pulls in `reqwest`. Enable it
 explicitly if you need the Pinecone backend:

@@ -1,8 +1,9 @@
 # WASM quickstart
 
 WebAssembly bindings for running the embedding pipeline (including
-category enrichment, Laplacian eigenmap, `auto_tune`, the `MetaModel`
-layer, and `FeedbackAggregator`) in the browser or Node.
+category enrichment, Laplacian eigenmap, UMAP-on-sphere via config,
+`auto_tune`, the `MetaModel` layer, and `FeedbackAggregator`) in the
+browser or Node.
 
 All pipeline methods now return **typed TypeScript values** via
 [`tsify`](https://github.com/madonoharu/tsify) — no `JSON.parse` step
@@ -15,6 +16,10 @@ for every payload.
 cd sphereql-wasm
 wasm-pack build --target web
 ```
+
+A self-contained browser demo lives in
+[`sphereql-wasm/examples/`](../sphereql-wasm/examples/) — see its
+README for serving instructions.
 
 ## Use
 
@@ -62,9 +67,11 @@ const proj = new LaplacianEigenmapProjection(
   0.05,          // active_threshold
 );
 console.log('connectivity_ratio:', proj.connectivityRatio);
-const point = JSON.parse(proj.project(JSON.stringify(query)));
+// `project` returns a typed { r, theta, phi } object — no JSON.parse.
+const point = proj.project(JSON.stringify(query));
 
-// Or build a pipeline with Laplacian as the outer projection:
+// Or build a pipeline with a non-default outer projection. Kinds:
+// "Pca" (default), "KernelPca", "LaplacianEigenmap", "UmapSphere".
 const pipeline = Pipeline.newWithConfig(
   JSON.stringify({ categories, embeddings }),
   JSON.stringify({ projection_kind: "LaplacianEigenmap" })
@@ -96,5 +103,7 @@ const tuned = Pipeline.newWithConfig(
 const model = new NearestNeighborMetaModel();
 model.fit(/* JSON array of MetaTrainingRecord */);
 const features = corpusFeatures(JSON.stringify({ categories, embeddings }));
+// predict returns the PipelineConfig as a JSON string — pass it
+// straight to Pipeline.newWithConfig.
 const predicted = model.predict(JSON.stringify(features));
 ```

@@ -3,17 +3,26 @@
 ## Running tests locally
 
 ```bash
-# All workspace tests
-cargo test --workspace
+# All workspace tests. sphereql-python is excluded under --all-features:
+# pyo3's extension-module feature breaks the `cargo test` link step
+# (Python provides those symbols at load time). Its tests run via pytest.
+cargo test --workspace --all-features --exclude sphereql-python
 
-# All features (including qdrant/pinecone compile checks)
-cargo test --workspace --all-features
+# Doc-tests
+cargo test --doc --workspace --exclude sphereql-python
 
-# Clippy lint pass
+# Clippy lint pass (CI runs this with RUSTFLAGS=-Dwarnings)
 cargo clippy --workspace --all-features --all-targets
 
 # Format check
-cargo fmt --check
+cargo fmt --all -- --check
+
+# Bindings drift check: every public sphereql-embed/layout API must
+# have a Python or WASM binding (or an allowlist entry)
+cargo run -p check-drift
+
+# WASM target check (native builds won't catch wasm32 breakage)
+cargo build -p sphereql-wasm --target wasm32-unknown-unknown
 
 # Python tests
 cd sphereql-python
@@ -30,12 +39,19 @@ cargo bench -p sphereql-index
 The [CI pipeline](../.github/workflows/ci.yml) runs on every push and
 PR to `main`:
 
-- `cargo test --workspace --all-features` + doc-tests.
+- `cargo test --workspace --all-features --exclude sphereql-python`
+  plus doc-tests.
 - `cargo clippy` with `-Dwarnings`.
-- `cargo fmt --check`.
+- `cargo doc --workspace --all-features --no-deps`.
+- `cargo fmt --all -- --check`.
 - Per-feature compilation matrix (`core`, `index`, `layout`, `embed`,
   `graphql`, `vectordb`, `full`, `no-default-features`).
-- Python build + `pytest` on Python 3.12.
+- Python build + `pytest` on Python 3.10–3.13.
+- Stub freshness: regenerates `__init__.pyi` via
+  `cargo run --bin gen-stubs` and fails if the checked-in stubs drifted.
+- WASM build to `wasm32-unknown-unknown`.
+- Bindings drift check (`cargo run -p check-drift`), mirrored by the
+  separate [bindings-drift workflow](../.github/workflows/bindings-drift.yml).
 
 ## Release pipeline
 

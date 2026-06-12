@@ -1,8 +1,9 @@
 # Project status
 
 sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
-by 600+ tests, but may change before 1.0. See
-[CHANGELOG.md](../CHANGELOG.md) for the v0.1 → v0.2 diff.
+by 850+ Rust tests plus 200+ pytest tests on the Python bindings, but
+may change before 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the
+v0.1 → v0.2 diff and the unreleased UMAP / ML-framework audit waves.
 
 ## Bindings status
 
@@ -21,8 +22,18 @@ Python and WASM bindings are at full parity with the Rust surface:
   `DistanceWeightedMetaModel`, `FeedbackAggregator`,
   `MetaTrainingRecord` default-store helpers. Quality-metric resolvers
   accept `bridge_diversity` alongside the original metric names.
+  `auto_tune` warm-starts from the meta-model — the predicted config is
+  evaluated as trial 0 (inside the budget) so it competes directly with
+  searched configs. `MetaModel::is_fitted` plus error-returning (not
+  panicking) constructors guard the unfitted case;
+  `NearestNeighborMetaModel::predict_blended(features, k)` aggregates
+  over the k nearest records, and records carry `score_lift` for
+  cross-corpus-comparable ranking.
 - Partial-config support: any `PipelineConfig` field can be omitted;
   missing keys fall back to defaults (no more "specify every knob").
+- Hardened boundaries: `SphereQLPipeline::to_json` returns an error on
+  non-finite coordinates instead of panicking; Python and WASM surface
+  it as an exception.
 
 **Python**: type stubs (`.pyi`) are auto-generated via `pyo3-stub-gen` —
 IDE and `mypy`/`pyright` pick them up automatically.
@@ -60,8 +71,15 @@ descriptive error until a real embedder is plugged in).
     - `ProjectionKind::LaplacianEigenmap` via `auto_tune` often
       preserves more neighbor structure than PCA on sparse/noisy
       corpora (see [empirical findings](empirical-findings.md)), and
-      `ProjectionKind::UmapSphere` (ANN-backed, category-supervised)
-      is the tunable option for the 10k–100k range.
+      `ProjectionKind::UmapSphere` (ANN-backed, category-supervised,
+      tunable `min_dist` via the `umap_min_dist` tuner axis) is the
+      tunable option for the 10k–100k range. Training items keep their
+      exact Adam-optimized positions (no kNN re-derivation), UMAP
+      quality is scored as kNN recall (trustworthiness-style
+      neighborhood preservation) rather than an EVR proxy — old-proxy
+      tuner records are not score-comparable — and the opt-in
+      `warm_start_anchor` keeps disconnected kNN components anchored
+      on sparse corpora.
 
   See [search-precision-roadmap.md](search-precision-roadmap.md) for
   tracked improvements.
@@ -104,7 +122,9 @@ Each parquet file embeds the auto-tuned `PipelineConfig` in its metadata so
 consumers can reconstruct a pre-tuned pipeline without rerunning `auto_tune`.
 The bulk pipeline runs: download → parse → embed → cluster → auto-tune →
 validate → write. A `run_self_tune` pass gates each corpus on a minimum
-`QualityMetric` score before it is committed.
+`QualityMetric` score before it is committed; it validates its config up
+front and returns `Result` instead of silently zeroing quality on
+out-of-range smoothings.
 
 Scaling machinery that supports this path:
 
@@ -114,6 +134,9 @@ Scaling machinery that supports this path:
 - **UMAP graph caching** in the tuner — one kNN-graph build per unique
   `n_neighbors`, reused across epoch/weight sweeps
   (`TuneReport::umap_graph_builds` reports cache effectiveness).
+- **Borrowed-corpus tuner trials** — trials share the embedding matrix
+  instead of cloning it (~3 GB per trial at 500k×768), and the winning
+  pipeline is kept from its trial rather than rebuilt.
 - **Wall-time budgets** — `SearchStrategy::{Random, Bayesian}` accept
   `max_wall_secs` so large-corpus tuning can be time-boxed instead of
   trial-count-boxed.
