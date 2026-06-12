@@ -7,7 +7,7 @@
 //!
 //! Run:
 //! ```bash
-//! cargo run -p sphereql-embed --example cq_e2e --release
+//! cargo run -p sphereql-examples --example cq_e2e --release
 //! ```
 
 use sphereql_embed::{

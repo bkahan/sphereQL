@@ -34,6 +34,7 @@
 //! [`SphereQLPipeline::new_from_metamodel_tuned`] for the
 //! tune-or-recall entry points.
 
+pub mod ann;
 pub mod category;
 pub mod confidence;
 pub mod config;
@@ -83,5 +84,9 @@ pub use spatial_quality::*;
 pub use text_embedder::*;
 pub use tuner::*;
 pub use types::*;
-pub use umap::*;
+// `umap::*` would re-export `UmapConfig`, clashing with the tunable
+// `config::UmapConfig`. Expose only the public projection type; callers
+// who want the fitter-internal `UmapConfig` reach for `umap::UmapConfig`
+// directly.
+pub use umap::UmapSphereProjection;
 pub use util::*;

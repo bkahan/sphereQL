@@ -3,7 +3,7 @@
 //! Auto-tuning needs a scalar objective to optimize. EVR alone is a bad
 //! target — a high-EVR projection can still produce a geometry where every
 //! bridge is an `OverlapArtifact`, so the "quality" the user experiences
-//! is low. This module defines a [`QualityMetric`] trait and four concrete
+//! is low. This module defines a [`QualityMetric`] trait and five concrete
 //! metrics that each measure a distinct slice of pipeline quality.
 //!
 //! Compose them via [`CompositeMetric`] for a weighted objective.
@@ -13,8 +13,9 @@
 
 use std::collections::HashSet;
 
-use sphereql_core::{SphericalPoint, angular_distance};
+use sphereql_core::{SphericalPoint, angular_distance, spherical_to_cartesian};
 
+use crate::ann::{AnnConfig, AnnIndex};
 use crate::category::BridgeClassification;
 use crate::pipeline::SphereQLPipeline;
 
@@ -34,9 +35,24 @@ pub trait QualityMetric: Send + Sync {
     fn name(&self) -> &str;
     /// Evaluate the pipeline. Must return a value in `[0, 1]`.
     fn score(&self, pipeline: &SphereQLPipeline) -> f64;
+
+    /// Evaluate the pipeline and report any per-component breakdown in
+    /// the same pass. Returns `(score, components)` where each
+    /// component is `(name, weight, component_score)`.
+    ///
+    /// The default implementation returns the scalar score with no
+    /// components — correct for leaf metrics. [`CompositeMetric`]
+    /// overrides it so the tuner can record *which* sub-metric moved
+    /// on each trial without paying for a second evaluation. A
+    /// component whose score barely varies across trials carries no
+    /// signal for the knobs being swept — the fastest diagnosis for a
+    /// flat tuner landscape.
+    fn score_with_components(&self, pipeline: &SphereQLPipeline) -> (f64, Vec<(String, f64, f64)>) {
+        (self.score(pipeline), Vec::new())
+    }
 }
 
-// ── Territorial health ─────────────────────────────────────────────────
+// ── Territorial health ─────────────────────────────────────────────
 
 /// Mean pairwise `territorial_factor` across every category pair.
 ///
@@ -73,7 +89,14 @@ impl QualityMetric for TerritorialHealth {
     }
 }
 
-// ── Bridge coherence ───────────────────────────────────────────────────
+// ── Bridge coherence ───────────────────────────────────────────────
+
+/// Neutral score returned by [`BridgeCoherence`] when bridges exist but
+/// none are classified `Genuine`. A 0.0 in that case dominates the
+/// composite (weight 0.40) and flattens the tuner landscape on lossy
+/// projections; the midpoint preserves rank ordering for downstream
+/// metrics.
+pub const BRIDGE_COHERENCE_NEUTRAL: f64 = 0.5;
 
 /// Fraction of bridges classified as [`BridgeClassification::Genuine`].
 ///
@@ -101,22 +124,79 @@ impl QualityMetric for BridgeCoherence {
             }
         }
         if total == 0 {
+            // No bridges at all — nothing to be incoherent about.
             1.0
+        } else if genuine == 0 {
+            // Bridges exist but none are `Genuine` — see
+            // [`BRIDGE_COHERENCE_NEUTRAL`] for why this isn't 0.0.
+            BRIDGE_COHERENCE_NEUTRAL
         } else {
             genuine as f64 / total as f64
         }
     }
 }
 
-// ── Cluster silhouette ─────────────────────────────────────────────────
+// ── Bridge diversity ───────────────────────────────────────────────
 
-/// Mean silhouette score of the category assignment on the projected
-/// sphere, remapped to `[0, 1]`.
+/// Fraction of distinct category pairs connected by at least one
+/// [`BridgeClassification::Genuine`] bridge.
 ///
-/// For each item: `s_i = (b_i − a_i) / max(a_i, b_i)` where `a_i` is the
-/// mean angular distance to other members of its own category and `b_i`
-/// is the minimum mean angular distance to any other category. Native
-/// silhouette lives in `[-1, 1]`; we return `(mean_s + 1) / 2`.
+/// High = the projection creates genuine cross-domain connectors across
+/// many category boundaries. Low = genuine bridges are concentrated in
+/// a few pairs or absent entirely. Returns `1.0` if there are fewer
+/// than 2 categories (no pairs to connect).
+///
+/// This replaces [`BridgeCoherence`] in the default composite because
+/// `genuine / total` converges to ~0.50 under the quantile-based
+/// classification floor regardless of projection quality.
+/// `BridgeDiversity` has real variance across projection configurations
+/// and directly measures the breadth of cross-domain connectivity that
+/// globetrot's marble dynamics and reasoning traces depend on.
+pub struct BridgeDiversity;
+
+impl QualityMetric for BridgeDiversity {
+    fn name(&self) -> &str {
+        "bridge_diversity"
+    }
+
+    fn score(&self, pipeline: &SphereQLPipeline) -> f64 {
+        let layer = pipeline.category_layer();
+        let n_cats = layer.num_categories();
+        if n_cats < 2 {
+            return 1.0;
+        }
+
+        let total_pairs = n_cats * (n_cats - 1) / 2;
+
+        let mut pairs_with_genuine: HashSet<(usize, usize)> = HashSet::new();
+        for (&(src, tgt), bridges) in &layer.graph.bridges {
+            if bridges
+                .iter()
+                .any(|b| b.classification == BridgeClassification::Genuine)
+            {
+                let pair = if src < tgt { (src, tgt) } else { (tgt, src) };
+                pairs_with_genuine.insert(pair);
+            }
+        }
+
+        (pairs_with_genuine.len() as f64 / total_pairs as f64).clamp(0.0, 1.0)
+    }
+}
+
+// ── Cluster silhouette ─────────────────────────────────────────────
+
+/// Simplified silhouette score of the category assignment on S²,
+/// remapped to `[0, 1]`.
+///
+/// Uses the centroid-based approximation (Hruschka et al., 2004):
+/// `a_i` = angular distance from item `i` to its own category centroid;
+/// `b_i` = minimum angular distance to any other category's centroid.
+/// This reduces complexity from O(N²) to O(N·C) where C is the number
+/// of categories, making it feasible for corpora with 500k+ items.
+///
+/// The centroid approximation correlates > 0.95 with the full silhouette
+/// on well-separated clusters and preserves the relative ranking across
+/// pipeline configurations that the auto-tuner needs.
 ///
 /// High = categories form tight, well-separated clusters on S².
 /// Low = categories blur into each other on the projected surface.
@@ -134,68 +214,53 @@ impl QualityMetric for ClusterSilhouette {
             return 1.0;
         }
 
-        // Gather all projected positions by category using exported points
-        // so we don't rely on private pipeline state.
-        let exported = pipeline.exported_points();
-        if exported.len() < 2 {
+        let points = pipeline.metric_points();
+        if points.positions.len() < 2 {
             return 1.0;
         }
 
-        // Map each item to its category index (by matching name to summary).
-        let mut positions_by_cat: Vec<Vec<sphereql_core::SphericalPoint>> =
-            vec![Vec::new(); n_cats];
-        for ep in &exported {
-            if let Some(ci) = layer.name_to_index.get(&ep.category).copied() {
-                let sp = sphereql_core::SphericalPoint::new_unchecked(ep.r, ep.theta, ep.phi);
-                positions_by_cat[ci].push(sp);
-            }
-        }
-
-        // Skip categories that somehow have zero positions (shouldn't happen
-        // on a built pipeline, but guard anyway).
-        let total_points: usize = positions_by_cat.iter().map(|v| v.len()).sum();
-        if total_points < 2 {
-            return 1.0;
-        }
+        // Collect category centroids from the already-computed summaries.
+        // These are projected positions on S² — no extra projection pass needed.
+        let centroids: Vec<SphericalPoint> = layer
+            .summaries
+            .iter()
+            .map(|s| s.centroid_position)
+            .collect();
 
         let mut silhouette_sum = 0.0;
         let mut scored_points = 0usize;
 
-        for (ci, own) in positions_by_cat.iter().enumerate() {
-            if own.len() < 2 {
-                // Single-member clusters have undefined silhouette — skip.
+        for (sp, cat) in points.positions.iter().zip(&points.category_indices) {
+            let Some(ci) = *cat else {
+                continue;
+            };
+
+            // a(i): distance to own category centroid (simplified silhouette).
+            let a = angular_distance(sp, &centroids[ci]);
+            // Items coinciding with their centroid would contribute a
+            // guaranteed s = 1.0 regardless of separation — skip them.
+            if a < 1e-12 {
                 continue;
             }
-            for (idx, p) in own.iter().enumerate() {
-                // a(i): mean distance to same-category peers.
-                let mut a_sum = 0.0;
-                for (j, q) in own.iter().enumerate() {
-                    if j != idx {
-                        a_sum += angular_distance(p, q);
-                    }
-                }
-                let a = a_sum / (own.len() - 1) as f64;
 
-                // b(i): min over other categories of mean distance.
-                let mut b = f64::INFINITY;
-                for (other_ci, other) in positions_by_cat.iter().enumerate() {
-                    if other_ci == ci || other.is_empty() {
-                        continue;
-                    }
-                    let sum: f64 = other.iter().map(|q| angular_distance(p, q)).sum();
-                    let mean = sum / other.len() as f64;
-                    if mean < b {
-                        b = mean;
-                    }
-                }
-                if b.is_infinite() {
+            // b(i): minimum distance to any other category's centroid.
+            let mut b = f64::INFINITY;
+            for (j, centroid) in centroids.iter().enumerate() {
+                if j == ci {
                     continue;
                 }
-
-                let s = (b - a) / a.max(b).max(f64::EPSILON);
-                silhouette_sum += s;
-                scored_points += 1;
+                let d = angular_distance(sp, centroid);
+                if d < b {
+                    b = d;
+                }
             }
+            if b.is_infinite() {
+                continue;
+            }
+
+            let s = (b - a) / a.max(b).max(f64::EPSILON);
+            silhouette_sum += s;
+            scored_points += 1;
         }
 
         if scored_points == 0 {
@@ -206,7 +271,58 @@ impl QualityMetric for ClusterSilhouette {
     }
 }
 
-// ── Graph modularity ───────────────────────────────────────────────────
+// ── Graph modularity ───────────────────────────────────────────────
+
+/// Corpus size at which [`GraphModularity`] switches its k-NN edge
+/// construction from the exact O(N²) scan to the RP-forest ANN index.
+/// Mirrors the brute-force/ANN crossover used by UMAP's graph builder.
+const MODULARITY_ANN_THRESHOLD: usize = 2000;
+
+/// Build the symmetric k-NN edge set over projected positions: edge
+/// `{i, j}` exists if `j ∈ top-k(i)` OR `i ∈ top-k(j)`, keyed as
+/// `(min(i, j), max(i, j))` in a `HashSet` to dedupe the union.
+///
+/// `exact` selects the all-pairs angular-distance scan; otherwise the
+/// RP-forest [`AnnIndex`] is used. The two rankings are interchangeable:
+/// `angular_distance` depends only on each point's direction (its
+/// `unit_cartesian`), and cosine similarity over those directions is
+/// strictly monotone with the angle, so descending ANN similarity
+/// reproduces the ascending-angular ordering up to ANN recall. The ANN
+/// index is seed-deterministic, preserving the [`QualityMetric`]
+/// determinism contract.
+fn knn_edges(positions: &[SphericalPoint], k: usize, exact: bool) -> HashSet<(usize, usize)> {
+    let n = positions.len();
+    let mut edges: HashSet<(usize, usize)> = HashSet::new();
+    if exact {
+        for i in 0..n {
+            let mut dists: Vec<(usize, f64)> = (0..n)
+                .filter(|&j| j != i)
+                .map(|j| (j, angular_distance(&positions[i], &positions[j])))
+                .collect();
+            dists.sort_by(|a, b| a.1.total_cmp(&b.1));
+            for &(j, _) in dists.iter().take(k) {
+                let e = if i < j { (i, j) } else { (j, i) };
+                edges.insert(e);
+            }
+        }
+    } else {
+        let coords: Vec<Vec<f64>> = positions
+            .iter()
+            .map(|p| {
+                let c = spherical_to_cartesian(p);
+                vec![c.x, c.y, c.z]
+            })
+            .collect();
+        let index = AnnIndex::build(&coords, &AnnConfig::default());
+        for i in 0..n {
+            for (j, _) in index.query_by_index(i, k) {
+                let e = if i < j { (i, j) } else { (j, i) };
+                edges.insert(e);
+            }
+        }
+    }
+    edges
+}
 
 /// Modularity of the category assignment on the k-NN graph of projected
 /// positions on S².
@@ -233,6 +349,10 @@ impl QualityMetric for ClusterSilhouette {
 /// [`LaplacianEigenmapProjection`](crate::laplacian::LaplacianEigenmapProjection),
 /// which otherwise get discounted by variance-centric metrics
 /// ([`ClusterSilhouette`]) that reward PCA's spread.
+///
+/// Edge construction is exact (all-pairs) below
+/// [`MODULARITY_ANN_THRESHOLD`] items and ANN-backed above it, keeping
+/// the metric usable inside tuner loops on 100k–500k corpora.
 pub struct GraphModularity {
     /// Number of nearest neighbors per node in the k-NN graph.
     ///
@@ -266,39 +386,15 @@ impl QualityMetric for GraphModularity {
             return 1.0;
         }
 
-        let exported = pipeline.exported_points();
-        let n = exported.len();
+        let points = pipeline.metric_points();
+        let n = points.positions.len();
         if n < 2 {
             return 1.0;
         }
-
-        // Positions + per-item category index.
-        let positions: Vec<SphericalPoint> = exported
-            .iter()
-            .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
-            .collect();
-        let item_cats: Vec<Option<usize>> = exported
-            .iter()
-            .map(|p| layer.name_to_index.get(&p.category).copied())
-            .collect();
+        let item_cats = &points.category_indices;
 
         let k = self.k.min(n - 1).max(1);
-
-        // Symmetric k-NN graph: edge {i, j} exists if j ∈ top-k(i) OR
-        // i ∈ top-k(j). Keyed by (min(i,j), max(i,j)) in a HashSet to
-        // dedupe the union.
-        let mut edges: HashSet<(usize, usize)> = HashSet::new();
-        for i in 0..n {
-            let mut dists: Vec<(usize, f64)> = (0..n)
-                .filter(|&j| j != i)
-                .map(|j| (j, angular_distance(&positions[i], &positions[j])))
-                .collect();
-            dists.sort_by(|a, b| a.1.total_cmp(&b.1));
-            for &(j, _) in dists.iter().take(k) {
-                let e = if i < j { (i, j) } else { (j, i) };
-                edges.insert(e);
-            }
-        }
+        let edges = knn_edges(&points.positions, k, n < MODULARITY_ANN_THRESHOLD);
 
         let m = edges.len() as f64;
         if m < 1.0 {
@@ -340,7 +436,7 @@ impl QualityMetric for GraphModularity {
     }
 }
 
-// ── Composite ──────────────────────────────────────────────────────────
+// ── Composite ──────────────────────────────────────────────────────
 
 /// Weighted linear combination of multiple [`QualityMetric`]s.
 ///
@@ -370,22 +466,30 @@ impl CompositeMetric {
         }
     }
 
-    /// Default composite: 40% bridge coherence + 35% territorial health +
-    /// 25% cluster silhouette. Emphasizes what PCA-on-sparse-data tends to
-    /// sacrifice first.
+    /// Default composite: 30% bridge diversity + 25% territorial health +
+    /// 25% cluster silhouette + 20% graph modularity.
+    ///
+    /// Bridge diversity replaces bridge coherence (which converges to ~0.50
+    /// under quantile-based classification). Graph modularity is included
+    /// to reward connectivity-preserving projections (UMAP, Laplacian)
+    /// alongside variance-centric ones (PCA).
     pub fn default_composite() -> Self {
         Self::new(
             "default_composite",
             vec![
-                (Box::new(BridgeCoherence) as Box<dyn QualityMetric>, 0.40),
-                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.35),
+                (Box::new(BridgeDiversity) as Box<dyn QualityMetric>, 0.30),
+                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.25),
                 (Box::new(ClusterSilhouette) as Box<dyn QualityMetric>, 0.25),
+                (
+                    Box::new(GraphModularity::default()) as Box<dyn QualityMetric>,
+                    0.20,
+                ),
             ],
         )
     }
 
-    /// Connectivity-native composite: 50% graph modularity + 30% bridge
-    /// coherence + 20% territorial health. Designed as a counter-hypothesis
+    /// Connectivity-native composite: 40% graph modularity + 35% bridge
+    /// diversity + 25% territorial health. Designed as a counter-hypothesis
     /// to [`Self::default_composite`] — which weights the variance-centric
     /// [`ClusterSilhouette`] and systematically rewards PCA-style spread.
     /// This composite instead rewards projections that preserve
@@ -397,10 +501,10 @@ impl CompositeMetric {
             vec![
                 (
                     Box::new(GraphModularity::default()) as Box<dyn QualityMetric>,
-                    0.50,
+                    0.40,
                 ),
-                (Box::new(BridgeCoherence) as Box<dyn QualityMetric>, 0.30),
-                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.20),
+                (Box::new(BridgeDiversity) as Box<dyn QualityMetric>, 0.35),
+                (Box::new(TerritorialHealth) as Box<dyn QualityMetric>, 0.25),
             ],
         )
     }
@@ -431,9 +535,20 @@ impl QualityMetric for CompositeMetric {
             .sum();
         total.clamp(0.0, 1.0)
     }
+
+    fn score_with_components(&self, pipeline: &SphereQLPipeline) -> (f64, Vec<(String, f64, f64)>) {
+        if self.components.is_empty() {
+            return (0.0, Vec::new());
+        }
+        // Each component is evaluated exactly once; the composite total
+        // is recomposed from the breakdown so the two always agree.
+        let breakdown = self.score_components(pipeline);
+        let total: f64 = breakdown.iter().map(|(_, w, s)| w * s).sum();
+        (total.clamp(0.0, 1.0), breakdown)
+    }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -478,6 +593,62 @@ mod tests {
         let p = make_pipeline();
         let s = BridgeCoherence.score(&p);
         assert!((0.0..=1.0).contains(&s), "got {s}");
+    }
+
+    #[test]
+    fn bridge_coherence_returns_neutral_when_no_genuine() {
+        // BridgeCoherence returns 0.5 (not 0.0) when bridges exist but
+        // none are Genuine. Force that state by setting
+        // `min_evr_for_classification` above any achievable EVR — every
+        // bridge falls back to Weak and we exercise the neutral arm.
+        use crate::config::PipelineConfig;
+        let n = 30;
+        let dim = 10;
+        let mut embeddings = Vec::new();
+        let mut categories = Vec::new();
+        for i in 0..n {
+            let mut v = vec![0.0; dim];
+            if i < n / 2 {
+                v[0] = 1.0 + (i as f64 * 0.01);
+                v[1] = 0.1;
+                categories.push("alpha".to_string());
+            } else {
+                v[0] = 0.1;
+                v[1] = 1.0 + (i as f64 * 0.01);
+                categories.push("beta".to_string());
+            }
+            v[2] = 0.05 * i as f64;
+            embeddings.push(v);
+        }
+        let mut config = PipelineConfig::default();
+        config.bridges.min_evr_for_classification = 1.5;
+        let p = SphereQLPipeline::new_with_config(
+            PipelineInput {
+                categories,
+                embeddings,
+            },
+            config,
+        )
+        .expect("pipeline build failed");
+
+        let has_bridges = p
+            .category_layer()
+            .graph
+            .bridges
+            .values()
+            .any(|v| !v.is_empty());
+
+        let score = BridgeCoherence.score(&p);
+        if has_bridges {
+            assert!(
+                (score - BRIDGE_COHERENCE_NEUTRAL).abs() < 1e-12,
+                "expected neutral {BRIDGE_COHERENCE_NEUTRAL} when bridges exist but none Genuine, got {score}"
+            );
+        } else {
+            // No bridges at all → the original "nothing to be
+            // incoherent about" path returns 1.0.
+            assert!((score - 1.0).abs() < 1e-12);
+        }
     }
 
     #[test]
@@ -538,9 +709,29 @@ mod tests {
     }
 
     #[test]
+    fn score_with_components_matches_score() {
+        let p = make_pipeline();
+        let m = CompositeMetric::default_composite();
+        let (total, components) = m.score_with_components(&p);
+        assert!((total - m.score(&p)).abs() < 1e-12);
+        assert_eq!(components.len(), 4);
+        let recomposed: f64 = components.iter().map(|(_, w, s)| w * s).sum();
+        assert!((total - recomposed).abs() < 1e-12);
+    }
+
+    #[test]
+    fn score_with_components_default_is_empty_for_leaf_metrics() {
+        let p = make_pipeline();
+        let (total, components) = TerritorialHealth.score_with_components(&p);
+        assert!((total - TerritorialHealth.score(&p)).abs() < 1e-12);
+        assert!(components.is_empty());
+    }
+
+    #[test]
     fn metric_names_stable() {
         assert_eq!(TerritorialHealth.name(), "territorial_health");
         assert_eq!(BridgeCoherence.name(), "bridge_coherence");
+        assert_eq!(BridgeDiversity.name(), "bridge_diversity");
         assert_eq!(ClusterSilhouette.name(), "cluster_silhouette");
         assert_eq!(GraphModularity::default().name(), "graph_modularity");
         assert_eq!(
@@ -554,11 +745,73 @@ mod tests {
     }
 
     #[test]
+    fn bridge_diversity_in_range() {
+        let p = make_pipeline();
+        let s = BridgeDiversity.score(&p);
+        assert!((0.0..=1.0).contains(&s), "got {s}");
+    }
+
+    #[test]
+    fn bridge_diversity_is_deterministic() {
+        let p = make_pipeline();
+        let a = BridgeDiversity.score(&p);
+        let b = BridgeDiversity.score(&p);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn default_composite_includes_bridge_diversity_not_coherence() {
+        let p = make_pipeline();
+        let m = CompositeMetric::default_composite();
+        let breakdown = m.score_components(&p);
+        let names: Vec<&str> = breakdown.iter().map(|(n, _, _)| n.as_str()).collect();
+        assert!(
+            names.contains(&"bridge_diversity"),
+            "default composite should include bridge_diversity, got {names:?}"
+        );
+        assert!(
+            !names.contains(&"bridge_coherence"),
+            "default composite should NOT include bridge_coherence, got {names:?}"
+        );
+        assert!(
+            names.contains(&"graph_modularity"),
+            "default composite should include graph_modularity, got {names:?}"
+        );
+    }
+
+    #[test]
+    fn default_composite_has_four_components() {
+        let p = make_pipeline();
+        let m = CompositeMetric::default_composite();
+        let breakdown = m.score_components(&p);
+        assert_eq!(
+            breakdown.len(),
+            4,
+            "default composite should have 4 components"
+        );
+    }
+
+    #[test]
     fn silhouette_is_deterministic() {
         let p = make_pipeline();
         let a = ClusterSilhouette.score(&p);
         let b = ClusterSilhouette.score(&p);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn cluster_silhouette_separates_well_structured_from_random() {
+        // make_pipeline() builds two disjoint clusters assigned to
+        // distinct categories. The simplified silhouette should produce
+        // a score well above the random-partition baseline of 0.5,
+        // validating that the centroid approximation still captures
+        // cluster quality.
+        let p = make_pipeline();
+        let s = ClusterSilhouette.score(&p);
+        assert!(
+            s > 0.55,
+            "well-separated clusters should score above random baseline, got {s}"
+        );
     }
 
     #[test]
@@ -606,6 +859,43 @@ mod tests {
     }
 
     #[test]
+    fn knn_edges_ann_path_respects_cluster_structure() {
+        // Two tight, well-separated caps on S². Both the exact and the
+        // ANN edge builders must keep every edge inside its own cap —
+        // the ANN path is otherwise only reachable at >= 2000 items, so
+        // this drives it directly through the helper.
+        let mut positions = Vec::new();
+        for i in 0..60 {
+            let t = i as f64;
+            positions.push(SphericalPoint::new_unchecked(
+                1.0,
+                0.3 + t * 0.001,
+                1.2 + t * 0.0005,
+            ));
+        }
+        for i in 0..60 {
+            let t = i as f64;
+            positions.push(SphericalPoint::new_unchecked(
+                1.0,
+                3.5 + t * 0.001,
+                1.8 + t * 0.0005,
+            ));
+        }
+
+        for exact in [true, false] {
+            let edges = knn_edges(&positions, 5, exact);
+            assert!(!edges.is_empty(), "edge set empty (exact={exact})");
+            for &(a, b) in &edges {
+                assert_eq!(
+                    a < 60,
+                    b < 60,
+                    "edge ({a}, {b}) crosses caps (exact={exact})"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn connectivity_composite_weights_modularity_most() {
         // The connectivity composite should score higher than the default
         // composite when graph modularity is high — sanity check that the
@@ -619,6 +909,6 @@ mod tests {
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .unwrap();
         assert_eq!(heaviest.0, "graph_modularity");
-        assert!((heaviest.1 - 0.50).abs() < 1e-12);
+        assert!((heaviest.1 - 0.40).abs() < 1e-12);
     }
 }

@@ -1,3 +1,7 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::sync::OnceLock;
+
 use sphereql_core::*;
 use sphereql_index::SpatialItem;
 
@@ -71,7 +75,7 @@ pub enum PipelineError {
     InvalidInput(String),
 }
 
-// ── Input contract ──────────────────────────────────────────────────────────
+// ── Input contract ──────────────────────────────────────────────────────────────
 
 /// Input to construct a SphereQL pipeline.
 ///
@@ -89,7 +93,7 @@ pub struct PipelineQuery {
     pub embedding: Vec<f64>,
 }
 
-// ── Output types ────────────────────────────────────────────────────────────
+// ── Output types ────────────────────────────────────────────────────────────────
 
 /// One item returned from a nearest-neighbor or similarity query.
 ///
@@ -163,7 +167,7 @@ pub enum SphereQLOutput {
     ConceptPath(Option<PathResult>),
     Globs(Vec<GlobSummary>),
     LocalManifold(ManifoldResult),
-    // ── Phase 3: category-level outputs ─────────────────────────────────
+    // ── Phase 3: category-level outputs ─────────────────────────
     /// Result of a category-level concept path query.
     CategoryConceptPath(Option<CategoryPath>),
     /// Nearest neighbor categories to a given category.
@@ -193,7 +197,7 @@ pub enum SphereQLQuery<'a> {
     DetectGlobs { k: Option<usize>, max_k: usize },
     /// Fit a local manifold around the query point.
     LocalManifold { neighborhood_k: usize },
-    // ── Phase 3: category-level queries ─────────────────────────────────
+    // ── Phase 3: category-level queries ─────────────────────────
     /// Find the shortest path between two categories through the category graph.
     CategoryConceptPath {
         source_category: &'a str,
@@ -223,7 +227,26 @@ pub struct ExportedPoint {
     pub intensity: f64,
 }
 
-// ── Pipeline ──────────────────────────────────────────────────────────────
+/// Per-item projected positions and category indices shared by the
+/// geometry metrics ([`ClusterSilhouette`](crate::quality_metric::ClusterSilhouette),
+/// [`GraphModularity`](crate::quality_metric::GraphModularity)). Built
+/// lazily once per pipeline — unlike [`SphereQLPipeline::exported_points`],
+/// which clones every id and category string per call.
+pub(crate) struct MetricPoints {
+    pub(crate) positions: Vec<SphericalPoint>,
+    pub(crate) category_indices: Vec<Option<usize>>,
+}
+
+// ── Pipeline ──────────────────────────────────────────────────────────────────
+
+/// Outer-projection EVR at or above which [`SphereQLPipeline::default_nearest`]
+/// skips group-inner-sphere routing entirely. At this fidelity the outer
+/// angular distances are more accurate than any inner re-projection
+/// (observed: UMAP at 99.7% EVR routed correct outer-sphere neighbors
+/// away through a lossy group PCA). Group routing only helps when the
+/// outer sphere is unreliable and the inner re-projection recovers lost
+/// structure.
+const HIGH_EVR_ROUTING_BYPASS: f64 = 0.90;
 
 /// The main SphereQL pipeline: fitted projection + spatial index +
 /// category enrichment layer + optional tunable config.
@@ -250,6 +273,11 @@ pub struct SphereQLPipeline {
     /// full-dimensional similarity (e.g., priming, concept extraction).
     /// Only populated when the `retain-embeddings` feature is active.
     raw_embeddings: Option<Vec<Vec<f64>>>,
+    /// Lazily-built positions + category indices for the geometry
+    /// metrics. Safe to cache: positions and categories are fixed at
+    /// construction (the only `&mut self` method is
+    /// [`Self::set_quality_config`], which touches neither).
+    metric_points: OnceLock<MetricPoints>,
 }
 
 impl SphereQLPipeline {
@@ -280,7 +308,7 @@ impl SphereQLPipeline {
             .map(|v| Embedding::new(v.clone()))
             .collect();
 
-        let projection = fit_projection_for_config(&embeddings, &config)?;
+        let projection = fit_projection_for_config(&embeddings, &input.categories, &config)?;
         let mut pipeline = Self::with_configured_projection_and_config(
             input.categories,
             embeddings,
@@ -308,6 +336,7 @@ impl SphereQLPipeline {
         input: PipelineInput,
         model: &M,
     ) -> Result<(Self, CorpusFeatures, PipelineConfig), PipelineError> {
+        require_fitted(model)?;
         let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
             .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
@@ -318,12 +347,14 @@ impl SphereQLPipeline {
     /// Warm-started hybrid: predict a config with `model`, then run a
     /// small-budget tuner pass using that prediction as `base_config`.
     ///
-    /// Non-tuned knobs stay at the model's predicted values; the
-    /// searched knobs explore the given [`SearchSpace`] from there.
-    /// When the meta-model has seen a similar corpus before the
-    /// prediction is usually close to optimal and the tuner only needs
-    /// a handful of trials to confirm or refine it — meaningfully
-    /// cheaper than cold-starting at [`PipelineConfig::default`].
+    /// The prediction supplies values only for knobs NOT enumerated by
+    /// `space` — any knob the space lists is searched cold across its
+    /// axes, and the predicted value for it is ignored. Under
+    /// [`SearchStrategy::Random`] and [`SearchStrategy::Bayesian`] the
+    /// predicted config itself is additionally evaluated as trial 0
+    /// (counted against the budget), so it competes directly with the
+    /// searched candidates; [`SearchStrategy::Grid`] skips that seed
+    /// trial to keep its trial set the exact Cartesian enumeration.
     ///
     /// Returns the winning pipeline, the extracted corpus features, and
     /// the full [`TuneReport`]. Callers can feed the report back into
@@ -340,6 +371,7 @@ impl SphereQLPipeline {
         M: MetaModel,
         Q: QualityMetric,
     {
+        require_fitted(model)?;
         let features = CorpusFeatures::extract(&input.categories, &input.embeddings)
             .map_err(PipelineError::InvalidInput)?;
         let predicted = model.predict(&features);
@@ -390,6 +422,21 @@ impl SphereQLPipeline {
         projection: ConfiguredProjection,
         config: PipelineConfig,
     ) -> Result<Self, PipelineError> {
+        Self::with_projection_parts(categories, &embeddings, projection, config)
+    }
+
+    /// Borrowed-embeddings core shared by the owned constructor and the
+    /// tuner. The pipeline never retains the high-dimensional embeddings
+    /// (only `raw_embeddings` under the `retain-embeddings` feature does,
+    /// and that copy is taken in [`Self::new_with_config`]), so taking a
+    /// slice here lets the tuner run trials without cloning the full
+    /// corpus matrix per trial.
+    pub(crate) fn with_projection_parts(
+        categories: Vec<String>,
+        embeddings: &[Embedding],
+        projection: ConfiguredProjection,
+        config: PipelineConfig,
+    ) -> Result<Self, PipelineError> {
         let n = embeddings.len();
         if n != categories.len() {
             return Err(PipelineError::LengthMismatch {
@@ -433,7 +480,7 @@ impl SphereQLPipeline {
         let evr = projection.explained_variance_ratio();
         let category_layer = CategoryLayer::build_with_config(
             &categories,
-            &embeddings,
+            embeddings,
             &projected_positions,
             &projection,
             evr,
@@ -456,6 +503,7 @@ impl SphereQLPipeline {
             projection_warnings,
             config,
             raw_embeddings: None,
+            metric_points: OnceLock::new(),
         })
     }
 
@@ -651,6 +699,16 @@ impl SphereQLPipeline {
         {
             return self.categories[idx].clone();
         }
+        // Every indexed id is generated as `s-{i:04}` at construction, so
+        // reaching this branch means an invariant broke (foreign id leaked
+        // into the index, or an out-of-range index). Surface it loudly in
+        // debug builds; release builds keep the historical soft fallback.
+        debug_assert!(
+            false,
+            "cat_for: id {id:?} does not match the generated `s-{{i:04}}` format \
+             or indexes past {} categories",
+            self.categories.len()
+        );
         "unknown".into()
     }
 
@@ -736,6 +794,34 @@ impl SphereQLPipeline {
             .collect()
     }
 
+    /// Cached per-item positions and category indices for the geometry
+    /// metrics. Positions come from the same per-item index records as
+    /// [`Self::exported_points`] (with the same `(0, 0, 0)` fallback for
+    /// missing items), so the two views always agree.
+    pub(crate) fn metric_points(&self) -> &MetricPoints {
+        self.metric_points.get_or_init(|| {
+            let positions = self
+                .ids
+                .iter()
+                .map(|id| {
+                    self.index
+                        .get(id)
+                        .map(|it| *it.position())
+                        .unwrap_or_else(|| SphericalPoint::new_unchecked(0.0, 0.0, 0.0))
+                })
+                .collect();
+            let category_indices = self
+                .categories
+                .iter()
+                .map(|c| self.category_layer.name_to_index.get(c).copied())
+                .collect();
+            MetricPoints {
+                positions,
+                category_indices,
+            }
+        })
+    }
+
     /// The active projection's explained-variance-ratio-equivalent
     /// quality score, in `[0, 1]`. PCA returns the classical EVR;
     /// kernel PCA returns its kernel-space EVR; Laplacian eigenmap
@@ -760,7 +846,7 @@ impl SphereQLPipeline {
             .collect()
     }
 
-    // ── Phase 3: category-level accessors ──────────────────────────────
+    // ── Phase 3: category-level accessors ──────────────────────────
 
     /// Access the category enrichment layer directly.
     pub fn category_layer(&self) -> &CategoryLayer {
@@ -842,6 +928,10 @@ impl SphereQLPipeline {
     /// Returns `None` if embeddings were not retained.
     /// Returns `Err(DimensionMismatch)` if `query_embedding.len()` differs from
     /// the stored embedding dimensionality.
+    ///
+    /// Cost: scans every retained embedding — O(N·D) similarity
+    /// computations — with a size-`k` heap keeping selection at
+    /// O(N log k) time and O(k) extra allocation.
     pub fn nearest_by_embedding(
         &self,
         query_embedding: &[f64],
@@ -858,36 +948,65 @@ impl SphereQLPipeline {
         }
 
         let query_norm: f64 = query_embedding.iter().map(|x| x * x).sum::<f64>().sqrt();
-        if query_norm < f64::EPSILON {
+        if query_norm < f64::EPSILON || k == 0 {
             return Some(Ok(Vec::new()));
         }
 
-        let mut scored: Vec<(usize, f64)> = embeddings
-            .iter()
-            .enumerate()
-            .map(|(i, emb)| {
-                let emb_norm: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt();
-                let dot: f64 = query_embedding
-                    .iter()
-                    .zip(emb.iter())
-                    .map(|(a, b)| a * b)
-                    .sum();
-                let sim = if emb_norm < f64::EPSILON {
-                    0.0
-                } else {
-                    (dot / (query_norm * emb_norm)).clamp(-1.0, 1.0)
-                };
-                (i, sim)
-            })
-            .collect();
+        // Min-heap ordering: lower similarity is "smaller"; on ties the
+        // higher index is evicted first, matching the stable-sort order
+        // of the old full-materialize implementation.
+        struct Scored {
+            sim: f64,
+            index: usize,
+        }
+        impl Ord for Scored {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.sim
+                    .total_cmp(&other.sim)
+                    .then_with(|| other.index.cmp(&self.index))
+            }
+        }
+        impl PartialOrd for Scored {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl PartialEq for Scored {
+            fn eq(&self, other: &Self) -> bool {
+                self.cmp(other) == std::cmp::Ordering::Equal
+            }
+        }
+        impl Eq for Scored {}
 
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(k);
+        let mut heap: BinaryHeap<Reverse<Scored>> = BinaryHeap::with_capacity(k + 1);
+        for (i, emb) in embeddings.iter().enumerate() {
+            let emb_norm: f64 = emb.iter().map(|x| x * x).sum::<f64>().sqrt();
+            let dot: f64 = query_embedding
+                .iter()
+                .zip(emb.iter())
+                .map(|(a, b)| a * b)
+                .sum();
+            let sim = if emb_norm < f64::EPSILON {
+                0.0
+            } else {
+                (dot / (query_norm * emb_norm)).clamp(-1.0, 1.0)
+            };
+            heap.push(Reverse(Scored { sim, index: i }));
+            if heap.len() > k {
+                heap.pop();
+            }
+        }
+
+        let mut scored: Vec<(usize, f64)> = heap
+            .into_iter()
+            .map(|Reverse(s)| (s.index, s.sim))
+            .collect();
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
         Some(Ok(scored))
     }
 
-    // ── Phase 5: hierarchical domain groups ────────────────────────────
+    // ── Phase 5: hierarchical domain groups ────────────────────────
 
     /// Coarse-grained domain groups detected from Voronoi adjacency + cap overlap.
     /// Single source of truth: the same vector used by `default_nearest`'s
@@ -989,17 +1108,18 @@ impl SphereQLPipeline {
 
     /// Default `nearest` path (v2 routing).
     ///
-    /// Routes the query to its closest domain group when that choice is
-    /// unambiguous (`d_nearest / d_second_nearest < group_routing_alpha`)
+    /// Routes the query to its closest domain group when the outer
+    /// projection's EVR is below [`HIGH_EVR_ROUTING_BYPASS`], the choice
+    /// is unambiguous (`d_nearest / d_second_nearest < group_routing_alpha`),
     /// and the group has an inner sphere; otherwise falls back to plain
-    /// outer-sphere k-NN. EVR no longer gates routing — only the
-    /// distance-ratio rule does — so high-fidelity projections still
-    /// benefit from the inner-sphere refinement.
+    /// outer-sphere k-NN. At EVR ≥ [`HIGH_EVR_ROUTING_BYPASS`] routing is
+    /// bypassed entirely — the outer angular distances are already more
+    /// accurate than any inner-sphere re-projection.
     pub fn default_nearest(&self, embedding: &Embedding, k: usize) -> Vec<NearestResult> {
         let evr = self.projection.explained_variance_ratio();
         let alpha = self.config.routing.group_routing_alpha;
 
-        let route = if alpha > 0.0 {
+        let route = if alpha > 0.0 && evr < HIGH_EVR_ROUTING_BYPASS {
             let pos = self.projection.project(embedding);
             self.category_layer
                 .nearest_group(&pos)
@@ -1081,15 +1201,26 @@ impl SphereQLPipeline {
         self.quality_config = config;
     }
 
+    /// Annotate every bridge in the category layer with an inferred
+    /// [`RelationType`](crate::category::RelationType).
+    ///
+    /// `labels[i]` must correspond to the same item as
+    /// `BridgeItem::item_index == i` — i.e., the pipeline's item list.
+    pub fn annotate_relations(&mut self, labels: &[String]) {
+        self.category_layer.annotate_bridge_relations(labels);
+    }
+
     /// Full tunable configuration this pipeline was built with.
     pub fn config(&self) -> &PipelineConfig {
         &self.config
     }
 
     /// Serialize all projected points as a JSON array string.
-    pub fn to_json(&self) -> String {
+    ///
+    /// Returns `Err` when serialization fails — degenerate projections
+    /// can produce non-finite coordinates, which JSON cannot represent.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(&self.exported_points())
-            .expect("ExportedPoint is always serializable")
     }
 
     /// Serialize all projected points as RFC 4180-compliant CSV with a header row.
@@ -1118,18 +1249,57 @@ impl SphereQLPipeline {
     }
 }
 
+/// Shared guard for the meta-model entry points: an unfitted model would
+/// panic inside `predict`, which must not escape a `Result`-returning
+/// boundary.
+fn require_fitted<M: MetaModel>(model: &M) -> Result<(), PipelineError> {
+    if model.is_fitted() {
+        Ok(())
+    } else {
+        Err(PipelineError::InvalidInput(format!(
+            "meta-model {:?} is unfitted; call fit() with at least one record first",
+            model.name()
+        )))
+    }
+}
+
 /// Fit the projection family specified by `config.projection_kind` on the
 /// given corpus. Called by [`SphereQLPipeline::new_with_config`] and the
 /// auto-tuner prefit step. Default radial strategy mirrors
 /// [`SphereQLPipeline::new`]'s legacy behavior (magnitude + volumetric).
+///
+/// `categories` is parallel to `embeddings` — same length, same order.
+/// The PCA arm uses it to compute per-sample weights
+/// `wᵢ = 1 / sqrt(|category(i)|)` (square-root rebalancing of the
+/// covariance — see [`PcaProjection::fit_weighted`]); the UMAP arm uses
+/// it as supervision labels for the category term. Kernel PCA and
+/// Laplacian ignore it.
 pub fn fit_projection_for_config(
     embeddings: &[Embedding],
+    categories: &[String],
     config: &PipelineConfig,
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
     match config.projection_kind {
-        ProjectionKind::Pca => Ok(ConfiguredProjection::Pca(
-            PcaProjection::fit(embeddings, RadialStrategy::Magnitude)?.with_volumetric(true),
-        )),
+        ProjectionKind::Pca => {
+            // Weight each sample by 1/sqrt(|its_category|) so a category's
+            // covariance mass grows as √size instead of linearly — softens
+            // (not equalizes) imbalance. Critical for corpora with
+            // singleton categories (DBpedia-style), where a uniform fit
+            // lets large categories dominate.
+            let mut cat_counts: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
+            for c in categories {
+                *cat_counts.entry(c.as_str()).or_default() += 1;
+            }
+            let weights: Vec<f64> = categories
+                .iter()
+                .map(|c| 1.0 / (cat_counts[c.as_str()] as f64).sqrt())
+                .collect();
+            Ok(ConfiguredProjection::Pca(
+                PcaProjection::fit_weighted(embeddings, &weights, RadialStrategy::Magnitude)?
+                    .with_volumetric(true),
+            ))
+        }
         ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
             embeddings,
             RadialStrategy::Magnitude,
@@ -1145,14 +1315,78 @@ pub fn fit_projection_for_config(
                 )?,
             ))
         }
-        ProjectionKind::UmapSphere => Ok(ConfiguredProjection::UmapSphere(
-            crate::umap::UmapSphereProjection::fit(
-                embeddings,
-                None,
-                RadialStrategy::Magnitude,
-                crate::umap::UmapConfig::default(),
-            )?,
-        )),
+        ProjectionKind::UmapSphere => {
+            let cat_indices = compact_category_indices(categories);
+            Ok(ConfiguredProjection::UmapSphere(
+                crate::umap::UmapSphereProjection::fit(
+                    embeddings,
+                    Some(&cat_indices),
+                    RadialStrategy::Magnitude,
+                    umap_fit_config(config),
+                )?,
+            ))
+        }
+    }
+}
+
+/// Fit a UMAP projection from a prebuilt kNN graph.
+///
+/// Used by the tuner to avoid rebuilding the kNN graph across trials
+/// that share `n_neighbors` but differ in `n_epochs` /
+/// `category_weight` / `min_dist`.
+/// The graph build is the expensive part of UMAP fit; the Adam optimizer
+/// that runs on top of it is comparatively cheap.
+pub fn fit_umap_from_graph(
+    graph: &crate::umap::UmapGraph,
+    categories: &[String],
+    config: &PipelineConfig,
+) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
+    let cat_indices = compact_category_indices(categories);
+    Ok(ConfiguredProjection::UmapSphere(
+        crate::umap::UmapSphereProjection::fit_from_graph(
+            graph,
+            Some(&cat_indices),
+            RadialStrategy::Magnitude,
+            umap_fit_config(config),
+        )?,
+    ))
+}
+
+/// Compact each unique category string to a dense `u32` id, first-seen
+/// order, for UMAP's supervised term. Shared by
+/// [`fit_projection_for_config`] and [`fit_umap_from_graph`] so both fit
+/// paths label items identically.
+fn compact_category_indices(categories: &[String]) -> Vec<u32> {
+    let mut cat_map: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+    let mut next_id: u32 = 0;
+    categories
+        .iter()
+        .map(|c| {
+            *cat_map.entry(c.as_str()).or_insert_with(|| {
+                let id = next_id;
+                next_id += 1;
+                id
+            })
+        })
+        .collect()
+}
+
+/// Translate the tunable [`UmapConfig`](crate::config::UmapConfig)
+/// section of a [`PipelineConfig`] into the fitter's own config. The
+/// non-tunable optimizer constants (`learning_rate`,
+/// `negative_sample_rate`) are pinned to their canonical UMAP defaults
+/// here — the single place they're set for pipeline-driven fits.
+fn umap_fit_config(config: &PipelineConfig) -> crate::umap::UmapConfig {
+    let uc = &config.umap;
+    crate::umap::UmapConfig {
+        n_neighbors: uc.n_neighbors,
+        n_epochs: uc.n_epochs,
+        learning_rate: 0.05,
+        negative_sample_rate: 5,
+        category_weight: uc.category_weight,
+        min_dist: uc.min_dist,
+        warm_start_anchor: uc.warm_start_anchor,
+        seed: uc.seed,
     }
 }
 
@@ -1189,7 +1423,7 @@ mod tests {
         )
     }
 
-    // ── Existing tests (unchanged) ─────────────────────────────────────
+    // ── Existing tests (unchanged) ─────────────────────────────────
 
     #[test]
     fn ids_are_insertion_order_aligned_with_categories_and_points() {
@@ -1219,6 +1453,43 @@ mod tests {
             assert_eq!(*id, ids[i].as_str());
             assert_eq!(*cat, cats[i].as_str());
         }
+    }
+
+    #[test]
+    fn fit_weighted_pca_handles_singleton_categories() {
+        // Corpus with extreme imbalance: one category with 20 items,
+        // two categories with 1 item each. A naive (unweighted) fit
+        // would let the 20-item category dominate the covariance.
+        // fit_weighted uses 1/sqrt(count) per category, compressing the
+        // big category's mass from 20× to √20 ≈ 4.5× a singleton's —
+        // and uses all 22 samples, giving a well-conditioned fit even
+        // with singletons.
+        let mut embeddings = Vec::new();
+        let mut categories = Vec::new();
+        for i in 0..20 {
+            let mut v = vec![0.0; 8];
+            v[0] = 1.0 + (i as f64 * 0.01);
+            v[1] = 0.1;
+            embeddings.push(v);
+            categories.push("big".to_string());
+        }
+        embeddings.push(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+        categories.push("singleton_a".to_string());
+        embeddings.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        categories.push("singleton_b".to_string());
+
+        let pipeline = SphereQLPipeline::new(PipelineInput {
+            categories,
+            embeddings,
+        })
+        .unwrap();
+
+        let evr = pipeline.explained_variance_ratio();
+        assert!(
+            evr > 0.0,
+            "weighted PCA should produce nonzero EVR even with singletons, got {evr}"
+        );
+        assert_eq!(pipeline.num_categories(), 3);
     }
 
     #[test]
@@ -1339,7 +1610,7 @@ mod tests {
     fn test_to_json_parseable() {
         let (input, _) = make_input(20, 10);
         let pipeline = SphereQLPipeline::new(input).unwrap();
-        let json = pipeline.to_json();
+        let json = pipeline.to_json().unwrap();
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(parsed.len(), 20);
     }
@@ -1385,7 +1656,7 @@ mod tests {
         assert_eq!(pipeline.num_categories(), 2);
     }
 
-    // ── Phase 3 tests: category layer integration ──────────────────────
+    // ── Phase 3 tests: category layer integration ────────────────────
 
     #[test]
     fn pipeline_builds_category_layer() {
@@ -1528,7 +1799,7 @@ mod tests {
         assert!(layer.get_category("group_b").is_some());
     }
 
-    // ── Phase 5: domain groups ────────────────────────────────────────
+    // ── Phase 5: domain groups ────────────────────────────────────
 
     #[test]
     fn domain_groups_detected() {
@@ -1669,6 +1940,7 @@ mod tests {
             features: features.clone(),
             best_config: target_config.clone(),
             best_score: 0.5,
+            score_lift: None,
             metric_name: "test".into(),
             strategy: "manual".into(),
             timestamp: "0".into(),
@@ -1709,6 +1981,7 @@ mod tests {
             features: features.clone(),
             best_config: predicted_cfg.clone(),
             best_score: 0.5,
+            score_lift: None,
             metric_name: "test".into(),
             strategy: "manual".into(),
             timestamp: "0".into(),
@@ -1721,6 +1994,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3], // NOT the predicted 0.123
@@ -1749,6 +2026,79 @@ mod tests {
             assert!((t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-9);
         }
         assert_eq!(pipeline.projection_kind(), ProjectionKind::Pca);
+    }
+
+    #[test]
+    fn new_from_metamodel_unfitted_model_returns_err() {
+        use crate::meta_model::NearestNeighborMetaModel;
+
+        let (input, _) = make_input(20, 10);
+        let model = NearestNeighborMetaModel::new();
+        assert!(!model.is_fitted());
+        match SphereQLPipeline::new_from_metamodel(input, &model) {
+            Err(PipelineError::InvalidInput(msg)) => {
+                assert!(msg.contains("unfitted"), "msg = {msg:?}");
+            }
+            Err(other) => panic!("expected InvalidInput, got {other:?}"),
+            Ok(_) => panic!("expected Err for unfitted model"),
+        }
+    }
+
+    #[test]
+    fn new_from_metamodel_tuned_unfitted_model_returns_err() {
+        use crate::meta_model::DistanceWeightedMetaModel;
+        use crate::quality_metric::TerritorialHealth;
+        use crate::tuner::{SearchSpace, SearchStrategy};
+
+        let (input, _) = make_input(20, 10);
+        let model = DistanceWeightedMetaModel::new();
+        match SphereQLPipeline::new_from_metamodel_tuned(
+            input,
+            &model,
+            &SearchSpace::default(),
+            &TerritorialHealth,
+            SearchStrategy::Grid,
+        ) {
+            Err(PipelineError::InvalidInput(msg)) => {
+                assert!(msg.contains("unfitted"), "msg = {msg:?}");
+            }
+            Err(other) => panic!("expected InvalidInput, got {other:?}"),
+            Ok(_) => panic!("expected Err for unfitted model"),
+        }
+    }
+
+    #[test]
+    fn new_from_metamodel_empty_input_maps_to_invalid_input() {
+        use crate::corpus_features::CorpusFeatures;
+        use crate::meta_model::{MetaTrainingRecord, NearestNeighborMetaModel};
+
+        let (seed_input, _) = make_input(20, 10);
+        let features =
+            CorpusFeatures::extract(&seed_input.categories, &seed_input.embeddings).unwrap();
+        let record = MetaTrainingRecord {
+            corpus_id: "seed".into(),
+            features,
+            best_config: PipelineConfig::default(),
+            best_score: 0.5,
+            score_lift: None,
+            metric_name: "test".into(),
+            strategy: "manual".into(),
+            timestamp: "0".into(),
+        };
+        let mut model = NearestNeighborMetaModel::new();
+        model.fit(&[record]);
+
+        let empty = PipelineInput {
+            categories: Vec::new(),
+            embeddings: Vec::new(),
+        };
+        match SphereQLPipeline::new_from_metamodel(empty, &model) {
+            Err(PipelineError::InvalidInput(msg)) => {
+                assert!(msg.contains("empty"), "msg = {msg:?}");
+            }
+            Err(other) => panic!("expected InvalidInput, got {other:?}"),
+            Ok(_) => panic!("expected Err for empty input"),
+        }
     }
 
     // ── v2 default routing (#3 projection-overhaul) ────────────────────
@@ -1849,6 +2199,48 @@ mod tests {
     }
 
     #[test]
+    fn default_nearest_bypasses_group_routing_at_high_evr() {
+        // When EVR is high, default_nearest should use outer-sphere distances
+        // directly, not route through group inner spheres. We verify this by
+        // constructing a pipeline with a known high-EVR projection and checking
+        // that the nearest result matches the outer-sphere expectation.
+        let (input, query) = two_cluster_input(30, 8);
+        let pipeline = SphereQLPipeline::new_with_config(
+            input,
+            PipelineConfig {
+                routing: crate::config::RoutingConfig {
+                    num_domain_groups: 2,
+                    group_routing_alpha: 0.99, // would normally route
+                    low_evr_threshold: 0.35,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Precondition: this fixture must land in the high-EVR regime, or
+        // the test silently stops covering the bypass branch it exists for.
+        let evr = pipeline.explained_variance_ratio();
+        assert!(
+            evr >= HIGH_EVR_ROUTING_BYPASS,
+            "fixture no longer exercises the high-EVR bypass path (evr={evr})"
+        );
+
+        // High EVR: routing should be bypassed, outer-sphere k-NN used.
+        // The query is [1.0, 0.05, 0, 0, 0, 0, 0, 0] → closest to cluster "a".
+        let results = pipeline.default_nearest(&Embedding::new(query.embedding.clone()), 5);
+        assert!(!results.is_empty());
+        // All results should be from cluster "a" (outer-sphere is accurate).
+        for r in &results {
+            assert_eq!(
+                r.category, "a",
+                "high-EVR outer-sphere should find cluster-a items, got category={} id={}",
+                r.category, r.id
+            );
+        }
+    }
+
+    #[test]
     fn default_nearest_falls_back_when_alpha_zero() {
         // alpha=0 disables routing → outer-sphere k-NN is used.
         // This must still produce results (correctness) and is the
@@ -1870,7 +2262,7 @@ mod tests {
         assert!(!results.is_empty());
     }
 
-    // ── retain-embeddings tests ──────────────────────────────────────────
+    // ── retain-embeddings tests ──────────────────────────────────────
 
     #[test]
     #[cfg(feature = "retain-embeddings")]
@@ -1936,6 +2328,50 @@ mod tests {
 
     #[test]
     #[cfg(feature = "retain-embeddings")]
+    fn nearest_by_embedding_handles_ties_and_large_k() {
+        // Items 1 and 2 are identical, so their similarity to any query
+        // ties exactly — the lower index must rank first. k beyond the
+        // corpus size returns everything, sorted descending.
+        let input = PipelineInput {
+            categories: vec!["a".into(), "b".into(), "b".into(), "c".into()],
+            embeddings: vec![
+                vec![0.0, 0.0, 1.0],
+                vec![1.0, 0.0, 0.0],
+                vec![1.0, 0.0, 0.0],
+                vec![0.5, 0.0, 0.5],
+            ],
+        };
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let results = pipeline
+            .nearest_by_embedding(&[1.0, 0.0, 0.0], 10)
+            .unwrap()
+            .unwrap();
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].0, 1);
+        assert_eq!(results[1].0, 2);
+        for w in results.windows(2) {
+            assert!(w[0].1 >= w[1].1);
+        }
+
+        let top2 = pipeline
+            .nearest_by_embedding(&[1.0, 0.0, 0.0], 2)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            top2.iter().map(|r| r.0).collect::<Vec<_>>(),
+            vec![1, 2],
+            "bounded heap must keep the lower index on exact ties"
+        );
+
+        let none = pipeline
+            .nearest_by_embedding(&[1.0, 0.0, 0.0], 0)
+            .unwrap()
+            .unwrap();
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
     fn nearest_by_embedding_dimension_mismatch() {
         let input = PipelineInput {
             categories: vec!["a".into(), "b".into(), "c".into()],
@@ -1948,6 +2384,42 @@ mod tests {
         let pipeline = SphereQLPipeline::new(input).unwrap();
         let result = pipeline.nearest_by_embedding(&[1.0, 0.0], 1).unwrap();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn pipeline_with_min_category_size_still_indexes_all_items() {
+        let mut embeddings = Vec::new();
+        let mut categories = Vec::new();
+        for i in 0..15 {
+            let mut v = vec![0.0; 8];
+            v[0] = 1.0 + (i as f64 * 0.01);
+            embeddings.push(v);
+            categories.push("big".into());
+        }
+        embeddings.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
+        categories.push("tiny_a".into());
+        embeddings.push(vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        categories.push("tiny_b".into());
+
+        let pipeline = SphereQLPipeline::new_with_config(
+            PipelineInput {
+                categories,
+                embeddings,
+            },
+            PipelineConfig {
+                min_category_size: 5,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(pipeline.num_items(), 17);
+        assert!(pipeline.has_id("s-0015"));
+        assert!(pipeline.has_id("s-0016"));
+
+        assert_eq!(pipeline.num_categories(), 1);
+        let cats = pipeline.unique_categories();
+        assert_eq!(cats, vec!["big".to_string()]);
     }
 
     #[test]

@@ -6,8 +6,10 @@
 //!   Phase 1 — Auto-tuning: optimize the pipeline config against a
 //!             quality metric using random search.
 //!   Phase 2 — Meta-learning & feedback: extract corpus features, build
-//!             a meta-model from tuning results, simulate user feedback,
-//!             and blend it into the automated score.
+//!             a meta-model from tuning results, recall a pipeline
+//!             straight from the model, warm-start a small tune from
+//!             its prediction, simulate user feedback, and blend it
+//!             into the automated score.
 //!   Phase 3 — Embedding & projection: inspect how high-D embeddings
 //!             land on the sphere, with certainty and intensity metadata.
 //!   Phase 4 — Spatial analysis: full navigator report — antipodal
@@ -20,9 +22,12 @@
 //!   Phase 7 — AI-enhanced divergence: knowledge gap cartography,
 //!             bridge classification, geodesic deviation, gap confidence,
 //!             and a synthesized cross-domain reasoning chain.
+//!   Phase 8 — Self-tune controller: close the loop on the corpus
+//!             itself — score, reweight concept quality, prune, repeat
+//!             until plateau.
 //!
 //! Run with:
-//!   cargo run --example full_e2e --features embed --release
+//!   cargo run -p sphereql-examples --example full_e2e --release
 //!
 //! A terminal prompt lets you select which corpus to run. Multiple
 //! corpora can be selected and will run sequentially. Auto-tune budget
@@ -35,21 +40,119 @@ use dialoguer::MultiSelect;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use sphereql::core::SphericalPoint;
+use sphereql::core::angular_distance;
 use sphereql::core::spatial::*;
 use sphereql::embed::{
-    BridgeClassification, CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, Embedding,
-    FeedbackAggregator, FeedbackEvent, MetaModel, MetaTrainingRecord, NavigatorConfig,
-    NearestNeighborMetaModel, PipelineConfig, PipelineInput, PipelineQuery, Projection,
-    ProjectionKind, QualityMetric, SearchSpace, SearchStrategy, SphereQLOutput, SphereQLQuery,
-    auto_tune, category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
+    BridgeClassification, CategoryLayer, CompositeMetric, CorpusFeatures, CorpusQuality,
+    DistanceWeightedMetaModel, Embedding, FeedbackAggregator, FeedbackEvent, MetaModel,
+    MetaTrainingRecord, NavigatorConfig, NearestNeighborMetaModel, PipelineConfig, PipelineInput,
+    PipelineQuery, Projection, ProjectionKind, QualityMetric, SearchSpace, SearchStrategy,
+    SelfTuneConfig, SphereQLOutput, SphereQLPipeline, SphereQLQuery, TunableConcept, auto_tune,
+    category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
+    run_self_tune,
 };
 use sphereql_corpus::axes::*;
 use sphereql_corpus::{Concept, CorpusId, DIM, embed};
+
+/// Runtime-discovered category samples used across the demo. Replaces
+/// the previous hand-written `"physics"` / `"music"` / `"computer_science"`
+/// literals so the example runs against any corpus (HandCrafted, Stress,
+/// Wikidata, custom Parquet).
+///
+/// Entries are sorted descending by member count; the picker layers
+/// "most populous" on top of that ordering and computes "pairwise most
+/// distinct" via greedy farthest-point sampling against the projected
+/// centroids.
+struct CategoryPicker {
+    by_count: Vec<(String, SphericalPoint)>,
+}
+
+impl CategoryPicker {
+    fn new(layer: &CategoryLayer) -> Self {
+        let mut entries: Vec<(String, usize, SphericalPoint)> = layer
+            .summaries
+            .iter()
+            .map(|s| (s.name.clone(), s.member_count, s.centroid_position))
+            .collect();
+        entries.sort_by_key(|e| std::cmp::Reverse(e.1));
+        Self {
+            by_count: entries.into_iter().map(|(n, _, c)| (n, c)).collect(),
+        }
+    }
+
+    fn most_populous(&self, k: usize) -> Vec<String> {
+        self.by_count
+            .iter()
+            .take(k)
+            .map(|(n, _)| n.clone())
+            .collect()
+    }
+
+    /// Greedy farthest-point set on S²: start from the most populous
+    /// centroid, then repeatedly add the centroid whose nearest already-
+    /// picked centroid is the furthest away. Produces k pairwise-distant
+    /// category names while still rooting the selection in a category
+    /// big enough to be meaningful.
+    fn distinct_set(&self, k: usize) -> Vec<String> {
+        if self.by_count.is_empty() {
+            return Vec::new();
+        }
+        let cap = k.min(self.by_count.len());
+        let mut picked: Vec<usize> = Vec::with_capacity(cap);
+        picked.push(0);
+        while picked.len() < cap {
+            let mut best_i = 0;
+            let mut best_min = f64::NEG_INFINITY;
+            for i in 0..self.by_count.len() {
+                if picked.contains(&i) {
+                    continue;
+                }
+                let min_d = picked
+                    .iter()
+                    .map(|&p| angular_distance(&self.by_count[i].1, &self.by_count[p].1))
+                    .fold(f64::INFINITY, f64::min);
+                if min_d > best_min {
+                    best_min = min_d;
+                    best_i = i;
+                }
+            }
+            picked.push(best_i);
+        }
+        picked
+            .into_iter()
+            .map(|i| self.by_count[i].0.clone())
+            .collect()
+    }
+
+    fn distinct_pair(&self) -> Option<(String, String)> {
+        let set = self.distinct_set(2);
+        match set.as_slice() {
+            [a, b] => Some((a.clone(), b.clone())),
+            _ => None,
+        }
+    }
+
+    /// Build k cross-domain pairs by drawing 2k pairwise-distant
+    /// categories from [`Self::distinct_set`] and chunking them into
+    /// disjoint pairs. Each returned pair has internal angular distance
+    /// inherited from the diversity of the underlying set.
+    fn distinct_pairs(&self, k: usize) -> Vec<(String, String)> {
+        let set = self.distinct_set((2 * k).min(self.by_count.len()));
+        set.chunks_exact(2)
+            .map(|c| (c[0].clone(), c[1].clone()))
+            .collect()
+    }
+}
 
 fn main() {
     let selected = select_corpora();
     if selected.is_empty() {
         println!("No corpora selected. Exiting.");
+        return;
+    }
+    let projection_kinds = select_projection_kinds();
+    if projection_kinds.is_empty() {
+        println!("No projection kinds selected. Exiting.");
         return;
     }
     let total = selected.len();
@@ -60,7 +163,7 @@ fn main() {
             println!("{}\n", "═".repeat(66));
         }
         match load_and_embed(id) {
-            Some((corpus, embeddings)) => run_corpus(id, corpus, embeddings),
+            Some((corpus, embeddings)) => run_corpus(id, corpus, embeddings, &projection_kinds),
             None => eprintln!("  Skipping {} (load failed).", id.name()),
         }
     }
@@ -106,6 +209,47 @@ fn select_corpora() -> Vec<CorpusId> {
         Err(_) => {
             eprintln!("Not running interactively — defaulting to HandCrafted corpus.");
             vec![CorpusId::HandCrafted]
+        }
+    }
+}
+
+fn select_projection_kinds() -> Vec<ProjectionKind> {
+    let candidates: &[(ProjectionKind, &str)] = &[
+        (
+            ProjectionKind::Pca,
+            "PCA                 fast · variance-maximizing  · default",
+        ),
+        (
+            ProjectionKind::LaplacianEigenmap,
+            "Laplacian Eigenmap  connectivity-preserving     · O(N²) — small corpora only",
+        ),
+        (
+            ProjectionKind::UmapSphere,
+            "UMAP-on-Sphere      angular structure preserving · ANN kNN · cache reuse across configs",
+        ),
+        (
+            ProjectionKind::KernelPca,
+            "Kernel PCA          nonlinear manifold           · O(n²·d) fit",
+        ),
+    ];
+
+    let items: Vec<&str> = candidates.iter().map(|(_, l)| *l).collect();
+    let defaults: Vec<bool> = candidates
+        .iter()
+        .map(|(k, _)| *k == ProjectionKind::Pca)
+        .collect();
+
+    let result = MultiSelect::new()
+        .with_prompt("Select projection kinds  (↑/↓ move · space toggle · enter confirm)")
+        .items(&items)
+        .defaults(&defaults)
+        .interact();
+
+    match result {
+        Ok(indices) => indices.into_iter().map(|i| candidates[i].0).collect(),
+        Err(_) => {
+            eprintln!("Not running interactively — defaulting to PCA.");
+            vec![ProjectionKind::Pca]
         }
     }
 }
@@ -191,34 +335,68 @@ fn load_and_embed(id: &CorpusId) -> Option<(Vec<Concept>, Vec<Vec<f64>>)> {
 
 /// Returns `(budget, search_space)` scaled to corpus size.
 ///
-/// Laplacian eigenmap requires an O(n²) k-NN graph; at 10k+ concepts a
-/// single trial takes minutes. PCA stays under a second per trial at any
-/// practical scale, so large corpora drop to PCA-only with a smaller budget.
-fn tuning_params(n: usize) -> (usize, SearchSpace) {
-    if n <= 10_000 {
-        (16, SearchSpace::default())
-    } else if n <= 100_000 {
+/// Laplacian eigenmap needs an O(n²) affinity matrix and is automatically
+/// filtered out above 10k concepts even if the user requested it. UMAP
+/// uses the ANN-backed kNN graph, so it stays affordable into the 10k–100k
+/// range. The base search space comes from the size bucket; the caller's
+/// `selected_kinds` then narrows `projection_kinds` (intersection with
+/// what's feasible at this corpus size).
+fn tuning_params(n: usize, selected_kinds: &[ProjectionKind]) -> (usize, SearchSpace) {
+    let (budget, mut space) = if n <= 10_000 {
         (
-            8,
+            16,
             SearchSpace {
-                projection_kinds: vec![ProjectionKind::Pca],
+                projection_kinds: vec![
+                    ProjectionKind::Pca,
+                    ProjectionKind::LaplacianEigenmap,
+                    ProjectionKind::UmapSphere,
+                    ProjectionKind::KernelPca,
+                ],
                 ..SearchSpace::default()
             },
         )
+    } else if n <= 100_000 {
+        (8, SearchSpace::large_corpus())
     } else {
         (
             4,
             SearchSpace {
-                projection_kinds: vec![ProjectionKind::Pca],
+                projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::UmapSphere],
                 ..SearchSpace::default()
             },
         )
+    };
+
+    // Intersect the user's selection with what this corpus size supports.
+    let feasible: Vec<ProjectionKind> = space.projection_kinds.clone();
+    space.projection_kinds = selected_kinds
+        .iter()
+        .copied()
+        .filter(|k| feasible.contains(k))
+        .collect();
+
+    // Fall back to PCA if every selected kind was filtered out (e.g. user
+    // picked only Laplacian on a 500k corpus). Better to run something
+    // than to crash the demo with an empty search space.
+    if space.projection_kinds.is_empty() {
+        eprintln!(
+            "  Note: none of the selected projections are feasible at n={}; falling back to PCA.",
+            n
+        );
+        space.projection_kinds = vec![ProjectionKind::Pca];
     }
+
+    (budget, space)
 }
 
 // ─── Main demo (7 phases) ─────────────────────────────────────────────────────
 
-fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
+fn run_corpus(
+    id: &CorpusId,
+    corpus: Vec<Concept>,
+    embeddings: Vec<Vec<f64>>,
+    selected_kinds: &[ProjectionKind],
+) {
     let n = corpus.len();
     let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
     let labels: Vec<&str> = corpus.iter().map(|c| c.label).collect();
@@ -241,7 +419,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("  Optimize pipeline parameters against a quality metric");
     println!("================================================================\n");
 
-    let (budget, space) = tuning_params(n);
+    let (budget, space) = tuning_params(n, selected_kinds);
     let metric = CompositeMetric::default_composite();
     let seed = 0x0A17_CABE_CAFE_u64;
 
@@ -256,7 +434,10 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         "  strategy ................ Random(budget={}, seed=0x{:X})",
         budget, seed
     );
-    println!("  metric .................. {}\n", metric.name());
+    println!("  metric .................. {}", metric.name());
+    println!(
+        "  warm start .............. base config evaluated as trial 0 (counts against budget)\n"
+    );
 
     let start = std::time::Instant::now();
     let (pipeline, tune_report) = auto_tune(
@@ -266,7 +447,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         },
         &space,
         &metric,
-        SearchStrategy::Random { budget, seed },
+        SearchStrategy::Random {
+            budget,
+            seed,
+            max_wall_secs: None,
+        },
         &PipelineConfig::default(),
     )
     .expect("auto_tune failed");
@@ -289,28 +474,60 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("  Best score:   {:.4}", tune_report.best_score);
     println!("  Mean score:   {:.4}", tune_report.mean_score());
     println!("  Projection:   {}", pipeline.projection_kind().name());
-    println!("  EVR:          {:.1}% variance explained\n", evr * 100.0);
+    println!("  EVR:          {:.1}% variance explained", evr * 100.0);
+    let umap_trials = tune_report
+        .trials
+        .iter()
+        .filter(|t| t.config.projection_kind == ProjectionKind::UmapSphere)
+        .count();
+    if umap_trials > 0 {
+        println!(
+            "  UMAP cache:   {} graph build(s) for {} UMAP trial(s) ({} cache hit(s))",
+            tune_report.umap_graph_builds,
+            umap_trials,
+            umap_trials.saturating_sub(tune_report.umap_graph_builds),
+        );
+    }
+    println!();
 
-    println!("Top 5 trials:");
+    let ranked = tune_report.ranked_trials();
+    println!("Top {} trials:", ranked.len().min(5));
     println!(
         "  {:>4}  {:>7}  {:>6}  {:>18}  {:>7}  {:>8}",
         "rank", "score", "ms", "projection", "groups", "low_evr"
     );
     println!("  {}", "─".repeat(56));
-    for (rank, t) in tune_report.ranked_trials().iter().take(5).enumerate() {
+    let mut warm_in_top = false;
+    for (rank, t) in ranked.iter().take(5).enumerate() {
+        // Under Random the tuner records the warm-start base config as
+        // trial 0, so pointer identity against `trials[0]` flags it.
+        let warm = tune_report
+            .trials
+            .first()
+            .is_some_and(|t0| std::ptr::eq(*t, t0));
+        warm_in_top |= warm;
         println!(
-            "  {:>4}  {:>7.4}  {:>4}ms  {:>18}  {:>7}  {:>8.2}",
+            "  {:>4}  {:>7.4}  {:>4}ms  {:>18}  {:>7}  {:>8.2}{}",
             rank + 1,
             t.score,
             t.build_ms,
             t.config.projection_kind.name(),
             t.config.routing.num_domain_groups,
             t.config.routing.low_evr_threshold,
+            if warm { "  *" } else { "" },
         );
     }
+    if warm_in_top {
+        println!("  * = warm-start trial 0 (the base config)");
+    }
 
-    println!("\nComponent scores on winning config:");
-    for (name, weight, score) in metric.score_components(&pipeline) {
+    println!("\nComponent scores on winning trial (recorded during the run):");
+    let winner_components: Vec<(String, f64, f64)> = match ranked.first() {
+        Some(t) if !t.components.is_empty() => t.components.clone(),
+        // Leaf metrics record no per-trial components; re-evaluate.
+        _ => metric.score_components(&pipeline),
+    };
+    for (name, weight, score) in winner_components {
         let bar_len = ((score * 25.0) as usize).min(25);
         let bar = "█".repeat(bar_len) + &"░".repeat(25 - bar_len);
         println!(
@@ -370,6 +587,17 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         format!("random{{budget={}}}", budget),
     );
 
+    match record.score_lift {
+        Some(lift) => {
+            println!("\nTraining-record evidence: score_lift = {:.4}", lift);
+            println!("  ((best − mean) / headroom over this run's trials — near-zero lift");
+            println!("  means a flat landscape: the knobs didn't matter, weak evidence)");
+        }
+        None => {
+            println!("\nTraining-record evidence: score_lift = n/a (fewer than 2 trials)");
+        }
+    }
+
     let records = vec![record.clone()];
     let mut nn_model = NearestNeighborMetaModel::new();
     nn_model.fit(&records);
@@ -378,15 +606,69 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
 
     let nn_pred = nn_model.predict(&features);
     let dw_pred = dw_model.predict(&features);
-    println!("\nMeta-model predictions (self-query, should match tuner):");
+    let blended_pred = nn_model.predict_blended(&features, 3);
+    println!("\nMeta-model predictions (self-query):");
     println!("  {} → {}", nn_model.name(), nn_pred.projection_kind.name());
     println!("  {} → {}", dw_model.name(), dw_pred.projection_kind.name());
-    let matches = nn_pred.projection_kind == pipeline.projection_kind();
     println!(
-        "  Match tuner winner ({}): {}",
-        pipeline.projection_kind().name(),
-        if matches { "YES" } else { "no" }
+        "  {} (blended, k=3) → {}",
+        nn_model.name(),
+        blended_pred.projection_kind.name()
     );
+    println!(
+        "  All match the tuner winner ({}) by construction: with a single",
+        pipeline.projection_kind().name()
+    );
+    println!("  training record, a self-query is a tautology — the nearest");
+    println!("  neighbor is the record we just wrote. Accuracy becomes a real");
+    println!("  measurement with ≥ 10 diverse corpus records in the store.");
+
+    if nn_model.is_fitted() {
+        let (recalled, _, recalled_cfg) = SphereQLPipeline::new_from_metamodel(
+            PipelineInput {
+                categories: categories.clone(),
+                embeddings: embeddings.clone(),
+            },
+            &nn_model,
+        )
+        .expect("metamodel recall failed");
+        println!("\nRecall path (new_from_metamodel — skip search, build from prediction):");
+        println!(
+            "  predicted {} → pipeline EVR {:.1}%",
+            recalled_cfg.projection_kind.name(),
+            recalled.explained_variance_ratio() * 100.0
+        );
+
+        let hybrid_budget = 4;
+        let (hybrid, _, hybrid_report) = SphereQLPipeline::new_from_metamodel_tuned(
+            PipelineInput {
+                categories: categories.clone(),
+                embeddings: embeddings.clone(),
+            },
+            &nn_model,
+            &space,
+            &metric,
+            SearchStrategy::Random {
+                budget: hybrid_budget,
+                seed: seed ^ 0xBEEF,
+                max_wall_secs: None,
+            },
+        )
+        .expect("metamodel warm-start tune failed");
+        println!(
+            "\nWarm-start hybrid (new_from_metamodel_tuned, budget={}):",
+            hybrid_budget
+        );
+        println!(
+            "  best={:.4} over {} trials → {} (EVR {:.1}%)",
+            hybrid_report.best_score,
+            hybrid_report.trials.len(),
+            hybrid.projection_kind().name(),
+            hybrid.explained_variance_ratio() * 100.0
+        );
+        println!("  (the prediction fills knobs outside the SearchSpace and competes");
+        println!("  as trial 0; sampled candidates spend the rest of the budget)");
+    }
 
     let feedback_scores = [0.85, 0.72, 0.90, 0.60, 0.78, 0.95, 0.55, 0.80];
     let mut agg = FeedbackAggregator::new();
@@ -437,22 +719,18 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         .map(|p| SphericalPoint::new_unchecked(p.r, p.theta, p.phi))
         .collect();
 
-    let sample_cats = [
-        "physics",
-        "music",
-        "computer_science",
-        "biology",
-        "philosophy",
-    ];
+    let layer = pipeline.category_layer();
+    let picker = CategoryPicker::new(layer);
+
+    let sample_cats = picker.distinct_set(5);
     println!(
         "  {:<30} {:<18} {:>7} {:>7} {:>9} {:>9}",
         "Concept", "Category", "θ (°)", "φ (°)", "Certainty", "Intensity"
     );
     println!("  {}", "─".repeat(85));
 
-    let layer = pipeline.category_layer();
-    for &cat in &sample_cats {
-        if let Some(s) = layer.summaries.iter().find(|s| s.name == cat)
+    for cat in &sample_cats {
+        if let Some(s) = layer.summaries.iter().find(|s| &s.name == cat)
             && let Some(&idx) = s.member_indices.first()
         {
             let p = &exported[idx];
@@ -544,11 +822,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("  ── §4c. GEODESIC SWEEPS ────────────────────────────────────");
     println!("  What lies between two ideas on the great circle?\n");
 
-    let sweep_pairs = [
-        ("physics", "music"),
-        ("computer_science", "philosophy"),
-        ("biology", "economics"),
-    ];
+    let sweep_pairs = picker.distinct_pairs(3);
     for (src, tgt) in &sweep_pairs {
         if let Some(sweep) = category_geodesic_sweep(
             layer,
@@ -669,19 +943,14 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
 
     println!("\n  ── §5b. CROSS-DOMAIN CONCEPT PATHS ────────────────────────");
 
-    let path_queries = [
-        (
-            "nanotechnology",
-            "economics",
-            "How does nanotech impact the economy?",
-        ),
-        ("music", "biology", "Musical patterns in living systems?"),
-        (
-            "philosophy",
-            "computer_science",
-            "From abstract thought to computation",
-        ),
-    ];
+    let path_queries: Vec<(String, String, String)> = picker
+        .distinct_pairs(3)
+        .into_iter()
+        .map(|(src, tgt)| {
+            let q = format!("How does {} relate to {}?", src, tgt);
+            (src, tgt, q)
+        })
+        .collect();
 
     for (src, tgt, question) in &path_queries {
         println!("\n  Q: \"{}\"", question);
@@ -723,12 +992,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  ── §5c. BRIDGE CONCEPTS ───────────────────────────────────\n");
-    let bridge_pairs = [
-        ("physics", "computer_science"),
-        ("biology", "philosophy"),
-        ("music", "psychology"),
-        ("nanotechnology", "medicine"),
-    ];
+    let bridge_pairs = picker.distinct_pairs(4);
     for (src, tgt) in &bridge_pairs {
         let bridges = pipeline.bridge_items(src, tgt, 3);
         let rev = pipeline.bridge_items(tgt, src, 3);
@@ -842,11 +1106,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  ── §6b. DRILL-DOWN ───────────────────────────────────────");
-    for cat in ["physics", "computer_science", "mathematics"] {
+    for cat in picker.most_populous(3) {
         let drill = pipeline
             .query(
                 SphereQLQuery::DrillDown {
-                    category: cat,
+                    category: &cat,
                     k: 3,
                 },
                 &pq,
@@ -883,8 +1147,11 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             .zip(pipeline.categories().iter())
             .find_map(|(id, cat)| (cat == target).then(|| id.clone()))
     };
-    let src_id = pick_id_by_category("physics").expect("physics item in corpus");
-    let tgt_id = pick_id_by_category("computer_science").expect("CS item in corpus");
+    let (src_cat, tgt_cat) = picker
+        .distinct_pair()
+        .expect("corpus needs at least 2 categories for §6c");
+    let src_id = pick_id_by_category(&src_cat).expect("source category has no items");
+    let tgt_id = pick_id_by_category(&tgt_cat).expect("target category has no items");
     println!(
         "  Path: {} ({}) → {} ({})",
         src_id,
@@ -993,43 +1260,31 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     println!("\n  ── §7a. KNOWLEDGE GAP CARTOGRAPHY ─────────────────────────");
     println!("  Where on the sphere does knowledge run out?\n");
 
+    let (gap_a, gap_b) = picker
+        .distinct_pair()
+        .expect("corpus needs at least 2 categories for §7a");
+    let centroid_of = |name: &str| -> SphericalPoint {
+        layer
+            .summaries
+            .iter()
+            .find(|s| s.name == name)
+            .map(|s| s.centroid_position)
+            .expect("picker returned a name absent from the layer")
+    };
     let test_points = [
+        (format!("At {} centroid", gap_a), centroid_of(&gap_a)),
+        (format!("At {} centroid", gap_b), centroid_of(&gap_b)),
         (
-            "At physics centroid",
-            layer
-                .summaries
-                .iter()
-                .find(|s| s.name == "physics")
-                .unwrap()
-                .centroid_position,
-        ),
-        (
-            "At music centroid",
-            layer
-                .summaries
-                .iter()
-                .find(|s| s.name == "music")
-                .unwrap()
-                .centroid_position,
-        ),
-        (
-            "North pole (void?)",
+            "North pole (void?)".to_string(),
             SphericalPoint::new_unchecked(1.0, 0.0, 0.01),
         ),
         (
-            "South pole (void?)",
+            "South pole (void?)".to_string(),
             SphericalPoint::new_unchecked(1.0, 0.0, std::f64::consts::PI - 0.01),
         ),
         (
-            "Physics antipode",
-            antipode(
-                &layer
-                    .summaries
-                    .iter()
-                    .find(|s| s.name == "physics")
-                    .unwrap()
-                    .centroid_position,
-            ),
+            format!("{} antipode", gap_a),
+            antipode(&centroid_of(&gap_a)),
         ),
     ];
 
@@ -1081,16 +1336,21 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             100.0 * artifact as f64 / total_bridges as f64
         );
     }
+    let min_evr_gate = pipeline.config().bridges.min_evr_for_classification;
+    if evr < min_evr_gate {
+        println!(
+            "\n  Note: EVR {:.3} is below min_evr_for_classification ({:.2}) — the",
+            evr, min_evr_gate
+        );
+        println!("  projection is too lossy for territorial factors to separate genuine");
+        println!("  bridges from artifacts, so classification is disabled and every");
+        println!("  bridge reports Weak (honest uncertainty).");
+    }
 
     println!("\n  ── §7c. GEODESIC DEVIATION ───────────────────────────────");
     println!("  Graph path vs. direct great-circle arc (0 = perfect alignment)\n");
 
-    let dev_pairs = [
-        ("physics", "music"),
-        ("computer_science", "religion"),
-        ("biology", "law"),
-        ("nanotechnology", "culinary_arts"),
-    ];
+    let dev_pairs = picker.distinct_pairs(4);
     for (src, tgt) in &dev_pairs {
         if let Some(dev) = category_path_deviation(layer, src, tgt) {
             let quality = if dev < 0.1 {
@@ -1148,20 +1408,27 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  ── §7e. SYNTHESIZED REASONING CHAIN ─────────────────────");
-    println!("  Simulating how an AI answers: \"How does music relate to physics?\"\n");
-
-    let question_vec = embed(
-        &[
-            (SOUND, 0.6),
-            (WAVE, 0.7),
-            (MATH, 0.4),
-            (ENERGY, 0.3),
-            (HARMONY, 0.5),
-        ],
-        7777,
+    let (chain_src, chain_tgt) = picker
+        .distinct_pair()
+        .expect("corpus needs at least 2 categories for §7e");
+    println!(
+        "  Simulating how an AI answers: \"How does {} relate to {}?\"\n",
+        chain_src, chain_tgt
     );
-    let question_emb = Embedding::new(question_vec.clone());
 
+    // Anchor the synthesized question at the source category's centroid
+    // rather than a hardcoded "music"-flavored feature combo, so the
+    // routing step actually finds it on every corpus.
+    let question_emb = Embedding::new(
+        layer
+            .get_category(&chain_src)
+            .expect("src category present")
+            .centroid_embedding
+            .clone(),
+    );
+
+    // max_angle = π admits every category: we want the full ranking
+    // sorted by distance, not a proximity cutoff.
     let nearby =
         layer.categories_near_embedding(&question_emb, pipeline.projection(), std::f64::consts::PI);
     println!("  Step 1 — Category routing:");
@@ -1174,7 +1441,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
     }
 
     println!("\n  Step 2 — Category path:");
-    if let Some(path) = pipeline.category_path("music", "physics") {
+    if let Some(path) = pipeline.category_path(&chain_src, &chain_tgt) {
         let chain: Vec<&str> = path
             .steps
             .iter()
@@ -1232,7 +1499,7 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             }
         }
 
-        if let Some(dev) = category_path_deviation(layer, "music", "physics") {
+        if let Some(dev) = category_path_deviation(layer, &chain_src, &chain_tgt) {
             println!(
                 "\n  Step 5 — Path deviation from geodesic: {:.4} rad ({:.1}°)",
                 dev,
@@ -1274,29 +1541,102 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
             "quite distant"
         };
 
-        println!("\n  ┌──────────────────────────────────────────────────────────┐");
-        println!("  │  SYNTHESIZED ANSWER                                      │");
-        println!("  │                                                          │");
+        let n_hops = path.steps.len().saturating_sub(1);
+        println!("\n  SYNTHESIZED ANSWER");
         println!(
-            "  │  Music and physics are {} on the semantic  │",
-            closeness
+            "    {} and {} are {} on the semantic sphere",
+            chain_src, chain_tgt, closeness
         );
         println!(
-            "  │  sphere (distance {:.3} / π). The connection runs     │",
-            path.total_distance / std::f64::consts::PI
+            "    (distance {:.3} / π, {} hop{}).",
+            path.total_distance / std::f64::consts::PI,
+            n_hops,
+            if n_hops == 1 { "" } else { "s" }
         );
-        println!("  │  through shared mathematical structure — waves,        │");
-        println!("  │  harmonics, and resonance are native to both fields.   │");
-        println!("  │                                                          │");
-        println!("  │  Bridge concepts at each transition provide specific    │");
-        println!("  │  jumping-off points for cross-domain reasoning. The    │");
         println!(
-            "  │  projection preserves {:.1}% of the original semantic    │",
+            "    The projection preserves {:.1}% of the original semantic",
             evr * 100.0
         );
-        println!("  │  structure, giving confidence that these spatial        │");
-        println!("  │  relationships reflect genuine conceptual affinity.     │");
-        println!("  └──────────────────────────────────────────────────────────┘");
+        println!("    structure; bridge concepts at each transition provide");
+        println!("    concrete jumping-off points for cross-domain reasoning.");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  PHASE 8: SELF-TUNE CONTROLLER
+    // ════════════════════════════════════════════════════════════════════════
+
+    println!("\n================================================================");
+    println!("  PHASE 8: SELF-TUNE CONTROLLER");
+    println!("  Closed loop: score corpus → reweight quality → prune → repeat");
+    println!("================================================================\n");
+
+    let tunable: Vec<TunableConcept> = corpus
+        .iter()
+        .map(|c| TunableConcept {
+            label: c.label.to_string(),
+            category: c.category.to_string(),
+            features: c.features.clone(),
+            quality: c.quality,
+            axis_coherence: c.axis_coherence,
+            bridge_degree: c.bridge_degree,
+            source_confidence: c.source_confidence,
+            home_affinity: c.home_affinity,
+            source: None,
+            openalex_id: None,
+        })
+        .collect();
+
+    // Small budget keeps the demo fast: a few iterations against the
+    // default CorpusQuality objective, with floors loose enough that
+    // pruning is allowed but can't hollow out a small corpus.
+    let st_cfg = SelfTuneConfig {
+        max_iterations: 3,
+        min_quality_to_keep: 0.2,
+        min_concepts_per_category: 5,
+        ..SelfTuneConfig::default()
+    };
+    println!(
+        "  Config: max_iterations={}, plateau_eps={}, min_quality_to_keep={:.2}, min_per_cat={}",
+        st_cfg.max_iterations,
+        st_cfg.plateau_epsilon,
+        st_cfg.min_quality_to_keep,
+        st_cfg.min_concepts_per_category
+    );
+
+    let st_metric = CorpusQuality::default();
+    let st_start = std::time::Instant::now();
+    let (st_corpus, st_report) = run_self_tune(
+        tunable,
+        |f| embed(f, 0xE2E),
+        PipelineConfig::default(),
+        &st_metric,
+        &st_cfg,
+    )
+    .expect("self-tune config failed validation");
+    let st_elapsed = st_start.elapsed();
+
+    println!(
+        "\n  {:>4}  {:>8}  {:>9}  {:>6}  {:>8}",
+        "iter", "concepts", "composite", "pruned", "Δmean_q"
+    );
+    println!("  {}", "─".repeat(46));
+    for it in &st_report.iterations {
+        println!(
+            "  {:>4}  {:>8}  {:>9.4}  {:>6}  {:>+8.3}",
+            it.iteration, it.n_concepts, it.composite_score, it.n_pruned, it.mean_quality_delta
+        );
+    }
+    println!("  (per-iteration composite is measured entering the iteration)");
+    println!(
+        "\n  Stopped: {:?} after {:.2}s — {} of {} concepts kept",
+        st_report.stopped_reason,
+        st_elapsed.as_secs_f64(),
+        st_corpus.len(),
+        n
+    );
+    match st_report.final_composite {
+        Some(fc) => println!("  Final composite (the corpus as persisted): {:.4}", fc),
+        None => println!("  Final composite: n/a (final corpus too small to build a pipeline)"),
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -1355,8 +1695,14 @@ fn run_corpus(id: &CorpusId, corpus: Vec<Concept>, embeddings: Vec<Vec<f64>>) {
         "  Curvature:    {} triples analyzed",
         curv.top_triples.len()
     );
+    println!(
+        "  Self-tune:    {} iteration(s) — stopped: {:?}",
+        st_report.iterations.len(),
+        st_report.stopped_reason
+    );
 
-    println!("\n  All 7 phases demonstrated: auto-tune → meta-learn → embed →");
-    println!("  spatial analysis → category analysis → queries → AI divergence.");
+    println!("\n  All 8 phases demonstrated: auto-tune → meta-learn → embed →");
+    println!("  spatial analysis → category analysis → queries → AI divergence →");
+    println!("  self-tune controller.");
     println!("\n================================================================");
 }

@@ -7,14 +7,14 @@
 //! Run modes:
 //! ```bash
 //! # Default — dry run; writes to extended_corpus.tuned.parquet:
-//! cargo run -p sphereql-embed --example corpus_self_tune --release
+//! cargo run -p sphereql-examples --example corpus_self_tune --release
 //!
 //! # Commit in place — requires --commit-confirm to avoid accidents:
-//! cargo run -p sphereql-embed --example corpus_self_tune --release -- \
+//! cargo run -p sphereql-examples --example corpus_self_tune --release -- \
 //!     --commit --commit-confirm
 //!
 //! # Custom corpus path / iteration cap:
-//! cargo run -p sphereql-embed --example corpus_self_tune --release -- \
+//! cargo run -p sphereql-examples --example corpus_self_tune --release -- \
 //!     --corpus /tmp/my.parquet --max-iters 5
 //! ```
 //!
@@ -196,7 +196,8 @@ fn main() {
     let embed_fn = |f: &[(usize, f64)]| sphereql_corpus::embed(f, EMBED_SEED);
 
     let started = std::time::Instant::now();
-    let (tuned, report) = run_self_tune(tunable, embed_fn, pipeline_config, &metric, &cfg);
+    let (tuned, report) =
+        run_self_tune(tunable, embed_fn, pipeline_config, &metric, &cfg).expect("self-tune config");
     let elapsed = started.elapsed();
 
     println!(

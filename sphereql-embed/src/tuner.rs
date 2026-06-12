@@ -3,29 +3,38 @@
 //! This is the first usable rung of the metalearning ladder. Given a corpus
 //! and a scalar objective, the tuner enumerates or samples candidate
 //! configurations, builds a full pipeline for each, and records the score.
-//! No gradients, no surrogate models — just a reproducible random / grid
-//! sweep that establishes a baseline for higher-order tuners (Bayesian
-//! optimization, CMA-ES, meta-learning) to beat.
+//! Three strategies ship: exhaustive [`SearchStrategy::Grid`], uniform
+//! [`SearchStrategy::Random`], and the axis-parallel TPE-lite
+//! [`SearchStrategy::Bayesian`] acquisition — all reproducible under a
+//! fixed seed, establishing baselines for higher-order tuners (CMA-ES,
+//! meta-learning) to beat.
 //!
-//! Projections are fit **once per kind** from the input corpus (PCA,
-//! Kernel PCA, and/or Laplacian eigenmap as dictated by the
-//! [`SearchSpace`]) and reused across every trial — only the downstream
-//! config knobs (bridge thresholds, inner-sphere gates, domain-group
-//! counts, etc.) vary per trial.
+//! Projections are fit **once per distinct fit-affecting hyperparameter
+//! tuple** from the input corpus and reused across every trial: PCA and
+//! Kernel PCA key per kind, Laplacian per `(k_neighbors,
+//! active_threshold)`, and UMAP per `(n_neighbors, n_epochs,
+//! category_weight, min_dist)` — with UMAP's kNN graph additionally
+//! cached per `n_neighbors` (see [`TuneReport::umap_graph_builds`]).
+//! Only the
+//! downstream config knobs (bridge thresholds, inner-sphere gates,
+//! domain-group counts, etc.) vary per trial.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::config::{
-    BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind, RoutingConfig,
+    BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind,
+    RoutingConfig, UmapConfig,
 };
 use crate::configured_projection::ConfiguredProjection;
-use crate::pipeline::{PipelineError, PipelineInput, SphereQLPipeline, fit_projection_for_config};
+use crate::pipeline::{
+    PipelineError, PipelineInput, SphereQLPipeline, fit_projection_for_config, fit_umap_from_graph,
+};
 use crate::projection::SplitMix64;
 use crate::quality_metric::QualityMetric;
 use crate::types::Embedding;
 
-// ── Search space ───────────────────────────────────────────────────────
+// ── Search space ─────────────────────────────────────────────────────
 
 /// Discrete candidate values for each tunable knob.
 ///
@@ -43,7 +52,7 @@ pub struct SearchSpace {
     /// [`auto_tune`]; trials pick the prefit matching their config.
     pub projection_kinds: Vec<ProjectionKind>,
 
-    // ── Projection-kind-specific knobs ────────────────────────────────
+    // ── Projection-kind-specific knobs ────────────────────────────
     // These only take effect when the trial's projection_kind matches.
     // PCA trials ignore them (no waste — grid enumeration is
     // kind-conditional, so PCA trials don't multiply against these
@@ -57,7 +66,21 @@ pub struct SearchSpace {
     /// `projection_kinds`.
     pub laplacian_active_threshold: Vec<f64>,
 
-    // ── Kind-agnostic knobs ───────────────────────────────────────────
+    /// Candidate values for [`UmapConfig::n_neighbors`]. Only explored
+    /// when [`ProjectionKind::UmapSphere`] is in `projection_kinds`.
+    pub umap_n_neighbors: Vec<usize>,
+    /// Candidate values for [`UmapConfig::n_epochs`]. Only explored
+    /// when [`ProjectionKind::UmapSphere`] is in `projection_kinds`.
+    pub umap_n_epochs: Vec<usize>,
+    /// Candidate values for [`UmapConfig::category_weight`]. Only
+    /// explored when [`ProjectionKind::UmapSphere`] is in
+    /// `projection_kinds`.
+    pub umap_category_weight: Vec<f64>,
+    /// Candidate values for [`UmapConfig::min_dist`]. Only explored
+    /// when [`ProjectionKind::UmapSphere`] is in `projection_kinds`.
+    pub umap_min_dist: Vec<f64>,
+
+    // ── Kind-agnostic knobs ───────────────────────────────────────
     /// Candidate values for [`RoutingConfig::num_domain_groups`].
     pub num_domain_groups: Vec<usize>,
     /// Candidate values for [`RoutingConfig::low_evr_threshold`].
@@ -72,6 +95,34 @@ pub struct SearchSpace {
     pub min_evr_improvement: Vec<f64>,
 }
 
+impl SearchSpace {
+    /// Search space optimized for large corpora (> 5000 items).
+    ///
+    /// Includes PCA and UMAP (but not Laplacian eigenmap, which is O(N²)
+    /// on the affinity matrix). UMAP uses the ANN-backed kNN graph,
+    /// making it O(N log N) for graph construction.
+    pub fn large_corpus() -> Self {
+        Self {
+            projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::UmapSphere],
+            // Laplacian is excluded — kept as singletons so the axes
+            // exist if a caller swaps the kind in later, but they cost
+            // nothing at grid time because Laplacian isn't enumerated.
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10, 15, 30],
+            umap_n_epochs: vec![150, 300],
+            umap_category_weight: vec![0.0, 1.5, 3.0],
+            umap_min_dist: vec![0.0, 0.1, 0.25],
+            num_domain_groups: vec![3, 5, 7],
+            low_evr_threshold: vec![0.25, 0.35],
+            overlap_artifact_territorial: vec![0.2, 0.3],
+            threshold_base: vec![0.4, 0.5],
+            threshold_evr_penalty: vec![0.3, 0.5],
+            min_evr_improvement: vec![0.05, 0.10],
+        }
+    }
+}
+
 impl Default for SearchSpace {
     fn default() -> Self {
         Self {
@@ -84,6 +135,10 @@ impl Default for SearchSpace {
             // actually move the projection's geometry.
             laplacian_k_neighbors: vec![10, 15, 25],
             laplacian_active_threshold: vec![0.03, 0.05, 0.10],
+            umap_n_neighbors: vec![10, 15, 30],
+            umap_n_epochs: vec![150, 250],
+            umap_category_weight: vec![0.0, 1.5, 3.0],
+            umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
             overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
@@ -177,6 +232,28 @@ impl SearchSpace {
                 ));
             }
         }
+        if matches!(kind, ProjectionKind::UmapSphere) {
+            if self.umap_n_neighbors.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_n_neighbors` is empty".into(),
+                ));
+            }
+            if self.umap_n_epochs.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_n_epochs` is empty".into(),
+                ));
+            }
+            if self.umap_category_weight.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_category_weight` is empty".into(),
+                ));
+            }
+            if self.umap_min_dist.is_empty() {
+                return Err(PipelineError::InvalidSearchSpace(
+                    "axis `umap_min_dist` is empty".into(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -211,7 +288,14 @@ impl SearchSpace {
             ProjectionKind::LaplacianEigenmap => {
                 common * self.laplacian_k_neighbors.len() * self.laplacian_active_threshold.len()
             }
-            ProjectionKind::Pca | ProjectionKind::KernelPca | ProjectionKind::UmapSphere => common,
+            ProjectionKind::UmapSphere => {
+                common
+                    * self.umap_n_neighbors.len()
+                    * self.umap_n_epochs.len()
+                    * self.umap_category_weight.len()
+                    * self.umap_min_dist.len()
+            }
+            ProjectionKind::Pca | ProjectionKind::KernelPca => common,
         }
     }
 
@@ -291,6 +375,20 @@ impl SearchSpace {
             };
         }
 
+        if matches!(kind, ProjectionKind::UmapSphere) {
+            let i_nn = take(&mut idx, self.umap_n_neighbors.len());
+            let i_ne = take(&mut idx, self.umap_n_epochs.len());
+            let i_cw = take(&mut idx, self.umap_category_weight.len());
+            let i_md = take(&mut idx, self.umap_min_dist.len());
+            cfg.umap = UmapConfig {
+                n_neighbors: self.umap_n_neighbors[i_nn],
+                n_epochs: self.umap_n_epochs[i_ne],
+                category_weight: self.umap_category_weight[i_cw],
+                min_dist: self.umap_min_dist[i_md],
+                ..base.umap.clone()
+            };
+        }
+
         cfg
     }
 
@@ -338,11 +436,21 @@ impl SearchSpace {
             };
         }
 
+        if matches!(cfg.projection_kind, ProjectionKind::UmapSphere) {
+            cfg.umap = UmapConfig {
+                n_neighbors: pick_uniform(rng, &self.umap_n_neighbors),
+                n_epochs: pick_uniform(rng, &self.umap_n_epochs),
+                category_weight: pick_uniform(rng, &self.umap_category_weight),
+                min_dist: pick_uniform(rng, &self.umap_min_dist),
+                ..base.umap.clone()
+            };
+        }
+
         cfg
     }
 }
 
-// ── Prefit cache key ──────────────────────────────────────────────────
+// ── Prefit cache key ─────────────────────────────────────────────────
 
 /// Identifies a single fittable projection configuration.
 ///
@@ -355,8 +463,16 @@ impl SearchSpace {
 enum ProjectionFitKey {
     Pca,
     KernelPca,
-    Laplacian { k: usize, threshold_bits: u64 },
-    UmapSphere,
+    Laplacian {
+        k: usize,
+        threshold_bits: u64,
+    },
+    UmapSphere {
+        n_neighbors: usize,
+        n_epochs: usize,
+        category_weight_bits: u64,
+        min_dist_bits: u64,
+    },
 }
 
 impl ProjectionFitKey {
@@ -368,12 +484,21 @@ impl ProjectionFitKey {
                 k: cfg.laplacian.k_neighbors,
                 threshold_bits: cfg.laplacian.active_threshold.to_bits(),
             },
-            ProjectionKind::UmapSphere => Self::UmapSphere,
+            ProjectionKind::UmapSphere => Self::UmapSphere {
+                n_neighbors: cfg.umap.n_neighbors,
+                n_epochs: cfg.umap.n_epochs,
+                category_weight_bits: cfg.umap.category_weight.to_bits(),
+                // min_dist sets the optimizer's kernel (a, b), so two
+                // configs differing only here must not share a fitted
+                // projection — though they still share the kNN graph,
+                // which is built before the optimizer runs.
+                min_dist_bits: cfg.umap.min_dist.to_bits(),
+            },
         }
     }
 }
 
-// ── Strategy, report, trial record ─────────────────────────────────────
+// ── Strategy, report, trial record ───────────────────────────────────────
 
 /// Which enumeration to use over the [`SearchSpace`].
 #[derive(Debug, Clone)]
@@ -382,7 +507,15 @@ pub enum SearchStrategy {
     /// grid cardinality — see [`SearchSpace::grid_cardinality`].
     Grid,
     /// Uniform random sampling for `budget` trials.
-    Random { budget: usize, seed: u64 },
+    Random {
+        budget: usize,
+        seed: u64,
+        /// Optional wall-time cap in seconds. When set, the tuner stops
+        /// proposing new trials once cumulative elapsed time exceeds
+        /// this limit. Already-running trials are not interrupted.
+        /// `None` = unlimited (legacy behavior).
+        max_wall_secs: Option<u64>,
+    },
     /// Sequential Bayesian-ish search. After `warmup` uniform random
     /// trials, subsequent trials pick each knob's value by the ratio of
     /// per-value probabilities between the top-`gamma`-fraction trials
@@ -403,7 +536,21 @@ pub enum SearchStrategy {
         /// larger = more explore.
         gamma: f64,
         seed: u64,
+        /// Optional wall-time cap in seconds. Same semantics as
+        /// [`Self::Random::max_wall_secs`].
+        max_wall_secs: Option<u64>,
     },
+}
+
+impl SearchStrategy {
+    /// Extract the wall-time cap, if one was set.
+    fn max_wall_secs(&self) -> Option<u64> {
+        match self {
+            Self::Random { max_wall_secs, .. } => *max_wall_secs,
+            Self::Bayesian { max_wall_secs, .. } => *max_wall_secs,
+            Self::Grid => None,
+        }
+    }
 }
 
 /// One trial's observation.
@@ -414,6 +561,13 @@ pub struct TrialRecord {
     /// Wall-clock build time for this trial (pipeline rebuild only —
     /// projection fit is amortized across the tuner run).
     pub build_ms: u128,
+    /// Per-component metric breakdown as `(name, weight, score)`.
+    /// Populated when the metric is a composite (see
+    /// [`QualityMetric::score_with_components`]); empty for leaf
+    /// metrics. The fastest way to diagnose a flat tuner landscape:
+    /// a component whose score barely varies across trials carries no
+    /// signal for the knobs being swept.
+    pub components: Vec<(String, f64, f64)>,
 }
 
 /// Full tuner output.
@@ -427,6 +581,12 @@ pub struct TuneReport {
     /// combination rejected by a downstream validator). Each entry is
     /// `(config, error_message)`.
     pub failures: Vec<(PipelineConfig, String)>,
+    /// Number of distinct UMAP kNN graphs built during the run. The
+    /// tuner caches graphs by `n_neighbors`, so this equals the number
+    /// of unique `n_neighbors` values tried across UMAP trials. Lower
+    /// than the count of UMAP trials means the cache hit — a metric
+    /// for verifying the reuse path is actually firing.
+    pub umap_graph_builds: usize,
 }
 
 impl TuneReport {
@@ -452,7 +612,7 @@ impl TuneReport {
     }
 }
 
-// ── The tuner itself ───────────────────────────────────────────────────
+// ── The tuner itself ─────────────────────────────────────────────────
 
 /// Run the auto-tuner and return the best pipeline plus a report.
 ///
@@ -463,6 +623,13 @@ impl TuneReport {
 /// thresholds, inner-sphere gates, domain-group counts, etc.) vary per
 /// trial — this keeps per-trial cost dominated by spatial quality
 /// sampling and graph construction rather than projection fitting.
+///
+/// Under [`SearchStrategy::Random`] and [`SearchStrategy::Bayesian`],
+/// `base_config` itself is evaluated as trial 0 (counted against the
+/// budget) so a warm-start prediction competes directly with sampled
+/// candidates. [`SearchStrategy::Grid`] is excluded: its trial set is
+/// defined as the exact Cartesian enumeration of the space, and callers
+/// assert on [`SearchSpace::grid_cardinality`] matching the trial count.
 pub fn auto_tune<M: QualityMetric + ?Sized>(
     input: PipelineInput,
     space: &SearchSpace,
@@ -482,46 +649,119 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
     let embeddings: Vec<Embedding> = input.embeddings.into_iter().map(Embedding::new).collect();
 
     let mut prefit: HashMap<ProjectionFitKey, ConfiguredProjection> = HashMap::new();
+    // UMAP kNN graphs are reusable across configs that share `n_neighbors`
+    // but differ in `n_epochs` / `category_weight` / `min_dist`. Building
+    // the graph
+    // dominates UMAP fit cost (O(N log N) for the ANN-backed graph plus
+    // PCA warm-start), so caching it collapses the per-config sweep onto
+    // a handful of graph builds.
+    let mut umap_graph_cache: HashMap<usize, crate::umap::UmapGraph> = HashMap::new();
+    let mut umap_graph_builds: usize = 0;
     let mut trials: Vec<TrialRecord> = Vec::new();
     let mut failures: Vec<(PipelineConfig, String)> = Vec::new();
+    // Only the current best trial's pipeline stays alive — keeping every
+    // trial's pipeline would multiply peak memory by the trial count at
+    // 500k scale. Replaced (and the old one dropped) whenever a trial
+    // scores at least as high, matching the old post-loop `max_by`
+    // selection (last max wins) without rebuilding the winner.
+    let mut best: Option<(f64, SphereQLPipeline)> = None;
 
     // Closure: evaluate one config, update prefit cache, push record or
     // failure. Shared by every strategy so they only differ in how they
     // propose configs.
     let run_trial = |cfg: PipelineConfig,
                      prefit: &mut HashMap<ProjectionFitKey, ConfiguredProjection>,
+                     umap_graph_cache: &mut HashMap<usize, crate::umap::UmapGraph>,
+                     umap_graph_builds: &mut usize,
                      trials: &mut Vec<TrialRecord>,
-                     failures: &mut Vec<(PipelineConfig, String)>| {
+                     failures: &mut Vec<(PipelineConfig, String)>,
+                     best: &mut Option<(f64, SphereQLPipeline)>| {
         let key = ProjectionFitKey::from_config(&cfg);
-        let projection = match prefit.get(&key) {
-            Some(p) => p.clone(),
-            None => match fit_projection_for_config(&embeddings, &cfg) {
-                Ok(p) => {
-                    prefit.insert(key, p.clone());
-                    p
+        let projection = if cfg.projection_kind == ProjectionKind::UmapSphere {
+            // UMAP fast path: build the kNN graph once per `n_neighbors`
+            // and reuse it across `(n_epochs, category_weight, min_dist)`
+            // variations.
+            // The fully-realized projection still goes into `prefit` so
+            // the final pipeline rebuild and any exact-config repeats are
+            // free.
+            match prefit.get(&key) {
+                Some(p) => p.clone(),
+                None => {
+                    let k = cfg.umap.n_neighbors;
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        umap_graph_cache.entry(k)
+                    {
+                        match crate::umap::UmapGraph::build(&embeddings, k) {
+                            Ok(g) => {
+                                entry.insert(g);
+                                *umap_graph_builds += 1;
+                            }
+                            Err(err) => {
+                                failures.push((cfg, err.to_string()));
+                                return;
+                            }
+                        }
+                    }
+                    let graph = &umap_graph_cache[&k];
+                    match fit_umap_from_graph(graph, &categories, &cfg) {
+                        Ok(p) => {
+                            prefit.insert(key, p.clone());
+                            p
+                        }
+                        Err(e) => {
+                            failures.push((cfg, e.to_string()));
+                            return;
+                        }
+                    }
                 }
-                Err(e) => {
-                    failures.push((cfg, e.to_string()));
-                    return;
-                }
-            },
+            }
+        } else {
+            match prefit.get(&key) {
+                Some(p) => p.clone(),
+                None => match fit_projection_for_config(&embeddings, &categories, &cfg) {
+                    Ok(p) => {
+                        prefit.insert(key, p.clone());
+                        p
+                    }
+                    Err(e) => {
+                        failures.push((cfg, e.to_string()));
+                        return;
+                    }
+                },
+            }
         };
 
         let start = Instant::now();
-        match SphereQLPipeline::with_configured_projection_and_config(
+        // Embeddings are borrowed (the pipeline doesn't retain them), so
+        // only `categories` — which it does own — is cloned per trial.
+        // TODO: an Arc<[String]> categories field would drop that clone
+        // too (~tens of MB at 500k), but it touches the pipeline's
+        // retained-field accessors and downstream crates.
+        match SphereQLPipeline::with_projection_parts(
             categories.clone(),
-            embeddings.clone(),
+            &embeddings,
             projection,
             cfg.clone(),
         ) {
             Ok(pipeline) => {
-                let score = metric.score(&pipeline);
+                let (score, components) = metric.score_with_components(&pipeline);
                 let build_ms = start.elapsed().as_millis();
                 trials.push(TrialRecord {
                     config: cfg,
                     score,
                     build_ms,
+                    components,
                 });
+                let replace = match best {
+                    Some((best_score, _)) => !matches!(
+                        score.partial_cmp(best_score),
+                        Some(std::cmp::Ordering::Less)
+                    ),
+                    None => true,
+                };
+                if replace {
+                    *best = Some((score, pipeline));
+                }
             }
             Err(e) => {
                 failures.push((cfg, e.to_string()));
@@ -529,19 +769,61 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         }
     };
 
+    let wall_start = Instant::now();
+    let max_wall = strategy.max_wall_secs();
+    let wall_exceeded = || match max_wall {
+        Some(max_secs) => wall_start.elapsed().as_secs() >= max_secs,
+        None => false,
+    };
+
     match &strategy {
         SearchStrategy::Grid => {
+            // Grid deliberately skips the base-config seed trial: its
+            // contract is "trial set == the exact Cartesian enumeration"
+            // and callers assert on grid_cardinality matching the count.
             for i in 0..space.grid_cardinality() {
                 if let Some(cfg) = space.config_at_index(i, base_config) {
-                    run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut umap_graph_builds,
+                        &mut trials,
+                        &mut failures,
+                        &mut best,
+                    );
                 }
             }
         }
-        SearchStrategy::Random { budget, seed } => {
+        SearchStrategy::Random { budget, seed, .. } => {
             let mut rng = SplitMix64::new(*seed);
-            for _ in 0..*budget {
-                let cfg = space.sample(&mut rng, base_config);
-                run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+            // Trial 0: warm-start seed. base_config competes directly
+            // with the sampled candidates and counts against the budget.
+            run_trial(
+                base_config.clone(),
+                &mut prefit,
+                &mut umap_graph_cache,
+                &mut umap_graph_builds,
+                &mut trials,
+                &mut failures,
+                &mut best,
+            );
+            if !wall_exceeded() {
+                for _ in 1..*budget {
+                    let cfg = space.sample(&mut rng, base_config);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut umap_graph_builds,
+                        &mut trials,
+                        &mut failures,
+                        &mut best,
+                    );
+                    if wall_exceeded() {
+                        break;
+                    }
+                }
             }
         }
         SearchStrategy::Bayesian {
@@ -549,6 +831,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             warmup,
             gamma,
             seed,
+            ..
         } => {
             // budget/warmup/gamma already validated above by space.validate(&strategy).
             let budget = *budget;
@@ -556,15 +839,51 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             let warmup = (*warmup).clamp(2, budget);
             let gamma = gamma.clamp(0.05, 0.95);
 
-            // Warmup: uniform random.
-            for _ in 0..warmup {
-                let cfg = space.sample(&mut rng, base_config);
-                run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+            // Trial 0: warm-start seed (counts as the first warmup trial).
+            run_trial(
+                base_config.clone(),
+                &mut prefit,
+                &mut umap_graph_cache,
+                &mut umap_graph_builds,
+                &mut trials,
+                &mut failures,
+                &mut best,
+            );
+            // Remaining warmup: uniform random.
+            if !wall_exceeded() {
+                for _ in 1..warmup {
+                    let cfg = space.sample(&mut rng, base_config);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut umap_graph_builds,
+                        &mut trials,
+                        &mut failures,
+                        &mut best,
+                    );
+                    if wall_exceeded() {
+                        break;
+                    }
+                }
             }
             // Acquisition: axis-parallel TPE-lite.
-            for _ in warmup..budget {
-                let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
-                run_trial(cfg, &mut prefit, &mut trials, &mut failures);
+            if !wall_exceeded() {
+                for _ in warmup..budget {
+                    let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
+                    run_trial(
+                        cfg,
+                        &mut prefit,
+                        &mut umap_graph_cache,
+                        &mut umap_graph_builds,
+                        &mut trials,
+                        &mut failures,
+                        &mut best,
+                    );
+                    if wall_exceeded() {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -576,37 +895,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         return Err(PipelineError::AllTrialsFailed { failures });
     }
 
-    // Invariant: the `if trials.is_empty()` guard above returned an error,
-    // so by here `trials` is guaranteed to contain at least one element.
-    let best_idx = trials
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| {
-            a.score
-                .partial_cmp(&b.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(i, _)| i)
-        .expect("trials non-empty");
-    let best_config = trials[best_idx].config.clone();
-    let best_score = trials[best_idx].score;
-
-    // Build the winning pipeline fresh so the caller gets it owned.
-    // Winner came from a successful trial, so the prefit cache has its
-    // projection. The unwrap_or is defensive — if the cache entry went
-    // missing somehow, re-fit and propagate any error as a
-    // `PipelineError::Projection`.
-    let best_key = ProjectionFitKey::from_config(&best_config);
-    let best_projection = match prefit.get(&best_key).cloned() {
-        Some(p) => p,
-        None => fit_projection_for_config(&embeddings, &best_config)?,
-    };
-    let best_pipeline = SphereQLPipeline::with_configured_projection_and_config(
-        categories,
-        embeddings,
-        best_projection,
-        best_config.clone(),
-    )?;
+    // Every successful trial offered its pipeline to `best`, so a
+    // non-empty `trials` guarantees one was kept. Returning it directly
+    // saves rebuilding the winner from scratch (a second O(N·d)
+    // projection pass + category-layer build).
+    let (best_score, best_pipeline) = best.expect("non-empty trials imply a kept best pipeline");
+    let best_config = best_pipeline.config().clone();
 
     let report = TuneReport {
         metric_name: metric.name().to_string(),
@@ -614,6 +908,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         best_config,
         trials,
         failures,
+        umap_graph_builds,
     };
 
     Ok((best_pipeline, report))
@@ -673,7 +968,11 @@ fn tpe_propose(
     let pk_b = hist_kind(&bad, &space.projection_kinds);
     let kind = space.projection_kinds[pick_idx(rng, &pk_g, &pk_b)];
 
-    // Kind-agnostic knobs.
+    // Kind-agnostic knobs: histograms deliberately pool ALL trials
+    // regardless of projection kind. Conditioning each knob on the
+    // sampled kind would shrink the histograms to near-uselessness at
+    // typical budgets — accepting cross-kind aliasing is the
+    // axis-parallel TPE simplification.
     let ndg_g = hist_usize(&good, &space.num_domain_groups, |c| {
         c.routing.num_domain_groups
     });
@@ -741,10 +1040,8 @@ fn tpe_propose(
         if good_l.is_empty() || bad_l.is_empty() {
             // Not enough Laplacian trials on both sides — uniform fallback.
             cfg.laplacian = LaplacianConfig {
-                k_neighbors: space.laplacian_k_neighbors
-                    [(rng.next_u64() as usize) % space.laplacian_k_neighbors.len()],
-                active_threshold: space.laplacian_active_threshold
-                    [(rng.next_u64() as usize) % space.laplacian_active_threshold.len()],
+                k_neighbors: pick_uniform(rng, &space.laplacian_k_neighbors),
+                active_threshold: pick_uniform(rng, &space.laplacian_active_threshold),
             };
         } else {
             let k_g = hist_usize(&good_l, &space.laplacian_k_neighbors, |c| {
@@ -762,6 +1059,48 @@ fn tpe_propose(
             cfg.laplacian = LaplacianConfig {
                 k_neighbors: space.laplacian_k_neighbors[pick_idx(rng, &k_g, &k_b)],
                 active_threshold: space.laplacian_active_threshold[pick_idx(rng, &at_g, &at_b)],
+            };
+        }
+    }
+
+    if matches!(kind, ProjectionKind::UmapSphere) {
+        let good_u: Vec<&TrialRecord> = good
+            .iter()
+            .copied()
+            .filter(|t| t.config.projection_kind == ProjectionKind::UmapSphere)
+            .collect();
+        let bad_u: Vec<&TrialRecord> = bad
+            .iter()
+            .copied()
+            .filter(|t| t.config.projection_kind == ProjectionKind::UmapSphere)
+            .collect();
+        if good_u.is_empty() || bad_u.is_empty() {
+            cfg.umap = UmapConfig {
+                n_neighbors: pick_uniform(rng, &space.umap_n_neighbors),
+                n_epochs: pick_uniform(rng, &space.umap_n_epochs),
+                category_weight: pick_uniform(rng, &space.umap_category_weight),
+                min_dist: pick_uniform(rng, &space.umap_min_dist),
+                ..base.umap.clone()
+            };
+        } else {
+            let nn_g = hist_usize(&good_u, &space.umap_n_neighbors, |c| c.umap.n_neighbors);
+            let nn_b = hist_usize(&bad_u, &space.umap_n_neighbors, |c| c.umap.n_neighbors);
+            let ne_g = hist_usize(&good_u, &space.umap_n_epochs, |c| c.umap.n_epochs);
+            let ne_b = hist_usize(&bad_u, &space.umap_n_epochs, |c| c.umap.n_epochs);
+            let cw_g = hist_f64(&good_u, &space.umap_category_weight, |c| {
+                c.umap.category_weight
+            });
+            let cw_b = hist_f64(&bad_u, &space.umap_category_weight, |c| {
+                c.umap.category_weight
+            });
+            let md_g = hist_f64(&good_u, &space.umap_min_dist, |c| c.umap.min_dist);
+            let md_b = hist_f64(&bad_u, &space.umap_min_dist, |c| c.umap.min_dist);
+            cfg.umap = UmapConfig {
+                n_neighbors: space.umap_n_neighbors[pick_idx(rng, &nn_g, &nn_b)],
+                n_epochs: space.umap_n_epochs[pick_idx(rng, &ne_g, &ne_b)],
+                category_weight: space.umap_category_weight[pick_idx(rng, &cw_g, &cw_b)],
+                min_dist: space.umap_min_dist[pick_idx(rng, &md_g, &md_b)],
+                ..base.umap.clone()
             };
         }
     }
@@ -823,13 +1162,17 @@ fn hist_f64(
 /// empty case would be a programmer error rather than a recoverable
 /// input.
 fn pick_uniform<T: Copy>(rng: &mut SplitMix64, vals: &[T]) -> T {
-    vals[(rng.next_u64() as usize) % vals.len()]
+    // next_f64 instead of next_u64 % len: the modulo form is biased
+    // toward low indices whenever len doesn't divide 2^64. The min
+    // guards the next_f64 == 1.0 edge.
+    vals[((rng.next_f64() * vals.len() as f64) as usize).min(vals.len() - 1)]
 }
 
 fn sample_categorical(rng: &mut SplitMix64, weights: &[f64]) -> usize {
     let total: f64 = weights.iter().sum();
     if total <= 0.0 || !total.is_finite() {
-        return (rng.next_u64() as usize) % weights.len().max(1);
+        let n = weights.len().max(1);
+        return ((rng.next_f64() * n as f64) as usize).min(n - 1);
     }
     let r = rng.next_f64() * total;
     let mut acc = 0.0;
@@ -842,7 +1185,7 @@ fn sample_categorical(rng: &mut SplitMix64, weights: &[f64]) -> usize {
     weights.len() - 1
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -881,6 +1224,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.3],
             overlap_artifact_territorial: vec![0.3],
@@ -896,12 +1243,17 @@ mod tests {
         s.projection_kinds.clear();
         for strategy in [
             SearchStrategy::Grid,
-            SearchStrategy::Random { budget: 4, seed: 1 },
+            SearchStrategy::Random {
+                budget: 4,
+                seed: 1,
+                max_wall_secs: None,
+            },
             SearchStrategy::Bayesian {
                 budget: 4,
                 warmup: 2,
                 gamma: 0.25,
                 seed: 1,
+                max_wall_secs: None,
             },
         ] {
             match s.validate(&strategy) {
@@ -951,6 +1303,7 @@ mod tests {
                     warmup: 2,
                     gamma: 0.25,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "budget",
             ),
@@ -960,6 +1313,7 @@ mod tests {
                     warmup: 1,
                     gamma: 0.25,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "warmup",
             ),
@@ -969,6 +1323,7 @@ mod tests {
                     warmup: 2,
                     gamma: 0.0,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "gamma",
             ),
@@ -978,6 +1333,7 @@ mod tests {
                     warmup: 2,
                     gamma: f64::NAN,
                     seed: 1,
+                    max_wall_secs: None,
                 },
                 "gamma",
             ),
@@ -1041,6 +1397,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.3, 0.4],
             overlap_artifact_territorial: vec![0.3],
@@ -1069,6 +1429,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1092,6 +1456,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca],
             laplacian_k_neighbors: vec![15],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3, 5],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1117,6 +1485,51 @@ mod tests {
     }
 
     #[test]
+    fn trial_records_carry_component_breakdown_for_composites() {
+        let input = make_input(24, 8);
+        let metric = CompositeMetric::default_composite();
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert!(!report.trials.is_empty());
+        for t in &report.trials {
+            assert_eq!(
+                t.components.len(),
+                4,
+                "composite trials must record the 4-component breakdown"
+            );
+            let recomposed: f64 = t.components.iter().map(|(_, w, s)| w * s).sum();
+            assert!(
+                (t.score - recomposed).abs() < 1e-12,
+                "breakdown must recompose to the recorded score"
+            );
+        }
+    }
+
+    #[test]
+    fn trial_records_have_empty_components_for_leaf_metrics() {
+        let input = make_input(24, 8);
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert!(!report.trials.is_empty());
+        for t in &report.trials {
+            assert!(t.components.is_empty());
+        }
+    }
+
+    #[test]
     fn random_search_respects_budget() {
         let input = make_input(24, 8);
         let space = SearchSpace::default();
@@ -1128,11 +1541,65 @@ mod tests {
             SearchStrategy::Random {
                 budget: 5,
                 seed: 42,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
         .unwrap();
         assert_eq!(report.trials.len(), 5);
+    }
+
+    #[test]
+    fn random_search_respects_wall_time_cap() {
+        let input = make_input(24, 8);
+        let space = SearchSpace::default();
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Random {
+                budget: 1000,
+                // Some(0) trips the cap deterministically: trial 0 (the
+                // warm-start seed) always runs, then `wall_exceeded()` is
+                // true immediately, so exactly one trial completes
+                // regardless of host throughput. Some(1) would be racy —
+                // a fast machine can finish all 1000 trials under a second.
+                seed: 42,
+                max_wall_secs: Some(0),
+            },
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert!(
+            report.trials.len() < 1000,
+            "wall time cap should have stopped early, got {} trials",
+            report.trials.len()
+        );
+        assert!(
+            !report.trials.is_empty(),
+            "should complete at least one trial before checking wall time"
+        );
+    }
+
+    #[test]
+    fn none_wall_time_is_unlimited() {
+        let input = make_input(24, 8);
+        let space = full_search_space();
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Random {
+                budget: 3,
+                seed: 1,
+                max_wall_secs: None,
+            },
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(report.trials.len(), 3);
     }
 
     #[test]
@@ -1146,7 +1613,11 @@ mod tests {
                 input,
                 &space,
                 &metric,
-                SearchStrategy::Random { budget: 8, seed },
+                SearchStrategy::Random {
+                    budget: 8,
+                    seed,
+                    max_wall_secs: None,
+                },
                 &PipelineConfig::default(),
             )
             .unwrap()
@@ -1187,6 +1658,7 @@ mod tests {
             SearchStrategy::Random {
                 budget: 6,
                 seed: 99,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1205,7 +1677,11 @@ mod tests {
             input,
             &SearchSpace::default(),
             &metric,
-            SearchStrategy::Random { budget: 4, seed: 1 },
+            SearchStrategy::Random {
+                budget: 4,
+                seed: 1,
+                max_wall_secs: None,
+            },
             &PipelineConfig::default(),
         )
         .unwrap();
@@ -1227,6 +1703,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
             laplacian_k_neighbors: vec![10, 20],
             laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1272,6 +1752,10 @@ mod tests {
             projection_kinds: vec![ProjectionKind::LaplacianEigenmap],
             laplacian_k_neighbors: vec![10, 20],
             laplacian_active_threshold: vec![0.03, 0.08],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
             num_domain_groups: vec![3],
             low_evr_threshold: vec![0.35],
             overlap_artifact_territorial: vec![0.3],
@@ -1306,6 +1790,7 @@ mod tests {
                 warmup: 4,
                 gamma: 0.25,
                 seed: 42,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1327,6 +1812,7 @@ mod tests {
                     warmup: 3,
                     gamma: 0.25,
                     seed,
+                    max_wall_secs: None,
                 },
                 &PipelineConfig::default(),
             )
@@ -1358,6 +1844,7 @@ mod tests {
                 warmup: 4,
                 gamma: 0.25,
                 seed: 0xC0FFEE,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
@@ -1380,11 +1867,360 @@ mod tests {
                 warmup: 100,
                 gamma: 0.25,
                 seed: 1,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )
         .unwrap();
         assert_eq!(report.trials.len(), 5);
+    }
+
+    #[test]
+    fn umap_search_space_cardinality() {
+        let s = SearchSpace::large_corpus();
+        let common = s.num_domain_groups.len()
+            * s.low_evr_threshold.len()
+            * s.overlap_artifact_territorial.len()
+            * s.threshold_base.len()
+            * s.threshold_evr_penalty.len()
+            * s.min_evr_improvement.len();
+        let umap_specific = s.umap_n_neighbors.len()
+            * s.umap_n_epochs.len()
+            * s.umap_category_weight.len()
+            * s.umap_min_dist.len();
+        // PCA contributes `common`, UMAP contributes `common * umap_specific`.
+        let expected = common + common * umap_specific;
+        assert_eq!(s.grid_cardinality(), expected);
+    }
+
+    #[test]
+    fn umap_trials_produce_umap_configs() {
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::UmapSphere],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10, 20],
+            umap_n_epochs: vec![50],
+            umap_category_weight: vec![1.0],
+            umap_min_dist: vec![0.1],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 2);
+        for t in &report.trials {
+            assert_eq!(t.config.projection_kind, ProjectionKind::UmapSphere);
+        }
+        let nn_values: std::collections::HashSet<usize> = report
+            .trials
+            .iter()
+            .map(|t| t.config.umap.n_neighbors)
+            .collect();
+        assert_eq!(nn_values.len(), 2);
+    }
+
+    #[test]
+    fn umap_graph_cache_reuses_across_trials_sharing_n_neighbors() {
+        // Six UMAP configs all share `n_neighbors = 10` and differ only in
+        // `n_epochs` × `category_weight`. The kNN graph + PCA warm-start
+        // should be built once, then reused — `umap_graph_builds` must
+        // equal the number of distinct `n_neighbors` values (= 1), not
+        // the number of trials.
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::UmapSphere],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10],
+            umap_n_epochs: vec![30, 60],
+            umap_category_weight: vec![0.0, 1.0, 2.0],
+            umap_min_dist: vec![0.1],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 6, "6 UMAP configs in the grid");
+        assert_eq!(
+            report.umap_graph_builds, 1,
+            "all 6 configs share n_neighbors=10, so the cache should build the graph exactly once"
+        );
+    }
+
+    #[test]
+    fn umap_graph_cache_builds_one_per_unique_n_neighbors() {
+        // Two distinct `n_neighbors` values × two `n_epochs` = 4 UMAP
+        // trials. The cache builds the graph once per unique
+        // `n_neighbors`, so `umap_graph_builds` should equal 2.
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::UmapSphere],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10, 20],
+            umap_n_epochs: vec![30, 60],
+            umap_category_weight: vec![0.0],
+            umap_min_dist: vec![0.1],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 4);
+        assert_eq!(
+            report.umap_graph_builds, 2,
+            "n_neighbors ∈ {{10, 20}} should produce exactly 2 graph builds"
+        );
+    }
+
+    #[test]
+    fn umap_fit_key_distinguishes_min_dist() {
+        // min_dist changes the optimizer's kernel (a, b), so two configs
+        // that differ only there must not share a cached fitted
+        // projection. They still share the kNN graph (keyed by
+        // n_neighbors alone), which is built before the optimizer.
+        let a = PipelineConfig {
+            projection_kind: ProjectionKind::UmapSphere,
+            ..PipelineConfig::default()
+        };
+        let mut b = a.clone();
+        b.umap.min_dist = 0.5;
+        assert!(ProjectionFitKey::from_config(&a) == ProjectionFitKey::from_config(&a.clone()));
+        assert!(ProjectionFitKey::from_config(&a) != ProjectionFitKey::from_config(&b));
+    }
+
+    #[test]
+    fn umap_graph_cache_zero_when_no_umap_trials() {
+        // PCA-only search space — no UMAP trials, no graph builds.
+        let input = make_input(24, 8);
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![10],
+            umap_n_epochs: vec![30],
+            umap_category_weight: vec![0.0],
+            umap_min_dist: vec![0.1],
+            num_domain_groups: vec![3],
+            low_evr_threshold: vec![0.35],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let metric = TerritorialHealth;
+        let (_pipeline, report) = auto_tune(
+            input,
+            &space,
+            &metric,
+            SearchStrategy::Grid,
+            &PipelineConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.umap_graph_builds, 0);
+    }
+
+    #[test]
+    fn validate_rejects_empty_umap_axis_only_when_kind_present() {
+        let mut s = full_search_space();
+        s.umap_n_neighbors.clear();
+        // PCA-only space: missing UMAP axis is fine.
+        assert!(s.validate(&SearchStrategy::Grid).is_ok());
+        s.projection_kinds.push(ProjectionKind::UmapSphere);
+        match s.validate(&SearchStrategy::Grid) {
+            Err(PipelineError::InvalidSearchSpace(msg)) => {
+                assert!(msg.contains("umap_n_neighbors"), "msg = {msg:?}");
+            }
+            other => panic!("expected InvalidSearchSpace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tpe_proposes_dominating_value_more_often_than_uniform() {
+        // Hand-crafted history: every top-gamma trial used
+        // num_domain_groups = 7, every bad trial used 3 or 5. The
+        // acquisition should propose 7 far more often than the uniform
+        // 1/3 baseline.
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::Pca],
+            laplacian_k_neighbors: vec![15],
+            laplacian_active_threshold: vec![0.05],
+            umap_n_neighbors: vec![15],
+            umap_n_epochs: vec![200],
+            umap_category_weight: vec![1.5],
+            umap_min_dist: vec![0.1],
+            num_domain_groups: vec![3, 5, 7],
+            low_evr_threshold: vec![0.3],
+            overlap_artifact_territorial: vec![0.3],
+            threshold_base: vec![0.5],
+            threshold_evr_penalty: vec![0.4],
+            min_evr_improvement: vec![0.10],
+        };
+        let base = PipelineConfig::default();
+
+        let trial = |ndg: usize, score: f64| -> TrialRecord {
+            let mut config = base.clone();
+            config.projection_kind = ProjectionKind::Pca;
+            config.routing.num_domain_groups = ndg;
+            TrialRecord {
+                config,
+                score,
+                build_ms: 0,
+                components: Vec::new(),
+            }
+        };
+
+        let mut trials = Vec::new();
+        for i in 0..4 {
+            trials.push(trial(7, 0.9 + i as f64 * 0.01));
+        }
+        for i in 0..6 {
+            trials.push(trial(3, 0.1 + i as f64 * 0.01));
+            trials.push(trial(5, 0.1 + i as f64 * 0.005));
+        }
+
+        let mut rng = SplitMix64::new(42);
+        let n_proposals = 300;
+        let mut count_7 = 0usize;
+        for _ in 0..n_proposals {
+            let cfg = tpe_propose(&space, &base, &trials, 0.25, &mut rng);
+            if cfg.routing.num_domain_groups == 7 {
+                count_7 += 1;
+            }
+        }
+
+        // Uniform would land near 100/300. The good/bad ratio for 7 puts
+        // its sampling probability above 0.9, so 180 is a comfortable
+        // margin that still fails if the acquisition stops conditioning
+        // on the split.
+        assert!(
+            count_7 > 180,
+            "dominating value proposed only {count_7}/{n_proposals} times (uniform ≈ {})",
+            n_proposals / 3
+        );
+    }
+
+    #[test]
+    fn random_seeds_base_config_as_trial_zero() {
+        let input = make_input(24, 8);
+        let mut base = PipelineConfig::default();
+        base.bridges.overlap_artifact_territorial = 0.123; // off-axis
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Random {
+                budget: 4,
+                seed: 9,
+                max_wall_secs: None,
+            },
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 4, "seed trial counts against budget");
+        assert!(
+            (report.trials[0].config.bridges.overlap_artifact_territorial - 0.123).abs() < 1e-12,
+            "trial 0 must be base_config itself"
+        );
+        for t in &report.trials[1..] {
+            assert!(
+                (t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12,
+                "sampled trials must come from the space's axes"
+            );
+        }
+    }
+
+    #[test]
+    fn bayesian_seeds_base_config_as_trial_zero() {
+        let input = make_input(24, 8);
+        let mut base = PipelineConfig::default();
+        base.bridges.overlap_artifact_territorial = 0.123;
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Bayesian {
+                budget: 5,
+                warmup: 2,
+                gamma: 0.25,
+                seed: 9,
+                max_wall_secs: None,
+            },
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(report.trials.len(), 5);
+        assert!(
+            (report.trials[0].config.bridges.overlap_artifact_territorial - 0.123).abs() < 1e-12
+        );
+    }
+
+    #[test]
+    fn grid_does_not_seed_base_config() {
+        let input = make_input(24, 8);
+        let mut base = PipelineConfig::default();
+        base.bridges.overlap_artifact_territorial = 0.123;
+        let metric = TerritorialHealth;
+        let (_p, report) = auto_tune(
+            input,
+            &full_search_space(),
+            &metric,
+            SearchStrategy::Grid,
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.trials.len(),
+            full_search_space().grid_cardinality(),
+            "grid trial count must stay the exact enumeration"
+        );
+        for t in &report.trials {
+            assert!((t.config.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12);
+        }
     }
 
     #[test]
@@ -1398,6 +2234,7 @@ mod tests {
             SearchStrategy::Random {
                 budget: 4,
                 seed: 11,
+                max_wall_secs: None,
             },
             &PipelineConfig::default(),
         )

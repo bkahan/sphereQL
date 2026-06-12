@@ -8,14 +8,19 @@ by 600+ tests, but may change before 1.0. See
 
 Python and WASM bindings are at full parity with the Rust surface:
 
-- Projection families: PCA, Kernel PCA, **Laplacian eigenmap**, Random.
+- Projection families: PCA (category-weighted via `PipelineConfig`),
+  Kernel PCA, **Laplacian eigenmap**, Random — plus **UMAP-on-sphere**,
+  reachable through `PipelineConfig` / `auto_tune` in every binding
+  (no standalone UMAP class in the Python/WASM bindings; the
+  pipeline-level config is the supported surface).
 - Pipeline queries: nearest, similar-above, concept path, glob detection,
   local manifold.
 - Category enrichment: concept paths, category neighbors, drill-down,
   hierarchical nearest, domain groups, category stats.
 - Metalearning: `auto_tune`, `NearestNeighborMetaModel`,
   `DistanceWeightedMetaModel`, `FeedbackAggregator`,
-  `MetaTrainingRecord` default-store helpers.
+  `MetaTrainingRecord` default-store helpers. Quality-metric resolvers
+  accept `bridge_diversity` alongside the original metric names.
 - Partial-config support: any `PipelineConfig` field can be omitted;
   missing keys fall back to defaults (no more "specify every knob").
 
@@ -54,7 +59,9 @@ descriptive error until a real embedder is plugged in).
       `RoutingConfig::low_evr_threshold`.
     - `ProjectionKind::LaplacianEigenmap` via `auto_tune` often
       preserves more neighbor structure than PCA on sparse/noisy
-      corpora (see [empirical findings](empirical-findings.md)).
+      corpora (see [empirical findings](empirical-findings.md)), and
+      `ProjectionKind::UmapSphere` (ANN-backed, category-supervised)
+      is the tunable option for the 10k–100k range.
 
   See [search-precision-roadmap.md](search-precision-roadmap.md) for
   tracked improvements.
@@ -63,7 +70,10 @@ descriptive error until a real embedder is plugged in).
   this threshold fall back to the outer sphere for drill-down queries.
   This is by design — small categories don't benefit from a separate
   projection, and the threshold is configurable via
-  `InnerSphereConfig::min_size`.
+  `InnerSphereConfig::min_size`. For corpora with many singleton
+  categories, `PipelineConfig::min_category_size` additionally excludes
+  tiny categories from bridge/domain-group analysis while keeping their
+  items indexed and queryable.
 
 ## Drift protection
 
@@ -96,10 +106,25 @@ The bulk pipeline runs: download → parse → embed → cluster → auto-tune �
 validate → write. A `run_self_tune` pass gates each corpus on a minimum
 `QualityMetric` score before it is committed.
 
+Scaling machinery that supports this path:
+
+- **RP-forest ANN index** (`sphereql-embed::ann`) — deterministic
+  approximate kNN backing UMAP graph construction and
+  `GraphModularity` edge building at ≥ 2000 items.
+- **UMAP graph caching** in the tuner — one kNN-graph build per unique
+  `n_neighbors`, reused across epoch/weight sweeps
+  (`TuneReport::umap_graph_builds` reports cache effectiveness).
+- **Wall-time budgets** — `SearchStrategy::{Random, Bayesian}` accept
+  `max_wall_secs` so large-corpus tuning can be time-boxed instead of
+  trial-count-boxed.
+- **Category-weighted PCA** and `min_category_size` for
+  singleton-heavy bulk corpora.
+
 ## Roadmap
 
 - Improve search precision at higher k values.
-- HNSW or VP-tree indexing for better recall without brute-force
-  fallback.
+- Query-time ANN (HNSW or VP-tree) for better recall without
+  brute-force fallback — the RP-forest currently covers fit-time kNN
+  (UMAP, modularity); the query path is the remaining gap.
 - Streaming/incremental PCA for large-scale datasets.
 - Expose `sphereql-layout`'s managed layouts through the bindings.

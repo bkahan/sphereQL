@@ -99,7 +99,7 @@ Search precision improvements are tracked in
 
 The benchmark above uses PCA on the 775-concept built-in corpus (EVR ≈ 0.195).
 At that EVR, PCA remains the best of the available projection families: the
-auto-tuner in [`examples/auto_tune.rs`](../sphereql/examples/auto_tune.rs)
+auto-tuner in [`examples/auto_tune.rs`](../sphereql-examples/examples/auto_tune.rs)
 scores Laplacian eigenmap below PCA under every metric tested on this corpus.
 
 On a different regime — the synthetic stress corpus (`build_stress_corpus`:
@@ -111,8 +111,14 @@ amplitude) — the same tuner pipeline flips the winner:
 | `default_composite` (bridge coherence 40% / territorial 35% / silhouette 25%) | 0.9606 | **1.0000** |
 | `connectivity_composite` (modularity 50% / bridge 30% / territorial 20%) | 0.9265 | **0.9500** |
 
+These scores were measured under the pre-`BridgeDiversity` composite
+weights. The current `default_composite` is 30% bridge_diversity / 25%
+territorial / 25% silhouette / 20% modularity, and `connectivity_composite`
+is 40% modularity / 35% bridge_diversity / 25% territorial. The
+winner-flip on the stress corpus is robust to that reweighting.
+
 Same pipeline, same tuner, opposite winners. This is the motivation for the
 `MetaModel` layer: given a new corpus's 10-feature profile, predict which
 projection (and which knob values) will win before running the full tuner.
-See [`examples/meta_learn.rs`](../sphereql/examples/meta_learn.rs) for the
+See [`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) for the
 end-to-end loop.

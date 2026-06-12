@@ -15,7 +15,7 @@
 ///
 /// Every field is a sub-config grouped by area. [`Self::default`] returns
 /// the values the crate shipped with before the config surface existed.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct PipelineConfig {
     /// Outer-sphere projection family.
@@ -29,8 +29,40 @@ pub struct PipelineConfig {
     /// Laplacian eigenmap hyperparameters (only consulted if that
     /// projection is selected).
     pub laplacian: LaplacianConfig,
+    /// UMAP-on-sphere hyperparameters (only consulted if that
+    /// projection is selected).
+    pub umap: UmapConfig,
     /// Spatial quality Monte Carlo sample counts.
     pub spatial: SpatialConfig,
+    /// Minimum number of items a category must have to participate in
+    /// category-level analysis (bridges, domain groups, spatial quality,
+    /// Voronoi tessellation). Categories below this threshold are excluded
+    /// from the enrichment layer but their items remain projected, indexed,
+    /// and queryable on the sphere.
+    ///
+    /// Default 1 (no filtering — every category participates).
+    /// Set to 5–10 for corpora with many singleton categories.
+    #[serde(default = "default_min_category_size")]
+    pub min_category_size: usize,
+}
+
+fn default_min_category_size() -> usize {
+    1
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            projection_kind: ProjectionKind::default(),
+            inner_sphere: InnerSphereConfig::default(),
+            bridges: BridgeConfig::default(),
+            routing: RoutingConfig::default(),
+            laplacian: LaplacianConfig::default(),
+            umap: UmapConfig::default(),
+            spatial: SpatialConfig::default(),
+            min_category_size: default_min_category_size(),
+        }
+    }
 }
 
 // ── Projection kind ────────────────────────────────────────────────────
@@ -158,6 +190,14 @@ pub struct BridgeConfig {
     /// affinity to both sides as the bottom-25% of items have to
     /// their own home category.
     pub balanced_affinity_quantile: f64,
+    /// EVR below which bridge classification is unreliable. When the
+    /// outer projection's EVR is below this threshold, all bridges
+    /// are labeled `Weak` (honest uncertainty) rather than attempting
+    /// territorial-factor-based classification — which collapses to
+    /// 100% `OverlapArtifact` when caps overlap everywhere on a
+    /// low-EVR projection, flattening the tuner landscape. Default
+    /// 0.20.
+    pub min_evr_for_classification: f64,
 }
 
 impl Default for BridgeConfig {
@@ -167,6 +207,7 @@ impl Default for BridgeConfig {
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
             balanced_affinity_quantile: 0.25,
+            min_evr_for_classification: 0.20,
         }
     }
 }
@@ -240,11 +281,64 @@ impl Default for LaplacianConfig {
     }
 }
 
+// ── UMAP-on-sphere ─────────────────────────────────────────────────────
+
+/// Hyperparameters for [`UmapSphereProjection`](crate::umap::UmapSphereProjection).
+///
+/// These are the tunable knobs exposed to the auto-tuner. Non-tunable
+/// constants (`learning_rate`, `negative_sample_rate`) stay at their
+/// canonical UMAP defaults inside [`fit_projection_for_config`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct UmapConfig {
+    /// k in the kNN graph (attractive term). Higher = more global structure.
+    pub n_neighbors: usize,
+    /// Adam optimization epochs. ~200 for corpora < 10k, ~400 for 50k+.
+    pub n_epochs: usize,
+    /// Weight on the category supervision term. 0.0 = unsupervised UMAP.
+    /// Positive values pull same-category items together and push
+    /// different-category items apart. 1.0–3.0 is typical.
+    pub category_weight: f64,
+    /// How tightly neighbors may pack on the sphere. Larger values
+    /// flatten the embedding kernel near zero, so clusters claim more
+    /// territory — exactly what the territorial/cap-overlap metrics
+    /// measure. 0.0 = near-maximal clumping; 0.1 is the canonical UMAP
+    /// default.
+    pub min_dist: f64,
+    /// Weight on an attractive pull toward each point's PCA warm-start
+    /// position; 0.0 disables. Use small values (~0.01–0.1) on sparse
+    /// corpora whose kNN graphs fragment into disconnected components,
+    /// to keep the components' global arrangement from drifting under
+    /// unopposed repulsion. Intentionally not a tuner axis — it is a
+    /// data-pathology escape hatch, not a search dimension.
+    pub warm_start_anchor: f64,
+    /// PRNG seed for negative sampling and tie-breaking.
+    pub seed: u64,
+}
+
+impl Default for UmapConfig {
+    fn default() -> Self {
+        Self {
+            n_neighbors: 15,
+            n_epochs: 200,
+            category_weight: 1.5,
+            min_dist: 0.1,
+            warm_start_anchor: 0.0,
+            seed: 0xA1B2_C3D4,
+        }
+    }
+}
+
 // ── Spatial quality ────────────────────────────────────────────────────
 
 /// Monte Carlo sample counts for [`SpatialQuality::compute`](crate::spatial_quality::SpatialQuality::compute).
 ///
 /// These run once at build time. Higher = more precise but slower.
+///
+/// This config only governs the build-time `SpatialQuality::compute`
+/// pass. The navigator's `run_full_analysis` uses its own
+/// `NavigatorConfig` sample counts (with different defaults) and is
+/// unaffected by these values.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct SpatialConfig {
@@ -288,13 +382,21 @@ mod tests {
         assert!((c.bridges.threshold_base - 0.5).abs() < 1e-12);
         assert!((c.bridges.threshold_evr_penalty - 0.4).abs() < 1e-12);
         assert!((c.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12);
+        assert!((c.bridges.balanced_affinity_quantile - 0.25).abs() < 1e-12);
+        assert!((c.bridges.min_evr_for_classification - 0.20).abs() < 1e-12);
         assert_eq!(c.routing.num_domain_groups, 5);
         assert!((c.routing.low_evr_threshold - 0.35).abs() < 1e-12);
         assert_eq!(c.laplacian.k_neighbors, 15);
         assert!((c.laplacian.active_threshold - 0.05).abs() < 1e-12);
+        assert_eq!(c.umap.n_neighbors, 15);
+        assert_eq!(c.umap.n_epochs, 200);
+        assert!((c.umap.category_weight - 1.5).abs() < 1e-12);
+        assert!((c.umap.min_dist - 0.1).abs() < 1e-12);
+        assert_eq!(c.umap.warm_start_anchor, 0.0);
         assert_eq!(c.spatial.coverage_samples, 100_000);
         assert_eq!(c.spatial.exclusivity_samples, 30_000);
         assert_eq!(c.spatial.voronoi_samples, 100_000);
+        assert_eq!(c.min_category_size, 1);
     }
 
     #[test]

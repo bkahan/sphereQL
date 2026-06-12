@@ -19,7 +19,7 @@
 //!  10. Hierarchical domain groups — coarse routing when EVR is low.
 //!
 //! Run with:
-//!   cargo run --example spatial_analysis --features embed
+//!   cargo run -p sphereql-examples --example spatial_analysis
 
 use std::collections::HashMap;
 

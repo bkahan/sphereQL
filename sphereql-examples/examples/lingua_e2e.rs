@@ -1,5 +1,5 @@
 //! E2E demo: 3 texts, validation checks, SphereQL output, geodesic trace.
-//! Run: cargo run --example e2e -p sphereql-lingua
+//! Run: cargo run -p sphereql-examples --example lingua_e2e
 
 use sphereql_core::angular_distance;
 use sphereql_lingua::taxonomy::theta_distance;

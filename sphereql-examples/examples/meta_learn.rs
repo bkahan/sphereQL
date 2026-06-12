@@ -21,7 +21,7 @@
 //! `~/.sphereql/` store) so running the example is self-contained.
 //!
 //! Run with:
-//!   cargo run --example meta_learn --features embed --release
+//!   cargo run -p sphereql-examples --example meta_learn --release
 
 use sphereql::embed::{
     CompositeMetric, CorpusFeatures, DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord,
@@ -177,6 +177,7 @@ fn tune_and_record(
         SearchStrategy::Random {
             budget: BUDGET,
             seed: BASE_SEED.wrapping_add(corpus_id.len() as u64),
+            max_wall_secs: None,
         },
         &PipelineConfig::default(),
     )

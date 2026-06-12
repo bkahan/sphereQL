@@ -50,6 +50,104 @@ pub struct CategorySummary {
 
 // ── Bridge items ───────────────────────────────────────────────────────
 
+/// Semantic relation type for a bridge edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum RelationType {
+    Studies,
+    AppliesTo,
+    Enables,
+    CausedBy,
+    Contains,
+    SharedMethod,
+    HistoricalLink,
+}
+
+impl RelationType {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Studies => "studies",
+            Self::AppliesTo => "applies_to",
+            Self::Enables => "enables",
+            Self::CausedBy => "caused_by",
+            Self::Contains => "contains",
+            Self::SharedMethod => "shared_method",
+            Self::HistoricalLink => "historical_link",
+        }
+    }
+}
+
+/// Infer a [`RelationType`] for a bridge from its concept label.
+///
+/// Source and target category names are accepted for future use but
+/// currently unused — keyword cues in the label drive the inference.
+fn infer_relation(
+    concept_label: &str,
+    _source_category: &str,
+    _target_category: &str,
+) -> Option<RelationType> {
+    let label = concept_label.to_lowercase();
+
+    if label.contains("history of")
+        || label.contains("historical")
+        || label.contains("origins of")
+        || label.contains("evolution of")
+    {
+        return Some(RelationType::HistoricalLink);
+    }
+
+    if label.contains("method")
+        || label.contains("technique")
+        || label.contains("analysis")
+        || label.contains("spectroscop")
+        || label.contains("microscop")
+        || label.contains("imaging")
+        || label.contains("modeling")
+        || label.contains("simulation")
+        || label.contains("measurement")
+    {
+        return Some(RelationType::SharedMethod);
+    }
+
+    if label.contains("applications")
+        || label.contains("applied")
+        || label.contains(" in ")
+        || label.contains(" for ")
+    {
+        return Some(RelationType::AppliesTo);
+    }
+
+    if label.contains("studies")
+        || label.contains("research")
+        || label.contains("science of")
+        || label.contains("theory of")
+    {
+        return Some(RelationType::Studies);
+    }
+
+    if label.starts_with("bio")
+        || label.starts_with("geo")
+        || label.starts_with("neuro")
+        || label.starts_with("astro")
+        || label.starts_with("electro")
+        || label.starts_with("psycho")
+        || label.starts_with("socio")
+        || label.starts_with("eco")
+    {
+        return Some(RelationType::Contains);
+    }
+
+    if label.contains("foundation")
+        || label.contains("prerequisite")
+        || label.contains("basis")
+        || label.contains("fundamentals")
+        || label.contains("principles")
+    {
+        return Some(RelationType::Enables);
+    }
+
+    None
+}
+
 /// Quality classification for a bridge item.
 ///
 /// Assigned after all bridges are collected, comparing each bridge's
@@ -90,6 +188,8 @@ pub struct BridgeItem {
     pub bridge_strength: f64,
     /// Quality label assigned after the full bridge set is observed.
     pub classification: BridgeClassification,
+    /// Semantic relation type, inferred heuristically. `None` when untyped.
+    pub relation: Option<RelationType>,
 }
 
 // ── Category graph ─────────────────────────────────────────────────────
@@ -354,22 +454,42 @@ impl CategoryLayer {
         assert_eq!(n, embeddings.len());
         assert_eq!(n, projected_positions.len());
 
-        // 1. Discover unique categories and group member indices
+        // 1. Discover unique categories in first-seen order, then drop any
+        //    whose member count falls below `min_category_size`. Items in
+        //    excluded categories remain projected and indexed on the sphere
+        //    — they just don't get a CategorySummary, don't produce bridges,
+        //    and don't participate in domain groups or spatial quality.
+        let min_size = config.min_category_size;
+
         let mut name_to_index: HashMap<String, usize> = HashMap::new();
         let mut cat_names: Vec<String> = Vec::new();
         let mut cat_members: Vec<Vec<usize>> = Vec::new();
 
+        // Single pass: insert in first-seen order, but defer the size filter.
+        let mut raw_index: HashMap<&str, usize> = HashMap::new();
+        let mut raw_names: Vec<&str> = Vec::new();
+        let mut raw_members: Vec<Vec<usize>> = Vec::new();
         for (i, cat) in categories.iter().enumerate() {
-            let idx = if let Some(&idx) = name_to_index.get(cat) {
+            let idx = if let Some(&idx) = raw_index.get(cat.as_str()) {
                 idx
             } else {
-                let idx = cat_names.len();
-                name_to_index.insert(cat.clone(), idx);
-                cat_names.push(cat.clone());
-                cat_members.push(Vec::new());
+                let idx = raw_names.len();
+                raw_index.insert(cat.as_str(), idx);
+                raw_names.push(cat.as_str());
+                raw_members.push(Vec::new());
                 idx
             };
-            cat_members[idx].push(i);
+            raw_members[idx].push(i);
+        }
+
+        for (raw_name, members) in raw_names.iter().zip(raw_members) {
+            if members.len() < min_size {
+                continue;
+            }
+            let idx = cat_names.len();
+            name_to_index.insert((*raw_name).to_string(), idx);
+            cat_names.push((*raw_name).to_string());
+            cat_members.push(members);
         }
 
         let num_cats = cat_names.len();
@@ -510,6 +630,39 @@ impl CategoryLayer {
         }
     }
 
+    /// Annotate every bridge with a heuristically inferred [`RelationType`].
+    ///
+    /// Looks at each bridge item's concept label (indexed into `labels`
+    /// by `BridgeItem::item_index`) along with its source and target
+    /// category names. Bridges whose label doesn't match any cue remain
+    /// `relation: None`.
+    pub fn annotate_bridge_relations(&mut self, labels: &[String]) {
+        for ((src_cat, tgt_cat), bridges) in self.graph.bridges.iter_mut() {
+            let src_name = &self.summaries[*src_cat].name;
+            let tgt_name = &self.summaries[*tgt_cat].name;
+            for bridge in bridges.iter_mut() {
+                if bridge.item_index < labels.len() {
+                    bridge.relation =
+                        infer_relation(&labels[bridge.item_index], src_name, tgt_name);
+                }
+            }
+        }
+    }
+
+    /// Histogram of relation types across every bridge in the graph.
+    ///
+    /// `None` is included as its own bucket so callers can see how many
+    /// bridges remain unlabeled after annotation.
+    pub fn relation_census(&self) -> std::collections::HashMap<Option<RelationType>, usize> {
+        let mut counts = std::collections::HashMap::new();
+        for bridges in self.graph.bridges.values() {
+            for b in bridges {
+                *counts.entry(b.relation).or_default() += 1;
+            }
+        }
+        counts
+    }
+
     /// Build the inter-category adjacency graph and detect bridge items.
     ///
     /// Bridge detection uses the spatial quality's EVR-adaptive threshold
@@ -587,6 +740,7 @@ impl CategoryLayer {
                             bridge_strength,
                             // Populated in the classification pass below.
                             classification: BridgeClassification::Weak,
+                            relation: None,
                         });
                     }
                 }
@@ -595,28 +749,38 @@ impl CategoryLayer {
 
         // Classification pass: compare each bridge against the corpus-wide
         // median strength and the pair's territorial separation on S².
-        let mut all_strengths: Vec<f64> = bridges
-            .values()
-            .flat_map(|list| list.iter().map(|b| b.bridge_strength))
-            .collect();
-        let median_strength = if all_strengths.is_empty() {
-            0.0
-        } else {
-            all_strengths.sort_by(|a, b| a.total_cmp(b));
-            all_strengths[all_strengths.len() / 2]
-        };
+        //
+        // When EVR is below `min_evr_for_classification`, the projection
+        // is too lossy for territorial factors to distinguish genuine
+        // bridges from overlap artifacts — every factor collapses to
+        // near-zero, every bridge gets labeled OverlapArtifact, and the
+        // tuner landscape flattens. Skip the territorial check entirely
+        // in that regime and leave the default `Weak` label on each
+        // bridge (honest uncertainty).
+        if spatial.evr >= config.bridges.min_evr_for_classification {
+            let mut all_strengths: Vec<f64> = bridges
+                .values()
+                .flat_map(|list| list.iter().map(|b| b.bridge_strength))
+                .collect();
+            let median_strength = if all_strengths.is_empty() {
+                0.0
+            } else {
+                all_strengths.sort_by(|a, b| a.total_cmp(b));
+                all_strengths[all_strengths.len() / 2]
+            };
 
-        let overlap_threshold = config.bridges.overlap_artifact_territorial;
-        for list in bridges.values_mut() {
-            for b in list.iter_mut() {
-                let tf = spatial.territorial_factor(b.source_category, b.target_category);
-                b.classification = if tf < overlap_threshold {
-                    BridgeClassification::OverlapArtifact
-                } else if b.bridge_strength >= median_strength {
-                    BridgeClassification::Genuine
-                } else {
-                    BridgeClassification::Weak
-                };
+            let overlap_threshold = config.bridges.overlap_artifact_territorial;
+            for list in bridges.values_mut() {
+                for b in list.iter_mut() {
+                    let tf = spatial.territorial_factor(b.source_category, b.target_category);
+                    b.classification = if tf < overlap_threshold {
+                        BridgeClassification::OverlapArtifact
+                    } else if b.bridge_strength >= median_strength {
+                        BridgeClassification::Genuine
+                    } else {
+                        BridgeClassification::Weak
+                    };
+                }
             }
         }
 
@@ -1545,6 +1709,42 @@ mod tests {
     }
 
     #[test]
+    fn low_evr_skips_territorial_classification() {
+        // When `spatial.evr` falls below `min_evr_for_classification`,
+        // every bridge should fall back to `Weak`. We force the gate
+        // by raising the threshold above the measured EVR rather than
+        // synthesizing a low-EVR projection.
+        let (categories, embeddings) = test_corpus();
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+
+        let mut config = PipelineConfig::default();
+        // Set the gate above the natural ceiling so the early-skip
+        // branch is exercised regardless of corpus EVR.
+        config.bridges.min_evr_for_classification = 1.5;
+
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            0.10,
+            &config,
+        );
+
+        for bridges in layer.graph.bridges.values() {
+            for b in bridges {
+                assert_eq!(
+                    b.classification,
+                    BridgeClassification::Weak,
+                    "low EVR should label every bridge Weak, got {:?}",
+                    b.classification
+                );
+            }
+        }
+    }
+
+    #[test]
     fn bridge_quality_nonnegative() {
         let (layer, _, _) = build_test_layer();
         for s in &layer.summaries {
@@ -1868,5 +2068,136 @@ mod tests {
             .collect();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         assert_eq!(InnerProjection::LinearPca(pca).dimensionality(), 5);
+    }
+
+    // ======== min_category_size filtering ========
+
+    #[test]
+    fn min_category_size_excludes_small_categories() {
+        let (categories, embeddings) = test_corpus(); // 3 categories × 4 items each
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let evr = pca.explained_variance_ratio();
+
+        let config = PipelineConfig {
+            min_category_size: 5,
+            ..Default::default()
+        };
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            evr,
+            &config,
+        );
+
+        assert_eq!(
+            layer.num_categories(),
+            0,
+            "all categories below threshold should be excluded"
+        );
+        assert!(layer.graph.adjacency.is_empty());
+        assert!(layer.graph.bridges.is_empty());
+    }
+
+    #[test]
+    fn min_category_size_one_includes_everything() {
+        let (categories, embeddings) = test_corpus();
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let evr = pca.explained_variance_ratio();
+
+        let config = PipelineConfig {
+            min_category_size: 1,
+            ..Default::default()
+        };
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            evr,
+            &config,
+        );
+
+        assert_eq!(
+            layer.num_categories(),
+            3,
+            "all categories should be included at min_size=1"
+        );
+    }
+
+    #[test]
+    fn min_category_size_partial_filter() {
+        // One large category (10 items) and two small ones (2 each).
+        let mut categories = Vec::new();
+        let mut embeddings = Vec::new();
+        for i in 0..10 {
+            categories.push("big".to_string());
+            let mut v = vec![0.0; 5];
+            v[0] = 1.0 + i as f64 * 0.01;
+            embeddings.push(emb(&v));
+        }
+        for i in 0..2 {
+            categories.push("small_a".to_string());
+            let mut v = vec![0.0; 5];
+            v[1] = 1.0 + i as f64 * 0.01;
+            embeddings.push(emb(&v));
+        }
+        for i in 0..2 {
+            categories.push("small_b".to_string());
+            let mut v = vec![0.0; 5];
+            v[2] = 1.0 + i as f64 * 0.01;
+            embeddings.push(emb(&v));
+        }
+
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let evr = pca.explained_variance_ratio();
+
+        let config = PipelineConfig {
+            min_category_size: 5,
+            ..Default::default()
+        };
+        let layer = CategoryLayer::build_with_config(
+            &categories,
+            &embeddings,
+            &projected,
+            &pca,
+            evr,
+            &config,
+        );
+
+        assert_eq!(layer.num_categories(), 1);
+        assert_eq!(layer.summaries[0].name, "big");
+        assert_eq!(layer.summaries[0].member_count, 10);
+    }
+
+    #[test]
+    fn infer_relation_historical() {
+        assert_eq!(
+            infer_relation("History of technology", "history", "engineering"),
+            Some(RelationType::HistoricalLink)
+        );
+    }
+
+    #[test]
+    fn infer_relation_method() {
+        assert_eq!(
+            infer_relation("Spectroscopy", "chemistry", "physics"),
+            Some(RelationType::SharedMethod)
+        );
+    }
+
+    #[test]
+    fn infer_relation_none() {
+        assert_eq!(infer_relation("Quantum computing", "physics", "cs"), None);
+    }
+
+    #[test]
+    fn relation_type_name_stable() {
+        assert_eq!(RelationType::Studies.name(), "studies");
+        assert_eq!(RelationType::HistoricalLink.name(), "historical_link");
     }
 }

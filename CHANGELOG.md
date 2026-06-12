@@ -6,6 +6,145 @@ versions.
 
 ## [Unreleased]
 
+### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)
+
+- **Training items keep their optimized positions** — `project()` on a
+  fitted corpus embedding returns the exact Adam-optimized position
+  (certainty 1.0) via a bit-pattern fast path instead of re-deriving a
+  softmax kNN average. Pipeline builds on UMAP's own corpus drop from
+  O(N²·d) to O(N·d), and the tuner now scores the actual embedding
+  rather than a kNN-smeared copy. Unseen embeddings transform through
+  the RP-forest index the graph build already constructs (retained on
+  `UmapGraph` at ≥ 2000 items).
+- **EVR proxy replaced with kNN recall** — `explained_variance_ratio`
+  now reports trustworthiness-style neighborhood preservation (mean
+  overlap between spherical and original-space kNN sets) instead of
+  the saturating fraction-below-median-random-distance proxy. UMAP
+  records stored under the old proxy are not score-comparable.
+- **Fuzzy simplicial edge weights** (canonical local distance scaling)
+  — per-point ρ/σ calibration (`Σ exp(−(d−ρ)/σ) = log₂ k`, nearest
+  edge weight 1.0), fuzzy-union symmetrization, with both attraction
+  and per-edge negative draws scaled by the weight (matching
+  `epochs_per_sample` in expectation; scaling attraction alone
+  measurably halved recall).
+- **Tunable `min_dist`** (default 0.1) — deterministic least-squares
+  (a, b) curve fit, canonical generalized gradients (pinned to the old
+  forms at a = b = 1), new `umap_min_dist` tuner axis, and a
+  `ProjectionFitKey` component so prefit projections never collide
+  across min_dist values. The 775-concept benchmark improved under
+  the new default.
+- **Stratified category term** — one same-category cohesion pair and
+  one different-category separation pair per point per epoch; the old
+  single uniform draw was ~97% repulsion at realistic category counts.
+- **`warm_start_anchor`** (opt-in, default 0.0 = bit-identical no-op)
+  — weak pull toward each point's PCA warm-start position so
+  disconnected kNN components on sparse corpora keep their global
+  arrangement instead of drifting under unopposed repulsion.
+
+### Changed — ML-framework audit (tuner, metalearning, controller, pipeline)
+
+- **`auto_tune` warm-starts from the meta-model** — Random and Bayesian
+  strategies evaluate `base_config` as trial 0 (inside the budget; for
+  Bayesian it seeds the TPE history), so a predicted config competes
+  directly with searched ones. Grid keeps its exact-enumeration
+  contract. `new_from_metamodel_tuned` docs now state the real
+  semantics: the prediction supplies values only for knobs *not* in the
+  `SearchSpace`.
+- **Tuner trials stop cloning the corpus** — trials borrow the
+  embedding matrix via an internal constructor instead of cloning it
+  per trial (~3 GB/trial at 500k×768), and the winning pipeline is kept
+  from its trial instead of being rebuilt (one fewer full projection +
+  category-layer build per run).
+- **Metric scoring stops re-exporting the corpus** — `ClusterSilhouette`
+  and `GraphModularity` read a lazily-built, shared positions/category
+  cache on the pipeline instead of allocating a fresh
+  `Vec<ExportedPoint>` (with per-item `String` clones) on every call.
+  `SpatialQuality` stores pairwise cap intersections in a `HashMap`
+  (O(1) lookups; bridge detection was doing O(C²) scans per pair).
+- **Statistical fixes** — meta-model feature z-scores use Bessel-
+  corrected sample variance; tuner uniform sampling drops its modulo
+  bias; `ClusterSilhouette` skips items coinciding with their centroid
+  (a forced `s = 1.0` per category).
+- **`run_self_tune` validates its config and returns `Result`** —
+  smoothings/penalties must be in [0,1], boosts ≥ 1, finite
+  `plateau_epsilon`; out-of-range smoothing can no longer silently zero
+  out corpus quality. Plateau detection now fires *before* the
+  iteration's reweight+prune, so a plateaued corpus is no longer
+  mutated one extra unmeasured time. `SelfTuneConfig` is serializable.
+  `reweight_in_place` docs no longer claim idempotency (repeated calls
+  compound; use `reweight_from_base` with an invariant base).
+- **Hardened API boundaries** — `MetaModel::is_fitted` +
+  `new_from_metamodel{,_tuned}` return `InvalidInput` for unfitted
+  models instead of panicking through a `Result`;
+  `SphereQLPipeline::to_json` returns `Result` instead of panicking on
+  non-finite coordinates (wasm/python bindings updated);
+  `nearest_by_embedding` uses a bounded heap (O(N log k));
+  `MetaTrainingRecord::append_to`'s legacy-store migration shares
+  `feedback`'s locked tempfile+rename path (was an unsynchronized
+  read/rewrite). `CorpusQuality` reports per-component breakdowns to
+  `TrialRecord`; `SpatialQuality::compute` is deprecated in favor of
+  `compute_with_config`.
+
+### Changed — training loop (self-tune controller + metalearning)
+
+- **Self-tune closes the quality→geometry loop** — `run_self_tune`'s
+  PCA builds now weight each concept's covariance contribution by its
+  current `quality` (floored, combined with the `1/√|category|`
+  rebalancing). Previously reweighting mutated a field the pipeline
+  never read, so the composite could only move via pruning and the
+  plateau stop fired at iteration 2 by construction.
+- **Reweighting is idempotent** — quality is recomputed from the
+  run-entry base each iteration instead of compounding; the static
+  attenuation (home affinity / source confidence) applies once per
+  run, not once per iteration. `SelfTuneReport` gains
+  `final_composite` — the score of the corpus actually persisted.
+- **`CorpusQuality` bridge sub-score delegates to the canonical
+  `BridgeCoherence`** (neutral floor included): low-EVR corpora no
+  longer pin 30% of the controller objective at zero.
+- **`TrialRecord` gains per-component metric breakdowns**
+  (`components: Vec<(name, weight, score)>`) recorded in one pass via
+  the new `QualityMetric::score_with_components` — flat-landscape
+  diagnosis straight from the `TuneReport`.
+- **`MetaTrainingRecord` gains `score_lift`** — `(best − mean)/(1 −
+  mean)` over the run's trial distribution; cross-corpus-comparable
+  evidence that `DistanceWeightedMetaModel` now ranks on (raw
+  `best_score` fallback for legacy records, which keep deserializing
+  via `#[serde(default)]`).
+- **Meta-models**: scale features (`n_items`, `n_categories`, `dim`,
+  `mean_members_per_category`) are `ln(1+x)`-compressed before
+  z-scoring; mixed-metric training sets are stratified to the dominant
+  `metric_name` at fit time; new
+  `NearestNeighborMetaModel::predict_blended(features, k)` aggregates
+  per-knob medians + majority projection kind over the k nearest
+  records (`k = 1` reproduces `predict`).
+
+### Changed — review pass on the 500k-corpus branch
+
+- **`GraphModularity` scales to large corpora** — k-NN edge construction
+  switches to the RP-forest ANN index at ≥ 2000 items (the exact
+  all-pairs scan remains below that, so small-corpus scores are
+  bit-identical). Previously the metric was O(N²) in angular-distance
+  evaluations, which made every `default_composite` tuner trial
+  infeasible at 100k–500k items.
+- **`UmapSphereProjection::fit` deduplicated** — now delegates to
+  `UmapGraph::build` + `fit_from_graph` instead of carrying a duplicate
+  copy of the validation block and Adam optimizer loop. Numerically
+  identical (pinned by `fit_from_graph_matches_full_fit`).
+- **`AnnIndex::build_normalized` validates per-row dimensionality** like
+  `build`; ragged input now fails fast with a clear panic message
+  instead of an index error deep in `dot()`.
+- **Weighted-PCA documentation corrected** — `w = 1/sqrt(|category|)`
+  gives a category of size m total covariance mass √m (square-root
+  softening of imbalance), not the previously documented "equal mass";
+  exactly equal mass would require `w = 1/|category|`. Behavior is
+  unchanged.
+- **`default_nearest` docs match the code again** — the high-EVR
+  routing bypass is documented and its threshold is the named constant
+  `HIGH_EVR_ROUTING_BYPASS` (0.90) instead of an inline literal.
+- Sort comparators in `ann.rs` / `umap.rs` use `total_cmp` (matching
+  the wave-3 convention); tuner module docs updated for the Bayesian
+  TPE-lite strategy and the UMAP prefit/graph-cache contract.
+
 ### Added — corpus and bulk ingestion
 
 - **DBpedia 500K corpus** — `sphereql-corpus/data/dbpedia_500k.parquet` with

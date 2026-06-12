@@ -42,7 +42,7 @@ plus a `TuneReport`:
 ```rust
 let space = SearchSpace::default();       // sweeps PCA + Laplacian by default
 let metric = CompositeMetric::default_composite();
-let strategy = SearchStrategy::Random { budget: 24, seed: 0xCAFE };
+let strategy = SearchStrategy::Random { budget: 24, seed: 0xCAFE, max_wall_secs: None };
 
 let (tuned, report) =
     auto_tune(input.clone(), &space, &metric, strategy, &base).unwrap();
@@ -57,15 +57,22 @@ println!(
 Metrics implement the `QualityMetric` trait:
 
 - `TerritorialHealth` — mean territorial_factor across category pairs.
+- `BridgeDiversity` — fraction of distinct category pairs connected by at
+  least one `Genuine` bridge. Used by both default composites because it
+  varies meaningfully across projections.
 - `BridgeCoherence` — fraction of bridges classified `Genuine` versus
-  `OverlapArtifact` / `Weak`.
+  `OverlapArtifact` / `Weak`. Available standalone; excluded from the
+  default composites because it converges to ~0.50 under the
+  quantile-based classification floor.
 - `ClusterSilhouette` — silhouette score of the category assignment on
   S², remapped to `[0, 1]`.
 - `GraphModularity` — modularity of the category assignment on a
   k-NN graph over projected positions.
 - `CompositeMetric` — weight-normalized linear combination.
-  `default_composite()` and `connectivity_composite()` cover the common
-  cases.
+  `default_composite()` (30% bridge_diversity / 25% territorial_health /
+  25% cluster_silhouette / 20% graph_modularity) and
+  `connectivity_composite()` (40% graph_modularity / 35% bridge_diversity
+  / 25% territorial_health) cover the common cases.
 
 ## L2: `MetaModel`
 
@@ -138,25 +145,28 @@ want.
 ## Design notes
 
 - Projections are fit **once per distinct fit-affecting hyperparameter
-  tuple** inside `auto_tune` and reused across trials, so projection
-  fitting contributes only a one-time prefit cost per unique
-  (`ProjectionKind`, Laplacian params) combination.
+  tuple** inside `auto_tune` and reused across trials. PCA and Kernel
+  PCA key per kind; Laplacian keys on `(k_neighbors, active_threshold)`;
+  UMAP keys on `(n_neighbors, n_epochs, category_weight, min_dist)`,
+  and its kNN graph + PCA warm-start are additionally cached per
+  `n_neighbors` so epoch/weight/min_dist sweeps don't rebuild the graph
+  (`TuneReport::umap_graph_builds` reports the cache's effectiveness).
 - `SearchSpace` is kind-conditional: trials for `ProjectionKind::Pca`
-  don't iterate over Laplacian hyperparameters, and vice versa. The
-  grid cardinality reflects the union, not the product.
+  don't iterate over Laplacian or UMAP hyperparameters, and vice versa.
+  The grid cardinality reflects the union, not the product.
 - `CorpusFeatures::to_vec()` returns a fixed-order feature vector; the
   `category_separation_ratio` field is deliberately excluded because
   it's a derived ratio of two other features already in the vector.
 
 ## See also
 
-- [`examples/auto_tune.rs`](../sphereql/examples/auto_tune.rs) — a full
+- [`examples/auto_tune.rs`](../sphereql-examples/examples/auto_tune.rs) — a full
   sweep on either corpus.
-- [`examples/meta_learn.rs`](../sphereql/examples/meta_learn.rs) —
+- [`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) —
   cross-corpus tune → record → verify MetaModel prediction.
-- [`examples/meta_warm_start.rs`](../sphereql/examples/meta_warm_start.rs)
+- [`examples/meta_warm_start.rs`](../sphereql-examples/examples/meta_warm_start.rs)
   — recall a config, refine from it.
-- [`examples/meta_feedback.rs`](../sphereql/examples/meta_feedback.rs)
+- [`examples/meta_feedback.rs`](../sphereql-examples/examples/meta_feedback.rs)
   — L3 feedback blending in action.
 - [Empirical findings](empirical-findings.md) — PCA wins the built-in
   corpus, Laplacian wins the stress corpus. The metalearning framework

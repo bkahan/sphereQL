@@ -4,6 +4,8 @@
 //! and the category enrichment layer. Computed once at pipeline build time,
 //! then fed into bridge detection, edge weighting, and confidence scoring.
 
+use std::collections::HashMap;
+
 use sphereql_core::SphericalPoint;
 use sphereql_core::spatial::{
     CoverageReport, VoronoiCell, cap_exclusivity, cap_intersection_area, cap_solid_angle,
@@ -34,8 +36,10 @@ pub struct SpatialQuality {
     /// Voronoi cell for each category (area + neighbor indices).
     pub voronoi_cells: Vec<VoronoiCell>,
 
-    /// Pairwise cap intersection areas. Keyed by (min(i,j), max(i,j)).
-    pub pairwise_intersections: Vec<PairIntersection>,
+    /// Pairwise cap intersection areas in steradians, keyed by
+    /// `(min(i, j), max(i, j))`. Only pairs with measurable overlap
+    /// (> 1e-15 sr) are stored, keeping the map sparse.
+    pub pairwise_intersections: HashMap<(usize, usize), f64>,
 
     /// Coverage report: what fraction of S² is claimed by any category.
     pub coverage: CoverageReport,
@@ -51,26 +55,12 @@ pub struct SpatialQuality {
     pub bridge_quality_matrix: Vec<Vec<f64>>,
 }
 
-/// Cap intersection area between two categories on S².
-///
-/// Stored in [`SpatialQuality::pairwise_intersections`]; only pairs with
-/// measurable overlap (> 1e-15 sr) are kept to keep the list sparse.
-#[derive(Debug, Clone, Copy)]
-pub struct PairIntersection {
-    /// Lower of the two category indices (`min(i, j)`).
-    pub cat_a: usize,
-    /// Higher of the two category indices (`max(i, j)`).
-    pub cat_b: usize,
-    /// Overlap area of the two caps, in steradians.
-    pub area: f64,
-}
-
 impl SpatialQuality {
     /// Compute spatial quality from category centroids and angular spreads,
     /// using the legacy default Monte Carlo sample counts.
-    ///
-    /// Prefer [`Self::compute_with_config`] when you need to tune sample
-    /// counts or the EVR-adaptive bridge threshold formula.
+    #[deprecated(
+        note = "use compute_with_config; this uses PipelineConfig::default() sample counts"
+    )]
     pub fn compute(centroids: &[SphericalPoint], half_angles: &[f64], evr: f64) -> Self {
         Self::compute_with_config(centroids, half_angles, evr, &PipelineConfig::default())
     }
@@ -105,8 +95,7 @@ impl SpatialQuality {
 
         let voronoi_cells = spherical_voronoi(centroids, sc.voronoi_samples);
 
-        let mut pairwise_intersections =
-            Vec::with_capacity(if n >= 2 { n * (n - 1) / 2 } else { 0 });
+        let mut pairwise_intersections = HashMap::new();
         for i in 0..n {
             for j in (i + 1)..n {
                 let area = cap_intersection_area(
@@ -116,11 +105,7 @@ impl SpatialQuality {
                     half_angles[j],
                 );
                 if area > 1e-15 {
-                    pairwise_intersections.push(PairIntersection {
-                        cat_a: i,
-                        cat_b: j,
-                        area,
-                    });
+                    pairwise_intersections.insert((i, j), area);
                 }
             }
         }
@@ -196,15 +181,15 @@ impl SpatialQuality {
 
     /// Cap intersection area between two categories.
     pub fn intersection_area(&self, cat_a: usize, cat_b: usize) -> f64 {
-        let (lo, hi) = if cat_a < cat_b {
+        let key = if cat_a < cat_b {
             (cat_a, cat_b)
         } else {
             (cat_b, cat_a)
         };
         self.pairwise_intersections
-            .iter()
-            .find(|p| p.cat_a == lo && p.cat_b == hi)
-            .map_or(0.0, |p| p.area)
+            .get(&key)
+            .copied()
+            .unwrap_or(0.0)
     }
 }
 
@@ -217,6 +202,10 @@ mod tests {
         SphericalPoint::new_unchecked(1.0, theta, phi)
     }
 
+    fn compute(centroids: &[SphericalPoint], half_angles: &[f64], evr: f64) -> SpatialQuality {
+        SpatialQuality::compute_with_config(centroids, half_angles, evr, &PipelineConfig::default())
+    }
+
     #[test]
     fn spatial_quality_basic() {
         let centroids = vec![
@@ -225,7 +214,7 @@ mod tests {
             unit(FRAC_PI_2, FRAC_PI_2),
         ];
         let half_angles = vec![0.5, 0.5, 0.5];
-        let sq = SpatialQuality::compute(&centroids, &half_angles, 0.5);
+        let sq = compute(&centroids, &half_angles, 0.5);
 
         assert_eq!(sq.cap_areas.len(), 3);
         assert_eq!(sq.exclusivities.len(), 3);
@@ -239,8 +228,8 @@ mod tests {
         let centroids = vec![unit(0.0, FRAC_PI_2)];
         let half_angles = vec![0.5];
 
-        let sq_low = SpatialQuality::compute(&centroids, &half_angles, 0.19);
-        let sq_high = SpatialQuality::compute(&centroids, &half_angles, 0.80);
+        let sq_low = compute(&centroids, &half_angles, 0.19);
+        let sq_high = compute(&centroids, &half_angles, 0.80);
 
         assert!(
             sq_low.bridge_threshold > sq_high.bridge_threshold,
@@ -254,7 +243,7 @@ mod tests {
     fn territorial_factor_range() {
         let centroids = vec![unit(0.0, FRAC_PI_2), unit(PI, FRAC_PI_2)];
         let half_angles = vec![0.5, 0.5];
-        let sq = SpatialQuality::compute(&centroids, &half_angles, 0.5);
+        let sq = compute(&centroids, &half_angles, 0.5);
 
         let tf = sq.territorial_factor(0, 1);
         assert!(
@@ -271,7 +260,7 @@ mod tests {
             unit(PI, FRAC_PI_2),
         ];
         let half_angles = vec![0.3, 0.3, 0.3];
-        let sq = SpatialQuality::compute(&centroids, &half_angles, 0.5);
+        let sq = compute(&centroids, &half_angles, 0.5);
 
         assert!(
             sq.are_voronoi_neighbors(0, 1),
@@ -283,10 +272,26 @@ mod tests {
     fn exclusivities_bounded() {
         let centroids = vec![unit(0.0, FRAC_PI_2), unit(PI, FRAC_PI_2)];
         let half_angles = vec![0.3, 0.3];
-        let sq = SpatialQuality::compute(&centroids, &half_angles, 0.5);
+        let sq = compute(&centroids, &half_angles, 0.5);
 
         for &e in &sq.exclusivities {
             assert!((0.0..=1.0).contains(&e), "exclusivity out of range: {e}");
         }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_compute_matches_default_config() {
+        let centroids = vec![unit(0.0, FRAC_PI_2), unit(PI, FRAC_PI_2)];
+        let half_angles = vec![0.5, 0.5];
+        let legacy = SpatialQuality::compute(&centroids, &half_angles, 0.5);
+        let configured = compute(&centroids, &half_angles, 0.5);
+        assert_eq!(legacy.cap_areas, configured.cap_areas);
+        assert_eq!(legacy.exclusivities, configured.exclusivities);
+        assert_eq!(
+            legacy.pairwise_intersections,
+            configured.pairwise_intersections
+        );
+        assert!((legacy.bridge_threshold - configured.bridge_threshold).abs() < 1e-12);
     }
 }

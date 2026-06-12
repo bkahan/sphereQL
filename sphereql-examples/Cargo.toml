@@ -1,0 +1,36 @@
+[package]
+name = "sphereql-examples"
+description = "Runnable examples for the sphereQL workspace — not published"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+# Optional bulk-source features forwarded to sphereql-corpus. The
+# `bulk_ingest` example uses `#[cfg(feature = "bulk-dump")]` etc., so
+# these features must exist on the *examples* crate as well — that's
+# the crate the example actually lives in.
+bulk-dump = ["sphereql-corpus/bulk-dump"]
+bulk-dbpedia = ["sphereql-corpus/bulk-dbpedia"]
+
+[dependencies]
+# Umbrella crate covers core/index/layout/embed/graphql/vectordb for the
+# examples that originally lived under `sphereql/examples/`. The direct
+# sub-crate paths cover the examples that came from each crate's own
+# `examples/` directory and import sub-crates by name.
+sphereql = { path = "../sphereql", features = ["full"] }
+sphereql-core = { path = "../sphereql-core" }
+sphereql-corpus = { path = "../sphereql-corpus" }
+sphereql-embed = { path = "../sphereql-embed" }
+sphereql-lingua = { path = "../sphereql-lingua" }
+
+# Used by full_e2e only — kept here so we don't pollute sphereql's
+# dev-deps now that examples have left.
+dialoguer = "0.11"
+indicatif = "0.17"
+
+# benchmark + graphql_server use #[tokio::main].
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+serde_json = "1"

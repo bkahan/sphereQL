@@ -21,7 +21,7 @@
 //! verified at both scales.
 //!
 //! Run with:
-//!   cargo run --example meta_warm_start --features embed --release
+//!   cargo run -p sphereql-examples --example meta_warm_start --release
 
 use sphereql::embed::{
     CompositeMetric, CorpusFeatures, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
@@ -97,6 +97,10 @@ fn run_demo(corpus: &[Concept]) {
         projection_kinds: vec![ProjectionKind::Pca],
         laplacian_k_neighbors: vec![15],
         laplacian_active_threshold: vec![0.05],
+        umap_n_neighbors: vec![15],
+        umap_n_epochs: vec![200],
+        umap_category_weight: vec![1.5],
+        umap_min_dist: vec![0.1],
         num_domain_groups: vec![expert_cfg.routing.num_domain_groups], // pin
         low_evr_threshold: vec![expert_cfg.routing.low_evr_threshold], // pin
         overlap_artifact_territorial: vec![0.2, 0.3, 0.4],             // the only tuned axis
@@ -119,6 +123,7 @@ fn run_demo(corpus: &[Concept]) {
         SearchStrategy::Random {
             budget: BUDGET,
             seed: 0x00C0_FFEE,
+            max_wall_secs: None,
         },
     )
     .expect("warm-start tune failed");
@@ -157,6 +162,7 @@ fn mock_report(cfg: PipelineConfig, score: f64, metric_name: &str) -> sphereql::
         best_config: cfg,
         trials: Vec::new(),
         failures: Vec::new(),
+        umap_graph_builds: 0,
     }
 }
 

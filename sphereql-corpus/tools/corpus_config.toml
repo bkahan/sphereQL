@@ -77,7 +77,7 @@ w_curvature = 0.20
 w_balance = 0.20
 
 # Phase 6: self-tuning loop parameters. The Rust binary
-# `cargo run -p sphereql-embed --example corpus_self_tune` reads the
+# `cargo run -p sphereql-examples --example corpus_self_tune` reads the
 # canonical corpus, runs `run_self_tune` with these defaults, and writes
 # back to `*.tuned.parquet` (or in-place with --commit --commit-confirm).
 #
@@ -112,7 +112,7 @@ min_quality_to_keep = 0.15
 min_concepts_per_category = 30
 
 # Phase 7: streaming bulk ingest. The Rust binary
-# `cargo run -p sphereql-corpus --example bulk_ingest` reads its CLI
+# `cargo run -p sphereql-examples --example bulk_ingest` reads its CLI
 # args from this table via `tools/run_bulk_ingest.py`, then streams a
 # BulkSource through HashedClaimAxisExtractor and writes a Parquet
 # corpus at `target_size`. Defaults target ~500K Wikidata items; switch

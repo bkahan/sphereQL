@@ -41,8 +41,8 @@ use sphereql_embed::pipeline::{
 };
 use sphereql_embed::projection::Projection;
 use sphereql_embed::quality_metric::{
-    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
-    TerritorialHealth,
+    BridgeCoherence, BridgeDiversity, ClusterSilhouette, CompositeMetric, GraphModularity,
+    QualityMetric, TerritorialHealth,
 };
 use sphereql_embed::tuner::{SearchSpace, SearchStrategy, TuneReport, auto_tune as rust_auto_tune};
 use sphereql_embed::types::{Embedding, RadialStrategy};
@@ -254,7 +254,9 @@ impl Pipeline {
 
     /// Export all projected points as JSON.
     pub fn export_json(&self) -> Result<String, JsError> {
-        Ok(self.inner.to_json())
+        self.inner
+            .to_json()
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// PCA explained variance ratio.
@@ -874,12 +876,17 @@ fn resolve_strategy_wasm(
 ) -> Result<SearchStrategy, JsError> {
     match kind {
         "grid" => Ok(SearchStrategy::Grid),
-        "random" => Ok(SearchStrategy::Random { budget, seed }),
+        "random" => Ok(SearchStrategy::Random {
+            budget,
+            seed,
+            max_wall_secs: None,
+        }),
         "bayesian" => Ok(SearchStrategy::Bayesian {
             budget,
             warmup,
             gamma,
             seed,
+            max_wall_secs: None,
         }),
         other => Err(JsError::new(&format!(
             "unknown strategy {other:?}; expected grid, random, or bayesian"
@@ -896,14 +903,16 @@ fn resolve_metric(name: &str) -> Result<Box<dyn QualityMetric>, JsError> {
     match name {
         "territorial_health" => Ok(Box::new(TerritorialHealth)),
         "bridge_coherence" => Ok(Box::new(BridgeCoherence)),
+        "bridge_diversity" => Ok(Box::new(BridgeDiversity)),
         "cluster_silhouette" => Ok(Box::new(ClusterSilhouette)),
         "graph_modularity" => Ok(Box::new(GraphModularity::default())),
         "default_composite" => Ok(Box::new(CompositeMetric::default_composite())),
         "connectivity_composite" => Ok(Box::new(CompositeMetric::connectivity_composite())),
         other => Err(JsError::new(&format!(
             "unknown metric {other:?}; expected one of: \
-             territorial_health, bridge_coherence, cluster_silhouette, \
-             graph_modularity, default_composite, connectivity_composite"
+             territorial_health, bridge_coherence, bridge_diversity, \
+             cluster_silhouette, graph_modularity, default_composite, \
+             connectivity_composite"
         ))),
     }
 }

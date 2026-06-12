@@ -91,31 +91,30 @@ pub struct PcaProjection {
     dim: usize,
     radial: RadialStrategy,
     volumetric: bool,
-    /// Top-3 eigenvalues from PCA (descending). Used to compute per-point certainty.
+    /// Top-3 eigenvalues from PCA (descending). Summed against
+    /// `total_variance` in [`Self::explained_variance_ratio`].
     eigenvalues: [f64; 3],
     /// Total variance across all dimensions. eigenvalues[0..3].sum() / total_variance
     /// gives the global explained variance ratio.
     total_variance: f64,
 }
 
+/// Minimum embedding dimensionality required by PCA fits.
+const PCA_MIN_DIM: usize = 3;
+
 impl PcaProjection {
-    /// Fit the top-3 principal components on `embeddings`.
-    ///
-    /// Returns [`ProjectionError::EmptyCorpus`] if the slice is empty,
-    /// [`ProjectionError::DimensionTooLow`] if `dim < 3`, and
-    /// [`ProjectionError::InconsistentDimension`] if any row's
-    /// dimensionality disagrees with the first. Previously these paths
-    /// panicked via `assert!`, which surfaced as a `PanicException` in
-    /// Python / WASM bindings.
-    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
+    /// Validate that the corpus is non-empty, every row shares the same
+    /// dimensionality, and that dimensionality is at least
+    /// [`PCA_MIN_DIM`]. Returns the shared dimension on success.
+    fn validate_embeddings(embeddings: &[Embedding]) -> Result<usize, ProjectionError> {
         if embeddings.is_empty() {
             return Err(ProjectionError::EmptyCorpus);
         }
         let dim = embeddings[0].dimension();
-        if dim < 3 {
+        if dim < PCA_MIN_DIM {
             return Err(ProjectionError::DimensionTooLow {
                 got: dim,
-                required: 3,
+                required: PCA_MIN_DIM,
             });
         }
         for (i, e) in embeddings.iter().enumerate() {
@@ -127,6 +126,50 @@ impl PcaProjection {
                 });
             }
         }
+        Ok(dim)
+    }
+
+    /// Assemble a `PcaProjection` from the eigendecomposition outputs.
+    /// Padding shorter eigenvalue/component lists with zeros keeps the
+    /// fixed-arity arrays well-defined when [`top_k_eigenvectors`]
+    /// returns fewer than 3 components.
+    fn from_eigendecomp(
+        components: Vec<Vec<f64>>,
+        eigenvalues: Vec<f64>,
+        mean: Vec<f64>,
+        dim: usize,
+        radial: RadialStrategy,
+        total_variance: f64,
+    ) -> Self {
+        Self {
+            components: [
+                components[0].clone(),
+                components[1].clone(),
+                components[2].clone(),
+            ],
+            mean,
+            dim,
+            radial,
+            volumetric: false,
+            eigenvalues: [
+                eigenvalues.first().copied().unwrap_or(0.0),
+                eigenvalues.get(1).copied().unwrap_or(0.0),
+                eigenvalues.get(2).copied().unwrap_or(0.0),
+            ],
+            total_variance,
+        }
+    }
+
+    /// Fit the top-3 principal components on `embeddings`.
+    ///
+    /// Returns [`ProjectionError::EmptyCorpus`] if the slice is empty,
+    /// [`ProjectionError::DimensionTooLow`] if `dim < 3`, and
+    /// [`ProjectionError::InconsistentDimension`] if any row's
+    /// dimensionality disagrees with the first. Previously these paths
+    /// panicked via `assert!`, which surfaced as a `PanicException` in
+    /// Python / WASM bindings.
+    pub fn fit(embeddings: &[Embedding], radial: RadialStrategy) -> Result<Self, ProjectionError> {
+        let dim = Self::validate_embeddings(embeddings)?;
 
         let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
         let n = normalized.len();
@@ -160,27 +203,110 @@ impl PcaProjection {
             .sum::<f64>()
             / centered.len() as f64;
 
-        Ok(Self {
-            components: [
-                components[0].clone(),
-                components[1].clone(),
-                components[2].clone(),
-            ],
+        Ok(Self::from_eigendecomp(
+            components,
+            eigenvalues,
             mean,
             dim,
             radial,
-            volumetric: false,
-            eigenvalues: [
-                eigenvalues.first().copied().unwrap_or(0.0),
-                eigenvalues.get(1).copied().unwrap_or(0.0),
-                eigenvalues.get(2).copied().unwrap_or(0.0),
-            ],
             total_variance,
-        })
+        ))
     }
 
     pub fn fit_default(embeddings: &[Embedding]) -> Result<Self, ProjectionError> {
         Self::fit(embeddings, RadialStrategy::default())
+    }
+
+    /// Fit the top-3 principal components with per-sample weights.
+    ///
+    /// Weighted PCA finds the top eigenvectors of the weighted
+    /// covariance matrix `Σ wᵢ (xᵢ − μ_w)(xᵢ − μ_w)ᵀ / Σ wᵢ`, where
+    /// `μ_w = Σ wᵢ xᵢ / Σ wᵢ`. With uniform weights this collapses to
+    /// the same answer as [`Self::fit`].
+    ///
+    /// The intended use is rebalancing covariance estimates over
+    /// imbalanced corpora. Setting `wᵢ = 1 / sqrt(|category(i)|)` gives
+    /// a category of size `m` total covariance mass `m · (1/√m) = √m`,
+    /// compressing category influence from linear to square-root in its
+    /// size. For *exactly* equal per-category mass use
+    /// `wᵢ = 1 / |category(i)|`; the square-root compromise keeps large
+    /// categories' internal variance structure from being washed out
+    /// entirely while still letting small categories register.
+    ///
+    /// Returns the same error variants as [`Self::fit`], plus
+    /// [`ProjectionError::SliceLengthMismatch`] when `weights.len() !=
+    /// embeddings.len()`. Negative weights are treated as zero.
+    pub fn fit_weighted(
+        embeddings: &[Embedding],
+        weights: &[f64],
+        radial: RadialStrategy,
+    ) -> Result<Self, ProjectionError> {
+        // SliceLengthMismatch is the only error specific to the weighted
+        // path; the rest is shared with `fit`.
+        if weights.len() != embeddings.len() {
+            return Err(ProjectionError::SliceLengthMismatch {
+                expected: embeddings.len(),
+                got: weights.len(),
+            });
+        }
+        let dim = Self::validate_embeddings(embeddings)?;
+
+        let clamped: Vec<f64> = weights.iter().map(|&w| w.max(0.0)).collect();
+        let w_sum: f64 = clamped.iter().sum();
+        if w_sum < f64::EPSILON {
+            // All weights zero or negative — fall back to unweighted fit
+            // rather than producing a degenerate covariance.
+            return Self::fit(embeddings, radial);
+        }
+
+        let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
+
+        // Weighted mean: μ_w = Σ wᵢ xᵢ / Σ wᵢ.
+        let mut mean = vec![0.0; dim];
+        for (v, &w) in normalized.iter().zip(clamped.iter()) {
+            for (i, &val) in v.iter().enumerate() {
+                mean[i] += w * val;
+            }
+        }
+        for m in &mut mean {
+            *m /= w_sum;
+        }
+
+        // Each row scaled by sqrt(wᵢ) so that XᵀX equals the weighted
+        // covariance (times Σwᵢ). Eigenvectors are invariant under the
+        // overall scalar, so power iteration on these scaled rows yields
+        // the weighted principal components.
+        let scaled: Vec<Vec<f64>> = normalized
+            .iter()
+            .zip(clamped.iter())
+            .map(|(v, &w)| {
+                let s = w.sqrt();
+                v.iter()
+                    .zip(mean.iter())
+                    .map(|(&val, &m)| s * (val - m))
+                    .collect()
+            })
+            .collect();
+
+        let (components, eigenvalues) = top_k_eigenvectors(&scaled, 3, dim);
+
+        // total_variance uses the same /N normalization as the
+        // eigenvalues coming back from top_k_eigenvectors, so the EVR
+        // ratio is well-defined regardless of weight scale.
+        let total_variance: f64 = scaled
+            .iter()
+            .map(|row| row.iter().map(|x| x * x).sum::<f64>())
+            .sum::<f64>()
+            / scaled.len() as f64;
+
+        Ok(Self::from_eigendecomp(
+            components,
+            eigenvalues,
+            mean,
+            dim,
+            radial,
+            total_variance,
+        ))
     }
 
     /// Enable volumetric mode: r comes from the PCA projection magnitude
@@ -689,6 +815,89 @@ mod tests {
         let corpus = corpus_10d();
         let pca = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
         let _ = pca.project(&emb(&[1.0, 2.0, 3.0]));
+    }
+
+    // --- Weighted PCA tests ---
+
+    #[test]
+    fn fit_weighted_uniform_weights_matches_naive_fit() {
+        let corpus = corpus_10d();
+        let uniform: Vec<f64> = vec![1.0; corpus.len()];
+
+        let plain = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
+        let weighted =
+            PcaProjection::fit_weighted(&corpus, &uniform, RadialStrategy::Fixed(1.0)).unwrap();
+
+        // Power iteration converges to ±eigenvector with the same sign
+        // structure for identical input, so we compare projection
+        // outputs (sign-invariant via angular distance) rather than the
+        // raw components.
+        for e in &corpus {
+            let a = plain.project(e);
+            let b = weighted.project(e);
+            assert!(
+                angular_distance(&a, &b) < 1e-9,
+                "uniform-weight fit should match naive fit"
+            );
+        }
+        assert!(
+            (plain.explained_variance_ratio() - weighted.explained_variance_ratio()).abs() < 1e-9
+        );
+    }
+
+    #[test]
+    fn fit_weighted_balances_imbalanced_corpus() {
+        // 20 copies of an x-axis pattern + 1 sample on the y axis. With
+        // unit weights the y sample is washed out; with weight
+        // 1/sqrt(count) per category, the singleton y is amplified
+        // enough that the second component picks up its direction.
+        let mut corpus: Vec<Embedding> = Vec::new();
+        let mut weights: Vec<f64> = Vec::new();
+        for i in 0..20 {
+            let mut v = vec![0.0; 8];
+            v[0] = 1.0 + (i as f64) * 0.001;
+            v[1] = 0.01;
+            corpus.push(emb(&v));
+            weights.push(1.0 / (20f64).sqrt());
+        }
+        // Singleton: y-axis
+        corpus.push(emb(&[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
+        weights.push(1.0);
+
+        let weighted =
+            PcaProjection::fit_weighted(&corpus, &weights, RadialStrategy::Fixed(1.0)).unwrap();
+        // EVR should be meaningful (well above zero); the singleton's
+        // direction is preserved in the principal subspace.
+        assert!(
+            weighted.explained_variance_ratio() > 0.5,
+            "weighted EVR should be > 0.5, got {}",
+            weighted.explained_variance_ratio()
+        );
+    }
+
+    #[test]
+    fn fit_weighted_rejects_length_mismatch() {
+        let corpus = corpus_10d();
+        let bad_weights = vec![1.0; corpus.len() - 1];
+        let result = PcaProjection::fit_weighted(&corpus, &bad_weights, RadialStrategy::Fixed(1.0));
+        assert!(matches!(
+            result,
+            Err(ProjectionError::SliceLengthMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn fit_weighted_zero_weights_falls_back_to_unweighted() {
+        let corpus = corpus_10d();
+        let zeros = vec![0.0; corpus.len()];
+        let weighted =
+            PcaProjection::fit_weighted(&corpus, &zeros, RadialStrategy::Fixed(1.0)).unwrap();
+        let plain = PcaProjection::fit(&corpus, RadialStrategy::Fixed(1.0)).unwrap();
+        for e in &corpus {
+            let a = plain.project(e);
+            let b = weighted.project(e);
+            assert!(angular_distance(&a, &b) < 1e-9);
+        }
     }
 
     // --- Random projection tests ---

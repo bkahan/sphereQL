@@ -42,17 +42,28 @@ development priority. For the full results see
 Per-trial cost in `auto_tune` is dominated by spatial-quality Monte
 Carlo sampling, bridge graph construction, and category layer rebuild.
 The projection itself is **fit once per distinct fit-affecting
-hyperparameter tuple** and reused across trials, so projection fitting
-contributes only a one-time prefit cost per unique (`ProjectionKind`,
-Laplacian params) combination.
+hyperparameter tuple** and reused across trials: PCA and Kernel PCA
+key per kind, Laplacian per `(k_neighbors, active_threshold)`, UMAP
+per `(n_neighbors, n_epochs, category_weight, min_dist)` — and UMAP's kNN
+graph + PCA warm-start are additionally cached per `n_neighbors`, so
+epoch/weight sweeps only pay for the Adam optimizer
+(`TuneReport::umap_graph_builds` reports how often the cache fired).
+
+`SearchStrategy::Random` and `::Bayesian` accept `max_wall_secs` to
+bound a run: the tuner stops *proposing* new trials once the cap is
+exceeded, but a trial already in flight runs to completion — it is not
+a hard timeout. At 100k+ items, prefer the wall-time cap over a large
+trial budget.
 
 At n=775 (built-in corpus), a random search of budget 24 runs in ~3
 seconds release mode.
 
 ## Projection fit costs
 
-PCA fits in milliseconds at n ≤ 10k — its cost is dominated by a
-single SVD on the d × n embedding matrix.
+PCA fits in milliseconds at n ≤ 10k — its cost is power iteration with
+deflation for the top-3 eigenvectors, computed as Xᵀ(Xv) so each
+iteration is O(N · d) without materializing the d × d covariance.
+The category-weighted variant adds one O(N) weight pass.
 
 **Kernel PCA is materially slower.** It builds an n × n Gram matrix
 and runs eigendecomposition on it, both O(n²)–O(n³). On the 10k-point
@@ -68,3 +79,12 @@ Laplacian eigenmap fitting is between PCA and KPCA — graph
 construction is O(n · k) and eigendecomposition is O(n²) but on a
 sparse Laplacian, so practical cost is closer to PCA than KPCA at
 mid-size n.
+
+UMAP-on-sphere fit splits into two phases: kNN-graph construction
+(brute force below 2000 items; RP-forest ANN above, O(N · d · log N)
+build) plus PCA warm-start, then the Adam optimizer at
+O(N · k · epochs). Inside the tuner the first phase is cached per
+`n_neighbors`, so a sweep over `n_epochs × category_weight × min_dist`
+pays the graph cost once. The same RP-forest backs `GraphModularity`'s k-NN
+edge construction at ≥ 2000 items, keeping composite-metric scoring
+feasible at 100k–500k items.

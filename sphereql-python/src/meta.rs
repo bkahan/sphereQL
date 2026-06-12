@@ -15,8 +15,8 @@ use sphereql_embed::meta_model::{
 };
 use sphereql_embed::pipeline::PipelineInput;
 use sphereql_embed::quality_metric::{
-    BridgeCoherence, ClusterSilhouette, CompositeMetric, GraphModularity, QualityMetric,
-    TerritorialHealth,
+    BridgeCoherence, BridgeDiversity, ClusterSilhouette, CompositeMetric, GraphModularity,
+    QualityMetric, TerritorialHealth,
 };
 use sphereql_embed::tuner::{SearchSpace, SearchStrategy, auto_tune as rust_auto_tune};
 
@@ -38,14 +38,16 @@ fn resolve_metric(name: &str) -> PyResult<Box<dyn QualityMetric + Send + Sync>> 
     match name {
         "territorial_health" => Ok(Box::new(TerritorialHealth)),
         "bridge_coherence" => Ok(Box::new(BridgeCoherence)),
+        "bridge_diversity" => Ok(Box::new(BridgeDiversity)),
         "cluster_silhouette" => Ok(Box::new(ClusterSilhouette)),
         "graph_modularity" => Ok(Box::new(GraphModularity::default())),
         "default_composite" => Ok(Box::new(CompositeMetric::default_composite())),
         "connectivity_composite" => Ok(Box::new(CompositeMetric::connectivity_composite())),
         other => Err(PyValueError::new_err(format!(
             "unknown metric {other:?}; expected one of: \
-             territorial_health, bridge_coherence, cluster_silhouette, \
-             graph_modularity, default_composite, connectivity_composite"
+             territorial_health, bridge_coherence, bridge_diversity, \
+             cluster_silhouette, graph_modularity, default_composite, \
+             connectivity_composite"
         ))),
     }
 }
@@ -59,12 +61,17 @@ fn resolve_strategy(
 ) -> PyResult<SearchStrategy> {
     match kind {
         "grid" => Ok(SearchStrategy::Grid),
-        "random" => Ok(SearchStrategy::Random { budget, seed }),
+        "random" => Ok(SearchStrategy::Random {
+            budget,
+            seed,
+            max_wall_secs: None,
+        }),
         "bayesian" => Ok(SearchStrategy::Bayesian {
             budget,
             warmup,
             gamma,
             seed,
+            max_wall_secs: None,
         }),
         other => Err(PyValueError::new_err(format!(
             "unknown strategy {other:?}; expected one of: grid, random, bayesian"
@@ -79,8 +86,8 @@ fn resolve_strategy(
 ///     categories: Category label per embedding.
 ///     embeddings: List of embedding vectors.
 ///     metric: Quality metric name. One of `territorial_health`,
-///         `bridge_coherence`, `cluster_silhouette`, `graph_modularity`,
-///         `default_composite`, `connectivity_composite`.
+///         `bridge_coherence`, `bridge_diversity`, `cluster_silhouette`,
+///         `graph_modularity`, `default_composite`, `connectivity_composite`.
 ///         Default: `default_composite`.
 ///     strategy: One of `grid`, `random`, `bayesian`. Default: `random`.
 ///     budget: Number of trials for `random` / `bayesian`. Default: 24.

@@ -59,6 +59,13 @@ impl QualitySignal {
     }
 
     /// Simplified: no void distance available (e.g., raw k-NN results).
+    ///
+    /// With no void-distance signal, certainty stands in for gap
+    /// proximity: `√certainty` is a soft penalty (gentler than the
+    /// certainty factor itself), making `combined` effectively
+    /// `evr × certainty^1.5`. The 0.01 floor keeps a zero-certainty
+    /// point from zeroing out `combined` entirely, so EVR and
+    /// certainty differences still order results below the floor.
     pub fn from_certainty(evr: f64, certainty: f64) -> Self {
         let gap_confidence = certainty.sqrt().max(0.01);
         let combined = evr * certainty * gap_confidence;
