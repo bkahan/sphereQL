@@ -501,3 +501,35 @@ reason = "Rust trait; concrete projections (PcaProjection, LaplacianEigenmapProj
 [[exempt]]
 name = "QualityMetric"
 reason = "Rust trait; concrete impls (CompositeMetric, TerritorialHealth, etc.) are bound via metric-name string in auto_tune"
+
+# ── UMAP / ANN scaling internals (projection-overhaul) ──
+
+[[exempt]]
+name = "AnnConfig"
+reason = "internal ANN (RP-forest) knobs for large-corpus UMAP kNN; not user-facing"
+
+[[exempt]]
+name = "AnnIndex"
+reason = "internal approximate-nearest-neighbor index used to build the UMAP kNN graph"
+
+[[exempt]]
+name = "UmapGraph"
+reason = "internal fuzzy-simplicial kNN graph cache inside UmapSphereProjection; reached via UmapConfig dict"
+
+[[exempt]]
+name = "fit_umap_from_graph"
+reason = "internal UMAP fit helper; callers use Pipeline constructors / projection_kind=\"umap_sphere\""
+
+# ── Quality metric + bridge-relation additions ──
+
+[[exempt]]
+name = "BridgeDiversity"
+reason = "QualityMetric impl; selected by metric-name string \"bridge_diversity\" in auto_tune"
+
+[[exempt]]
+name = "RelationType"
+reason = "internal enum annotated on BridgeItem.relation by annotate_bridge_relations; not yet surfaced at the binding boundary"
+
+[[exempt]]
+name = "migrate_legacy_array_to_jsonl"
+reason = "internal one-shot feedback-store migration helper (legacy JSON array → JSONL); not user-facing"

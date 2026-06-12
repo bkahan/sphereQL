@@ -642,11 +642,8 @@ impl CategoryLayer {
             let tgt_name = &self.summaries[*tgt_cat].name;
             for bridge in bridges.iter_mut() {
                 if bridge.item_index < labels.len() {
-                    bridge.relation = infer_relation(
-                        &labels[bridge.item_index],
-                        src_name,
-                        tgt_name,
-                    );
+                    bridge.relation =
+                        infer_relation(&labels[bridge.item_index], src_name, tgt_name);
                 }
             }
         }
@@ -2195,10 +2192,7 @@ mod tests {
 
     #[test]
     fn infer_relation_none() {
-        assert_eq!(
-            infer_relation("Quantum computing", "physics", "cs"),
-            None
-        );
+        assert_eq!(infer_relation("Quantum computing", "physics", "cs"), None);
     }
 
     #[test]
