@@ -32,6 +32,24 @@ the PCA-vs-Laplacian columns:
   because the 2 authored axes still carry most of the variance, and UMAP
   edges it out (0.6513 / 0.6100).
 
+> **Laplacian is fragile, not uniformly bad, on the stress corpus.** The
+> 0.0752 above is `auto_tune`'s *best* Laplacian trial under its three-way
+> search (`[Pca, LaplacianEigenmap, UmapSphere]`, budget 24), but
+> Laplacian's score here is bimodal in `laplacian_active_threshold`: at
+> `0.10` the 0.2-amplitude noise is filtered enough that the 2 authored
+> axes dominate and Laplacian *recovers* the signature (~0.68), while at
+> `0.03`/`0.05` it builds the affinity graph on noise and collapses
+> (~0.07). `examples/meta_learn.rs` sweeps the same corpus under the plain
+> `SearchSpace::default()` (`[Pca, LaplacianEigenmap]`, no UMAP, budget 12)
+> and its random draws land on the `0.10` region, so it reports a *tuned*
+> Laplacian winning at ~0.68. Both runs are correct for their own search
+> settings — adding `UmapSphere` shifts the random stream so `auto_tune`'s
+> Laplacian trials only hit the fragile low-threshold region. The
+> takeaway: a well-tuned Laplacian is competitive on this regime (~0.68 vs
+> PCA ~0.64), but most of its hyperparameter space collapses, so a
+> budget-limited search that doesn't sample `active_threshold = 0.10`
+> misses the good configuration.
+
 This per-corpus, per-metric variation is the whole motivation for the
 auto-tuner + meta-model layer — no single projection is right, so the
 pipeline picks one per corpus.

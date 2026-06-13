@@ -48,7 +48,7 @@ additive.
 
 ## Status
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`. Pre-1.0:
+Part of the sphereQL workspace, currently `0.3.0`. Pre-1.0:
 expect breaking changes between minor versions.
 
 See the [main repository](https://github.com/bkahan/sphereQL) for full

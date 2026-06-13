@@ -55,7 +55,7 @@ lingua`; the default PyPI wheel does not include it yet).
 
 ## Status
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`. Pre-1.0:
+Part of the sphereQL workspace, currently `0.3.0`. Pre-1.0:
 expect breaking changes between minor versions.
 
 ## Documentation

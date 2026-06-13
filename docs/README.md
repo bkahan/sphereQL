@@ -42,7 +42,7 @@ topic lives here.
 - [Examples](examples.md) — catalog of runnable examples across Rust, Python,
   and WASM.
 - [Testing](testing.md) — running tests locally; CI pipeline.
-- [Project status](project-status.md) — alpha surface, known limitations,
+- [Project status](project-status.md) — release status, known limitations,
   roadmap.
 - [Benchmark analysis](benchmark-analysis.md) — annotated results on a
   10k-point search benchmark.

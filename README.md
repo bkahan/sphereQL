@@ -75,7 +75,7 @@ or pin it in `Cargo.toml`:
 
 ```toml
 [dependencies]
-sphereql = { version = "0.2.0-alpha", features = ["full"] }
+sphereql = { version = "0.3.0", features = ["full"] }
 ```
 
 ```bash
@@ -193,7 +193,7 @@ Full dependency graph and crate-by-crate description in
 
 ## Project status
 
-sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
+sphereQL is at **v0.3.0**. The core API is functional and covered
 by 850+ Rust tests plus 200+ Python binding tests, but may change
 before 1.0. Known limitations and roadmap
 are in [project-status.md](docs/project-status.md).

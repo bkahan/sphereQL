@@ -1,9 +1,10 @@
 # Project status
 
-sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
+sphereQL is at **v0.3.0**. The core API is functional and covered
 by 850+ Rust tests plus 200+ pytest tests on the Python bindings, but
-may change before 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the
-v0.1 → v0.2 diff and the unreleased UMAP / ML-framework audit waves.
+may change before 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the full
+v0.3.0 changes, including the UMAP projection overhaul and the
+auto-tuner / meta-model framework.
 
 ## Bindings status
 
@@ -61,23 +62,45 @@ descriptive error until a real embedder is plugged in).
 ## Known limitations
 
 - **Search precision degrades at higher k.** The 384-d to 3-d projection
-  is inherently lossy (~2–5% explained variance). Precision at k=1 is
-  perfect; at k=5 it drops to ~20%. Mitigations available today:
+  is inherently lossy. Precision at k=1 is perfect; at k=5 it drops to
+  ~20%. How that loss is *measured* depends on the projection family —
+  there is no single "EVR" lens. Each family reports one quality scalar in
+  `[0, 1]` (the shared `explained_variance_ratio()` accessor), but the
+  number means a different thing per family; see the
+  [per-family quality-metric table](projections.md#projection-quality-scores-per-family):
+    - **PCA** reports a classical explained-variance ratio — and that is
+      where the familiar "~2–5% EVR for transformer embeddings at 3
+      dimensions" figure comes from. That low-EVR story is **PCA-specific**.
+    - **Kernel PCA** reports a kernel-space EVR (variance captured in RBF
+      feature space).
+    - **Laplacian eigenmap** reports a connectivity ratio (mean |μ| of the
+      three retained eigenvalues) — a community-structure signal, not a
+      variance fraction.
+    - **UMAP-on-sphere** reports kNN recall (trustworthiness-style
+      neighborhood preservation), not a variance ratio at all.
+
+  On large/sparse corpora the defaults are UMAP or Laplacian, not PCA, so
+  the relevant quality signal there is recall or connectivity — "low EVR"
+  is the wrong frame for those regimes. The scalars are not comparable
+  across families (a PCA EVR and a UMAP recall live on different scales),
+  but they feed the same downstream thresholds. Mitigations available
+  today:
     - Hybrid search (angular recall + cosine re-ranking) for production
       precision.
     - `pipeline.hierarchical_nearest(embedding, k)` falls back to
-      domain-group routing when the fitted EVR is below
-      `RoutingConfig::low_evr_threshold`.
+      domain-group routing when the fitted quality scalar is below
+      `RoutingConfig::low_evr_threshold` — the threshold name keeps the
+      `evr` token for back-compat, but it gates on whichever family's
+      scalar is in play, not on PCA EVR specifically.
     - `ProjectionKind::LaplacianEigenmap` via `auto_tune` often
       preserves more neighbor structure than PCA on sparse/noisy
       corpora (see [empirical findings](empirical-findings.md)), and
       `ProjectionKind::UmapSphere` (ANN-backed, category-supervised,
       tunable `min_dist` via the `umap_min_dist` tuner axis) is the
       tunable option for the 10k–100k range. Training items keep their
-      exact Adam-optimized positions (no kNN re-derivation), UMAP
-      quality is scored as kNN recall (trustworthiness-style
-      neighborhood preservation) rather than an EVR proxy — old-proxy
-      tuner records are not score-comparable — and the opt-in
+      exact Adam-optimized positions (no kNN re-derivation); UMAP
+      quality is scored as kNN recall rather than an EVR proxy — so
+      old-proxy tuner records are not score-comparable — and the opt-in
       `warm_start_anchor` keeps disconnected kNN components anchored
       on sparse corpora.
 
@@ -114,16 +137,18 @@ internal helpers, layout-crate internals, foreign-trait objects).
 The `sphereql-corpus/data/` directory contains bulk-ingested parquet corpora
 built by the `tools/bulk_ingest` pipeline:
 
-- **DBpedia 500K** — `dbpedia_500k.parquet` with clustered and pre-tuned
-  variants; produced from the DBpedia TTL dump via `DBpediaTtlSource`.
+- **DBpedia 500K** — `dbpedia_500k.parquet` with a clustered variant
+  (`dbpedia_500k.clustered.parquet`); produced from the DBpedia TTL dump via
+  `DBpediaTtlSource`.
 - **Wikidata 50K** — `wikidata_50k.parquet` with checkpoint-resume support.
 
-Each parquet file embeds the auto-tuned `PipelineConfig` in its metadata so
-consumers can reconstruct a pre-tuned pipeline without rerunning `auto_tune`.
-The bulk pipeline runs: download → parse → embed → cluster → auto-tune →
-validate → write. A `run_self_tune` pass gates each corpus on a minimum
-`QualityMetric` score before it is committed; it validates its config up
-front and returns `Result` instead of silently zeroing quality on
+The committed corpora are the raw and clustered parquets. The bulk pipeline
+runs: download → parse → embed → cluster → validate → write. An optional
+self-tune pass (`run_self_tune`) reweights and prunes a clustered corpus into
+a local `*.tuned.parquet` — that artifact is gitignored and never shipped, so
+in-repo users regenerate it on demand rather than depending on a committed
+copy. The pass gates on a minimum `QualityMetric` score, validates its config
+up front, and returns `Result` instead of silently zeroing quality on
 out-of-range smoothings.
 
 Scaling machinery that supports this path:

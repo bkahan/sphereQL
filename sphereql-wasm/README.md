@@ -44,7 +44,7 @@ Open <http://localhost:8000/>. See
 
 ## Status
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`. Pre-1.0:
+Part of the sphereQL workspace, currently `0.3.0`. Pre-1.0:
 expect breaking changes between minor versions. Not published to npm —
 build locally with `wasm-pack`.
 

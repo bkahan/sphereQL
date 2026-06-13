@@ -180,9 +180,17 @@ in [empirical-findings.md](empirical-findings.md); the headline:
 
 - **UMAP-on-sphere wins both corpora**, under both `default_composite`
   and `connectivity_composite`.
-- **Laplacian eigenmap collapses on the stress corpus** (its
-  noise-dominated affinity graph scores near zero) while staying roughly
-  level with PCA on the built-in corpus.
+- **Laplacian eigenmap collapses in this search** on the stress corpus
+  (its noise-dominated affinity graph scores near zero) while staying
+  roughly level with PCA on the built-in corpus. The collapse is a
+  hyperparameter artifact, not a property of the corpus: Laplacian's
+  stress-corpus score is bimodal in `laplacian_active_threshold`, and a
+  *tuned* Laplacian (threshold `0.10`) recovers the signature at ~0.68.
+  `auto_tune` only hits the fragile low-threshold region because adding
+  `UmapSphere` shifts its random stream; `examples/meta_learn.rs` sweeps
+  the same corpus without UMAP and reports Laplacian winning at ~0.68. See
+  [empirical-findings.md](empirical-findings.md) for the full
+  reconciliation.
 - **PCA is robust on the stress corpus** but still loses to UMAP there.
 
 This supersedes the earlier two-way result (PCA wins the built-in corpus,

@@ -44,10 +44,8 @@ including bulk-ingested parquets:
 | `Stress` | in-memory |
 | `DBpedia50k` | `data/dbpedia_50k.parquet` |
 | `DBpedia50kClustered` | `data/dbpedia_50k.clustered.parquet` |
-| `DBpedia50kTuned` | `data/dbpedia_50k.clustered.tuned.parquet` |
 | `DBpedia500k` | `data/dbpedia_500k.parquet` |
 | `DBpedia500kClustered` | `data/dbpedia_500k.clustered.parquet` |
-| `DBpedia500kTuned` | `data/dbpedia_500k.clustered.tuned.parquet` |
 | `Wikidata50k` | `data/wikidata_50k.parquet` |
 | `Parquet(path)` | any Parquet file |
 
@@ -106,6 +104,6 @@ address (auto-detected) for the free polite pool. See
 This is a dev/examples support crate — it is not part of the core sphereQL
 library and sphereQL users do not need to depend on it.
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`; API may change
+Part of the sphereQL workspace, currently `0.3.0`; API may change
 before 1.0. See the [main repository](https://github.com/bkahan/sphereQL)
 for full documentation, examples, and architecture overview.

@@ -39,6 +39,18 @@ fn load_corpus_from_env() -> (Vec<Concept>, Vec<String>, Vec<Vec<f64>>, &'static
         .unwrap_or(false);
 
     if use_stress {
+        // Same corpus `examples/meta_learn.rs` tunes as `stress_300`
+        // (`build_stress_corpus` + `embed_with_noise` at
+        // `STRESS_NOISE_AMPLITUDE`, seed `9000 + i`). The two examples reach
+        // opposite verdicts on Laplacian — here it collapses (~0.07), in
+        // meta_learn a tuned Laplacian wins (~0.68) — because Laplacian's
+        // score on this corpus is bimodal in `laplacian_active_threshold`
+        // (0.10 recovers the signature, 0.03/0.05 build the affinity graph on
+        // the 0.2-amplitude noise floor). This example adds `UmapSphere` to
+        // the search space below, which desyncs the random stream so its
+        // Laplacian trials only hit the fragile low-threshold region. Neither
+        // result is wrong; see meta_learn.rs's header and
+        // docs/empirical-findings.md.
         let corpus = build_stress_corpus();
         let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
         let embeddings: Vec<Vec<f64>> = corpus

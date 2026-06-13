@@ -5,7 +5,7 @@ has a minimal version of this; the sections below fill it in.
 
 ```toml
 [dependencies]
-sphereql = { version = "0.2.0-alpha", features = ["full"] }
+sphereql = { version = "0.3.0", features = ["full"] }
 ```
 
 See [architecture.md](architecture.md) for feature-flag details.

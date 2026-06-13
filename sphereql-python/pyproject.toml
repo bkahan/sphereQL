@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sphereql"
-version = "0.2.0a0"
+version = "0.3.0"
 description = "Spherical coordinate knowledge representation — fast semantic search, visualization, and analysis"
 readme = "README.md"
 license = { text = "MIT" }

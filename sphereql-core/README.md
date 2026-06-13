@@ -44,7 +44,7 @@ fn main() -> Result<(), SphereQlError> {
 
 ## Versioning
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`. Public API is
+Part of the sphereQL workspace, currently `0.3.0`. Public API is
 stable enough to ship against, but reserve the right to break on minor
 bumps before 1.0. See the workspace
 [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md).

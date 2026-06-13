@@ -19,16 +19,18 @@ tech-debt projects.
 
 ## Release blockers / decisions
 
-- [ ] **Missing tuned corpus artifacts** — the registry exposes
-  `DBpedia50kTuned` / `DBpedia500kTuned` (`sphereql-corpus/src/registry.rs`)
-  and CHANGELOG advertises `dbpedia_500k.clustered.tuned.parquet`, but no
-  `*.clustered.tuned.parquet` exists in `sphereql-corpus/data/`. `load()` on
-  those variants errors. Generate and ship the artifacts, or drop the
-  registry variants before release.
-- [ ] **Decide the published PyPI wheel's feature set**
-  (`sphereql-python/pyproject.toml [tool.maturin]`). Today the wheel ships
-  without `lingua` and without `qdrant`/`pinecone`, while older docs implied
-  otherwise (READMEs now state the truth). Pick the v0.3.0 surface.
+- [x] **Missing tuned corpus artifacts** — DONE: dropped the broken
+  `DBpedia50kTuned` / `DBpedia500kTuned` registry variants
+  (`sphereql-corpus/src/registry.rs`) and their doc claims rather than
+  shipping the gitignored `*.clustered.tuned.parquet` files (which can't
+  ship from a published crate anyway). In-repo users self-tune via the
+  `CorpusId::Parquet(path)` escape hatch.
+- [x] **Decide the published PyPI wheel's feature set** — DONE: v0.3.0 ships
+  the current surface `core + embed + vectordb` (no change). `lingua` /
+  `qdrant` / `pinecone` stay opt-in `maturin --features` source builds, as
+  the READMEs state — qdrant/pinecone drag heavy deps (tonic/reqwest) and
+  can't run without a live server; the in-wheel `VectorStoreBridge` already
+  demonstrates the bridge API.
 - [x] **`pyproject.toml` `[qdrant]` extra is misleading** — DONE: removed the
   `[project.optional-dependencies] qdrant` block; the two docs that said
   `pip install sphereql[qdrant]` now point at `maturin --features qdrant`.
@@ -50,16 +52,19 @@ tech-debt projects.
 
 ## Version bump mechanics (at release time)
 
-- [ ] Bump `[workspace.package].version` `0.2.0-alpha` → `0.3.0` and the
-  independently pinned `sphereql-python/pyproject.toml` `0.2.0a0` (two
-  places to bump). The drift rule now exists: `cargo run -p check-versions`
-  fails if any manifest pin, README, or doc disagrees with these two.
-- [ ] Update version pins/status lines in docs: root `README.md` install
-  snippet, per-crate README status sections, `docs/architecture.md`.
-- [ ] Cut CHANGELOG `[Unreleased]` → `[0.3.0]` with date and a new compare
-  link in the footer (CHANGELOG.md:396-397).
-- [ ] Publish to crates.io + PyPI (both currently live at 0.2.0-alpha /
-  0.2.0a0).
+- [x] Bump `[workspace.package].version` → `0.3.0` and `pyproject.toml`
+  `0.2.0a0` → `0.3.0` — DONE: both canonicals + all ~20 intra-workspace
+  path-dep pins bumped; `cargo run -p check-versions` is green.
+- [x] Update version pins/status lines in docs — DONE: README install
+  snippet + status, `docs/architecture.md`, `quickstart-rust.md`,
+  `project-status.md`, every per-crate README status line, and the two
+  mixed "tracking" lines (reworded to `Pre-1.0 (` + `0.3.0` + `)`). Cargo.lock
+  regenerated.
+- [x] Cut CHANGELOG `[Unreleased]` → `[0.3.0] — 2026-06-12` with a fresh
+  empty `[Unreleased]` above it and a new footer tag link.
+- [ ] **Publish to crates.io + PyPI** — NOT done (live release action,
+  intentionally left). Triggered by cutting a GitHub release, which runs the
+  crates-publish / python-publish workflows. Version + CHANGELOG are prepped.
 
 ## Stale benchmarks (every published number predates the UMAP overhaul)
 
@@ -71,8 +76,11 @@ tech-debt projects.
 - [x] PCA vs Laplacian vs UMAP tuner head-to-head on both corpora — DONE:
   `auto_tune.rs` now sweeps all three explicitly; `docs/empirical-findings.md`
   refreshed. **UMAP wins both corpora** (overturns the old PCA/Laplacian
-  split). NOTE new follow-up: `meta_learn`'s stress_300 vs `auto_tune`'s
-  stress corpus disagree on Laplacian — reconcile the two generators.
+  split). Stress-corpus nuance RESOLVED: both examples build the *same*
+  corpus — Laplacian is bimodal in `laplacian_active_threshold` (~0.68 at
+  0.10, collapses at 0.03/0.05), and adding UMAP desyncs the tuner RNG so
+  `auto_tune` samples only the fragile region. Clarified in the example
+  headers + `docs/empirical-findings.md` (not a generator mismatch).
 - [x] Re-measure tuner wall time at n=775, budget 24 — DONE: ~9.9 s
   (built-in) / ~4.1 s (stress), with UMAP in the space.
 - [x] Re-measure KPCA fit + query at n=10k — DONE: fit ~138 s (≈2.3 min,
@@ -117,11 +125,10 @@ tech-debt projects.
   `tests/test_parity.py` cross-checking its coordinate math against the
   `sphereql` wheel; wired into CI. slerp/centroid/etc. have no
   python-reachable twin yet → documented skips.
-- **docs/project-status.md "Known limitations" is framed entirely in EVR
-  terms** — correct for PCA, but ages badly as UMAP (kNN-recall scoring)
-  becomes the default on large corpora. Same for the mixed EVR/recall
-  scales in docs/projections.md; a per-family quality-metric table would be
-  cleaner.
+- ~~**docs/project-status.md "Known limitations" framed entirely in EVR
+  terms**~~ — DONE: reframed "Known limitations" per-family (PCA=EVR,
+  KPCA=kernel EVR, Laplacian=connectivity ratio, UMAP=kNN-recall) and added
+  a per-family quality-metric table to `docs/projections.md`.
 - ~~**Doc code snippets aren't compile-checked**~~ — DONE: `scripts/check-doc-snippets`
   compiles the `rust` blocks in `docs/*.md` against `sphereql --features full`
   (5 real snippets checked, 8 illustrative ones tagged `rust,ignore`); CI-wired.

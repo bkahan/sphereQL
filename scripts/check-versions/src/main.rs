@@ -226,7 +226,7 @@ fn check_manifest_pins(manifest: &Path, rel: &str, rust_canon: &str, problems: &
 fn skip_dir(name: &str) -> bool {
     matches!(
         name,
-        "target" | ".git" | ".venv" | "node_modules" | "__pycache__" | ".pytest_cache"
+        "target" | ".git" | ".venv" | ".claude" | "node_modules" | "__pycache__" | ".pytest_cache"
     )
 }
 

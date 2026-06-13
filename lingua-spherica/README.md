@@ -26,9 +26,15 @@ extend `sphereql-lingua` and re-export through the bindings.
 - `coordinates.py` — `angular_distance` (Vincenty), `slerp` with
   antipodal branch, weighted spherical centroid, theta/phi distance
   helpers, semantic-distance combiner. Same algorithms as the Rust
-  side; this package's pytest suite covers the math, but parity with
-  Rust is maintained by hand — there is no automated cross-language
-  check.
+  side; this package's pytest suite covers the math. An automated
+  cross-language parity test (`tests/test_parity.py`, CI-wired) now
+  guards the helpers with a Python-reachable Rust twin in the
+  `sphereql` wheel — `angular_distance`, `SphericalPoint`
+  construction, and the spherical↔cartesian conversions. The
+  remaining helpers (`slerp`, weighted centroid, the circular stats,
+  etc.) have no Python-reachable Rust twin yet, so their parity still
+  relies on hand-maintenance; the parity suite marks those as explicit
+  skips so the gap stays visible.
 
 ## Coordinate convention
 
@@ -44,6 +50,6 @@ silently.
 
 ## Status
 
-Pre-1.0 (`0.2.0a0`, tracking the workspace's `0.2.0-alpha`). Public
+Pre-1.0 (`0.3.0`). Public
 surface kept small and stable; new functionality ships in
 `sphereql-lingua` first and reaches Python through the bindings.

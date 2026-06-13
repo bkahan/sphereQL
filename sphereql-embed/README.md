@@ -46,6 +46,6 @@ To pick a non-default projection family, build with `SphereQLPipeline::new_with_
 
 ## Versioning
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`; API may change before 1.0. Notable recent changes (see the workspace [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md)): `run_self_tune` and `SphereQLPipeline::to_json` now return `Result`, `MetaModel` gained `is_fitted`, `auto_tune` warm-starts trial 0 from the meta-model prediction, and for UMAP projections `explained_variance_ratio` now reports kNN-recall trustworthiness rather than the old variance proxy (records stored under the old proxy are not score-comparable).
+Part of the sphereQL workspace, currently `0.3.0`; API may change before 1.0. Notable recent changes (see the workspace [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md)): `run_self_tune` and `SphereQLPipeline::to_json` now return `Result`, `MetaModel` gained `is_fitted`, `auto_tune` warm-starts trial 0 from the meta-model prediction, and for UMAP projections `explained_variance_ratio` now reports kNN-recall trustworthiness rather than the old variance proxy (records stored under the old proxy are not score-comparable).
 
 See the [main repository](https://github.com/bkahan/sphereQL) for full documentation, examples (`auto_tune`, `meta_learn`, `meta_warm_start`, `meta_feedback`, `spatial_analysis`, `category_enrichment`), and architecture overview.

@@ -61,31 +61,25 @@ pub enum CorpusId {
     DBpedia50k,
     /// DBpedia 50K after k-means clustering — `dbpedia_50k.clustered.parquet`.
     DBpedia50kClustered,
-    /// DBpedia 50K after clustering + self-tuning — `dbpedia_50k.clustered.tuned.parquet`.
-    DBpedia50kTuned,
     /// DBpedia 500K raw ingest — `dbpedia_500k.parquet`.
     DBpedia500k,
     /// DBpedia 500K after k-means clustering — `dbpedia_500k.clustered.parquet`.
     DBpedia500kClustered,
-    /// DBpedia 500K after clustering + self-tuning — `dbpedia_500k.clustered.tuned.parquet`.
-    DBpedia500kTuned,
     /// Wikidata 50K raw ingest — `wikidata_50k.parquet`.
     Wikidata50k,
     /// Any Parquet file at the given path — for corpora not yet named above.
     Parquet(PathBuf),
 }
 
-static ALL_NAMED: [CorpusId; 11] = [
+static ALL_NAMED: [CorpusId; 9] = [
     CorpusId::HandCrafted,
     CorpusId::Extended,
     CorpusId::Full,
     CorpusId::Stress,
     CorpusId::DBpedia50k,
     CorpusId::DBpedia50kClustered,
-    CorpusId::DBpedia50kTuned,
     CorpusId::DBpedia500k,
     CorpusId::DBpedia500kClustered,
-    CorpusId::DBpedia500kTuned,
     CorpusId::Wikidata50k,
 ];
 
@@ -106,10 +100,8 @@ impl CorpusId {
             Self::Stress => "stress",
             Self::DBpedia50k => "dbpedia_50k",
             Self::DBpedia50kClustered => "dbpedia_50k_clustered",
-            Self::DBpedia50kTuned => "dbpedia_50k_tuned",
             Self::DBpedia500k => "dbpedia_500k",
             Self::DBpedia500kClustered => "dbpedia_500k_clustered",
-            Self::DBpedia500kTuned => "dbpedia_500k_tuned",
             Self::Wikidata50k => "wikidata_50k",
             Self::Parquet(p) => p.file_stem().and_then(|s| s.to_str()).unwrap_or("custom"),
         }
@@ -130,10 +122,8 @@ impl CorpusId {
             Self::Extended => Some(d.join("extended_corpus.parquet")),
             Self::DBpedia50k => Some(d.join("dbpedia_50k.parquet")),
             Self::DBpedia50kClustered => Some(d.join("dbpedia_50k.clustered.parquet")),
-            Self::DBpedia50kTuned => Some(d.join("dbpedia_50k.clustered.tuned.parquet")),
             Self::DBpedia500k => Some(d.join("dbpedia_500k.parquet")),
             Self::DBpedia500kClustered => Some(d.join("dbpedia_500k.clustered.parquet")),
-            Self::DBpedia500kTuned => Some(d.join("dbpedia_500k.clustered.tuned.parquet")),
             Self::Wikidata50k => Some(d.join("wikidata_50k.parquet")),
             Self::Parquet(p) => Some(p.clone()),
         }
@@ -229,8 +219,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_returns_eleven_named_variants() {
-        assert_eq!(CorpusId::all().len(), 11);
+    fn all_returns_nine_named_variants() {
+        assert_eq!(CorpusId::all().len(), 9);
     }
 
     #[test]

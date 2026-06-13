@@ -57,7 +57,7 @@ assert_eq!(*hits[0].item.id(), 1);
 
 ## Versioning
 
-Part of the sphereQL workspace, currently `0.2.0-alpha`; API may change
+Part of the sphereQL workspace, currently `0.3.0`; API may change
 before 1.0. `IndexError` is `#[non_exhaustive]`. Builder types are
 `#[must_use]` — forgetting `.build()` warns at the use site.
 

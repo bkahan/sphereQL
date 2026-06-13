@@ -3251,7 +3251,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "sphereql-core",
  "sphereql-embed",
@@ -3263,7 +3263,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-core"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "criterion",
@@ -3275,7 +3275,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-corpus"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "arrow",
  "bzip2-rs",
@@ -3290,7 +3290,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-embed"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "indexmap 2.13.1",
@@ -3308,7 +3308,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-examples"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "dialoguer",
  "indicatif",
@@ -3323,7 +3323,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-graphql"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "async-graphql",
  "serde",
@@ -3336,7 +3336,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-index"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "criterion",
@@ -3349,7 +3349,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-layout"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "proptest",
@@ -3361,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-lingua"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "regex",
  "serde",
@@ -3370,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-python"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "numpy",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-vectordb"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "async-trait",
@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-wasm"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",

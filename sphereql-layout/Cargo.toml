@@ -10,8 +10,8 @@ keywords = ["spherical", "layout", "clustering", "force-directed", "visualizatio
 categories = ["algorithms", "mathematics"]
 
 [dependencies]
-sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
-sphereql-index = { version = "0.2.0-alpha", path = "../sphereql-index" }
+sphereql-core = { version = "0.3.0", path = "../sphereql-core" }
+sphereql-index = { version = "0.3.0", path = "../sphereql-index" }
 rayon = { workspace = true }
 
 [dev-dependencies]
