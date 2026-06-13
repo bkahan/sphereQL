@@ -113,12 +113,14 @@ relation-type annotations.
 
 Type stubs (`python/sphereql/__init__.pyi`) are auto-generated via
 `pyo3-stub-gen` and ship with the wheel — IDEs, `mypy`, and `pyright`
-pick them up automatically. (The vector-store classes — `InMemoryStore`,
-`VectorStoreBridge`, and friends — are not yet covered by the stubs;
-they exist at runtime.) Regenerate after binding changes with:
+pick them up automatically. They are generated at the `vectordb` feature
+level, so the in-memory vector-store classes (`InMemoryStore`,
+`VectorStoreBridge`) are covered; `QdrantBridge` / `PineconeBridge`
+(behind their own features, not in the default wheel) are not.
+Regenerate after binding changes with:
 
 ```bash
-cd sphereql-python && cargo run --bin gen-stubs
+cd sphereql-python && cargo run --bin gen-stubs --features vectordb
 ```
 
 ## Status

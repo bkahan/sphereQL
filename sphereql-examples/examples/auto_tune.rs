@@ -81,7 +81,20 @@ fn main() {
     );
     drop(corpus);
 
-    let space = SearchSpace::default();
+    // Explicit three-way head-to-head: PCA vs Laplacian eigenmap vs
+    // UMAP-on-sphere. `SearchSpace::default()` only sweeps
+    // [Pca, LaplacianEigenmap]; we add UmapSphere so every run produces
+    // per-projection scores for all three families. Laplacian's O(N²)
+    // affinity matrix keeps this tractable only at the corpus sizes used
+    // here (n ≤ 775); large corpora should use `SearchSpace::large_corpus()`.
+    let space = SearchSpace {
+        projection_kinds: vec![
+            ProjectionKind::Pca,
+            ProjectionKind::LaplacianEigenmap,
+            ProjectionKind::UmapSphere,
+        ],
+        ..SearchSpace::default()
+    };
     // Small budget chosen deliberately so Bayesian's sample-efficiency
     // edge over Random has a chance to show up. At 24 random trials both
     // strategies tend to hit the same ceiling.

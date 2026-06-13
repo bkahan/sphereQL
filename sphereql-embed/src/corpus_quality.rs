@@ -49,7 +49,8 @@ use crate::quality_metric::{BridgeCoherence, QualityMetric};
 /// Weights for the four sub-scores. Must be finite, non-negative, and
 /// not all zero. They do NOT need to sum to 1 — [`CorpusQuality`]
 /// normalizes by their sum at score time.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct CorpusQualityWeights {
     pub w_evr: f64,
     pub w_bridge: f64,

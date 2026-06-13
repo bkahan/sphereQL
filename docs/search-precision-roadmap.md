@@ -202,8 +202,9 @@ search precision at the ANN level; it addresses the "the sphere is too
 lossy for _this_ corpus" failure mode that motivates #2 and #7.
 
 See [`benchmark-analysis.md`](benchmark-analysis.md) for the empirical
-finding that motivated the framework (PCA wins the built-in corpus,
-Laplacian wins the stress corpus — same pipeline, same tuner).
+finding that motivated the framework (the projection winner is corpus-
+dependent — in the three-way head-to-head UMAP wins both corpora, and PCA
+vs Laplacian flips between them).
 
 ---
 

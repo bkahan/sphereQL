@@ -1,46 +1,57 @@
 # Empirical: when does each projection win?
 
-The right projection is corpus-dependent. Two sanity checks, same
-pipeline, same tuner, same metrics, two different corpora, opposite
-winners:
+The right projection is corpus-dependent. The numbers below are a
+three-way head-to-head — PCA vs Laplacian eigenmap vs UMAP-on-sphere —
+measured **2026-06-12** with the current `BridgeDiversity`-weighted
+composites, a budget-24 random search per metric, on both corpora. Each
+cell is the *best* score that projection reached across its trials:
 
-| Corpus | Metric | PCA score | Laplacian score | Winner |
-|---|---|---|---|---|
-| Built-in 775-concept (31 academic domains, hand-crafted 128-d) | `default_composite` | best | lower | **PCA** |
-| Built-in 775-concept | `connectivity_composite` | best | lower | **PCA** |
-| Stress 300-concept (10 categories, 2-axis signatures, high noise) | `default_composite` | 0.9606 | 1.0000 | **Laplacian** |
-| Stress 300-concept | `connectivity_composite` | 0.9265 | 0.9500 | **Laplacian** |
+| Corpus | Metric | PCA | Laplacian | UMAP | Winner |
+|---|---|---|---|---|---|
+| Built-in 775-concept (31 academic domains, hand-crafted 128-d) | `default_composite` | 0.1271 | 0.1159 | 0.6324 | **UMAP** |
+| Built-in 775-concept | `connectivity_composite` | 0.0687 | 0.0611 | 0.6195 | **UMAP** |
+| Stress 300-concept (10 categories, 2-axis signatures, high noise) | `default_composite` | 0.6419 | 0.0752 | 0.6513 | **UMAP** |
+| Stress 300-concept | `connectivity_composite` | 0.5912 | 0.0193 | 0.6100 | **UMAP** |
 
-The stress-corpus scores above were measured under the pre-`BridgeDiversity`
-composite weights (see *Metric details* below for the current weights).
-Absolute numbers will shift slightly under the new composites; the
-winner-flip conclusion still holds because both composites still reward
-the connectivity structure Laplacian preserves on that corpus.
+With UMAP in the search space, **UMAP wins under both metrics on both
+corpora.** This overturns the earlier two-way story (PCA winning the
+built-in corpus, Laplacian winning the stress corpus) measured before
+`UmapSphere` and `BridgeDiversity` landed: those scores predated the
+UMAP overhaul and the current composite weights and are no longer
+score-comparable. Two regime effects survive the change, now visible in
+the PCA-vs-Laplacian columns:
 
-Dense, low-noise embeddings where variance tracks meaning: PCA wins.
-Sparse, noise-heavy regimes where variance is dominated by noise and the
-real signal is in the co-activation graph: Laplacian wins. This is the
-whole motivation for the auto-tuner + meta-model layer — no single
-projection is right, so the pipeline picks one per corpus.
+- On the **built-in** corpus PCA still edges Laplacian (0.1271 vs 0.1159
+  under `default_composite`), but both linear/spectral options are far
+  behind UMAP — the 128-d hand-crafted signatures have enough usable
+  variance for PCA, yet UMAP's neighborhood-preserving embedding
+  separates the 31 domains better.
+- On the **stress** corpus Laplacian *collapses* (best 0.0752 /
+  0.0193): at 0.2 noise amplitude over 2-axis signatures its affinity
+  graph is dominated by noise edges. PCA holds up here (0.6419 / 0.5912)
+  because the 2 authored axes still carry most of the variance, and UMAP
+  edges it out (0.6513 / 0.6100).
 
-## UMAP-on-sphere: comparison pending
+This per-corpus, per-metric variation is the whole motivation for the
+auto-tuner + meta-model layer — no single projection is right, so the
+pipeline picks one per corpus.
 
-The projection lineup is now four families (`Pca`, `KernelPca`,
-`LaplacianEigenmap`, `UmapSphere`), and `SearchSpace::default()` sweeps
-**PCA + UMAP** — see [projections.md](projections.md). The table above
-predates `UmapSphere`: no UMAP-vs-PCA or UMAP-vs-Laplacian scores have
-been recorded on either corpus yet. Two things to know before recording
-them:
+## UMAP's quality metric changed
+
+The projection lineup is four families (`Pca`, `KernelPca`,
+`LaplacianEigenmap`, `UmapSphere`); the head-to-head above adds
+`UmapSphere` to `SearchSpace::default()`'s `[Pca, LaplacianEigenmap]`
+explicitly — see [projections.md](projections.md). One caveat on the
+UMAP column:
 
 - UMAP's `explained_variance_ratio` now reports a
   trustworthiness-style kNN-recall score (mean neighborhood overlap),
   not the old fraction-below-median-random-distance proxy. Any UMAP
   quality numbers stored before the overhaul are **not
-  score-comparable** with current ones.
-- The table's PCA / Laplacian scores are unaffected by that change
-  (their EVR semantics are unchanged), but they were measured on
-  pre-overhaul builds of the metrics; treat absolute values as
-  approximate per the weighting caveat above.
+  score-comparable** with the 2026-06-12 numbers above.
+- The PCA / Laplacian columns use unchanged EVR semantics, but were
+  re-measured in the same 2026-06-12 run for an apples-to-apples
+  comparison.
 
 ## Reproduce
 
@@ -56,10 +67,11 @@ SPHEREQL_CORPUS=stress \
 cargo run -p sphereql-examples --example meta_learn --release
 ```
 
-**Caveat:** both examples use `SearchSpace::default()`, which now
-enumerates PCA + UMAP only. To reproduce the PCA-vs-Laplacian
-head-to-head in the table, add `ProjectionKind::LaplacianEigenmap` to
-`projection_kinds` in the example's search space first.
+**Note:** [`examples/auto_tune.rs`](../sphereql-examples/examples/auto_tune.rs)
+overrides `SearchSpace::default()` (`[Pca, LaplacianEigenmap]`) to sweep
+`[Pca, LaplacianEigenmap, UmapSphere]` explicitly, so each run produces the
+three-way per-projection scores in the table above. `examples/meta_learn.rs`
+still uses the plain `SearchSpace::default()`.
 
 [`examples/meta_learn.rs`](../sphereql-examples/examples/meta_learn.rs) also
 verifies that a `NearestNeighborMetaModel` fitted on both records can

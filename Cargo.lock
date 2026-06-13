@@ -546,11 +546,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "check-doc-snippets"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "check-docs"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "toml 0.8.23",
+ "walkdir",
+]
+
+[[package]]
 name = "check-drift"
 version = "0.1.0"
 dependencies = [
  "serde",
  "syn",
+ "toml 0.8.23",
+ "walkdir",
+]
+
+[[package]]
+name = "check-versions"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
  "toml 0.8.23",
  "walkdir",
 ]
@@ -3256,6 +3283,7 @@ dependencies = [
  "parquet",
  "serde",
  "serde_json",
+ "sphereql-core",
  "tempfile",
  "ureq",
 ]

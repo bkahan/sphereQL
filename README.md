@@ -183,6 +183,10 @@ in the browser.
 | `sphereql-corpus` | Shared example corpora: 775-concept built-in (31 academic domains) and 300-concept stress corpus, plus bulk-ingested parquet corpora from DBpedia (500K) and Wikidata (50K). |
 | `sphereql-lingua` | Six-stage text → `ConceptGraph` pipeline that places every concept at a SphereQL `(r, θ, φ)` position. |
 | `sphereql-examples` | Runnable examples across the whole workspace (not published). |
+| `scripts/check-drift` | CI tool: fails when a new `sphereql-embed`/`sphereql-layout` public item isn't bound in Python/WASM (or allowlisted). |
+| `scripts/check-versions` | CI tool: fails when any release-version string across manifests, READMEs, and docs disagrees with the canonical workspace/pyproject version. |
+| `scripts/check-docs` | CI tool: fails when a workspace crate is missing from these tables, or a stated test-count floor no longer holds. |
+| `scripts/check-doc-snippets` | CI tool: compile-checks the `rust` code blocks in the prose docs against `sphereql --features full`. |
 
 Full dependency graph and crate-by-crate description in
 [architecture.md](docs/architecture.md).
@@ -201,14 +205,18 @@ have a Python/WASM binding or an allowlist entry with a reason in
 
 ## Contributing
 
-1. Fork the repo and create a feature branch.
-2. Run `cargo test --workspace --all-features --exclude sphereql-python`
-   and `cargo clippy --workspace --all-features --all-targets`.
-3. For Python changes, run `cd sphereql-python && maturin develop && pytest -v`.
-4. Open a PR against `main`.
+Fork, branch from `main`, and open a PR. Before pushing, run the core
+verification trio:
 
-The codebase uses Rust 2024 edition. All CI checks must pass before
-merge. See [testing.md](docs/testing.md) for the full pipeline.
+```bash
+cargo test --workspace --all-features --exclude sphereql-python
+cargo clippy --workspace --all-features --all-targets -- -D warnings
+cargo fmt --all -- --check
+```
+
+The codebase uses Rust 2024 edition; all CI checks must pass before
+merge. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow,
+the complete local command list, and the CI pipeline.
 
 ## License
 

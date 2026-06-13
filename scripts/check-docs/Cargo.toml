@@ -1,0 +1,17 @@
+[package]
+name = "check-docs"
+description = "CI drift check: every workspace crate appears in the README + architecture crate tables, and the test-count floors stated in the docs still hold"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "check-docs"
+path = "src/main.rs"
+
+[dependencies]
+toml = "0.8"
+walkdir = "2"
+regex = "1"

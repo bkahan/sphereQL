@@ -1,0 +1,25 @@
+name: Version drift
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/Cargo.toml"
+      - "**/*.md"
+      - "**/pyproject.toml"
+      - "**/__init__.py"
+      - ".version-drift-ignore.toml"
+      - "scripts/check-versions/**"
+      - ".github/workflows/version-drift.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run version drift check
+        run: cargo run -p check-versions

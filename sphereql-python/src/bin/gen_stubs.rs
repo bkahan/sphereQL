@@ -3,7 +3,7 @@
 //! Run from the `sphereql-python` directory:
 //!
 //! ```sh
-//! cargo run --bin gen-stubs
+//! cargo run --bin gen-stubs --features vectordb
 //! ```
 //!
 //! This writes `sphereql.pyi` alongside the built extension so IDEs and

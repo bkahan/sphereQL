@@ -19,6 +19,7 @@ __all__ = [
     "FeedbackEvent",
     "GeoPoint",
     "GlobInfo",
+    "InMemoryStore",
     "InnerSphereInfo",
     "KernelPcaProjection",
     "LaplacianEigenmap",
@@ -36,6 +37,7 @@ __all__ = [
     "ProjectionWarningInfo",
     "RandomProjection",
     "SphericalPoint",
+    "VectorStoreBridge",
     "VoronoiCell",
     "angular_distance",
     "append_to_default_store",
@@ -47,6 +49,7 @@ __all__ = [
     "great_circle_distance",
     "load_default_store",
     "run_navigator",
+    "run_self_tune",
     "spherical_to_cartesian",
     "spherical_to_geo",
     "visualize",
@@ -82,6 +85,13 @@ class BridgeItemInfo:
     def classification(self) -> builtins.str:
         r"""
         One of "Genuine", "OverlapArtifact", or "Weak".
+        """
+    @property
+    def relation(self) -> typing.Optional[builtins.str]:
+        r"""
+        Inferred semantic relation as a snake_case string (e.g.
+        "studies", "applies_to", "shared_method"), or None if no relation
+        was inferred for this bridge.
         """
     def __repr__(self) -> builtins.str: ...
 
@@ -308,6 +318,37 @@ class GlobInfo:
     def to_json(self) -> builtins.str: ...
     @staticmethod
     def from_json(json: builtins.str) -> GlobInfo: ...
+
+@typing.final
+class InMemoryStore:
+    r"""
+    In-memory vector store for testing and small datasets.
+    
+    Uses brute-force cosine similarity — O(n) per query.
+    Pass this to VectorStoreBridge to build a sphereQL pipeline.
+    """
+    def __new__(cls, collection: builtins.str, dimension: builtins.int) -> InMemoryStore:
+        r"""
+        Create an in-memory vector store.
+        
+        Args:
+            collection: Name for this collection.
+            dimension: Dimensionality of stored vectors.
+        """
+    def upsert(self, records: typing.Sequence[dict]) -> None:
+        r"""
+        Insert or update records.
+        
+        Args:
+            records: List of dicts with keys 'id' (str), 'vector' (list[float]),
+                and optionally 'metadata' (dict).
+        """
+    def count(self) -> builtins.int:
+        r"""
+        Return the number of records in the store.
+        """
+    def __len__(self) -> builtins.int: ...
+    def __repr__(self) -> builtins.str: ...
 
 @typing.final
 class InnerSphereInfo:
@@ -568,7 +609,7 @@ class Pipeline:
     def projection_kind(self) -> builtins.str:
         r"""
         Short stable name of the projection family — "pca", "kernel_pca",
-        or "laplacian_eigenmap".
+        "laplacian_eigenmap", or "umap_sphere".
         """
     @property
     def explained_variance_ratio(self) -> builtins.float: ...
@@ -668,6 +709,88 @@ class SphericalPoint:
     def __eq__(self, other: SphericalPoint) -> builtins.bool: ...
 
 @typing.final
+class VectorStoreBridge:
+    r"""
+    Bridge between an InMemoryStore and the sphereQL pipeline.
+    
+    Pulls vectors from the store, fits a projection, and exposes the
+    full sphereQL query surface (nearest, concept path, globs, category
+    enrichment, hierarchical routing, hybrid search).
+    """
+    @property
+    def projection_kind(self) -> typing.Optional[builtins.str]:
+        r"""
+        Short name of the projection family, or None before the
+        pipeline is built. One of "pca", "kernel_pca",
+        "laplacian_eigenmap", "umap_sphere".
+        """
+    def __new__(cls, store: InMemoryStore, *, batch_size: typing.Optional[builtins.int] = None, max_records: typing.Optional[builtins.int] = None) -> VectorStoreBridge:
+        r"""
+        Create a bridge from an InMemoryStore.
+        
+        Args:
+            store: The InMemoryStore to pull vectors from.
+            batch_size: Records per batch for sync operations. Default 100.
+            max_records: Upper bound on records to load. Default 500,000.
+        """
+    def build_pipeline(self, *, category_key: builtins.str = 'category') -> None:
+        r"""
+        Pull all vectors from the store and build the sphereQL
+        pipeline using PCA with the bridge's default radial
+        strategy and volumetric settings.
+        """
+    def build_pipeline_with_config(self, config: typing.Any, *, category_key: builtins.str = 'category') -> None:
+        r"""
+        Pull all vectors and build the pipeline with an explicit
+        PipelineConfig (non-PCA projections, custom bridge /
+        inner-sphere / routing thresholds).
+        """
+    def query_nearest(self, embedding: typing.Sequence[builtins.float], *, k: builtins.int = 5) -> builtins.list[NearestHit]: ...
+    def query_similar(self, embedding: typing.Sequence[builtins.float], *, min_cosine: builtins.float = 0.8) -> builtins.list[NearestHit]: ...
+    def query_concept_path(self, source_id: builtins.str, target_id: builtins.str, *, graph_k: builtins.int = 10, embedding: typing.Sequence[builtins.float]) -> typing.Optional[PathResult]: ...
+    def query_detect_globs(self, embedding: typing.Sequence[builtins.float], *, k: typing.Optional[builtins.int] = None, max_k: builtins.int = 10) -> builtins.list[GlobInfo]: ...
+    def query_local_manifold(self, embedding: typing.Sequence[builtins.float], *, neighborhood_k: builtins.int = 10) -> ManifoldInfo:
+        r"""
+        Fit a local manifold around the query point in the
+        pipeline's projected space.
+        """
+    def category_concept_path(self, source_category: builtins.str, target_category: builtins.str) -> typing.Optional[CategoryPathResult]:
+        r"""
+        Find the shortest path between two categories through
+        the category graph.
+        """
+    def category_neighbors(self, category: builtins.str, *, k: builtins.int = 5) -> builtins.list[CategorySummaryInfo]:
+        r"""
+        k-NN over category centroids starting from `category`.
+        """
+    def drill_down(self, category: builtins.str, embedding: typing.Sequence[builtins.float], *, k: builtins.int = 10) -> builtins.list[DrillDownHit]:
+        r"""
+        Drill into one category: k-NN within that category using
+        its inner sphere's projection when available.
+        """
+    def category_stats(self) -> tuple[builtins.list[CategorySummaryInfo], builtins.list[InnerSphereInfo]]:
+        r"""
+        Per-category summaries plus inner-sphere reports.
+        """
+    def hierarchical_nearest(self, embedding: typing.Sequence[builtins.float], *, k: builtins.int = 5) -> builtins.list[NearestHit]: ...
+    def domain_groups(self) -> builtins.list[DomainGroupInfo]:
+        r"""
+        Coarse domain groups detected from category geometry.
+        """
+    def projection_warnings(self) -> builtins.list[ProjectionWarningInfo]:
+        r"""
+        Projection-quality warnings. Empty when EVR is healthy.
+        """
+    def hybrid_search(self, embedding: typing.Sequence[builtins.float], *, final_k: builtins.int = 5, recall_k: builtins.int = 20) -> builtins.list[dict]: ...
+    def sync_projections(self) -> builtins.int: ...
+    def config(self) -> typing.Optional[typing.Any]:
+        r"""
+        PipelineConfig of the built pipeline as a dict, or None.
+        """
+    def __len__(self) -> builtins.int: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
 class VoronoiCell:
     @property
     def category_name(self) -> builtins.str: ...
@@ -759,6 +882,40 @@ def load_default_store() -> typing.Any:
     """
 
 def run_navigator(pipeline: Pipeline, *, config: typing.Optional[NavigatorConfig] = None) -> NavigatorReport: ...
+
+def run_self_tune(concepts: typing.Any, base_config: typing.Optional[typing.Any] = None, cfg: typing.Optional[typing.Any] = None, weights: typing.Optional[typing.Any] = None, seed: builtins.int = 3735928559) -> tuple[typing.Any, dict]:
+    r"""
+    Run one corpus self-tune loop and return the mutated corpus and report.
+    
+    Mirrors the standalone `sphereql_embed::run_self_tune`, owning the
+    embed closure (fixed to the deterministic synthetic embedder so the
+    run is reproducible) rather than taking an arbitrary callback.
+    
+    Args:
+        concepts: List of concept dicts. Each must carry `label`,
+            `category`, `features` (list of `[axis, weight]` pairs),
+            `quality`, `axis_coherence`, `bridge_degree`,
+            `source_confidence`, `home_affinity`, and the optional
+            `source` / `openalex_id`.
+        base_config: Optional dict of PipelineConfig. Default:
+            PipelineConfig.default().
+        cfg: Optional dict of SelfTuneConfig (max_iterations,
+            plateau_epsilon, min_quality_to_keep, etc.). Any field may be
+            omitted. Default: SelfTuneConfig.default().
+        weights: Optional dict of CorpusQualityWeights (`w_evr`,
+            `w_bridge`, `w_curvature`, `w_balance`). Default:
+            0.30 / 0.30 / 0.20 / 0.20.
+        seed: Embed-noise seed for the deterministic synthetic embedder.
+            Default: 0xDEADBEEF.
+    
+    Returns:
+        Tuple `(concepts, report)` where `concepts` is the mutated
+        (possibly pruned) corpus as a list of dicts, and `report` is a
+        dict with `iterations` (each carrying the iteration counters plus
+        the five flattened breakdown sub-scores), `stopped_reason`
+        (`"plateau"`, `"max_iterations"`, or `"prune_floor_hit"`), and
+        `final_composite` (`float` or `None`).
+    """
 
 def spherical_to_cartesian(p: SphericalPoint) -> CartesianPoint: ...
 

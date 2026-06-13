@@ -61,7 +61,7 @@ const QUALITY_WEIGHT_FLOOR: f64 = 0.05;
 /// and category — fine for read-only consumers, but the self-tuner
 /// owns the strings for the lifetime of the tune run and re-emits them
 /// to Parquet, so we copy into owned `String`s here.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TunableConcept {
     pub label: String,
     pub category: String,

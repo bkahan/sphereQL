@@ -221,9 +221,13 @@ fn has_derive(attrs: &[Attribute], trait_name: &str) -> bool {
         }
         if let Meta::List(list) = &attr.meta {
             let tokens = list.tokens.to_string();
+            // `proc_macro2`'s token stringification spaces out path
+            // separators (`tsify :: Tsify`), so trim each `::` segment
+            // before comparing — otherwise path-qualified derives like
+            // `#[derive(tsify::Tsify)]` are never matched.
             if tokens
                 .split(',')
-                .any(|part| part.trim().split("::").last() == Some(trait_name))
+                .any(|part| part.trim().split("::").last().map(str::trim) == Some(trait_name))
             {
                 return true;
             }

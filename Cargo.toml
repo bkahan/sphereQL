@@ -11,6 +11,9 @@ members = [
     "sphereql-corpus",
     "sphereql",
     "scripts/check-drift",
+    "scripts/check-versions",
+    "scripts/check-docs",
+    "scripts/check-doc-snippets",
     "sphereql-lingua",
     "sphereql-examples",
 ]

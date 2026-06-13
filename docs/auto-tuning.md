@@ -23,7 +23,7 @@ Every tunable constant lives in `PipelineConfig`. Projection family is
 a first-class field, so the tuner can compare families on equal
 footing with the rest of the knobs.
 
-```rust
+```rust,ignore
 use sphereql::embed::*;
 
 let mut base = PipelineConfig::default();
@@ -39,7 +39,7 @@ let pipeline =
 `SearchStrategy::{Grid, Random, Bayesian}` and returns the best pipeline
 plus a `TuneReport`:
 
-```rust
+```rust,ignore
 let space = SearchSpace::default();       // sweeps PCA + Laplacian by default
 let metric = CompositeMetric::default_composite();
 let strategy = SearchStrategy::Random { budget: 24, seed: 0xCAFE, max_wall_secs: None };
@@ -86,7 +86,7 @@ The tuner result can be persisted as a `MetaTrainingRecord`, keyed on a
 10-feature `CorpusFeatures` profile. The default store lives at
 `~/.sphereql/meta_records.json` and accumulates across runs.
 
-```rust
+```rust,ignore
 let features = CorpusFeatures::extract(&input.categories, &input.embeddings).unwrap();
 let record = MetaTrainingRecord::from_tune_result(
     "my_corpus_v1",
@@ -100,7 +100,7 @@ record.append_to_default_store().unwrap();
 On a new corpus, a `MetaModel` predicts the config without running the
 tuner:
 
-```rust
+```rust,ignore
 let records = MetaTrainingRecord::load_default_store().unwrap();
 let mut model = NearestNeighborMetaModel::default();
 model.fit(&records);
@@ -152,7 +152,7 @@ into the stored record via
 `alpha` is the weight of feedback in the blended score — `0.0` ignores
 feedback, `1.0` replaces the tuner's score entirely.
 
-```rust
+```rust,ignore
 let mut aggregator = FeedbackAggregator::new();
 aggregator.record(FeedbackEvent::now("my_corpus_v1", "q-001", 1.0));
 aggregator.record(FeedbackEvent::now("my_corpus_v1", "q-002", 0.3));
@@ -217,6 +217,7 @@ worth knowing:
   — recall a config, refine from it.
 - [`examples/meta_feedback.rs`](../sphereql-examples/examples/meta_feedback.rs)
   — L3 feedback blending in action.
-- [Empirical findings](empirical-findings.md) — PCA wins the built-in
-  corpus, Laplacian wins the stress corpus. The metalearning framework
-  exists because neither is right on its own.
+- [Empirical findings](empirical-findings.md) — three-way head-to-head:
+  UMAP-on-sphere wins both corpora; PCA still edges Laplacian on the
+  built-in corpus while Laplacian collapses on the stress corpus. The
+  metalearning framework exists to predict the winner per corpus.

@@ -10,6 +10,7 @@ pub mod error;
 pub mod interpolation;
 pub mod regions;
 pub mod spatial;
+pub mod synthetic;
 pub mod types;
 
 pub use conversions::*;

@@ -19,10 +19,14 @@ jobs:
   # against crates.io to validate the future-published tarball. That
   # means downstream crates can't be dry-run until their upstream is
   # actually on the registry — a chicken-and-egg for any workspace-wide
-  # version bump. We scope this gate to `sphereql-core` (the leaf),
-  # which has no intra-workspace deps and catches the common manifest
-  # breaks: missing readme / description / license fields, bad
-  # `include` patterns, version typos.
+  # version bump. We scope this gate to `sphereql-core` — the only
+  # dependency-free leaf — which catches the common manifest breaks:
+  # missing readme / description / license fields, bad `include`
+  # patterns, version typos. (sphereql-corpus is NOT a leaf: it depends
+  # on sphereql-core for the relocated synthetic embedder, so a
+  # standalone dry-run would try to resolve sphereql-core from the
+  # registry and break on a version bump. It's validated by the real
+  # publish step like every other downstream crate.)
   #
   # Downstream crates are implicitly validated by the real publish
   # step below — if sphereql-core publishes cleanly, the 60-second
@@ -53,13 +57,20 @@ jobs:
       # occasionally lags behind a publish by ~30s.
       #
       # Order mirrors the workspace dependency graph:
-      #   core → index → layout → embed → graphql → vectordb → sphereql
+      #   core → corpus → index → layout → embed → graphql → vectordb → sphereql
+      # `sphereql-corpus` depends only on `sphereql-core` (the relocated
+      # synthetic embedder), so it is published right after core.
       # `sphereql-graphql` depends on `sphereql-embed` (added in
-      # v0.2.0-alpha for the category resolvers), so it has to come
-      # after embed.
+      # v0.2.0-alpha for the category resolvers), so it has to come after
+      # embed.
 
       - name: Publish sphereql-core
         run: cargo publish -p sphereql-core
+      - name: Wait for registry
+        run: sleep 60
+
+      - name: Publish sphereql-corpus
+        run: cargo publish -p sphereql-corpus
       - name: Wait for registry
         run: sleep 60
 

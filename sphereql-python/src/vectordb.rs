@@ -457,7 +457,7 @@ macro_rules! impl_vector_bridge_methods {
 
             /// Short name of the projection family, or None before the
             /// pipeline is built. One of "pca", "kernel_pca",
-            /// "laplacian_eigenmap".
+            /// "laplacian_eigenmap", "umap_sphere".
             #[getter]
             fn projection_kind(&self) -> Option<&'static str> {
                 self.bridge.projection_kind().map(|k| k.name())

@@ -4,7 +4,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 use sphereql_embed::category::{
     BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
-    DrillDownResult, InnerSphereReport,
+    DrillDownResult, InnerSphereReport, RelationType,
 };
 use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
 use sphereql_embed::domain_groups::DomainGroup;
@@ -16,6 +16,10 @@ fn classification_name(c: BridgeClassification) -> &'static str {
         BridgeClassification::OverlapArtifact => "OverlapArtifact",
         BridgeClassification::Weak => "Weak",
     }
+}
+
+fn relation_name(r: Option<RelationType>) -> Option<String> {
+    r.map(|r| r.name().to_string())
 }
 
 fn severity_name(s: WarningSeverity) -> &'static str {
@@ -492,6 +496,11 @@ pub struct PyBridgeItem {
     /// One of "Genuine", "OverlapArtifact", or "Weak".
     #[pyo3(get)]
     pub classification: String,
+    /// Inferred semantic relation as a snake_case string (e.g.
+    /// "studies", "applies_to", "shared_method"), or None if no relation
+    /// was inferred for this bridge.
+    #[pyo3(get)]
+    pub relation: Option<String>,
 }
 
 #[gen_stub_pymethods]
@@ -519,6 +528,7 @@ impl From<&BridgeItem> for PyBridgeItem {
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
             classification: classification_name(b.classification).to_string(),
+            relation: relation_name(b.relation),
         }
     }
 }

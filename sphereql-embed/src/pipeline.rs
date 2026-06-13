@@ -826,8 +826,10 @@ impl SphereQLPipeline {
     /// quality score, in `[0, 1]`. PCA returns the classical EVR;
     /// kernel PCA returns its kernel-space EVR; Laplacian eigenmap
     /// returns a compatible connectivity ratio (see
-    /// [`LaplacianEigenmapProjection::connectivity_ratio`](crate::laplacian::LaplacianEigenmapProjection::connectivity_ratio)).
-    /// All three feed the EVR-adaptive thresholds downstream.
+    /// [`LaplacianEigenmapProjection::connectivity_ratio`](crate::laplacian::LaplacianEigenmapProjection::connectivity_ratio));
+    /// UMAP returns its kNN-recall — the fraction of each point's
+    /// high-dimensional neighbors preserved on the sphere. All four feed
+    /// the EVR-adaptive thresholds downstream.
     pub fn explained_variance_ratio(&self) -> f64 {
         self.projection.explained_variance_ratio()
     }

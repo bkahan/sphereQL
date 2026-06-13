@@ -6,35 +6,34 @@ features; you depend on it with the flags you need.
 
 ## Dependency graph
 
+Intra-workspace dependency edges (normal `[dependencies]`, derived
+directly from each `Cargo.toml` — kept as an edge list rather than ASCII
+art so it can't drift out of sync):
+
 ```text
-                    sphereql (umbrella crate, feature-gated)
-                    |
-    +---------------+------+------------------+
-    |               |      |                  |
-sphereql-graphql  sphereql-vectordb           |
-    |    |          |                         |
-    |    +------sphereql-embed                |
-    |               |                         |
-    |           sphereql-layout               |
-    |               |                         |
-    +----------sphereql-index                 |
-                    |                         |
-                sphereql-core ----------------+
-                    ^
-                    |
-                sphereql-lingua  (text → ConceptGraph pipeline)
+  sphereql-core      →  (no workspace deps)
+  sphereql-index     →  core
+  sphereql-layout    →  core, index
+  sphereql-embed     →  core, index, layout
+  sphereql-graphql   →  core, index, embed
+  sphereql-vectordb  →  core, embed
+  sphereql-lingua    →  core
+  sphereql-corpus    →  core  (re-exports the synthetic embedder)
+  sphereql (umbrella, feature-gated)
+                     →  core, index, layout, embed, graphql, vectordb
 
-    sphereql-python  (PyO3 bindings via maturin)
-    sphereql-wasm    (wasm-bindgen bindings)
-    lingua-spherica  (Python skeleton: types + spherical math only)
-
-    sphereql-corpus   (shared example data; no sphereql crate deps)
-    sphereql-examples (runnable examples spanning the workspace)
+  Bindings / tooling (consume the above; not part of the core graph):
+  sphereql-python    →  core, index, layout, embed, graphql, vectordb, lingua  (all optional)
+  sphereql-wasm      →  core, index, embed
+  sphereql-examples  →  sphereql, core, corpus, embed, lingua
+  scripts/check-drift, scripts/check-versions  →  CI tooling (no library deps)
 ```
 
 Both `sphereql-graphql` and `sphereql-vectordb` depend on
 `sphereql-embed` — the GraphQL layer serves the category-enrichment
-surface and embeds query text through the `TextEmbedder` trait.
+surface and embeds query text through the `TextEmbedder` trait — and
+both also depend directly on `sphereql-core`. The Python skeleton
+`lingua-spherica` is a separate package, not a workspace crate.
 
 ## Crates
 
@@ -50,6 +49,9 @@ surface and embeds query text through the `TextEmbedder` trait.
 | `sphereql-python` | Python bindings via PyO3/maturin. Exposes Pipeline (with category enrichment + Laplacian), every projection family, vector store bridges, `auto_tune`, the `MetaModel` layer, `FeedbackAggregator`, and interactive 3D visualization. Type stubs (`.pyi`) auto-generated via `pyo3-stub-gen`. |
 | `sphereql-wasm` | WebAssembly bindings via `wasm-bindgen`. Typed return values via `tsify` — every pipeline / category / metalearning method returns a TypeScript-typed value, no `JSON.parse` required on the JS side. |
 | `scripts/check-drift` | CI tool that `syn`-parses `sphereql-embed` + `sphereql-layout` public APIs and fails when a new public item isn't bound in Python/WASM and isn't in `.bindings-ignore.toml`. |
+| `scripts/check-versions` | CI tool that checks every release-version string across manifests, READMEs, and docs against the canonical workspace + pyproject versions. |
+| `scripts/check-docs` | CI tool that checks doc/code consistency: every workspace crate appears in the README + architecture crate tables, and the test-count floors stated in the docs still hold. |
+| `scripts/check-doc-snippets` | CI tool that compile-checks the `rust` fenced blocks in the prose docs against the `sphereql` umbrella crate, so API drift in a quickstart snippet fails CI. |
 | `sphereql` | Umbrella crate with feature flags for selective imports. |
 | `sphereql-corpus` | Shared test corpora for examples: 775-concept built-in across 31 academic domains, plus a 300-concept low-SNR stress corpus (via `build_stress_corpus` / `embed_with_noise`). Bulk-ingested parquet corpora (DBpedia 500K, Wikidata 50K) live in `sphereql-corpus/data/` and are produced by the `bulk_ingest` example. Used by `ai_knowledge_navigator`, `spatial_analysis`, `auto_tune`, `meta_learn`, and the full_e2e example. |
 | `sphereql-examples` | Runnable examples for the whole workspace (`auto_tune`, `meta_learn`, `bulk_ingest`, `corpus_self_tune`, `full_e2e`, `graphql_server`, …). Workspace member; not published. |
@@ -77,8 +79,9 @@ sphereql = { version = "0.2.0-alpha", features = ["full", "pinecone"] }
 
 The `qdrant` feature is available on `sphereql-vectordb` and `sphereql-python`
 directly but is not re-exported through the umbrella crate. Use
-`sphereql-vectordb` with `features = ["qdrant"]` for Rust, or
-`pip install sphereql[qdrant]` for Python.
+`sphereql-vectordb` with `features = ["qdrant"]` for Rust, or build the
+Python wheel from source with `maturin develop --features qdrant` for
+Python (it is not a PyPI extra).
 
 ## GraphQL category schema
 
@@ -93,7 +96,7 @@ server-side through a `TextEmbedder` trait — pluggable at schema
 construction time, with `NoEmbedder` (error-descriptively) as the
 default:
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use sphereql_embed::{Embedding, EmbedderError, FnEmbedder};
 use sphereql_graphql::{

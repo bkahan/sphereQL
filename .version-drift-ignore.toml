@@ -1,0 +1,26 @@
+# Version-drift allowlist.
+#
+# The `check-versions` tool scans every `*.md` for release-version tokens
+# and checks them against the canonical workspace (Rust) / pyproject
+# (Python) versions. A handful of files legitimately carry historical or
+# target versions; list them here so the scan stays signal.
+#
+# Run the checker with:
+#   cargo run -p check-versions
+
+# Files excluded from the markdown scan entirely (relative path or bare
+# file name). Manifest pins in these dirs are still checked exactly.
+ignore_files = [
+    "CHANGELOG.md", # release-managed; inherently lists every historical version
+    "TODO.md",      # planning doc; intentionally names the next target version
+]
+
+# One-off (file, token) exceptions for a single deliberate reference that
+# must not equal the canonical — e.g. a doc snippet pinning a third-party
+# crate to an `x.y.z` version, or a historical version called out in prose.
+# Prefer fixing the drift over adding an entry. Example:
+#
+#   [[allow]]
+#   file = "docs/migration.md"
+#   token = "0.1.0-alpha"
+#   reason = "documents the pre-0.2 upgrade path"

@@ -1,0 +1,18 @@
+[package]
+name = "check-versions"
+description = "CI drift check: ensures every release-version string across manifests and docs agrees with the canonical workspace + pyproject versions"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "check-versions"
+path = "src/main.rs"
+
+[dependencies]
+toml = "0.8"
+walkdir = "2"
+regex = "1"
+serde = { version = "1", features = ["derive"] }

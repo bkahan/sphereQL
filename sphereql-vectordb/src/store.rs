@@ -8,6 +8,7 @@ use crate::types::{PayloadUpdate, SearchResult, VectorPage, VectorRecord};
 /// Implementations exist for:
 /// - [`InMemoryStore`](crate::InMemoryStore) — always available, for testing and small datasets
 /// - `QdrantStore` — behind the `qdrant` feature flag
+/// - `PineconeStore` — behind the `pinecone` feature flag
 ///
 /// All methods accept `&self` — implementations must handle interior
 /// mutability (typically via `RwLock` or the backend's own concurrency).

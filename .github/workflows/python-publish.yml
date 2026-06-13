@@ -23,11 +23,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Regenerate stubs
         working-directory: sphereql-python
-        run: cargo run --bin gen-stubs
+        run: cargo run --bin gen-stubs --features vectordb
       - name: Fail if stubs are stale
         run: |
           if ! git diff --exit-code sphereql-python/python/sphereql/__init__.pyi; then
-            echo "::error::python stubs are stale — run \`cargo run --bin gen-stubs\` from sphereql-python/ and commit before publishing"
+            echo "::error::python stubs are stale — run \`cargo run --bin gen-stubs --features vectordb\` from sphereql-python/ and commit before publishing"
             exit 1
           fi
 

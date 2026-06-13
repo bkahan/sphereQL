@@ -94,7 +94,7 @@ let layout = ForceDirectedLayout::new()
 
 ## Embedding projection
 
-```rust
+```rust,ignore
 use sphereql::embed::*;
 
 // Prepare embeddings (e.g., 384-dimensional sentence-transformer output)
@@ -184,7 +184,7 @@ families and [auto-tuning.md](auto-tuning.md) for the `PipelineConfig` +
 
 ## GraphQL
 
-```rust
+```rust,ignore
 use sphereql::graphql::*;
 
 // Build schema with sensible defaults
