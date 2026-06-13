@@ -33,7 +33,10 @@ pub fn embed(features: &[(usize, f64)], seed: u64) -> Vec<f64> {
 pub fn embed_with_noise(features: &[(usize, f64)], seed: u64, amplitude: f64) -> Vec<f64> {
     let mut v = vec![0.0; DIM];
     for &(axis, val) in features {
-        v[axis] = val;
+        // Skip out-of-range axes instead of panicking on malformed input.
+        if axis < DIM {
+            v[axis] = val;
+        }
     }
     // Knuth's 64-bit LCG: cheap, deterministic, good enough for noise injection.
     let mut s = seed;

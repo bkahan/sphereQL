@@ -27,7 +27,7 @@ fit **138,160 ms ≈ 2.3 min** (EVR 1.68%), UMAP-on-sphere fit **12,208 ms**
 
 ## Results
 
-```
+```text
 PCA explained variance ratio: 2.81%   (fit 7,834 ms)
 KPCA explained variance ratio: 1.68%  (fit 138,160 ms)
 UMAP kNN-recall: 5.80%                (fit 12,208 ms)

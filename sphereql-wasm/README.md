@@ -22,9 +22,9 @@ speak JSON strings.
 Coverage tracks the Rust crates closely but not 1:1 — the gaps are
 listed in the workspace's
 [`.bindings-ignore.toml`](https://github.com/bkahan/sphereQL/blob/main/.bindings-ignore.toml)
-and enforced by a drift checker. Notably not bound yet: the corpus
-self-tune controller (`run_self_tune`) and bridge relation-type
-annotations.
+and enforced by a drift checker. `run_self_tune` (WASM `runSelfTune`) and
+bridge relation-type annotations are now bound; the remaining gaps are
+config/report sub-types surfaced as JSON and Rust-only traits.
 
 ## Example
 

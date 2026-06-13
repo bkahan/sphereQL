@@ -64,7 +64,7 @@ both also depend directly on `sphereql-core`. The Python skeleton
 | `index` | Spatial indexing and queries | `core` |
 | `layout` | Layout strategies and quality metrics | `core`, `index` |
 | `embed` | Embedding projection, pipeline, auto-tuner, meta-model | `core`, `index`, `layout` |
-| `graphql` | GraphQL schema, subscriptions, event bus | `core`, `index` |
+| `graphql` | GraphQL schema, subscriptions, event bus | `core`, `index` (+ `embed` via the crate) |
 | `vectordb` | Vector store bridge and hybrid search | `embed` |
 | `pinecone` | Pinecone backend for vectordb | `vectordb` |
 | `retain-embeddings` | Keep the original high-dimensional embeddings on the pipeline (`raw_embeddings()`, `pairwise_similarities()`, `nearest_by_embedding()`) | `sphereql-embed/retain-embeddings` |

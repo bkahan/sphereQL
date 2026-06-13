@@ -144,12 +144,15 @@ fn extract(file: &Path, text: &str) -> Vec<Snippet> {
 /// scope: the former track per-crate APIs, the latter are LLM prompts.
 fn doc_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(root.join("docs")) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                files.push(path);
-            }
+    let docs_dir = root.join("docs");
+    // Fail closed: a missing/unreadable docs/ dir must error, not silently
+    // yield zero snippets (which would let CI pass without checking anything).
+    let entries = std::fs::read_dir(&docs_dir)
+        .unwrap_or_else(|e| panic!("failed to read docs dir {}: {e}", docs_dir.display()));
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("md") {
+            files.push(path);
         }
     }
     for name in ROOT_DOCS {
@@ -333,9 +336,11 @@ fn main() {
 
     let mut snippets: Vec<Snippet> = Vec::new();
     for file in doc_files(&root) {
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
+        // Fail closed: a doc we can't read is an error, not a silent skip.
+        let text = std::fs::read_to_string(&file).unwrap_or_else(|e| {
+            eprintln!("\nERROR: failed to read {}: {e}", rel(&root, &file));
+            std::process::exit(1);
+        });
         snippets.extend(extract(&file, &text));
     }
 

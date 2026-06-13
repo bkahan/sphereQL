@@ -14,6 +14,9 @@ on:
       - "scripts/check-versions/**"
       - ".github/workflows/version-drift.yml"
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest

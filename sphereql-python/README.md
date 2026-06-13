@@ -105,9 +105,9 @@ tuned, report = sphereql.auto_tune(categories, embeddings, budget=16)
 Most of the Rust query surface has a 1:1 Python binding; the gaps are
 tracked explicitly in the workspace's
 [`.bindings-ignore.toml`](https://github.com/bkahan/sphereQL/blob/main/.bindings-ignore.toml)
-allowlist and enforced by a drift checker in CI. Notably *not* bound
-yet: the corpus self-tune controller (`run_self_tune`) and bridge
-relation-type annotations.
+allowlist and enforced by a drift checker in CI. `run_self_tune` and
+bridge relation-type annotations are now bound; the remaining gaps are
+config/report sub-types surfaced as dicts and Rust-only traits.
 
 ## API Reference
 

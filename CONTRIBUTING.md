@@ -99,18 +99,24 @@ pytest -v
    - Note anything reviewers should pay attention to
    - Include a test plan if the changes aren't covered by automated tests
 
-4. **All CI checks must pass** before merge. The CI pipeline runs:
+4. **All CI checks must pass** before merge. `RUSTFLAGS: -Dwarnings` is set
+   workspace-wide in the CI env, so any compiler/clippy warning fails the
+   build. The pipeline runs:
    - `cargo test --workspace --all-features --exclude sphereql-python`
      plus a separate doc-test pass
-   - `cargo clippy --workspace --all-features --all-targets` with `-D warnings`
+   - `cargo clippy --workspace --all-features --all-targets`
    - `cargo fmt --all -- --check` and `cargo doc --no-deps`
    - Per-feature compilation matrix (core, index, layout, embed, graphql,
      vectordb, full, no-default-features)
-   - Python build + pytest on Python 3.10–3.13, and a stub-freshness
-     check (`gen-stubs` output must match the committed `__init__.pyi`)
-   - WASM build to `wasm32-unknown-unknown`, the bindings drift check
-     (`cargo run -p check-drift`), and the version drift check
-     (`cargo run -p check-versions`)
+   - Python build + pytest on Python 3.10–3.13 (plus the `lingua-spherica`
+     cross-language parity suite), and a stub-freshness check
+     (`gen-stubs` output must match the committed `__init__.pyi`)
+   - WASM build to `wasm32-unknown-unknown` and the `wasm-bindgen-test`
+     smoke suite (`wasm-pack test --node`)
+   - The drift checks: bindings (`cargo run -p check-drift`), versions
+     (`cargo run -p check-versions`), docs — crate tables + test-count
+     floors (`cargo run -p check-docs`), and doc snippets
+     (`cargo run -p check-doc-snippets`)
 
 5. **Address review feedback** with new commits (don't force-push during review
    unless asked). Once approved, the maintainer will merge.
