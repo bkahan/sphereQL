@@ -182,6 +182,38 @@ See [projections.md](projections.md) for a tour of the four projection
 families and [auto-tuning.md](auto-tuning.md) for the `PipelineConfig` +
 `auto_tune` workflow.
 
+## Visualization
+
+Enable the `vis` feature (included in `full`) to render a corpus to a
+self-contained, interactive 3D sphere. The emitted HTML inlines the Three.js
+runtime, so it opens offline.
+
+```rust
+use sphereql::vis::{Scene, ScenePoint, SceneStats};
+
+// Map projected points into a scene (here, literals; in practice convert
+// `pipeline.exported_points()` into `ScenePoint`s — see the
+// `visualize_corpus` example for the full overlay set).
+let scene = Scene::builder()
+    .title("My corpus")
+    .points(vec![
+        ScenePoint::from_spherical("science", "atom", 1.0, 0.3, 1.2),
+        ScenePoint::from_spherical("cooking", "bread", 1.0, 2.7, 0.9),
+        ScenePoint::from_spherical("science", "energy", 1.0, 0.5, 1.0),
+    ])
+    // The label is set per projection family, not hardcoded.
+    .stats(SceneStats::new("pca", 0.83).with_label("PCA variance"))
+    .build();
+
+let html = scene.to_html(); // offline; `to_html_cdn()` for a smaller file
+std::fs::write("sphere_viz.html", html).unwrap();
+```
+
+The `sphereql-examples` crate's `visualize_corpus` example shows the full
+workflow: load a corpus, auto-tune a projection, and emit a scene with
+category centroids, classified bridges, geodesic concept paths, Voronoi caps,
+antipodes, and domain-group spokes.
+
 ## GraphQL
 
 ```rust,ignore

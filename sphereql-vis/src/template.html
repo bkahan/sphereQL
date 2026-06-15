@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__SPHEREQL_TITLE__</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}
+canvas{position:absolute;top:0;left:0}
+.panel{position:absolute;background:rgba(26,26,46,0.92);padding:14px 18px;border-radius:10px;backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);z-index:10}
+#legend{top:16px;left:16px;font-size:13px;max-height:46vh;overflow-y:auto}
+#legend h3,#overlays h3,#stats h3{font-size:13px;margin-bottom:8px;color:#aaa;font-weight:500;letter-spacing:.5px}
+.lrow{display:flex;align-items:center;gap:8px;margin:4px 0;cursor:pointer;padding:2px 4px;border-radius:4px;transition:background .15s}
+.lrow:hover{background:rgba(255,255,255,0.08)}.lrow.dim{opacity:.25}
+.ldot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.lbl{font-size:12px}.lcnt{font-size:11px;color:#888;margin-left:auto}
+#overlays{top:16px;left:200px;font-size:13px;max-height:46vh;overflow-y:auto}
+.orow{display:flex;align-items:center;gap:8px;margin:5px 0;cursor:pointer;font-size:12px;color:#bbb}
+.orow input{accent-color:#4fc3f7}
+#info{top:16px;right:16px;width:320px;max-height:calc(100vh - 32px);overflow-y:auto;font-size:13px;padding:18px;display:none}
+#info.visible{display:block}
+#info h3{font-size:15px;margin-bottom:6px;font-weight:600}
+#info .cat-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;margin-bottom:8px}
+#info .coord{font-size:12px;color:#999;margin:4px 0}
+#info .nb{padding:6px 8px;margin:3px 0;background:rgba(255,255,255,0.04);border-radius:6px;font-size:12px;cursor:pointer;transition:background .15s}
+#info .nb:hover{background:rgba(255,255,255,0.1)}
+#info .nb .dist{color:#888;font-size:11px;float:right}
+#stats{bottom:16px;left:16px;font-size:12px}
+#stats .row{display:flex;justify-content:space-between;gap:16px;margin:2px 0;color:#bbb}
+#stats .val{color:#e0e0e0;font-weight:500}
+#stats .note{color:#d29;font-size:11px;margin-top:4px}
+#search{bottom:16px;right:16px;padding:10px 14px}
+#search input{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#e0e0e0;padding:6px 10px;font-size:12px;width:200px;outline:none}
+#search input:focus{border-color:rgba(100,180,255,0.4)}
+#tooltip{position:absolute;pointer-events:none;background:rgba(26,26,46,0.95);padding:8px 12px;border-radius:6px;font-size:12px;border:1px solid rgba(255,255,255,0.12);display:none;z-index:20;white-space:nowrap}
+#empty{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#888;font-size:15px;display:none;z-index:5}
+#help{position:absolute;bottom:64px;right:16px;font-size:11px;color:#555;text-align:right;pointer-events:none;z-index:5}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="legend" class="panel"><h3>Categories</h3><div id="legend-items"></div></div>
+<div id="overlays" class="panel" style="display:none"><h3>Overlays</h3><div id="overlay-items"></div></div>
+<div id="info" class="panel"><h3 id="info-label"></h3><div id="info-cat" class="cat-tag"></div><div id="info-coords" class="coord"></div><h4 style="font-size:12px;color:#aaa;margin:10px 0 4px">Nearest (chord distance)</h4><div id="info-neighbors"></div></div>
+<div id="stats" class="panel"><h3>Stats</h3><div id="stats-content"></div></div>
+<div id="search" class="panel"><input type="text" id="search-input" placeholder="Search labels..."></div>
+<div id="tooltip"></div>
+<div id="empty">No points to display — empty corpus.</div>
+<div id="help">drag to rotate · scroll to zoom · click a point to inspect</div>
+<!--__SPHEREQL_SCRIPTS__-->
+<script>
+const D=/*__SPHEREQL_DATA__*/;
+const pts=D.points||[],N=pts.length;
+const overlays=D.overlays||[];
+const SR=D.surface_radius||1.0;
+const escHtml=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const fmin=a=>a.reduce((m,v)=>v<m?v:m,Infinity);
+const fmax=a=>a.reduce((m,v)=>v>m?v:m,-Infinity);
+
+// Category colors
+const catSet=[...new Set(pts.map(p=>p.cat))].sort();
+const PALETTE=["#4fc3f7","#ff8a65","#81c784","#ba68c8","#fff176","#f06292","#4dd0e1","#a1887f","#90a4ae","#aed581","#7986cb","#ffb74d","#e57373","#64b5f6","#dce775","#9575cd"];
+const catColor={};catSet.forEach((c,i)=>catColor[c]=PALETTE[i%PALETTE.length]);
+const catVisible={};catSet.forEach(c=>catVisible[c]=true);
+
+// Canvas & renderer
+const canvas=document.getElementById("c");
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x1a1a2e);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.001,1000);
+camera.position.set(0,SR*0.6,SR*4.2);
+
+const controls=new THREE.OrbitControls(camera,canvas);
+controls.enableDamping=true;controls.dampingFactor=0.08;
+controls.minDistance=SR*0.2;controls.maxDistance=SR*20;
+
+scene.add(new THREE.AmbientLight(0x404060,2));
+const dl=new THREE.DirectionalLight(0xffffff,0.6);dl.position.set(3,5,4);scene.add(dl);
+
+if(N===0){document.getElementById("empty").style.display="block";}
+
+// Reference wireframe sphere at the surface radius
+const wg=new THREE.IcosahedronGeometry(SR,3);
+const wm=new THREE.MeshBasicMaterial({color:0x334466,wireframe:true,transparent:true,opacity:0.06});
+scene.add(new THREE.Mesh(wg,wm));
+
+// Optional axis triad
+if(D.show_axes){
+  const ag=new THREE.BufferGeometry(),av=[],ac=[];
+  [[1,0,0,1,0.35,0.35],[0,1,0,0.35,1,0.35],[0,0,1,0.35,0.35,1]].forEach(([x,y,z,r,g,b])=>{
+    av.push(0,0,0,x*SR*1.2,y*SR*1.2,z*SR*1.2);ac.push(r,g,b,r,g,b);});
+  ag.setAttribute("position",new THREE.Float32BufferAttribute(av,3));
+  ag.setAttribute("color",new THREE.Float32BufferAttribute(ac,3));
+  scene.add(new THREE.LineSegments(ag,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.35})));
+}
+
+// Points as BufferGeometry
+const positions=new Float32Array(N*3);
+const colors=new Float32Array(N*3);
+const sizes=new Float32Array(N);
+for(let i=0;i<N;i++){
+  const p=pts[i],c=new THREE.Color(catColor[p.cat]);
+  positions[i*3]=p.x;positions[i*3+1]=p.y;positions[i*3+2]=p.z;
+  colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b;
+  sizes[i]=4.0;
+}
+const pointsGeo=new THREE.BufferGeometry();
+pointsGeo.setAttribute("position",new THREE.BufferAttribute(positions,3));
+pointsGeo.setAttribute("color",new THREE.BufferAttribute(colors,3));
+pointsGeo.setAttribute("size",new THREE.BufferAttribute(sizes,1));
+const pointsMat=new THREE.ShaderMaterial({
+  vertexColors:true,transparent:true,depthWrite:false,
+  uniforms:{opacity:{value:1.0}},
+  vertexShader:`attribute float size;varying vec3 vc;void main(){vc=color;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=size*300.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
+  fragmentShader:`uniform float opacity;varying vec3 vc;void main(){float d=length(gl_PointCoord-0.5);if(d>0.5)discard;float a=smoothstep(0.5,0.3,d)*opacity;gl_FragColor=vec4(vc,a);}`
+});
+const pointsMesh=new THREE.Points(pointsGeo,pointsMat);
+scene.add(pointsMesh);
+
+// Neighbor lines group
+const linesGroup=new THREE.Group();scene.add(linesGroup);
+
+// ── Overlays ─────────────────────────────────────────────────────────────
+const overlayGroups={};          // kind -> THREE.Group
+const classColor={Genuine:0xffffff,Weak:0x888888,OverlapArtifact:0xff6666};
+function groupFor(kind){
+  if(!overlayGroups[kind]){const g=new THREE.Group();overlayGroups[kind]=g;scene.add(g);}
+  return overlayGroups[kind];
+}
+function v3(a){return new THREE.Vector3(a[0],a[1],a[2]);}
+// A wire ring for a spherical cap: center direction `dir`, half-angle `ha`.
+function capRing(dir,ha,colHex){
+  const d=v3(dir).normalize();
+  const ringR=SR*Math.sin(ha),off=SR*Math.cos(ha);
+  const geo=new THREE.RingGeometry(ringR*0.985,ringR,48);
+  const mat=new THREE.MeshBasicMaterial({color:colHex,transparent:true,opacity:0.5,side:THREE.DoubleSide});
+  const ring=new THREE.Mesh(geo,mat);
+  ring.position.copy(d.clone().multiplyScalar(off));
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),d);
+  return ring;
+}
+function lineBetween(a,b,colHex,op){
+  const geo=new THREE.BufferGeometry().setFromPoints([v3(a),v3(b)]);
+  return new THREE.Line(geo,new THREE.LineBasicMaterial({color:colHex,transparent:true,opacity:op}));
+}
+function marker(pos,colHex,rad){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(rad,12,12),
+    new THREE.MeshStandardMaterial({color:colHex,emissive:colHex,emissiveIntensity:0.5,roughness:0.4}));
+  m.position.copy(v3(pos));return m;
+}
+const overlayKinds=new Set();
+overlays.forEach(o=>{
+  overlayKinds.add(o.kind);
+  const g=groupFor(o.kind);
+  const col=o.color?new THREE.Color(o.color).getHex():0xffffff;
+  if(o.kind==="centroid"){
+    g.add(marker(o.pos,col,SR*0.02));
+  }else if(o.kind==="bridge"){
+    const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;
+    g.add(lineBetween(o.from,o.to,ch,0.2+0.6*(o.strength||0.5)));
+  }else if(o.kind==="geodesic_path"){
+    const geo=new THREE.BufferGeometry().setFromPoints((o.vertices||[]).map(v3));
+    g.add(new THREE.Line(geo,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.85})));
+  }else if(o.kind==="voronoi_cap"){
+    g.add(capRing(o.center,o.half_angle,col));
+  }else if(o.kind==="antipode"){
+    g.add(marker(o.centroid,col,SR*0.015));
+    g.add(marker(o.antipode,col,SR*0.015));
+    g.add(lineBetween(o.centroid,o.antipode,col,0.2));
+  }else if(o.kind==="coverage_void"){
+    (o.caps||[]).forEach(c=>g.add(capRing(c.center,c.half_angle,0x66aaff)));
+    (o.voids||[]).forEach(vp=>g.add(marker(vp,0x222233,SR*0.006)));
+  }else if(o.kind==="domain_group"){
+    g.add(marker(o.centroid,col,SR*0.025));
+    (o.members||[]).forEach(m=>g.add(lineBetween(o.centroid,m,col,0.3)));
+  }else if(o.kind==="glob"){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(o.radius,20,20),
+      new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.12,depthWrite:false}));
+    m.position.copy(v3(o.center));g.add(m);
+  }else if(o.kind==="manifold_slice"){
+    const pl=new THREE.Mesh(new THREE.PlaneGeometry(SR,SR),
+      new THREE.MeshBasicMaterial({color:0x6688aa,transparent:true,opacity:0.12,side:THREE.DoubleSide}));
+    pl.position.copy(v3(o.center));
+    pl.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),v3(o.normal).normalize());
+    g.add(pl);
+  }
+});
+// Default overlay visibility: heavy/territorial layers start off.
+const overlayDefaultOff=new Set(["voronoi_cap","coverage_void","glob","manifold_slice"]);
+overlayKinds.forEach(k=>{if(overlayDefaultOff.has(k))overlayGroups[k].visible=false;});
+
+// ── Picking (hover + click) ──────────────────────────────────────────────
+const raycaster=new THREE.Raycaster();
+raycaster.params.Points.threshold=SR*0.02;
+const mouse=new THREE.Vector2();
+const tooltip=document.getElementById("tooltip");
+let selectedIdx=-1;
+
+function getHovered(e){
+  mouse.x=(e.clientX/innerWidth)*2-1;
+  mouse.y=-(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObject(pointsMesh);
+  if(hits.length>0){const idx=hits[0].index;if(catVisible[pts[idx].cat])return idx;}
+  return -1;
+}
+canvas.addEventListener("mousemove",e=>{
+  const idx=getHovered(e);
+  if(idx>=0){
+    const p=pts[idx];
+    tooltip.innerHTML=`<b>${escHtml(p.label||"Point "+idx)}</b><br>Category: ${escHtml(p.cat)}<br>θ=${p.theta.toFixed(3)} φ=${p.phi.toFixed(3)} r=${p.r.toFixed(3)}`;
+    tooltip.style.display="block";
+    tooltip.style.left=(e.clientX+12)+"px";tooltip.style.top=(e.clientY+12)+"px";
+    canvas.style.cursor="pointer";
+  }else{tooltip.style.display="none";canvas.style.cursor="grab";}
+});
+canvas.addEventListener("click",e=>{const idx=getHovered(e);if(idx>=0)selectPoint(idx);else deselectPoint();});
+
+function selectPoint(idx){
+  selectedIdx=idx;
+  const p=pts[idx];
+  const dists=pts.map((q,i)=>{
+    if(i===idx||!catVisible[q.cat])return{i,d:Infinity};
+    const dx=p.x-q.x,dy=p.y-q.y,dz=p.z-q.z;
+    return{i,d:Math.sqrt(dx*dx+dy*dy+dz*dz)};
+  }).filter(d=>d.d<Infinity).sort((a,b)=>a.d-b.d).slice(0,5);
+  const neighborSet=new Set([idx,...dists.map(d=>d.i)]);
+  const sizeAttr=pointsGeo.getAttribute("size"),colorAttr=pointsGeo.getAttribute("color");
+  for(let i=0;i<N;i++){
+    const base=new THREE.Color(catColor[pts[i].cat]);
+    if(neighborSet.has(i)){sizeAttr.array[i]=6.0;colorAttr.array[i*3]=base.r;colorAttr.array[i*3+1]=base.g;colorAttr.array[i*3+2]=base.b;}
+    else{sizeAttr.array[i]=2.0;colorAttr.array[i*3]=base.r*0.3;colorAttr.array[i*3+1]=base.g*0.3;colorAttr.array[i*3+2]=base.b*0.3;}
+  }
+  sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;pointsMat.uniforms.opacity.value=0.4;
+  while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
+  const lineMat=new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:0.3});
+  for(const d of dists){
+    const geo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p.x,p.y,p.z),new THREE.Vector3(pts[d.i].x,pts[d.i].y,pts[d.i].z)]);
+    linesGroup.add(new THREE.Line(geo,lineMat));
+  }
+  const info=document.getElementById("info");
+  document.getElementById("info-label").textContent=p.label||"Point "+idx;
+  const catTag=document.getElementById("info-cat");
+  catTag.textContent=p.cat;catTag.style.background=catColor[p.cat]+"33";catTag.style.color=catColor[p.cat];
+  document.getElementById("info-coords").innerHTML=`θ=${p.theta.toFixed(4)} &nbsp; φ=${p.phi.toFixed(4)} &nbsp; r=${p.r.toFixed(4)}`;
+  const nbDiv=document.getElementById("info-neighbors");
+  nbDiv.innerHTML=dists.map(d=>`<div class="nb" data-idx="${d.i}">${escHtml(pts[d.i].label||"Point "+d.i)} <span class="dist">${d.d.toFixed(4)}</span></div>`).join("");
+  nbDiv.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));
+  info.classList.add("visible");
+}
+function deselectPoint(){
+  selectedIdx=-1;
+  const sizeAttr=pointsGeo.getAttribute("size"),colorAttr=pointsGeo.getAttribute("color");
+  for(let i=0;i<N;i++){
+    const vis=catVisible[pts[i].cat];sizeAttr.array[i]=vis?4.0:0.0;
+    const c=new THREE.Color(catColor[pts[i].cat]);
+    colorAttr.array[i*3]=c.r;colorAttr.array[i*3+1]=c.g;colorAttr.array[i*3+2]=c.b;
+  }
+  sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;pointsMat.uniforms.opacity.value=1.0;
+  while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
+  document.getElementById("info").classList.remove("visible");
+}
+
+// ── Legend ───────────────────────────────────────────────────────────────
+const legendDiv=document.getElementById("legend-items");
+const catCounts={};pts.forEach(p=>catCounts[p.cat]=(catCounts[p.cat]||0)+1);
+catSet.forEach(cat=>{
+  const row=document.createElement("div");row.className="lrow";
+  row.innerHTML=`<span class="ldot" style="background:${catColor[cat]}"></span><span class="lbl"></span><span class="lcnt">${catCounts[cat]}</span>`;
+  row.querySelector(".lbl").textContent=cat;
+  row.addEventListener("click",()=>{catVisible[cat]=!catVisible[cat];row.classList.toggle("dim",!catVisible[cat]);updateVisibility();});
+  legendDiv.appendChild(row);
+});
+function updateVisibility(){
+  const sizeAttr=pointsGeo.getAttribute("size");
+  for(let i=0;i<N;i++)sizeAttr.array[i]=catVisible[pts[i].cat]?4.0:0.0;
+  sizeAttr.needsUpdate=true;
+  if(selectedIdx>=0)deselectPoint();
+}
+
+// ── Overlay toggles ────────────────────────────────────────────────────────
+const OVERLAY_LABELS={centroid:"Centroids",bridge:"Bridges",geodesic_path:"Geodesic paths",voronoi_cap:"Voronoi caps",antipode:"Antipodes",coverage_void:"Coverage / void",domain_group:"Domain groups",glob:"Globs",manifold_slice:"Manifold slice"};
+if(overlayKinds.size>0){
+  const op=document.getElementById("overlays");op.style.display="block";
+  const oitems=document.getElementById("overlay-items");
+  [...overlayKinds].sort().forEach(kind=>{
+    const on=overlayGroups[kind].visible;
+    const row=document.createElement("label");row.className="orow";
+    row.innerHTML=`<input type="checkbox" ${on?"checked":""}><span></span>`;
+    row.querySelector("span").textContent=OVERLAY_LABELS[kind]||kind;
+    row.querySelector("input").addEventListener("change",e=>{overlayGroups[kind].visible=e.target.checked;});
+    oitems.appendChild(row);
+  });
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+const searchInput=document.getElementById("search-input");
+searchInput.addEventListener("input",()=>{
+  const q=searchInput.value.toLowerCase();
+  const sizeAttr=pointsGeo.getAttribute("size"),colorAttr=pointsGeo.getAttribute("color");
+  if(!q){deselectPoint();return;}
+  for(let i=0;i<N;i++){
+    const match=(pts[i].label||"").toLowerCase().includes(q),vis=catVisible[pts[i].cat];
+    sizeAttr.array[i]=(match&&vis)?6.0:(vis?2.0:0.0);
+    const c=new THREE.Color(catColor[pts[i].cat]),f=match?1.0:0.3;
+    colorAttr.array[i*3]=c.r*f;colorAttr.array[i*3+1]=c.g*f;colorAttr.array[i*3+2]=c.b*f;
+  }
+  sizeAttr.needsUpdate=true;colorAttr.needsUpdate=true;pointsMat.uniforms.opacity.value=0.5;
+});
+
+// ── Stats ────────────────────────────────────────────────────────────────
+const statsDiv=document.getElementById("stats-content");
+const st=D.stats||{};
+let rows="";
+if(N>0){
+  const rVals=pts.map(p=>p.r),thVals=pts.map(p=>p.theta),phVals=pts.map(p=>p.phi);
+  rows=`
+<div class="row"><span>Points</span><span class="val">${N.toLocaleString()}</span></div>
+<div class="row"><span>Categories</span><span class="val">${catSet.length}</span></div>
+<div class="row"><span>Projection</span><span class="val">${escHtml(st.projection_kind||"?")}</span></div>
+<div class="row"><span>${escHtml(st.evr_label||"Explained variance ratio")}</span><span class="val">${((st.evr||0)*100).toFixed(1)}%</span></div>
+<div class="row"><span>r range</span><span class="val">[${fmin(rVals).toFixed(3)}, ${fmax(rVals).toFixed(3)}]</span></div>
+<div class="row"><span>θ range</span><span class="val">[${fmin(thVals).toFixed(3)}, ${fmax(thVals).toFixed(3)}]</span></div>
+<div class="row"><span>φ range</span><span class="val">[${fmin(phVals).toFixed(3)}, ${fmax(phVals).toFixed(3)}]</span></div>`;
+}else{
+  rows=`<div class="row"><span>Points</span><span class="val">0</span></div>`;
+}
+if(st.sampled_from)rows+=`<div class="note">Showing a ${N.toLocaleString()}-point sample of ${st.sampled_from.toLocaleString()}.</div>`;
+if(st.dropped_nonfinite)rows+=`<div class="note">${st.dropped_nonfinite} non-finite point(s) dropped.</div>`;
+statsDiv.innerHTML=rows;
+
+// ── Resize + render loop ─────────────────────────────────────────────────
+window.addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);}
+animate();
+</script>
+</body>
+</html>

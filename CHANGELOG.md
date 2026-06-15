@@ -6,6 +6,41 @@ versions.
 
 ## [Unreleased]
 
+### Added — `sphereql-vis` crate + first-class Rust visualization
+
+- **New `sphereql-vis` crate** — a pure, data-agnostic 3D-visualization
+  emitter: a serializable `Scene` (point cloud + `SceneStats` + an
+  `#[non_exhaustive]` `Overlay` set — category centroids, classified
+  bridges, slerp-interpolated geodesic concept paths, Voronoi territory
+  caps, antipodes, coverage maps, domain-group spokes, globs, manifold
+  slices) and a hardened HTML emitter. Depends only on `sphereql-core`.
+- **Offline, self-contained output** — the emitted HTML inlines the
+  Three.js + OrbitControls runtime (`to_html()`), so files open with no
+  network; `to_html_cdn()` produces a smaller CDN-backed file. The old
+  Python viewer claimed "self-contained" but loaded Three.js from a CDN.
+- **Projection-aware stats** — the stats panel reports the pipeline's
+  actual projection family and its matching quality metric (PCA variance
+  / Kernel EVR / connectivity ratio / UMAP kNN-recall) instead of a
+  hardcoded "PCA variance" label.
+- **Umbrella `vis` feature** — `sphereql --features vis` re-exports the
+  scene API as `sphereql::vis` (also in `full`).
+- **`visualize_corpus` example** — loads a corpus, auto-tunes a
+  projection, and renders the full overlay set to one offline HTML file
+  (`--open` to launch a browser, `--cdn` for a smaller file).
+- **Hardening** — centralized `<script>`-breakout escaping, a reduce-based
+  min/max that fixes a latent large-N `RangeError`, non-finite-point
+  filtering, deterministic per-category decimation for very large clouds,
+  and a snapshot/round-trip/XSS/offline test suite.
+
+### Changed
+
+- `sphereql-python`'s `visualize` / `visualize_pipeline` now render through
+  `sphereql-vis` (API and signatures unchanged; output is offline and
+  projection-aware). The `sphereql-examples` `e2e_transformer` example was
+  migrated onto the shared crate, removing its duplicated inline template;
+  its bespoke per-query/per-path buttons are consolidated into the shared
+  viewer's click-to-inspect and overlay toggles.
+
 ## [0.3.0] — 2026-06-15
 
 ### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)

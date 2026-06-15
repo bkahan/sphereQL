@@ -15,8 +15,11 @@ A quick map of what's in [`examples/`](./examples/):
 - **Basics** — `basic_positioning`, `geospatial`, `graphql_server`,
   `word_embeddings`, `semantic_search`, `auto_categorize`
 - **Category & spatial analysis** — `category_enrichment`,
-  `ai_knowledge_navigator`, `spatial_analysis`, `e2e_transformer`,
-  `benchmark`
+  `ai_knowledge_navigator`, `spatial_analysis`, `benchmark`
+- **Visualization** — `visualize_corpus` (corpus → auto-tuned pipeline →
+  interactive 3D sphere with the full overlay set; `--open` to launch a
+  browser, `--cdn` for a smaller file), `e2e_transformer` (transformer
+  embeddings → sphere; both render via the shared `sphereql-vis` crate)
 - **Auto-tuning & metalearning** — `auto_tune`, `meta_learn`,
   `meta_warm_start`, `meta_feedback`, `cq_e2e`
 - **Corpus tooling** — `corpus_self_tune`, `bulk_ingest` (some sources

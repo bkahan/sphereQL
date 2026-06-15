@@ -39,7 +39,7 @@ extension-module = ["pyo3/extension-module"]
 core = ["dep:sphereql-core"]
 index = ["core", "dep:sphereql-index"]
 layout = ["index", "dep:sphereql-layout"]
-embed = ["layout", "dep:sphereql-embed"]
+embed = ["layout", "dep:sphereql-embed", "dep:sphereql-vis"]
 graphql = ["index", "dep:sphereql-graphql"]
 vectordb = ["embed", "dep:sphereql-vectordb", "dep:tokio", "dep:async-trait"]
 pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
@@ -55,6 +55,7 @@ sphereql-core = { path = "../sphereql-core", optional = true }
 sphereql-index = { path = "../sphereql-index", optional = true }
 sphereql-layout = { path = "../sphereql-layout", optional = true }
 sphereql-embed = { path = "../sphereql-embed", optional = true }
+sphereql-vis = { path = "../sphereql-vis", version = "0.3.0", optional = true }
 sphereql-graphql = { path = "../sphereql-graphql", optional = true }
 sphereql-vectordb = { path = "../sphereql-vectordb", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread"], optional = true }

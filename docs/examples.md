@@ -40,11 +40,23 @@ cargo run -p sphereql-examples --example ai_knowledge_navigator
 # geodesic sweep, lunes, curvature) raw and navigator-wrapped
 cargo run -p sphereql-examples --example spatial_analysis
 
-# End-to-end transformer embedding pipeline
-cargo run -p sphereql-examples --example e2e_transformer
-
 # Benchmarks
 cargo run -p sphereql-examples --example benchmark
+```
+
+## Rust — visualization
+
+```bash
+# Corpus → auto-tuned pipeline → interactive 3D sphere. Writes a
+# self-contained HTML file (Three.js inlined, so it opens offline) with the
+# full overlay set: category centroids, classified bridges, geodesic concept
+# paths, Voronoi territory caps, antipodes, coverage caps, and domain-group
+# spokes. `--open` launches a browser; `--cdn` emits a smaller CDN-backed file.
+cargo run -p sphereql-examples --example visualize_corpus --release -- --corpus handcrafted
+
+# Transformer-embedding pipeline → sphere, rendered through the same
+# sphereql-vis crate (points, globs, slicing manifolds, concept paths).
+cargo run -p sphereql-examples --example e2e_transformer
 ```
 
 ## Rust — comprehensive end-to-end demo

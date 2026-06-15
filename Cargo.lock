@@ -3259,6 +3259,7 @@ dependencies = [
  "sphereql-index",
  "sphereql-layout",
  "sphereql-vectordb",
+ "sphereql-vis",
 ]
 
 [[package]]
@@ -3386,6 +3387,7 @@ dependencies = [
  "sphereql-layout",
  "sphereql-lingua",
  "sphereql-vectordb",
+ "sphereql-vis",
  "tokio",
 ]
 
@@ -3409,6 +3411,15 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "sphereql-vis"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sphereql-core",
 ]
 
 [[package]]

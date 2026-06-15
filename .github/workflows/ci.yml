@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: ["core", "index", "layout", "embed", "graphql", "vectordb", "full", ""]
+        features: ["core", "index", "layout", "embed", "graphql", "vectordb", "vis", "full", ""]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
