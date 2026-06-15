@@ -60,7 +60,7 @@ tech-debt projects.
   `project-status.md`, every per-crate README status line, and the two
   mixed "tracking" lines (reworded to `Pre-1.0 (` + `0.3.0` + `)`). Cargo.lock
   regenerated.
-- [x] Cut CHANGELOG `[Unreleased]` → `[0.3.0] — 2026-06-12` with a fresh
+- [x] Cut CHANGELOG `[Unreleased]` → `[0.3.0] — 2026-06-15` with a fresh
   empty `[Unreleased]` above it and a new footer tag link.
 - [ ] **Publish to crates.io + PyPI** — NOT done (live release action,
   intentionally left). Triggered by cutting a GitHub release, which runs the

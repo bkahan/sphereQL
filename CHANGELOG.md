@@ -6,7 +6,7 @@ versions.
 
 ## [Unreleased]
 
-## [0.3.0] — 2026-06-12
+## [0.3.0] — 2026-06-15
 
 ### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)
 
