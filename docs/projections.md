@@ -1,7 +1,10 @@
 # Projections
 
 sphereQL projects high-dimensional vectors (e.g. 384-d sentence-transformer
-output) down to 3D spherical coordinates via one of five families.
+output) down to 3D spherical coordinates via one of four pipeline families —
+the `ProjectionKind` enum: PCA, Kernel PCA, Laplacian eigenmap, and
+UMAP-on-sphere. (A random-projection baseline also exists as a low-level
+`Projection` impl; see below.)
 
 ## The core pipeline
 
@@ -15,9 +18,17 @@ output) down to 3D spherical coordinates via one of five families.
 The **radial coordinate** is configurable via `RadialStrategy`:
 
 - `Magnitude` (default) — r = pre-normalization L2 magnitude, encoding
-  "confidence" or specificity.
+  "confidence" or specificity. Degenerates to a constant when inputs are
+  already L2-normalized; pick a projection-side variant in that case.
 - `Fixed(value)` — constant radius; pure angular projection.
-- `MagnitudeTransform(fn)` — custom transform (e.g. log-scaling).
+- `MagnitudeTransform(fn)` — custom transform of the pre-normalization
+  magnitude (e.g. log-scaling).
+- `ProjectionMagnitude` — r = ‖(x, y, z)‖, how much input variance landed
+  in the projected 3-vector. Recommended starting point for normalized
+  embeddings.
+- `Certainty { scale }` — r = scale × the projection's per-point fidelity
+  score in [0, 1].
+- `Custom(fn)` — arbitrary per-point logic over the `RadialContext` signals.
 
 ## PCA
 
@@ -72,61 +83,94 @@ for construction details.
 ## UMAP-on-sphere
 
 UMAP optimized directly on S². A kNN graph over the normalized
-embeddings supplies the attractive term (brute-force below 2000 items,
-RP-forest ANN above — see [`sphereql-embed/src/ann.rs`](../sphereql-embed/src/ann.rs)),
-uniformly sampled negatives supply repulsion, and each Adam step runs
-in the local tangent space `T_x S²` with retraction back to the sphere
-by normalization. PCA provides the warm start. An optional supervised
-term (`category_weight > 0`) pulls same-category points together and
-pushes different categories apart.
+embeddings supplies the attractive term (brute-force below 2000 items —
+an O(n²) build — RP-forest ANN above, O(N log N); see
+[`sphereql-embed/src/ann.rs`](../sphereql-embed/src/ann.rs)). Edges
+carry fuzzy simplicial weights: per-point ρ/σ calibration (nearest edge
+weight 1.0, `Σ exp(−(d−ρ)/σ) = log₂ k`) with fuzzy-union
+symmetrization, and both the attraction and each edge's negative draws
+scale with the weight. Each Adam step runs in the local tangent space
+`T_x S²` with retraction back to the sphere by normalization. PCA
+provides the warm start; an opt-in `warm_start_anchor` weight (default
+0.0 — a bit-identical no-op) adds a weak pull toward the warm-start
+positions so disconnected kNN components on sparse corpora keep their
+global arrangement. An optional supervised term (`category_weight > 0`)
+draws one same-category cohesion pair and one different-category
+separation pair per point per epoch. `min_dist` (default 0.1) controls
+how tightly neighbors may pack — the embedding kernel's (a, b) curve is
+fit to it by deterministic least squares.
 
 Hyperparameters live in `UmapConfig` (`n_neighbors`, `n_epochs`,
-`category_weight`, `min_dist`) and are first-class auto-tuner axes; the tuner also
-caches the kNN graph + warm start per `n_neighbors` so epoch/weight
-sweeps only pay for optimization. UMAP is non-parametric — unseen
-points are transformed by kNN-weighted interpolation over the fitted
-positions, so far-from-corpus queries degrade gracefully rather than
-extrapolating. See [`sphereql-embed/src/umap.rs`](../sphereql-embed/src/umap.rs).
+`category_weight`, `min_dist`, plus `warm_start_anchor` and `seed`);
+the first four are first-class auto-tuner axes, and the tuner caches
+the kNN graph + warm start per `n_neighbors` so epoch/weight/min_dist
+sweeps only pay for optimization. UMAP is non-parametric: corpus items
+return their exact Adam-optimized positions (a bit-pattern fast path,
+certainty 1.0), and unseen embeddings are transformed by kNN-weighted
+interpolation over the fitted positions — looked up through the same
+RP-forest index the graph build retains at ≥ 2000 items — so
+far-from-corpus queries degrade gracefully rather than extrapolating.
+See [`sphereql-embed/src/umap.rs`](../sphereql-embed/src/umap.rs).
 
 Strength: preserving local neighborhood structure at scale (O(N log N)
 graph construction with ANN). Failure mode: global distances between
 far-apart clusters are not meaningful, and transform quality depends on
 the fitted corpus covering the query region.
 
-## Random projection
+## Random projection (low-level baseline)
 
 The Johnson–Lindenstrauss baseline. Useful for ablations: if PCA doesn't
 beat a random 3-axis basis, the corpus has no low-rank structure in 3
-dimensions.
+dimensions. **Not a pipeline family** — there is no
+`ProjectionKind::Random`, so neither `PipelineConfig` nor the auto-tuner
+can select it. `RandomProjection`
+([`sphereql-embed/src/projection.rs`](../sphereql-embed/src/projection.rs))
+implements the low-level `Projection` trait for direct use.
 
-## Explained variance (EVR)
+## Projection quality scores (per family)
 
-Every projection reports an `explained_variance_ratio()` in `[0, 1]`.
-PCA returns the classical EVR; Kernel PCA returns its kernel-space
-EVR; Laplacian returns a compatible connectivity ratio (mean of the
-retained eigenvalues); UMAP-on-sphere returns a trustworthiness-style
-kNN recall (mean overlap between each point's neighborhood among the
-fitted 3D positions and its original-space kNN set) — not a variance
-ratio, but bounded in `[0, 1]` and rank-meaningful across corpora.
-(Earlier versions used a median-distance proxy that saturated near 1.0
-on the sphere; recall replaced it.) All of them feed the EVR-adaptive
-thresholds downstream — bridge threshold, `RoutingConfig::low_evr_threshold`,
-the high-EVR routing bypass in `default_nearest`, and confidence scoring
-all consult this value.
+Every projection family reports a single quality scalar in `[0, 1]`
+through the shared `explained_variance_ratio()` accessor — but the four
+families do **not** measure the same thing. The name is a historical
+artifact (the accessor predates the non-PCA families); only PCA actually
+returns an explained-variance ratio. The other three reuse the method
+for API compatibility and to feed the same downstream thresholds, while
+reporting a quantity appropriate to their own mathematics.
 
-**Typical values:** 2–5% EVR for transformer embeddings at 3 dimensions
-under PCA; supervised UMAP reports much higher neighborhood-recall
-scores on category-structured corpora.
-This projection is inherently lossy; sphereQL compensates with **hybrid
-search** (angular candidates in projected space → cosine re-ranking in
-the original space) and, for low-EVR corpora,
-`hierarchical_nearest` which routes through domain groups and inner
-spheres instead of the outer sphere.
+| Family | Quality scalar reported | What it measures | Rough interpretation |
+|---|---|---|---|
+| **PCA** | Classical explained-variance ratio (EVR) | Fraction of total corpus variance retained in the top-3 principal components | Higher = more linear variance survives the 3D projection. 2–5% is typical for transformer embeddings at 3 dimensions — low in absolute terms, but the surviving axes still rank meaning. |
+| **Kernel PCA** | Kernel-space EVR | Fraction of variance in the (infinite-dimensional) Gaussian feature space captured by the top-3 kernel PCs | Same shape as PCA's EVR but computed in RBF feature space; comparable to PCA only loosely, not to the two below. |
+| **Laplacian eigenmap** | Connectivity ratio (mean \|μ\| of the 3 retained eigenvalues) | How much low-frequency community/connectivity structure the 3D embedding captured | Higher = stronger block structure along the retained spectral directions. **Not** a variance fraction and **not** comparable to PCA EVR. |
+| **UMAP-on-sphere** | Trustworthiness-style kNN recall | Mean overlap between each point's neighborhood among the fitted 3D positions and its original-space kNN set | Higher = more local neighborhoods survive the projection. 1.0 means every original neighborhood is preserved; random placements score near `k/n`. Rank-meaningful across corpora. |
+
+All four are bounded in `[0, 1]` and feed the same EVR-adaptive
+thresholds downstream — the bridge threshold,
+`RoutingConfig::low_evr_threshold`, the high-EVR routing bypass in
+`default_nearest`, and confidence scoring all consult this single value.
+That shared plumbing is the reason the families expose one accessor; it
+is **not** a claim that the scores are interchangeable. Do not compare a
+PCA EVR against a UMAP recall or a Laplacian connectivity ratio as if
+they were the same scale — a "low" number means something different in
+each column above. (Earlier UMAP versions used a median-distance proxy
+that saturated near 1.0 on the sphere; recall replaced it because it
+discriminates and is honest across corpora.)
+
+Whatever the family, the 3D projection is inherently lossy. sphereQL
+compensates with **hybrid search** (angular candidates in projected
+space → cosine re-ranking in the original space) and, when the reported
+quality scalar falls below `RoutingConfig::low_evr_threshold`,
+`hierarchical_nearest` routes through domain groups and inner spheres
+instead of the outer sphere — applied uniformly across families on the
+one scalar, regardless of which quantity it represents.
 
 ## Choosing a projection
 
 The right choice is corpus-dependent. See
 [empirical findings](empirical-findings.md) for measured scores across
-both built-in corpora, and [auto-tuning](auto-tuning.md) for how the
-tuner picks for you — including the PCA + UMAP
-`SearchSpace::large_corpus()` space used above 10k items.
+both built-in corpora — read those scores through the per-family table in
+[Projection quality scores](#projection-quality-scores-per-family),
+since a number from one family is not comparable to one from another —
+and [auto-tuning](auto-tuning.md) for how the tuner picks for you,
+including the PCA + UMAP `SearchSpace::large_corpus()` space used above
+10k items.

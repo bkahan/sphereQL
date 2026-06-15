@@ -26,13 +26,42 @@ coherent point clouds.
   preservation; consumed by the auto-tuner to pick layout
   hyperparameters per corpus.
 
-All layouts produce `Vec<LayoutEntry<T>>` with item id, position, and
-metadata so they round-trip through the index and visualization
-crates.
+All strategies implement `LayoutStrategy<T>` and return a
+`LayoutResult<T>`: the positioned entries (`LayoutEntry { item,
+position }`) plus a `LayoutQuality` block (dispersion, overlap,
+silhouette) so callers can compare layouts without recomputing
+metrics.
+
+## Example
+
+```rust
+use sphereql_core::SphericalPoint;
+use sphereql_layout::{DimensionMapper, LayoutStrategy, UniformLayout};
+
+// UniformLayout places items on a Fibonacci lattice and ignores the
+// mapper's semantic positions, so a stub mapper is fine here. The
+// affinity-driven strategies (ClusteredLayout, ForceDirectedLayout)
+// use the mapper to seed each item's natural position.
+struct NoMapper;
+impl DimensionMapper for NoMapper {
+    type Item = &'static str;
+    fn map(&self, _: &Self::Item) -> SphericalPoint {
+        SphericalPoint::new_unchecked(1.0, 0.0, 0.0)
+    }
+}
+
+let items = ["alpha", "beta", "gamma", "delta"];
+let result = UniformLayout::new().layout(&items, &NoMapper);
+for e in &result.entries {
+    println!("{} -> theta {:.2}, phi {:.2}", e.item, e.position.theta, e.position.phi);
+}
+println!("dispersion: {:.2}", result.quality.dispersion_score);
+```
 
 ## Versioning
 
-Pre-1.0. Builder types are `#[must_use]`. See the workspace
+Part of the sphereQL workspace, currently `0.3.0`; API may change
+before 1.0. See the workspace
 [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md).
 
 ## Documentation

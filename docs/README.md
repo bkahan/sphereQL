@@ -20,7 +20,8 @@ topic lives here.
 - [Coordinate system](coordinate-system.md) — physics convention for
   (r, θ, φ); geographic conversion.
 - [Projections](projections.md) — how PCA, Kernel PCA, Laplacian eigenmap,
-  and random projection map embeddings onto S².
+  and UMAP-on-sphere map embeddings onto S² (plus the low-level random
+  projection).
 - [Empirical findings](empirical-findings.md) — when each projection wins,
   with measured scores.
 - [Use cases](use-cases.md) — what problem each feature is meant to solve.
@@ -41,7 +42,7 @@ topic lives here.
 - [Examples](examples.md) — catalog of runnable examples across Rust, Python,
   and WASM.
 - [Testing](testing.md) — running tests locally; CI pipeline.
-- [Project status](project-status.md) — alpha surface, known limitations,
+- [Project status](project-status.md) — release status, known limitations,
   roadmap.
 - [Benchmark analysis](benchmark-analysis.md) — annotated results on a
   10k-point search benchmark.

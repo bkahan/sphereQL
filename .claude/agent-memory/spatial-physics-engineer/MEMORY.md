@@ -1,1 +1,0 @@
-- [sphereQL creator profile](user_sphereql_creator.md) -- Ben builds sphereQL, exploring AI reasoning via category enrichment layer

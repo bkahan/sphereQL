@@ -18,6 +18,8 @@ mod pipeline;
 #[cfg(feature = "embed")]
 mod projection;
 #[cfg(feature = "embed")]
+mod self_tune;
+#[cfg(feature = "embed")]
 mod types;
 #[cfg(feature = "vectordb")]
 mod vectordb;
@@ -73,6 +75,7 @@ fn sphereql(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_function(wrap_pyfunction!(viz::visualize_pipeline, m)?)?;
         m.add_function(wrap_pyfunction!(meta::corpus_features, m)?)?;
         m.add_function(wrap_pyfunction!(meta::auto_tune, m)?)?;
+        m.add_function(wrap_pyfunction!(self_tune::run_self_tune, m)?)?;
         m.add_function(wrap_pyfunction!(meta::load_default_store, m)?)?;
         m.add_function(wrap_pyfunction!(meta::append_to_default_store, m)?)?;
         m.add_class::<meta::PyNearestNeighborMetaModel>()?;

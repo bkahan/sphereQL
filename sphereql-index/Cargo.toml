@@ -10,7 +10,7 @@ keywords = ["spherical", "spatial-index", "knn", "geometry", "query"]
 categories = ["data-structures", "mathematics"]
 
 [dependencies]
-sphereql-core = { version = "0.2.0-alpha", path = "../sphereql-core" }
+sphereql-core = { version = "0.3.0", path = "../sphereql-core" }
 thiserror = "2"
 # O(1) move-to-back for the LRU cache. `IndexMap` keeps insertion
 # order and supports `shift_remove` + re-insert at tail in amortized

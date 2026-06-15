@@ -187,7 +187,7 @@ impl Pipeline {
     }
 
     /// Short stable name of the projection family — "pca", "kernel_pca",
-    /// or "laplacian_eigenmap".
+    /// "laplacian_eigenmap", or "umap_sphere".
     #[getter]
     fn projection_kind(&self) -> &'static str {
         self.inner.projection_kind().name()

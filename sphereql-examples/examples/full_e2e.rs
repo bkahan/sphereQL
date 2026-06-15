@@ -274,10 +274,8 @@ fn corpus_display_label(id: &CorpusId) -> String {
         CorpusId::Stress => ("300 concepts", "~3s"),
         CorpusId::DBpedia50k => ("~50k concepts", "~25min"),
         CorpusId::DBpedia50kClustered => ("~50k concepts", "~25min"),
-        CorpusId::DBpedia50kTuned => ("~50k concepts", "~25min"),
         CorpusId::DBpedia500k => ("~500k concepts", "~3min"),
         CorpusId::DBpedia500kClustered => ("~500k concepts", "~3min"),
-        CorpusId::DBpedia500kTuned => ("~500k concepts", "~3min"),
         CorpusId::Wikidata50k => ("~50k concepts", "~25min"),
         CorpusId::Parquet(p) => {
             return format!(

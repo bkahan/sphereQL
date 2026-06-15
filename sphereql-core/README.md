@@ -20,14 +20,33 @@ everywhere — keep them deliberate.
   interpolation through the pole.
 - **Region primitives** — `Cone`, `Cap`, `Shell`, `Band`, `Wedge`,
   plus boolean `Region::Intersection` / `Region::Union`. All implement
-  the `Contains<SphericalPoint>` trait.
+  the `Contains` trait (containment test against a `SphericalPoint`).
 - **Errors** — `SphereQlError` is `#[non_exhaustive]`; new variants
   can be added without breaking downstream `match` arms.
 
+## Example
+
+```rust
+use sphereql_core::{Cap, Contains, SphereQlError, SphericalPoint, angular_distance, slerp};
+
+fn main() -> Result<(), SphereQlError> {
+    let a = SphericalPoint::new(1.0, 0.3, 1.2)?;
+    let b = SphericalPoint::new(1.0, 2.1, 0.8)?;
+
+    println!("angular distance: {:.3} rad", angular_distance(&a, &b));
+
+    let mid = slerp(&a, &b, 0.5);
+    let cap = Cap::new(a, 1.0)?;
+    println!("midpoint inside cap around a: {}", cap.contains(&mid));
+    Ok(())
+}
+```
+
 ## Versioning
 
-Pre-1.0. Public API is stable enough to ship against, but reserve the
-right to break on minor bumps. See the workspace
+Part of the sphereQL workspace, currently `0.3.0`. Public API is
+stable enough to ship against, but reserve the right to break on minor
+bumps before 1.0. See the workspace
 [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md).
 
 ## Documentation

@@ -1,7 +1,7 @@
 //! Vector embedding projection engine.
 //!
 //! Projects high-dimensional embeddings onto S² via one of several
-//! projection families (PCA, kernel PCA, Laplacian eigenmap, random)
+//! projection families (PCA, kernel PCA, Laplacian eigenmap, UMAP)
 //! and offers a query pipeline for k-NN search, similarity thresholds,
 //! concept paths, glob detection, local manifold fitting, and a
 //! category-level enrichment layer (inter-category graph, bridge

@@ -1,5 +1,5 @@
 //! Retrieval benchmark: Vanilla ANN vs SphereQL (PCA) vs SphereQL (Kernel PCA)
-//! vs Hybrid search.
+//! vs SphereQL (UMAP-on-sphere) vs Hybrid search vs PQ re-rank.
 //!
 //! Run with:
 //!   cargo run -p sphereql-examples --example benchmark --release
@@ -8,9 +8,13 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use sphereql::embed::pipeline::{SphereQLOutput, SphereQLQuery};
-use sphereql::embed::{Embedding, EmbeddingIndex, KernelPcaProjection, RadialStrategy};
+use sphereql::embed::umap::UmapConfig;
+use sphereql::embed::{
+    Embedding, EmbeddingIndex, KernelPcaProjection, RadialStrategy, UmapSphereProjection,
+};
 use sphereql::vectordb::{
-    BridgeConfig, InMemoryStore, VectorRecord, VectorStoreBridge, store::VectorStore,
+    BridgeConfig, InMemoryStore, PqConfig, PqIndex, VectorRecord, VectorStoreBridge,
+    store::VectorStore,
 };
 
 const NUM_CLUSTERS: usize = 20;
@@ -271,6 +275,21 @@ async fn main() {
         evr * 100.0
     );
 
+    // Build PQ sidecar over the full embeddings. The store ids (p-NNNN)
+    // are stable now, so the codes line up with the corpus order and the
+    // ANN candidate ids come back already remapped.
+    eprintln!("Building PQ index...");
+    let pq_start = Instant::now();
+    let pq_ids: Vec<String> = dataset.records.iter().map(|r| r.id.clone()).collect();
+    let corpus_f32: Vec<Vec<f32>> = dataset
+        .records
+        .iter()
+        .map(|r| r.vector.iter().map(|&x| x as f32).collect())
+        .collect();
+    let pq_index = PqIndex::build(&pq_ids, &corpus_f32, &PqConfig::default()).expect("PQ build");
+    let pq_build_ms = pq_start.elapsed().as_millis();
+    eprintln!("PQ index built in {pq_build_ms} ms");
+
     // Build Kernel PCA index
     eprintln!("Building Kernel PCA index...");
     let kpca_start = Instant::now();
@@ -303,6 +322,39 @@ async fn main() {
         kpca_evr * 100.0
     );
 
+    // Build UMAP-on-sphere index. Unsupervised (categories=None) and
+    // Magnitude radial, matching PCA/KPCA. The quality scalar reported as
+    // EVR is the trustworthiness-style kNN recall, comparable across
+    // projection kinds.
+    eprintln!("Building UMAP-on-sphere index...");
+    let umap_start = Instant::now();
+
+    let umap = UmapSphereProjection::fit(
+        &embs,
+        None,
+        RadialStrategy::Magnitude,
+        UmapConfig::default(),
+    )
+    .expect("UMAP fit");
+    let umap_quality = umap.explained_variance_ratio();
+
+    let mut umap_index = EmbeddingIndex::builder(umap)
+        .uniform_shells(10, 1.0)
+        .theta_divisions(12)
+        .phi_divisions(6)
+        .build();
+
+    for (i, emb) in embs.iter().enumerate() {
+        umap_index.insert(format!("s-{i:04}"), emb);
+    }
+
+    let umap_build_ms = umap_start.elapsed().as_millis();
+    eprintln!(
+        "UMAP-on-sphere index built in {} ms, kNN recall: {:.1}%",
+        umap_build_ms,
+        umap_quality * 100.0
+    );
+
     let ks = [1, 5, 10, 20];
     let recall_multipliers = [2, 4, 8];
     let mut all_results: Vec<MethodResult> = Vec::new();
@@ -315,6 +367,17 @@ async fn main() {
         let _ = bridge.query(SphereQLQuery::Nearest { k: 20 }, &q.vector);
         let query_emb = Embedding::from(q.vector.as_slice());
         let _ = kpca_index.search_nearest(&query_emb, 20);
+        let _ = umap_index.search_nearest(&query_emb, 20);
+        let cand: Vec<String> = bridge
+            .store()
+            .search(&q.vector, 80)
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+        let query_f32: Vec<f32> = q.vector.iter().map(|&x| x as f32).collect();
+        let _ = pq_index.rerank(&query_f32, &cand, 20);
     }
 
     // --- Vanilla ANN ---
@@ -433,6 +496,46 @@ async fn main() {
         });
     }
 
+    // --- SphereQL UMAP-only ---
+    eprintln!("Running SphereQL UMAP-only...");
+    for &k in &ks {
+        let mut latencies = Vec::with_capacity(NUM_QUERIES);
+        let mut precisions = Vec::with_capacity(NUM_QUERIES);
+        let mut recalls = Vec::with_capacity(NUM_QUERIES);
+        let mut ndcgs = Vec::with_capacity(NUM_QUERIES);
+
+        for (qi, q) in dataset.queries.iter().enumerate() {
+            let query_emb = Embedding::from(q.vector.as_slice());
+            let start = Instant::now();
+            let results = umap_index.search_nearest(&query_emb, k);
+            let elapsed = start.elapsed().as_micros() as f64;
+            latencies.push(elapsed);
+
+            // Map pipeline IDs (s-NNNN) back to record IDs (p-NNNN)
+            let mapped_ids: Vec<String> = results
+                .iter()
+                .filter_map(|r| {
+                    let idx: usize = r.item.id.strip_prefix("s-")?.parse().ok()?;
+                    Some(dataset.records.get(idx)?.id.clone())
+                })
+                .collect();
+
+            precisions.push(precision_at_k(&mapped_ids, &truth_ids[qi], k));
+            recalls.push(recall_at_k(&mapped_ids, &truth_ids[qi], k));
+            ndcgs.push(ndcg_at_k(&mapped_ids, &truth_relevance[qi], k));
+        }
+
+        all_results.push(MethodResult {
+            method: "SphereQL UMAP".into(),
+            k,
+            precision: precisions.iter().sum::<f64>() / NUM_QUERIES as f64,
+            recall: recalls.iter().sum::<f64>() / NUM_QUERIES as f64,
+            ndcg: ndcgs.iter().sum::<f64>() / NUM_QUERIES as f64,
+            mean_us: latencies.iter().sum::<f64>() / NUM_QUERIES as f64,
+            p99_us: p99(latencies),
+        });
+    }
+
     // --- SphereQL Hybrid (varying recall_k) ---
     for &mult in &recall_multipliers {
         eprintln!("Running SphereQL Hybrid (recall=k*{mult})...");
@@ -467,16 +570,67 @@ async fn main() {
         }
     }
 
+    // --- PQ re-rank (varying recall_k) ---
+    // Two-stage: ANN pulls recall_k candidates, PQ asymmetric distance
+    // reranks them down to k. Directly comparable to Hybrid, which uses
+    // exact-cosine rerank over the same candidate budget. The candidate
+    // ids are already p-NNNN, so no remap is needed.
+    for &mult in &recall_multipliers {
+        eprintln!("Running PQ re-rank (recall=k*{mult})...");
+        for &k in &ks {
+            let recall_k = k * mult;
+            let mut latencies = Vec::with_capacity(NUM_QUERIES);
+            let mut precisions = Vec::with_capacity(NUM_QUERIES);
+            let mut recalls = Vec::with_capacity(NUM_QUERIES);
+            let mut ndcgs = Vec::with_capacity(NUM_QUERIES);
+
+            for (qi, q) in dataset.queries.iter().enumerate() {
+                let query_f32: Vec<f32> = q.vector.iter().map(|&x| x as f32).collect();
+                let start = Instant::now();
+                let cand_ids: Vec<String> = bridge
+                    .store()
+                    .search(&q.vector, recall_k)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .map(|r| r.id.clone())
+                    .collect();
+                let reranked = pq_index.rerank(&query_f32, &cand_ids, k);
+                let elapsed = start.elapsed().as_micros() as f64;
+                latencies.push(elapsed);
+
+                let ids: Vec<String> = reranked.into_iter().map(|(id, _)| id).collect();
+                precisions.push(precision_at_k(&ids, &truth_ids[qi], k));
+                recalls.push(recall_at_k(&ids, &truth_ids[qi], k));
+                ndcgs.push(ndcg_at_k(&ids, &truth_relevance[qi], k));
+            }
+
+            all_results.push(MethodResult {
+                method: format!("PQ-rerank (r=k*{mult})"),
+                k,
+                precision: precisions.iter().sum::<f64>() / NUM_QUERIES as f64,
+                recall: recalls.iter().sum::<f64>() / NUM_QUERIES as f64,
+                ndcg: ndcgs.iter().sum::<f64>() / NUM_QUERIES as f64,
+                mean_us: latencies.iter().sum::<f64>() / NUM_QUERIES as f64,
+                p99_us: p99(latencies),
+            });
+        }
+    }
+
     // --- Output ---
     println!("## SphereQL Retrieval Benchmark");
     println!("Dataset: {TOTAL} points, {DIM}-d, {NUM_CLUSTERS} clusters");
     println!("Queries: {NUM_QUERIES}");
     println!(
-        "PCA EVR: {:.1}%  |  Kernel PCA EVR: {:.1}%",
+        "PCA EVR: {:.1}%  |  Kernel PCA EVR: {:.1}%  |  UMAP kNN-recall: {:.1}%",
         evr * 100.0,
-        kpca_evr * 100.0
+        kpca_evr * 100.0,
+        umap_quality * 100.0
     );
-    println!("PCA build: {build_time_ms} ms  |  Kernel PCA build: {kpca_build_ms} ms");
+    println!(
+        "PCA build: {build_time_ms} ms  |  Kernel PCA build: {kpca_build_ms} ms  |  \
+         UMAP build: {umap_build_ms} ms  |  PQ build: {pq_build_ms} ms"
+    );
     println!();
     println!(
         "| {:<20} | {:>2} | {:>11} | {:>8} | {:>6} | {:>9} | {:>8} |",
@@ -521,6 +675,9 @@ async fn main() {
         "pca_build_time_ms": build_time_ms,
         "kpca_explained_variance_ratio": kpca_evr,
         "kpca_build_time_ms": kpca_build_ms,
+        "umap_explained_variance_ratio": umap_quality,
+        "umap_build_time_ms": umap_build_ms,
+        "pq_build_time_ms": pq_build_ms,
         "results": json_results,
     });
 

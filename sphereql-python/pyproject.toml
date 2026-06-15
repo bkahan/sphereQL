@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "sphereql"
-version = "0.2.0a0"
+version = "0.3.0"
 description = "Spherical coordinate knowledge representation — fast semantic search, visualization, and analysis"
 readme = "README.md"
 license = { text = "MIT" }
@@ -23,9 +23,6 @@ classifiers = [
     "Topic :: Database",
 ]
 keywords = ["embeddings", "semantic-search", "vector-database", "spherical", "pca", "visualization"]
-
-[project.optional-dependencies]
-qdrant = ["qdrant-client>=1.7"]
 
 [project.urls]
 Repository = "https://github.com/bkahan/sphereQL"

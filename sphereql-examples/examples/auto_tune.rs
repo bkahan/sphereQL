@@ -39,6 +39,18 @@ fn load_corpus_from_env() -> (Vec<Concept>, Vec<String>, Vec<Vec<f64>>, &'static
         .unwrap_or(false);
 
     if use_stress {
+        // Same corpus `examples/meta_learn.rs` tunes as `stress_300`
+        // (`build_stress_corpus` + `embed_with_noise` at
+        // `STRESS_NOISE_AMPLITUDE`, seed `9000 + i`). The two examples reach
+        // opposite verdicts on Laplacian — here it collapses (~0.07), in
+        // meta_learn a tuned Laplacian wins (~0.68) — because Laplacian's
+        // score on this corpus is bimodal in `laplacian_active_threshold`
+        // (0.10 recovers the signature, 0.03/0.05 build the affinity graph on
+        // the 0.2-amplitude noise floor). This example adds `UmapSphere` to
+        // the search space below, which desyncs the random stream so its
+        // Laplacian trials only hit the fragile low-threshold region. Neither
+        // result is wrong; see meta_learn.rs's header and
+        // docs/empirical-findings.md.
         let corpus = build_stress_corpus();
         let categories: Vec<String> = corpus.iter().map(|c| c.category.to_string()).collect();
         let embeddings: Vec<Vec<f64>> = corpus
@@ -81,7 +93,20 @@ fn main() {
     );
     drop(corpus);
 
-    let space = SearchSpace::default();
+    // Explicit three-way head-to-head: PCA vs Laplacian eigenmap vs
+    // UMAP-on-sphere. `SearchSpace::default()` only sweeps
+    // [Pca, LaplacianEigenmap]; we add UmapSphere so every run produces
+    // per-projection scores for all three families. Laplacian's O(N²)
+    // affinity matrix keeps this tractable only at the corpus sizes used
+    // here (n ≤ 775); large corpora should use `SearchSpace::large_corpus()`.
+    let space = SearchSpace {
+        projection_kinds: vec![
+            ProjectionKind::Pca,
+            ProjectionKind::LaplacianEigenmap,
+            ProjectionKind::UmapSphere,
+        ],
+        ..SearchSpace::default()
+    };
     // Small budget chosen deliberately so Bayesian's sample-efficiency
     // edge over Random has a chance to show up. At 24 random trials both
     // strategies tend to hit the same ceiling.

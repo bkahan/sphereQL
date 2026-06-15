@@ -121,7 +121,7 @@
             // ── 1. Default pipeline ────────────────────────────────
             const pipeline = new Pipeline(inputJson);
             const query = embeddings[0];
-            const nearest = JSON.parse(pipeline.nearest(JSON.stringify(query), 3));
+            const nearest = pipeline.nearest(JSON.stringify(query), 3);
 
             write("out-basic", [
                 `projectionKind   = ${pipeline.projectionKind()}`,
@@ -154,8 +154,8 @@
             write("out-config", lapReport);
 
             // ── 3. Corpus features + auto-tune ─────────────────────
-            const features = JSON.parse(corpusFeatures(inputJson));
-            const report = JSON.parse(autoTune(inputJson, JSON.stringify({
+            const features = corpusFeatures(inputJson);
+            const report = autoTune(inputJson, JSON.stringify({
                 metric: "default_composite",
                 strategy: "random",
                 budget: 8,
@@ -166,7 +166,7 @@
                     low_evr_threshold: [0.15, 0.35],
                     laplacian_k_neighbors: [6, 10],
                 },
-            })));
+            }));
 
             write("out-tune", [
                 `CorpusFeatures:`,
@@ -187,10 +187,8 @@
                 inputJson,
                 JSON.stringify(report.best_config),
             );
-            const flat = JSON.parse(tuned.nearest(JSON.stringify(query), 4));
-            const hier = JSON.parse(
-                tuned.hierarchicalNearest(JSON.stringify(query), 4),
-            );
+            const flat = tuned.nearest(JSON.stringify(query), 4);
+            const hier = tuned.hierarchicalNearest(JSON.stringify(query), 4);
 
             const rows = ["rank | flat              | hierarchical"];
             rows.push("-----+-------------------+-------------------");
@@ -202,8 +200,8 @@
             write("out-hier", rows.join("\n"));
 
             // ── 5. Routing primitives on the tuned pipeline ────────
-            const groups = JSON.parse(tuned.domainGroups());
-            const warnings = JSON.parse(tuned.projectionWarnings());
+            const groups = tuned.domainGroups();
+            const warnings = tuned.projectionWarnings();
 
             const groupLines = groups.map(
                 (g, i) => `  Group ${i}: [${g.category_names.join(", ")}] ` +

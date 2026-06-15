@@ -37,7 +37,7 @@ benchmark_results.json
 *.generated.json
 sphere_viz.html
 # Self-tune binary output (Phase 6); regenerate with
-# `cargo run -p sphereql-embed --example corpus_self_tune`.
+# `cargo run -p sphereql-examples --example corpus_self_tune`.
 *.tuned.parquet
 
 # RustRover

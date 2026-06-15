@@ -485,14 +485,15 @@ impl<S: VectorStore> VectorStoreBridge<S> {
     }
 
     /// Access the fitted projection (if built). The returned
-    /// [`ConfiguredProjection`] may be PCA, kernel PCA, or Laplacian
-    /// eigenmap depending on which `build_pipeline*` entry point was used.
+    /// [`ConfiguredProjection`] may be PCA, kernel PCA, Laplacian eigenmap,
+    /// or UMAP-on-sphere depending on which `build_pipeline*` entry point
+    /// was used.
     pub fn projection(&self) -> Option<&ConfiguredProjection> {
         self.projection.as_ref()
     }
 
-    /// Projection family name ("pca", "kernel_pca", "laplacian_eigenmap"),
-    /// or None if the pipeline has not been built.
+    /// Projection family name ("pca", "kernel_pca", "laplacian_eigenmap",
+    /// "umap_sphere"), or None if the pipeline has not been built.
     pub fn projection_kind(&self) -> Option<ProjectionKind> {
         self.projection.as_ref().map(|p| p.kind())
     }

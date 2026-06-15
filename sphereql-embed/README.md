@@ -10,4 +10,42 @@ Ships a metalearning framework on top: a `PipelineConfig` hierarchy for every tu
 
 Includes a `TextEmbedder` trait (plus `NoEmbedder` default and `FnEmbedder` closure wrapper) so downstream crates — GraphQL, REPLs, custom harnesses — can accept natural-language queries without `sphereql-embed` depending on any specific embedder backend.
 
+## Example
+
+```rust
+use sphereql_embed::{
+    PipelineInput, PipelineQuery, SphereQLOutput, SphereQLPipeline, SphereQLQuery,
+};
+
+let pipeline = SphereQLPipeline::new(PipelineInput {
+    categories: vec![
+        "science".into(), "science".into(),
+        "cooking".into(), "cooking".into(),
+    ],
+    embeddings: vec![
+        vec![0.1, 0.9, 0.3, 0.0],
+        vec![0.2, 0.8, 0.4, 0.1],
+        vec![0.9, 0.1, 0.0, 0.5],
+        vec![0.8, 0.2, 0.1, 0.4],
+    ],
+})?;
+
+let out = pipeline.query(
+    SphereQLQuery::Nearest { k: 3 },
+    &PipelineQuery { embedding: vec![0.15, 0.85, 0.35, 0.05] },
+)?;
+
+if let SphereQLOutput::Nearest(results) = out {
+    for r in results {
+        println!("{} ({}) at {:.3} rad", r.id, r.category, r.distance);
+    }
+}
+```
+
+To pick a non-default projection family, build with `SphereQLPipeline::new_with_config` and set `PipelineConfig::projection_kind` (`Pca`, `KernelPca`, `LaplacianEigenmap`, or `UmapSphere`) — or let `auto_tune` sweep the kind as a tuner axis.
+
+## Versioning
+
+Part of the sphereQL workspace, currently `0.3.0`; API may change before 1.0. Notable recent changes (see the workspace [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md)): `run_self_tune` and `SphereQLPipeline::to_json` now return `Result`, `MetaModel` gained `is_fitted`, `auto_tune` warm-starts trial 0 from the meta-model prediction, and for UMAP projections `explained_variance_ratio` now reports kNN-recall trustworthiness rather than the old variance proxy (records stored under the old proxy are not score-comparable).
+
 See the [main repository](https://github.com/bkahan/sphereQL) for full documentation, examples (`auto_tune`, `meta_learn`, `meta_warm_start`, `meta_feedback`, `spatial_analysis`, `category_enrichment`), and architecture overview.

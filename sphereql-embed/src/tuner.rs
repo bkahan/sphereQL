@@ -96,7 +96,7 @@ pub struct SearchSpace {
 }
 
 impl SearchSpace {
-    /// Search space optimized for large corpora (> 5000 items).
+    /// Search space optimized for large corpora (> 10 000 items).
     ///
     /// Includes PCA and UMAP (but not Laplacian eigenmap, which is O(N²)
     /// on the affinity matrix). UMAP uses the ANN-backed kNN graph,

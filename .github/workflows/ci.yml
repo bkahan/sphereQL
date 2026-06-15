@@ -10,6 +10,10 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Dwarnings
 
+# Least-privilege default token: every job here only reads the repo.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -97,11 +101,19 @@ jobs:
         run: |
           source ../.venv/bin/activate
           maturin develop
+      - name: Install lingua-spherica (Python sibling)
+        run: |
+          source .venv/bin/activate
+          pip install -e lingua-spherica
       - name: Run Python tests
         working-directory: sphereql-python
         run: |
           source ../.venv/bin/activate
           pytest -v
+      - name: Run lingua-spherica tests (incl. cross-language parity)
+        run: |
+          source .venv/bin/activate
+          pytest lingua-spherica/tests -v
 
   python-stubs:
     # Verifies the checked-in `__init__.pyi` matches what
@@ -115,11 +127,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Regenerate stubs
         working-directory: sphereql-python
-        run: cargo run --bin gen-stubs
+        run: cargo run --bin gen-stubs --features vectordb
       - name: Fail if stubs are stale
         run: |
           if ! git diff --exit-code sphereql-python/python/sphereql/__init__.pyi; then
-            echo "::error::python stubs are out of date — run \`cargo run --bin gen-stubs\` from sphereql-python/ and commit the diff"
+            echo "::error::python stubs are out of date — run \`cargo run --bin gen-stubs --features vectordb\` from sphereql-python/ and commit the diff"
             exit 1
           fi
 
@@ -137,6 +149,21 @@ jobs:
       - name: Build WASM crate to wasm32
         run: cargo build -p sphereql-wasm --target wasm32-unknown-unknown
 
+  wasm-test:
+    # Runs the wasm-bindgen-test smoke suite on the real wasm32 target via
+    # Node (build-only checks miss runtime breakage). wasm-pack manages a
+    # version-matched test runner automatically.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - name: Run WASM smoke tests (Node)
+        run: wasm-pack test --node sphereql-wasm
+
   bindings-drift:
     # Mirror of the separate bindings-drift workflow, but run on every
     # PR (not just those touching embed/layout/bindings) so the
@@ -148,3 +175,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run bindings drift check
         run: cargo run -p check-drift
+
+  version-drift:
+    # Mirror of the separate version-drift workflow, run on every PR so a
+    # forgotten version bump in any doc / README / manifest pin is caught
+    # regardless of which paths the PR touched.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run version drift check
+        run: cargo run -p check-versions
+
+  doc-drift:
+    # Crate-table membership (README + docs/architecture.md must list every
+    # workspace crate) and test-count-floor freshness.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run doc drift check
+        run: cargo run -p check-docs
+
+  doc-snippets:
+    # Compile-checks the ```rust fenced blocks in the prose docs (docs/*.md
+    # + README/CONTRIBUTING) against `sphereql --features full`, so API
+    # drift in a quickstart snippet fails CI instead of rotting silently.
+    # `rust,ignore` blocks are intentionally illustrative and skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run doc snippet compile check
+        run: cargo run -p check-doc-snippets

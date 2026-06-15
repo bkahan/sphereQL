@@ -115,12 +115,12 @@ name = "CategoryEdge"
 reason = "internal graph edge; surfaced via bridges on CategoryPathStep"
 
 [[exempt]]
-name = "CategoryPath"
-reason = "bound as PyCategoryPath / CategoryPathOut"
-
-[[exempt]]
 name = "BridgeClassification"
 reason = "exposed as string on BridgeItemOut / PyBridgeItem"
+
+[[exempt]]
+name = "RelationType"
+reason = "exposed as the `relation` snake_case string field on BridgeItemOut / PyBridgeItem (same pattern as BridgeClassification)"
 
 [[exempt]]
 name = "InnerProjection"
@@ -133,16 +133,8 @@ name = "MetaTrainingRecord"
 reason = "passed as dict/JSON to MetaModel.fit and load/append_to_default_store"
 
 [[exempt]]
-name = "TuneReport"
-reason = "bound as TuneReportOut in WASM and a dict in Python"
-
-[[exempt]]
 name = "TrialRecord"
 reason = "internal auto-tuner state; summary surfaced via TuneReport"
-
-[[exempt]]
-name = "FeedbackSummary"
-reason = "bound as FeedbackSummaryOut in WASM, dict in Python"
 
 [[exempt]]
 name = "CompositeMetric"
@@ -404,14 +396,6 @@ reason = "returns SphereQlError which doesn't map cleanly to bindings; Rust-only
 name = "nearest_by_embedding"
 reason = "Rust-only downstream consumer (sphereql-globetrot); returns (usize, f64) pairs"
 
-[[exempt]]
-name = "pairwise_cosine_similarities"
-reason = "core free function; called via pairwise_similarities on the pipeline binding"
-
-[[exempt]]
-name = "upper_triangle_index"
-reason = "index helper for pairwise_cosine_similarities; Rust-only utility"
-
 # ── Projection-overhaul additions ──
 
 [[exempt]]
@@ -431,38 +415,30 @@ name = "UnimplementedLogicalConfidence"
 reason = "placeholder skeleton for the future logical-confidence metric; no scorer to bind yet"
 
 # ── Corpus self-tune / quality additions (Phase 7) ──
+# `run_self_tune` is now bound (Python `run_self_tune`, WASM `runSelfTune`).
+# These config/report structs are reached as dict params and dict/JSON
+# returns of that call — same pattern as PipelineConfig — so they stay
+# allowlisted rather than getting standalone classes.
 
 [[exempt]]
 name = "CorpusQuality"
-reason = "internal quality aggregate; surfaced via run_self_tune result, not a standalone binding"
+reason = "constructed inside run_self_tune from the `weights` dict param; not a standalone binding"
 
 [[exempt]]
 name = "CorpusQualityBreakdown"
-reason = "sub-struct of CorpusQuality; aggregated into SelfTuneReport"
+reason = "flattened into each iteration dict of the run_self_tune report (evr/bridge_coherence/curvature_health/category_balance/composite)"
 
 [[exempt]]
 name = "CorpusQualityWeights"
-reason = "config struct passed by value to run_self_tune; not user-facing in bindings"
+reason = "passed as the optional `weights` dict to run_self_tune; not a standalone class"
 
 [[exempt]]
 name = "SelfTuneConfig"
-reason = "passed as dict/kwargs to the corpus self-tune entry point; not a standalone class"
-
-[[exempt]]
-name = "SelfTuneIteration"
-reason = "internal per-iteration record inside SelfTuneReport; not user-facing"
-
-[[exempt]]
-name = "SelfTuneReport"
-reason = "internal result type from run_self_tune; not yet surfaced in bindings"
+reason = "passed as the optional `cfg` dict to run_self_tune; not a standalone class (like PipelineConfig)"
 
 [[exempt]]
 name = "StopReason"
-reason = "internal enum inside SelfTuneReport; surfaced as a string field if report is bound"
-
-[[exempt]]
-name = "TunableConcept"
-reason = "internal corpus item used during self-tune pass; not user-facing"
+reason = "surfaced as the `stopped_reason` string ('plateau'|'max_iterations'|'prune_floor_hit') in the run_self_tune report"
 
 [[exempt]]
 name = "prune_below_floor"
@@ -471,10 +447,6 @@ reason = "internal corpus pruning helper called inside run_self_tune; not a stan
 [[exempt]]
 name = "reweight_in_place"
 reason = "internal corpus reweighting helper called inside run_self_tune; not a standalone binding"
-
-[[exempt]]
-name = "run_self_tune"
-reason = "corpus-level batch operation; not yet exposed in Python/WASM bindings"
 
 # ── Rust traits (no 1:1 binding concept in Python/WASM) ──
 
@@ -525,10 +497,6 @@ reason = "internal UMAP fit helper; callers use Pipeline constructors / projecti
 [[exempt]]
 name = "BridgeDiversity"
 reason = "QualityMetric impl; selected by metric-name string \"bridge_diversity\" in auto_tune"
-
-[[exempt]]
-name = "RelationType"
-reason = "internal enum annotated on BridgeItem.relation by annotate_bridge_relations; not yet surfaced at the binding boundary"
 
 [[exempt]]
 name = "migrate_legacy_array_to_jsonl"

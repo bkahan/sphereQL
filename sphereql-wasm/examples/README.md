@@ -51,3 +51,8 @@ The corpus is synthesized inline: four categories × eight 16-d vectors,
 with one dominant axis plus a shared cross-talk axis per category.
 Small enough to reason about, large enough to produce non-trivial
 bridges and domain groups.
+
+This is a dev demo, not a published package — see the
+[main repository](https://github.com/bkahan/sphereQL) and
+[`sphereql-wasm`](https://github.com/bkahan/sphereQL/tree/main/sphereql-wasm)
+for the binding surface itself.

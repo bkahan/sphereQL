@@ -11,6 +11,9 @@ members = [
     "sphereql-corpus",
     "sphereql",
     "scripts/check-drift",
+    "scripts/check-versions",
+    "scripts/check-docs",
+    "scripts/check-doc-snippets",
     "sphereql-lingua",
     "sphereql-examples",
 ]
@@ -18,7 +21,7 @@ resolver = "2"
 
 [workspace.package]
 edition = "2024"
-version = "0.2.0-alpha"
+version = "0.3.0"
 license = "MIT"
 repository = "https://github.com/bkahan/sphereQL"
 

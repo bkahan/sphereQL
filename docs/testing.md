@@ -1,41 +1,11 @@
 # Testing
 
-## Running tests locally
-
-```bash
-# All workspace tests
-cargo test --workspace
-
-# All features (including qdrant/pinecone compile checks)
-cargo test --workspace --all-features
-
-# Clippy lint pass
-cargo clippy --workspace --all-features --all-targets
-
-# Format check
-cargo fmt --check
-
-# Python tests
-cd sphereql-python
-maturin develop
-pytest -v
-
-# Benchmarks
-cargo bench -p sphereql-core
-cargo bench -p sphereql-index
-```
-
-## CI
-
-The [CI pipeline](../.github/workflows/ci.yml) runs on every push and
-PR to `main`:
-
-- `cargo test --workspace --all-features` + doc-tests.
-- `cargo clippy` with `-Dwarnings`.
-- `cargo fmt --check`.
-- Per-feature compilation matrix (`core`, `index`, `layout`, `embed`,
-  `graphql`, `vectordb`, `full`, `no-default-features`).
-- Python build + `pytest` on Python 3.12.
+The canonical list of local test/lint commands and the full CI checklist
+lives in **[CONTRIBUTING.md](../CONTRIBUTING.md)** — see
+[Testing](../CONTRIBUTING.md#testing) for the commands and
+[Branching and Pull Requests](../CONTRIBUTING.md#branching-and-pull-requests)
+for what each CI job runs. Keeping a single copy avoids the drift this
+page used to accumulate.
 
 ## Release pipeline
 

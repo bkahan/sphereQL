@@ -1,8 +1,9 @@
-# SphereQL
+# sphereQL
 
 Project high-dimensional embeddings onto a 3D sphere for fast semantic search,
 interactive visualization, and knowledge structure analysis. Built in Rust,
-exposed to Python via PyO3.
+exposed to Python via PyO3. These are the official Python bindings for the
+[sphereQL](https://github.com/bkahan/sphereQL) workspace.
 
 ## Install
 
@@ -10,10 +11,14 @@ exposed to Python via PyO3.
 pip install sphereql
 ```
 
-For Qdrant vector database support:
+The default wheel ships the core pipeline, projections, metalearning,
+visualization, and the in-memory vector-store bridge. The Qdrant and
+Pinecone bridges are compile-time features — build from source to get
+them:
 
 ```bash
-pip install sphereql[qdrant]
+cd sphereql-python
+python -m maturin develop --release --features qdrant   # adds QdrantBridge
 ```
 
 ## Quick Start: Semantic Search
@@ -67,17 +72,24 @@ results = bridge.hybrid_search(query_vec, final_k=5, recall_k=20)
 
 ## How It Works
 
-SphereQL fits a projection to reduce embeddings to 3 dimensions, then maps
+sphereQL fits a projection to reduce embeddings to 3 dimensions, then maps
 them onto spherical coordinates (r, theta, phi). The radial component encodes
 magnitude/confidence, while angular position preserves semantic similarity.
 This enables angular-distance queries, cluster detection, concept paths, and
 interactive 3D visualization — all in projected space.
 
-Four projection families are exposed: `PcaProjection`, `KernelPcaProjection`,
-`LaplacianEigenmap` (connectivity-preserving spectral projection over a
-k-NN similarity graph), and `RandomProjection`. The full auto-tuning and
-meta-learning framework is available too — `auto_tune`, `NearestNeighborMetaModel`,
-`DistanceWeightedMetaModel`, and `FeedbackAggregator`.
+The pipeline supports four projection families, selected via the config
+dict: `"Pca"` (default), `"KernelPca"`, `"LaplacianEigenmap"`
+(connectivity-preserving spectral projection over a k-NN similarity
+graph), and `"UmapSphere"` (UMAP optimized directly on S², new in this
+release — no standalone class; configure it through
+`config={"projection_kind": "UmapSphere", "umap": {...}}`). Standalone
+projection classes are also exposed for direct use: `PcaProjection`,
+`KernelPcaProjection`, `LaplacianEigenmap`, and `RandomProjection`.
+
+The auto-tuning and metalearning surface is bound too — `corpus_features`,
+`auto_tune`, `NearestNeighborMetaModel`, `DistanceWeightedMetaModel`,
+`FeedbackEvent`, and `FeedbackAggregator`.
 
 ```python
 # Non-default projection via config dict
@@ -90,15 +102,33 @@ pipeline = sphereql.Pipeline(
 tuned, report = sphereql.auto_tune(categories, embeddings, budget=16)
 ```
 
+Most of the Rust query surface has a 1:1 Python binding; the gaps are
+tracked explicitly in the workspace's
+[`.bindings-ignore.toml`](https://github.com/bkahan/sphereQL/blob/main/.bindings-ignore.toml)
+allowlist and enforced by a drift checker in CI. `run_self_tune` and
+bridge relation-type annotations are now bound; the remaining gaps are
+config/report sub-types surfaced as dicts and Rust-only traits.
+
 ## API Reference
 
 Type stubs (`python/sphereql/__init__.pyi`) are auto-generated via
 `pyo3-stub-gen` and ship with the wheel — IDEs, `mypy`, and `pyright`
-pick them up automatically. Regenerate after binding changes with:
+pick them up automatically. They are generated at the `vectordb` feature
+level, so the in-memory vector-store classes (`InMemoryStore`,
+`VectorStoreBridge`) are covered; `QdrantBridge` / `PineconeBridge`
+(behind their own features, not in the default wheel) are not.
+Regenerate after binding changes with:
 
 ```bash
-cd sphereql-python && cargo run --bin gen-stubs
+cd sphereql-python && cargo run --bin gen-stubs --features vectordb
 ```
+
+## Status
+
+Pre-1.0 (`0.3.0`). Expect
+breaking changes between minor versions. Source, issues, and full
+documentation live in the
+[sphereQL repository](https://github.com/bkahan/sphereQL).
 
 ## License
 

@@ -3,11 +3,43 @@
 //!
 //! Tunes on three regimes — the 775-concept built-in corpus (favors PCA),
 //! the ~5,000-concept extended corpus (a larger, denser regime), and the
-//! 300-concept stress corpus (favors Laplacian) — accumulates the three
-//! winning configs into a MetaTrainingRecord store, fits two meta-models
-//! (NearestNeighbor + DistanceWeighted) on those records, and verifies
-//! that querying the store with a "built-in-like" feature profile
-//! predicts PCA while a "stress-like" profile predicts Laplacian.
+//! 300-concept stress corpus (favors a *well-tuned* Laplacian) —
+//! accumulates the three winning configs into a MetaTrainingRecord store,
+//! fits two meta-models (NearestNeighbor + DistanceWeighted) on those
+//! records, and verifies that querying the store with a "built-in-like"
+//! feature profile predicts PCA while a "stress-like" profile predicts
+//! Laplacian.
+//!
+//! ## Why "favors Laplacian" here, but auto_tune shows Laplacian collapsing
+//!
+//! This example and `examples/auto_tune.rs` build the SAME stress corpus
+//! (`build_stress_corpus` + `embed_with_noise` at `STRESS_NOISE_AMPLITUDE`,
+//! seed `9000 + i`) yet reach opposite conclusions about Laplacian. That
+//! is NOT a contradiction — it is the Laplacian landscape being bimodal on
+//! this corpus, and the two examples sampling different regions of it:
+//!
+//!   - Laplacian's score on the stress corpus is controlled almost
+//!     entirely by `laplacian_active_threshold`. At `0.10` the 0.2-amplitude
+//!     noise is filtered enough that the 2 authored signal axes dominate
+//!     and Laplacian recovers the signature (~0.68). At `0.03`/`0.05` the
+//!     noise floor clears the filter, the affinity graph is built on noise
+//!     edges, and Laplacian collapses (~0.07).
+//!   - This example sweeps the plain `SearchSpace::default()`
+//!     (`[Pca, LaplacianEigenmap]`, budget 12, seed `BASE_SEED + 10`). Its
+//!     RNG draws land mostly on `active_threshold = 0.10`, so its best
+//!     Laplacian trial reaches ~0.68 and — with UMAP not in the space —
+//!     Laplacian wins. That win is real: a *tuned* Laplacian genuinely
+//!     beats PCA (~0.64) on this regime, which is the routing lesson here.
+//!   - `auto_tune.rs` adds `UmapSphere` to the space (and uses budget 24,
+//!     seed `BASE_SEED`). Adding a third projection kind desyncs the RNG
+//!     stream, so its Laplacian trials happen to draw only the fragile
+//!     low-threshold region (~0.07) — see its three-way table, where UMAP
+//!     wins outright. Both results are correct for their own search
+//!     settings; neither invalidates the other.
+//!
+//! Takeaway: on the stress corpus a tuned Laplacian is competitive
+//! (~0.68 vs PCA ~0.64), but Laplacian is *fragile* — most of its
+//! hyperparameter region collapses. See docs/empirical-findings.md.
 //!
 //! This exercises:
 //!   - auto_tune across two genuinely different corpus regimes
@@ -54,6 +86,12 @@ fn main() {
         &space,
         &metric,
     );
+    // `stress_300` is `build_stress_corpus()` swept under the plain
+    // `SearchSpace::default()` (`[Pca, LaplacianEigenmap]`). On this regime a
+    // tuned Laplacian (active_threshold≈0.10) reaches ~0.68 and wins; this is
+    // the SAME corpus auto_tune.rs uses, but auto_tune adds UmapSphere and so
+    // samples Laplacian's fragile low-threshold region instead. See the
+    // module header for the full reconciliation.
     let (stress_record, stress_features) =
         tune_and_record("stress_300", build_stress_corpus(), true, &space, &metric);
 

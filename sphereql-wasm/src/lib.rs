@@ -22,11 +22,12 @@ fn install_panic_hook() {}
 
 use sphereql_embed::category::{
     BridgeClassification, BridgeItem, CategoryPath, CategoryPathStep, CategorySummary,
-    DrillDownResult, InnerSphereReport,
+    DrillDownResult, InnerSphereReport, RelationType,
 };
 use sphereql_embed::confidence::{ProjectionWarning, WarningSeverity};
 use sphereql_embed::config::PipelineConfig;
 use sphereql_embed::corpus_features::CorpusFeatures;
+use sphereql_embed::corpus_quality::{CorpusQuality, CorpusQualityWeights};
 use sphereql_embed::domain_groups::DomainGroup;
 use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent, FeedbackSummary};
 use sphereql_embed::laplacian::{
@@ -44,6 +45,9 @@ use sphereql_embed::quality_metric::{
     BridgeCoherence, BridgeDiversity, ClusterSilhouette, CompositeMetric, GraphModularity,
     QualityMetric, TerritorialHealth,
 };
+use sphereql_embed::self_tune::{
+    SelfTuneConfig, SelfTuneReport, StopReason, TunableConcept, run_self_tune as rust_run_self_tune,
+};
 use sphereql_embed::tuner::{SearchSpace, SearchStrategy, TuneReport, auto_tune as rust_auto_tune};
 use sphereql_embed::types::{Embedding, RadialStrategy};
 
@@ -53,6 +57,10 @@ fn classification_name(c: BridgeClassification) -> &'static str {
         BridgeClassification::OverlapArtifact => "OverlapArtifact",
         BridgeClassification::Weak => "Weak",
     }
+}
+
+fn relation_name(r: Option<RelationType>) -> Option<String> {
+    r.map(|r| r.name().to_string())
 }
 
 fn severity_name(s: WarningSeverity) -> &'static str {
@@ -117,7 +125,7 @@ impl Pipeline {
     }
 
     /// Short stable name of the projection family — "pca", "kernel_pca",
-    /// or "laplacian_eigenmap".
+    /// "laplacian_eigenmap", or "umap_sphere".
     #[wasm_bindgen(js_name = projectionKind)]
     pub fn projection_kind(&self) -> String {
         self.inner.projection_kind().name().to_string()
@@ -603,6 +611,9 @@ pub struct BridgeItemOut {
     pub affinity_to_target: f64,
     pub bridge_strength: f64,
     pub classification: String,
+    /// Inferred semantic relation as a snake_case string (e.g.
+    /// "studies", "applies_to"), or `null` if none was inferred.
+    pub relation: Option<String>,
 }
 
 impl From<&BridgeItem> for BridgeItemOut {
@@ -615,6 +626,7 @@ impl From<&BridgeItem> for BridgeItemOut {
             affinity_to_target: b.affinity_to_target,
             bridge_strength: b.bridge_strength,
             classification: classification_name(b.classification).to_string(),
+            relation: relation_name(b.relation),
         }
     }
 }
@@ -946,6 +958,162 @@ pub fn auto_tune(input_json: &str, opts_json: &str) -> Result<TuneReportOut, JsE
         .map_err(|e| JsError::new(&e.to_string()))?;
 
     Ok(TuneReportOut::from_report(&report))
+}
+
+// ── Corpus self-tune (Phase 7) ────────────────────────────────────────
+
+/// Default embed seed — matches Phase 6's binary so the synthetic noise
+/// is reproducible across runs.
+const DEFAULT_SELF_TUNE_SEED: u64 = 0xDEADBEEF;
+
+fn default_self_tune_seed() -> u64 {
+    DEFAULT_SELF_TUNE_SEED
+}
+
+#[derive(serde::Deserialize, Default)]
+struct SelfTuneOpts {
+    #[serde(default)]
+    base_config: Option<PipelineConfig>,
+    #[serde(default)]
+    cfg: Option<SelfTuneConfig>,
+    #[serde(default)]
+    weights: Option<CorpusQualityWeights>,
+    #[serde(default = "default_self_tune_seed")]
+    seed: u64,
+}
+
+/// One corpus row carried into and out of `runSelfTune`. Mirrors
+/// `sphereql-embed`'s `TunableConcept`; `features` are `[axis, weight]`
+/// pairs.
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi, from_wasm_abi)]
+pub struct TunableConceptOut {
+    pub label: String,
+    pub category: String,
+    pub features: Vec<(usize, f64)>,
+    pub quality: f64,
+    pub axis_coherence: f64,
+    pub bridge_degree: u8,
+    pub source_confidence: f64,
+    pub home_affinity: f64,
+    pub source: Option<String>,
+    pub openalex_id: Option<String>,
+}
+
+impl From<&TunableConcept> for TunableConceptOut {
+    fn from(c: &TunableConcept) -> Self {
+        Self {
+            label: c.label.clone(),
+            category: c.category.clone(),
+            features: c.features.clone(),
+            quality: c.quality,
+            axis_coherence: c.axis_coherence,
+            bridge_degree: c.bridge_degree,
+            source_confidence: c.source_confidence,
+            home_affinity: c.home_affinity,
+            source: c.source.clone(),
+            openalex_id: c.openalex_id.clone(),
+        }
+    }
+}
+
+/// One self-tune iteration record, with the `CorpusQualityBreakdown`
+/// flattened into its five sub-score fields.
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct SelfTuneIterationOut {
+    pub iteration: usize,
+    pub n_concepts: usize,
+    pub composite_score: f64,
+    pub n_pruned: usize,
+    pub mean_quality: f64,
+    pub mean_quality_delta: f64,
+    pub evr: f64,
+    pub bridge_coherence: f64,
+    pub curvature_health: f64,
+    pub category_balance: f64,
+    pub composite: f64,
+}
+
+/// Full self-tune report plus the mutated corpus.
+#[derive(serde::Serialize, serde::Deserialize, tsify::Tsify)]
+#[tsify(into_wasm_abi)]
+pub struct SelfTuneReportOut {
+    pub iterations: Vec<SelfTuneIterationOut>,
+    pub stopped_reason: String,
+    pub final_composite: Option<f64>,
+    pub tuned_concepts: Vec<TunableConceptOut>,
+}
+
+fn stop_reason_name(reason: StopReason) -> &'static str {
+    match reason {
+        StopReason::Plateau => "plateau",
+        StopReason::MaxIterations => "max_iterations",
+        StopReason::PruneFloorHit => "prune_floor_hit",
+    }
+}
+
+impl SelfTuneReportOut {
+    fn from_parts(corpus: &[TunableConcept], report: &SelfTuneReport) -> Self {
+        let iterations = report
+            .iterations
+            .iter()
+            .map(|it| SelfTuneIterationOut {
+                iteration: it.iteration,
+                n_concepts: it.n_concepts,
+                composite_score: it.composite_score,
+                n_pruned: it.n_pruned,
+                mean_quality: it.mean_quality,
+                mean_quality_delta: it.mean_quality_delta,
+                evr: it.breakdown.evr,
+                bridge_coherence: it.breakdown.bridge_coherence,
+                curvature_health: it.breakdown.curvature_health,
+                category_balance: it.breakdown.category_balance,
+                composite: it.breakdown.composite,
+            })
+            .collect();
+        Self {
+            iterations,
+            stopped_reason: stop_reason_name(report.stopped_reason).to_string(),
+            final_composite: report.final_composite,
+            tuned_concepts: corpus.iter().map(TunableConceptOut::from).collect(),
+        }
+    }
+}
+
+/// Run one corpus self-tune loop.
+///
+/// `input_json` is a JSON array of concept objects (the shape of
+/// [`TunableConceptOut`]). `opts_json` may be `"{}"` or a JSON object
+/// with any of `base_config`, `cfg`, `weights`, `seed`. The embed
+/// closure is fixed to the deterministic synthetic embedder seeded by
+/// `seed` so the run is reproducible.
+#[wasm_bindgen(js_name = runSelfTune)]
+pub fn run_self_tune(input_json: &str, opts_json: &str) -> Result<SelfTuneReportOut, JsError> {
+    let corpus: Vec<TunableConcept> = serde_json::from_str(input_json)
+        .map_err(|e| JsError::new(&format!("invalid concepts JSON: {e}")))?;
+    let opts: SelfTuneOpts = serde_json::from_str(opts_json)
+        .map_err(|e| JsError::new(&format!("invalid options JSON: {e}")))?;
+
+    let base = opts.base_config.unwrap_or_default();
+    let cfg = opts.cfg.unwrap_or_default();
+    let weights = opts.weights.unwrap_or_default();
+    weights
+        .validate()
+        .map_err(|e| JsError::new(&format!("invalid weights: {e}")))?;
+    let seed = opts.seed;
+    let quality = CorpusQuality::new(weights);
+
+    let (tuned, report) = rust_run_self_tune(
+        corpus,
+        |f: &[(usize, f64)]| sphereql_core::synthetic::embed(f, seed),
+        base,
+        &quality,
+        &cfg,
+    )
+    .map_err(|e| JsError::new(&e.to_string()))?;
+
+    Ok(SelfTuneReportOut::from_parts(&tuned, &report))
 }
 
 // ── MetaModel ────────────────────────────────────────────────────────

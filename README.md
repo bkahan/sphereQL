@@ -3,7 +3,7 @@
 [![CI](https://github.com/bkahan/sphereQL/actions/workflows/ci.yml/badge.svg)](https://github.com/bkahan/sphereQL/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/sphereql.svg)](https://crates.io/crates/sphereql)
-[![PyPI](https://img.shields.io/pypi/v/sphereQL.svg)](https://pypi.org/project/sphereql/)
+[![PyPI](https://img.shields.io/pypi/v/sphereql.svg)](https://pypi.org/project/sphereql/)
 
 **Project high-dimensional embeddings onto a 3D sphere for fast semantic
 search, spatial queries, category-aware exploration, and interactive
@@ -12,9 +12,10 @@ visualization.**
 sphereQL maps vectors from any embedding model (OpenAI, Cohere,
 sentence-transformers, etc.) onto spherical coordinates via one of four
 projection families — linear PCA, kernel PCA with a Gaussian (RBF)
-kernel, Laplacian eigenmap over a k-NN similarity graph, or random
-projection — then indexes them with shell/sector partitioning for fast
-nearest-neighbor lookups. A Category Enrichment Layer computes
+kernel, Laplacian eigenmap over a k-NN similarity graph, or
+UMAP-on-sphere (Adam-optimized in the tangent bundle of S², with an
+optional supervised category term) — then indexes them with
+shell/sector partitioning for fast nearest-neighbor lookups. A Category Enrichment Layer computes
 inter-category relationships, classifies bridges (`Genuine` /
 `OverlapArtifact` / `Weak`), and builds inner spheres for
 high-resolution within-category search. sphereQL auto-tunes its
@@ -65,10 +66,16 @@ Full documentation lives under [`docs/`](docs/README.md).
 
 ## Install
 
+```bash
+# Rust
+cargo add sphereql --features full
+```
+
+or pin it in `Cargo.toml`:
+
 ```toml
-# Cargo.toml
 [dependencies]
-sphereql = { version = "0.2.0-alpha", features = ["full"] }
+sphereql = { version = "0.3.0", features = ["full"] }
 ```
 
 ```bash
@@ -100,7 +107,7 @@ let pipeline = SphereQLPipeline::new(input).unwrap();
 
 // 2. Query nearest neighbors.
 let query = PipelineQuery { embedding: vec![0.15, 0.85, 0.35, 0.05] };
-let results = pipeline.query(SphereQLQuery::Nearest { k: 3 }, &query);
+let results = pipeline.query(SphereQLQuery::Nearest { k: 3 }, &query).unwrap();
 ```
 
 See the [Rust quickstart](docs/quickstart-rust.md) for spatial indexing,
@@ -129,7 +136,8 @@ sphereql.visualize(categories, embeddings, title="My Embeddings")
 ```
 
 The Python bindings cover the full Rust surface — PCA, Kernel PCA,
-Laplacian eigenmap, `auto_tune`, `MetaModel`, `FeedbackAggregator`,
+Laplacian eigenmap, UMAP-on-sphere (via `config={"projection_kind":
+"UmapSphere"}` or `auto_tune`), `MetaModel`, `FeedbackAggregator`,
 and the category enrichment layer. Type stubs (`.pyi`) are
 auto-generated via `pyo3-stub-gen`. See the
 [Python quickstart](docs/quickstart-python.md) for semantic search,
@@ -173,14 +181,21 @@ in the browser.
 | `sphereql-python` | Python bindings via PyO3/maturin. |
 | `sphereql-wasm` | WASM bindings via wasm-bindgen. |
 | `sphereql-corpus` | Shared example corpora: 775-concept built-in (31 academic domains) and 300-concept stress corpus, plus bulk-ingested parquet corpora from DBpedia (500K) and Wikidata (50K). |
+| `sphereql-lingua` | Six-stage text → `ConceptGraph` pipeline that places every concept at a SphereQL `(r, θ, φ)` position. |
+| `sphereql-examples` | Runnable examples across the whole workspace (not published). |
+| `scripts/check-drift` | CI tool: fails when a new `sphereql-embed`/`sphereql-layout` public item isn't bound in Python/WASM (or allowlisted). |
+| `scripts/check-versions` | CI tool: fails when any release-version string across manifests, READMEs, and docs disagrees with the canonical workspace/pyproject version. |
+| `scripts/check-docs` | CI tool: fails when a workspace crate is missing from these tables, or a stated test-count floor no longer holds. |
+| `scripts/check-doc-snippets` | CI tool: compile-checks the `rust` code blocks in the prose docs against `sphereql --features full`. |
 
 Full dependency graph and crate-by-crate description in
 [architecture.md](docs/architecture.md).
 
 ## Project status
 
-sphereQL is at **v0.2.0-alpha**. The core API is functional and covered
-by 450+ tests, but may change before 1.0. Known limitations and roadmap
+sphereQL is at **v0.3.0**. The core API is functional and covered
+by 850+ Rust tests plus 200+ Python binding tests, but may change
+before 1.0. Known limitations and roadmap
 are in [project-status.md](docs/project-status.md).
 
 Binding parity is protected by a drift check (`scripts/check-drift`) —
@@ -190,14 +205,18 @@ have a Python/WASM binding or an allowlist entry with a reason in
 
 ## Contributing
 
-1. Fork the repo and create a feature branch.
-2. Run `cargo test --workspace --all-features` and
-   `cargo clippy --workspace --all-features --all-targets`.
-3. For Python changes, run `cd sphereql-python && maturin develop && pytest -v`.
-4. Open a PR against `main`.
+Fork, branch from `main`, and open a PR. Before pushing, run the core
+verification trio:
 
-The codebase uses Rust 2024 edition. All CI checks must pass before
-merge. See [testing.md](docs/testing.md) for the full pipeline.
+```bash
+cargo test --workspace --all-features --exclude sphereql-python
+cargo clippy --workspace --all-features --all-targets -- -D warnings
+cargo fmt --all -- --check
+```
+
+The codebase uses Rust 2024 edition; all CI checks must pass before
+merge. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow,
+the complete local command list, and the CI pipeline.
 
 ## License
 

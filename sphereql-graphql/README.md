@@ -38,9 +38,18 @@ let schema = build_unified_schema(
 );
 ```
 
+For tests and quickstarts, `build_unified_schema_from_items(&items)`
+wires all four resources (default index, a 16-slot event bus, a
+default-config pipeline, and `NoEmbedder`) in one call.
+
 Spatial-only deployments keep using the existing `build_schema(index,
 event_bus)` entry point — the pipeline and embedder resources are
 additive.
+
+## Status
+
+Part of the sphereQL workspace, currently `0.3.0`. Pre-1.0:
+expect breaking changes between minor versions.
 
 See the [main repository](https://github.com/bkahan/sphereQL) for full
 documentation, examples, and architecture overview.

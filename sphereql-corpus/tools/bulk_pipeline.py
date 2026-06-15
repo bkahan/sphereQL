@@ -162,7 +162,7 @@ def main() -> int:
             return rc
 
     if not ns.skip_self_tune:
-        _section("stage 4/4 — sphereql-embed corpus_self_tune")
+        _section("stage 4/4 — sphereql-examples corpus_self_tune")
         rc = _run_self_tune(clustered_path, tuned_path, cfg.self_tune_bulk, ns.release)
         if rc != 0:
             return rc
@@ -208,8 +208,8 @@ def _run_self_tune(
     cmd = [
         cargo,
         "run",
-        "--manifest-path",
-        str(REPO_ROOT / "sphereql-embed" / "Cargo.toml"),
+        "-p",
+        "sphereql-examples",
         "--example",
         "corpus_self_tune",
     ]

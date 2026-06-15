@@ -546,11 +546,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "check-doc-snippets"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "check-docs"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "toml 0.8.23",
+ "walkdir",
+]
+
+[[package]]
 name = "check-drift"
 version = "0.1.0"
 dependencies = [
  "serde",
  "syn",
+ "toml 0.8.23",
+ "walkdir",
+]
+
+[[package]]
+name = "check-versions"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
  "toml 0.8.23",
  "walkdir",
 ]
@@ -3224,7 +3251,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "sphereql-core",
  "sphereql-embed",
@@ -3236,7 +3263,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-core"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "criterion",
@@ -3248,7 +3275,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-corpus"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "arrow",
  "bzip2-rs",
@@ -3256,13 +3283,14 @@ dependencies = [
  "parquet",
  "serde",
  "serde_json",
+ "sphereql-core",
  "tempfile",
  "ureq",
 ]
 
 [[package]]
 name = "sphereql-embed"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "indexmap 2.13.1",
@@ -3280,7 +3308,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-examples"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "dialoguer",
  "indicatif",
@@ -3295,7 +3323,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-graphql"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "async-graphql",
  "serde",
@@ -3308,7 +3336,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-index"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "criterion",
@@ -3321,7 +3349,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-layout"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "proptest",
@@ -3333,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-lingua"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "regex",
  "serde",
@@ -3342,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-python"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "numpy",
@@ -3363,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-vectordb"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "approx",
  "async-trait",
@@ -3385,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "sphereql-wasm"
-version = "0.2.0-alpha"
+version = "0.3.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",

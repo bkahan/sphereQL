@@ -18,11 +18,15 @@ doc = false
 [[bin]]
 name = "gen-stubs"
 path = "src/bin/gen_stubs.rs"
-# Only built when explicitly requested; it requires the default
-# features but must not be built with `extension-module` (which tells
-# the linker Python provides libpython at load time — true for the
-# cdylib, false for a standalone native binary).
-required-features = ["embed"]
+# Built at the `vectordb` feature level so the generated stubs match the
+# vector-store surface that ships in the published wheel (InMemoryStore,
+# VectorStoreBridge). QdrantBridge / PineconeBridge sit behind their own
+# `qdrant` / `pinecone` features and are absent from both the default
+# wheel and these stubs. Must not be built with `extension-module`
+# (which tells the linker Python provides libpython at load time — true
+# for the cdylib, false for a standalone native binary). Invoke with
+# `cargo run --bin gen-stubs --features vectordb`.
+required-features = ["vectordb"]
 
 [features]
 # `extension-module` tells pyo3 to skip linking libpython — correct for the

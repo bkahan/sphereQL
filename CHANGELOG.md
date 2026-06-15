@@ -1,10 +1,12 @@
 # Changelog
 
 All notable user-visible changes. sphereQL follows semver from v1.0
-onward; while on `0.x-alpha` expect breaking changes between minor
+onward; while on `0.x` expect breaking changes between minor
 versions.
 
 ## [Unreleased]
+
+## [0.3.0] — 2026-06-15
 
 ### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)
 
@@ -147,13 +149,13 @@ versions.
 
 ### Added — corpus and bulk ingestion
 
-- **DBpedia 500K corpus** — `sphereql-corpus/data/dbpedia_500k.parquet` with
-  clustered and auto-tuned variants (`dbpedia_500k.clustered.parquet`,
-  `dbpedia_500k.clustered.tuned.parquet`). Built from the DBpedia TTL dump via
-  the new `DBpediaTtlSource` ingestor.
+- **DBpedia 500K corpus** — `sphereql-corpus/data/dbpedia_500k.parquet` with a
+  clustered variant (`dbpedia_500k.clustered.parquet`). Built from the DBpedia
+  TTL dump via the new `DBpediaTtlSource` ingestor.
 - **Wikidata 50K corpus** — `sphereql-corpus/data/wikidata_50k.parquet` with
   checkpoint resume support (`wikidata_50k.parquet.checkpoint.json`).
-- **Bulk ingestion pipeline** (`tools/bulk_ingest`) — end-to-end orchestrator
+- **Bulk ingestion pipeline** (the `bulk_ingest` example in
+  `sphereql-examples`) — end-to-end orchestrator
   covering download → parse → embed → cluster → tune → validate. Corpus sources
   implement a shared trait so DBpedia and Wikidata share the same pipeline path.
 - **Emergent clustering** — density-based cluster discovery on the projected
@@ -393,5 +395,6 @@ pipeline, category enrichment layer, GraphQL spatial queries, Python
 bridges (InMemory / Qdrant / Pinecone), auto-tuner + meta-model
 framework (Rust-only at the time). See git history for full detail.
 
+[0.3.0]: https://github.com/bkahan/sphereQL/releases/tag/v0.3.0
 [0.2.0-alpha]: https://github.com/bkahan/sphereQL/releases/tag/v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/bkahan/sphereQL/releases/tag/v0.1.0-alpha
