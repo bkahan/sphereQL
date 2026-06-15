@@ -56,9 +56,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Build wheels for every supported interpreter (3.10–3.13) via
-      # maturin's abi3 path. Dropping 3.9 in line with pyo3 0.28 — the
-      # crate's minimum supported interpreter.
+      # Build a wheel for each supported interpreter (3.10–3.13).
+      # Minimum is 3.10 (`requires-python` in pyproject.toml); 3.9 dropped
+      # in line with pyo3 0.28.
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
