@@ -11,6 +11,10 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  # Force HTTP/1.1 to dodge the crates.io `[16] HTTP2 framing layer` fetch
+  # flake (mirrors .cargo/config.toml); env guarantees it reaches cargo.
+  CARGO_HTTP_MULTIPLEXING: "false"
+  CARGO_NET_RETRY: "10"
 
 jobs:
   # Catch packaging errors before touching the registry.
