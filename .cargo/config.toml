@@ -1,0 +1,14 @@
+# Network robustness for crates.io fetches.
+#
+# GitHub Actions runners intermittently fail cargo downloads with
+# `curl ... [16] Error in the HTTP2 framing layer`. Forcing HTTP/1.1
+# (multiplexing = false) avoids that bug, and a higher retry count rides
+# out other transient registry hiccups. This file is discovered by every
+# cargo invocation — local, CI, the release workflows, and the manylinux
+# build container (which reads it from the checked-out source) — so the
+# mitigation applies everywhere without per-workflow duplication.
+[net]
+retry = 10
+
+[http]
+multiplexing = false

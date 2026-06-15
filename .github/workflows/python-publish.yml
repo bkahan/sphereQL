@@ -66,16 +66,6 @@ jobs:
           args: --release --out dist --interpreter 'python3.10 python3.11 python3.12 python3.13'
           manylinux: auto
           working-directory: sphereql-python
-          before-all: |
-            # Symlink manylinux container's Python into PATH so maturin
-            # can find the oldest supported interpreter (3.10).
-            if [ -d /opt/python/cp310-cp310/bin ]; then
-              ln -sf /opt/python/cp310-cp310/bin/python3 /usr/local/bin/python3
-            else
-              echo "Python 3.10 not found at /opt/python/cp310-cp310/bin"
-              ls /opt/python/ 2>/dev/null || echo "/opt/python does not exist"
-              exit 1
-            fi
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.target }}
