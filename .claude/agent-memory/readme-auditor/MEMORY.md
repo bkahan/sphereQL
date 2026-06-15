@@ -1,4 +1,0 @@
-- [Benchmark accuracy crisis](project_benchmark_accuracy.md) — was 3 orders of magnitude off; fixed in docs/performance.md as of 2026-05-05
-- [Per-crate README anti-patterns](feedback_per_crate_readmes.md) — workspace per-crate READMEs need usage examples, not just descriptions
-- [Stale version pins after workspace bump](feedback_stale_version_pins.md) — recurring audit finding; grep all version=" pins against workspace version
-- [Missing comparison-to-alternatives](feedback_positioning_vs_alternatives.md) — #1 README adoption gap; flag as BLOCKER for v1 in crowded categories
