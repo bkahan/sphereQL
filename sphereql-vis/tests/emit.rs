@@ -119,14 +119,19 @@ fn scene_serde_round_trips() {
 
 /// Extract the embedded `const D=<JSON>;` payload from emitted HTML.
 ///
-/// Anchored on the app-unique `\nconst pts=D.points` line so it never matches
-/// a `const D=` that happens to appear inside the minified three.js blob.
+/// Anchored on the app-unique `\nconst pts=D.points` line (now in the inlined
+/// viewer runtime, no longer adjacent to the data line) so we never latch onto
+/// a `const D=` inside the minified three.js blob. The payload is emitted as a
+/// single physical line (`serde_json::to_string` is newline-free), so we take
+/// the last `\nconst D=` before the app script and read just that one line.
 fn embedded_payload(html: &str) -> &str {
     let pts_marker = "\nconst pts=D.points";
     let pi = html.find(pts_marker).expect("app script present");
     let before = &html[..pi];
-    let di = before.rfind("const D=").expect("data assignment present") + "const D=".len();
-    before[di..]
+    let di = before.rfind("\nconst D=").expect("data assignment present") + "\nconst D=".len();
+    let line = &before[di..];
+    let end = line.find('\n').expect("data line is terminated");
+    line[..end]
         .strip_suffix(';')
         .expect("data line ends with ;")
 }
@@ -154,6 +159,7 @@ fn nonfinite_points_are_dropped_and_json_stays_valid() {
     let mut pts = sample_points();
     // Inject a NaN coordinate via a hand-built point.
     pts.push(ScenePoint {
+        id: None,
         x: f64::NAN,
         y: 0.0,
         z: 0.0,

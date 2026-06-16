@@ -28,11 +28,17 @@ pub(crate) fn render_html(scene: &Scene, source: ScriptSource) -> String {
         ScriptSource::Inline => inline_scripts(),
         ScriptSource::Cdn => cdn_scripts(),
     };
-    // Order matters: substitute the title and the (large) script blob before
-    // the data payload, so neither replacement scans the injected JSON.
+    // Order matters: substitute the title, the script blob, and the viewer
+    // runtime before the data payload, so no earlier replacement scans the
+    // injected JSON (and the viewer body — which contains its own comments —
+    // is never mistaken for the data placeholder).
     template::TEMPLATE
         .replace("__SPHEREQL_TITLE__", &escape_html_text(&scene.title))
         .replace("<!--__SPHEREQL_SCRIPTS__-->", &scripts)
+        .replace(
+            "/*__SPHEREQL_VIEWER__*/",
+            &guard_script(template::VIEWER_JS),
+        )
         .replace("/*__SPHEREQL_DATA__*/", &data_json)
 }
 

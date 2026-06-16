@@ -8,3 +8,7 @@
 pub(crate) const TEMPLATE: &str = include_str!("template.html");
 pub(crate) const THREE_JS: &str = include_str!("vendor/three.min.js");
 pub(crate) const ORBIT_CONTROLS_JS: &str = include_str!("vendor/OrbitControls.js");
+/// The viewer runtime, inlined into the page at `/*__SPHEREQL_VIEWER__*/`.
+/// Kept in a separate file so the (future) WASM studio can load the exact
+/// same implementation and the two can never drift.
+pub(crate) const VIEWER_JS: &str = include_str!("viewer.js");

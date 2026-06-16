@@ -22,6 +22,12 @@ use sphereql_core::SphericalPoint;
 /// and opacity when present.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScenePoint {
+    /// Stable identity (e.g. the pipeline item id). Used to align points
+    /// across scenes for k-NN highlighting and morph; the viewer keys on
+    /// this rather than array position. Optional — absent in hand-built
+    /// scenes, in which case array index is the fallback identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub x: f64,
     pub y: f64,
     pub z: f64,
@@ -51,6 +57,7 @@ impl ScenePoint {
         let c =
             sphereql_core::spherical_to_cartesian(&SphericalPoint::new_unchecked(r, theta, phi));
         Self {
+            id: None,
             x: c.x,
             y: c.y,
             z: c.z,
@@ -71,6 +78,7 @@ impl ScenePoint {
             xyz[0], xyz[1], xyz[2],
         ));
         Self {
+            id: None,
             x: xyz[0],
             y: xyz[1],
             z: xyz[2],
@@ -82,6 +90,13 @@ impl ScenePoint {
             certainty: None,
             intensity: None,
         }
+    }
+
+    /// Attach a stable identity (builder-style). The viewer keys k-NN
+    /// highlighting and cross-scene morph on this rather than array position.
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 
     /// Attach certainty / intensity quality signals (builder-style).
@@ -195,6 +210,37 @@ impl Scene {
     /// requires network to view).
     pub fn to_html_cdn(&self) -> String {
         crate::emit::render_html(self, crate::emit::ScriptSource::Cdn)
+    }
+
+    /// Serialize this scene to a compact JSON string.
+    ///
+    /// This is the canonical on-the-wire form: it is what the viewer's
+    /// drag-drop loader consumes and what the WASM bridge produces, so the
+    /// baked HTML, a dropped file, and a live in-browser pipeline all feed the
+    /// viewer the same shape. [`Scene::from_json`] is its inverse.
+    ///
+    /// ```
+    /// use sphereql_vis::{Scene, ScenePoint};
+    /// let scene = Scene::builder()
+    ///     .title("demo")
+    ///     .point(ScenePoint::from_spherical("alpha", "p0", 1.0, 1.2, 0.5).with_id("p0"))
+    ///     .build();
+    /// let json = scene.to_json();
+    /// let back = Scene::from_json(&json).expect("round-trips");
+    /// assert_eq!(back.points.len(), 1);
+    /// assert_eq!(back.points[0].id.as_deref(), Some("p0"));
+    /// ```
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).expect("a built Scene always serializes")
+    }
+
+    /// Parse a scene from its JSON form (inverse of [`Scene::to_json`]).
+    ///
+    /// Note this deserializes directly and does *not* re-run builder
+    /// sanitization; trust the source or rebuild via [`Scene::builder`] if the
+    /// JSON may contain non-finite coordinates.
+    pub fn from_json(s: &str) -> serde_json::Result<Scene> {
+        serde_json::from_str(s)
     }
 
     /// Render and write to `path`, returning the canonicalized path.
