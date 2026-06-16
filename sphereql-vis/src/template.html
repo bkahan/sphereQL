@@ -9,7 +9,7 @@
   --bg:#06060f; --panel:rgba(11,13,28,0.66); --panel-solid:#0b0d1c;
   --line:rgba(120,160,255,0.16); --line-soft:rgba(120,160,255,0.08);
   --ink:#e6eaf7; --ink-dim:#9aa2bd; --ink-faint:#596084;
-  --accent:#5cc8ff; --accent-warm:#ffb454; --good:#86e0a8;
+  --accent:#5cc8ff; --accent-warm:#ffb454; --good:#86e0a8; --ui:1;
   --mono:ui-monospace,"JetBrains Mono","Cascadia Code","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -24,7 +24,7 @@ canvas{position:absolute;top:0;left:0;z-index:0}
 .panel{position:absolute;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:2px;
   backdrop-filter:blur(14px) saturate(1.15);-webkit-backdrop-filter:blur(14px) saturate(1.15);
   box-shadow:0 12px 40px -18px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.03);
-  padding:14px 16px;animation:rise .7s cubic-bezier(.16,.84,.34,1) backwards}
+  padding:14px 16px;zoom:var(--ui,1);animation:rise .7s cubic-bezier(.16,.84,.34,1) backwards}
 .panel::before,.panel::after{content:"";position:absolute;width:9px;height:9px;pointer-events:none}
 .panel::before{top:-1px;left:-1px;border-top:1px solid var(--accent);border-left:1px solid var(--accent)}
 .panel::after{bottom:-1px;right:-1px;border-bottom:1px solid var(--accent);border-right:1px solid var(--accent)}
@@ -75,6 +75,8 @@ h3::before{content:"";width:14px;height:1px;background:linear-gradient(90deg,var
 .resetbtn{width:100%;margin-top:12px;background:rgba(120,160,255,.05);border:1px solid var(--line);color:var(--ink-dim);
   font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:8px;border-radius:2px;cursor:pointer;transition:.15s}
 .resetbtn:hover{color:var(--accent);border-color:var(--accent);background:rgba(92,200,255,.08)}
+.sel{width:100%;background:rgba(120,160,255,.05);border:1px solid var(--line);color:var(--ink);font-family:var(--mono);font-size:12px;padding:7px 9px;border-radius:2px;outline:none;cursor:pointer}
+.sel option{background:var(--panel-solid);color:var(--ink)}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;background:rgba(120,160,255,.18);outline:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(92,200,255,.6);cursor:pointer;border:2px solid #0b0d1c}
 input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0d1c;border-radius:50%;background:var(--accent);cursor:pointer}
@@ -116,7 +118,9 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 #reticle::after{top:50%;left:-6px;height:1px;width:6px;margin-top:-.5px}
 
 #empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:5;color:var(--ink-faint);font-size:13px;letter-spacing:.1em;text-transform:uppercase}
-#help{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:5;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);pointer-events:none;white-space:nowrap;animation:rise 1s ease 1.1s backwards}
+#help{position:absolute;bottom:38px;left:50%;transform:translateX(-50%);z-index:5;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);pointer-events:none;white-space:nowrap;animation:rise 1s ease 1.1s backwards}
+#credit{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:6;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);text-decoration:none;transition:color .15s;animation:rise 1s ease 1.25s backwards}
+#credit:hover{color:var(--accent)}
 
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1}}
 #hdr{animation-name:rise,drop}
@@ -167,6 +171,20 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
       <div class="lab"><span>Point size</span><span class="val" id="size-val">3.5</span></div>
       <input type="range" id="psize" min="0.5" max="12" step="0.5" value="3.5">
     </div>
+    <div class="set">
+      <div class="lab"><span>UI scale</span><span class="val" id="ui-val">1.00×</span></div>
+      <input type="range" id="ui" min="0.7" max="1.6" step="0.05" value="1">
+    </div>
+    <div class="set">
+      <div class="lab"><span>Color scheme</span></div>
+      <select id="scheme" class="sel">
+        <option value="aurora">Aurora</option>
+        <option value="spectral">Spectral</option>
+        <option value="viridis">Viridis</option>
+        <option value="sunset">Sunset</option>
+        <option value="ice">Ice</option>
+      </select>
+    </div>
     <div class="sep"></div>
     <label class="orow"><input type="checkbox" id="globe" checked><span>Reference globe</span></label>
     <label class="orow"><input type="checkbox" id="autorot"><span>Auto-rotate</span></label>
@@ -189,13 +207,14 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 <div id="reticle"></div>
 <div id="empty">no points — empty corpus</div>
 <div id="help">drag · orbit&nbsp;&nbsp;scroll · zoom&nbsp;&nbsp;click · inspect</div>
+<a id="credit" href="https://github.com/bkahan/sphereQL" target="_blank" rel="noopener noreferrer">© bkahan/sphereQL ↗</a>
 <!--__SPHEREQL_SCRIPTS__-->
 <script>
 const D=/*__SPHEREQL_DATA__*/;
 const pts=D.points||[],N=pts.length;
 const overlays=D.overlays||[];
 const SR=D.surface_radius||1.0;
-const DEF={scale:5,radial:1,spread:1,size:3.5,globe:true,autorot:false};
+const DEF={scale:5,radial:1,spread:1,size:3.5,globe:true,autorot:false,ui:1,palette:"aurora"};
 let maxR=1;for(const p of pts){const m=Math.hypot(p.x,p.y,p.z);if(m>maxR)maxR=m;}
 const escHtml=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const fmin=a=>a.reduce((m,v)=>v<m?v:m,Infinity);
@@ -204,8 +223,16 @@ const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const reduceMotion=matchMedia("(prefers-reduced-motion:reduce)").matches;
 
 const catSet=[...new Set(pts.map(p=>p.cat))].sort();
-const PALETTE=["#5cc8ff","#ff8a65","#86e0a8","#c79bff","#ffd95c","#ff7fa8","#4dd0e1","#bfa07a","#9fb2d4","#b6e07a","#8aa0ff","#ffb454","#ff6f6f","#74b9ff","#dce07a","#a98bff"];
-const catColor={};catSet.forEach((c,i)=>catColor[c]=PALETTE[i%PALETTE.length]);
+const PALETTES={
+  aurora:["#5cc8ff","#ff8a65","#86e0a8","#c79bff","#ffd95c","#ff7fa8","#4dd0e1","#bfa07a","#9fb2d4","#b6e07a","#8aa0ff","#ffb454","#ff6f6f","#74b9ff","#dce07a","#a98bff"],
+  spectral:["#9e0142","#d53e4f","#f46d43","#fdae61","#fee08b","#e6f598","#abdda4","#66c2a5","#3288bd","#5e4fa2","#f1a340","#998ec3"],
+  viridis:["#440154","#472d7b","#3b528b","#2c728e","#21918c","#28ae80","#5ec962","#addc30","#fde725","#a0da39","#35b779","#31688e"],
+  sunset:["#f9c74f","#f9844a","#f8961e","#f3722c","#f94144","#ff6f91","#c9457e","#9b5de5","#f15bb5","#fee440","#ff9b54","#e07a5f"],
+  ice:["#caf0f8","#90e0ef","#48cae4","#00b4d8","#0096c7","#5e60ce","#6930c3","#7400b8","#80ffdb","#56cfe1","#64dfdf","#4ea8de"]
+};
+const catColor={};
+function buildCatColor(name){const pal=PALETTES[name]||PALETTES.aurora;catSet.forEach((c,i)=>catColor[c]=pal[i%pal.length]);}
+buildCatColor(DEF.palette);
 const catVisible={};catSet.forEach(c=>catVisible[c]=true);
 
 const canvas=document.getElementById("c");
@@ -307,7 +334,8 @@ overlayKinds.forEach(k=>{if(overlayDefaultOff.has(k))overlayGroups[k].visible=fa
 // Uniform world scale applied to each object's own transform (keeps point
 // picking correct — THREE scales the Points pick threshold by object scale).
 const scalables=[pointsMesh,linesGroup,globeGroup,...Object.values(overlayGroups)];
-function applyScale(s){scalables.forEach(o=>o.scale.setScalar(s));}
+let curScale=DEF.scale;
+function applyScale(s){curScale=s;scalables.forEach(o=>o.scale.setScalar(s));raycaster.params.Points.threshold=maxR*0.07*s;}
 
 // ── Picking ───────────────────────────────────────────────────────────
 const raycaster=new THREE.Raycaster();raycaster.params.Points.threshold=SR*0.045;
@@ -355,7 +383,7 @@ function selectPoint(idx){
   const tag=document.getElementById("info-cat");tag.textContent=p.cat;tag.style.color=catColor[p.cat];tag.style.background=catColor[p.cat]+"18";
   document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${p.theta.toFixed(4)}</b><span>φ</span><b>${p.phi.toFixed(4)}</b><span>r</span><b>${p.r.toFixed(4)}</b>`;
   const nb=document.getElementById("info-neighbors");
-  nb.innerHTML=dists.map(d=>`<div class="nb" data-idx="${d.i}"><span>${escHtml(pts[d.i].label||"Point "+d.i)}</span><span class="dist">${d.d.toFixed(3)}</span></div>`).join("");
+  nb.innerHTML=dists.map(d=>{const dc=catColor[pts[d.i].cat];return `<div class="nb" data-idx="${d.i}" style="background:${dc}22;border-left:2px solid ${dc}"><span>${escHtml(pts[d.i].label||"Point "+d.i)}</span><span class="dist">${d.d.toFixed(3)}</span></div>`;}).join("");
   nb.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));
   info.classList.add("visible");
 }
@@ -412,11 +440,26 @@ const globeCb=document.getElementById("globe");globeCb.addEventListener("change"
 const autorot=document.getElementById("autorot");autorot.checked=false;
 autorot.addEventListener("change",e=>{controls.autoRotate=e.target.checked;});
 controls.addEventListener("start",()=>{controls.autoRotate=false;autorot.checked=false;});
+const uiS=document.getElementById("ui"),uiVal=document.getElementById("ui-val");
+uiS.addEventListener("input",e=>{document.documentElement.style.setProperty("--ui",e.target.value);uiVal.textContent=parseFloat(e.target.value).toFixed(2)+"×";});
+const schemeSel=document.getElementById("scheme");
+schemeSel.addEventListener("change",e=>applyPalette(e.target.value));
+function applyPalette(name){
+  buildCatColor(name);
+  const ca=pointsGeo.getAttribute("color").array;
+  for(let i=0;i<N;i++){const c=new THREE.Color(catColor[pts[i].cat]);ca[i*3]=c.r;ca[i*3+1]=c.g;ca[i*3+2]=c.b;}
+  pointsGeo.getAttribute("color").needsUpdate=true;
+  catSet.forEach(c=>{const dot=legendRows[c]&&legendRows[c].querySelector(".ldot");if(dot){dot.style.background=catColor[c];dot.style.color=catColor[c];}});
+  pointsMat.uniforms.opacity.value=1.0;drawMinimapBase();
+  if(selectedIdx>=0){const k=selectedIdx;deselectPoint();selectPoint(k);}
+}
 function resetDefaults(){
   scaleS.value=DEF.scale;scaleVal.textContent=DEF.scale.toFixed(1)+"×";applyScale(DEF.scale);
   radial.value=DEF.radial;radialVal.textContent=DEF.radial.toFixed(1)+"×";radialG=DEF.radial;
   spread.value=DEF.spread;spreadVal.textContent=DEF.spread.toFixed(1)+"×";spreadF=DEF.spread;
   psize.value=DEF.size;sizeVal.textContent=DEF.size.toFixed(1);applySize(DEF.size);
+  uiS.value=DEF.ui;uiVal.textContent=DEF.ui.toFixed(2)+"×";document.documentElement.style.setProperty("--ui",DEF.ui);
+  schemeSel.value=DEF.palette;applyPalette(DEF.palette);
   globeCb.checked=DEF.globe;globeGroup.visible=DEF.globe;
   autorot.checked=DEF.autorot;controls.autoRotate=DEF.autorot;
   searchInput.value="";applyTransform();frameCamera();
