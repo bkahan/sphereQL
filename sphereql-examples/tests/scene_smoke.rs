@@ -77,11 +77,14 @@ fn build_corpus_scene_produces_valid_overlaid_scene() {
     // The emitted HTML embeds parseable JSON and is offline.
     let html = scene.to_html();
     assert!(!html.contains("src=\"http"));
-    let pts_marker = "\nconst pts=D.points";
-    let pi = html.find(pts_marker).expect("app script present");
-    let before = &html[..pi];
-    let di = before.rfind("const D=").unwrap() + "const D=".len();
-    let json = before[di..].strip_suffix(';').unwrap();
+    // Anchored on the payload script's opening `<script>\nconst D=` (unique to
+    // our data block — the inlined three.js never opens with `const D=`). The
+    // payload is a single newline-free line, so read to the next newline.
+    let marker = "<script>\nconst D=";
+    let di = html.find(marker).expect("app script present") + marker.len();
+    let line = &html[di..];
+    let end = line.find('\n').expect("data line is terminated");
+    let json = line[..end].strip_suffix(';').unwrap();
     let parsed: serde_json::Value = serde_json::from_str(json).expect("valid embedded JSON");
     assert_eq!(parsed["points"].as_array().unwrap().len(), 15);
     assert!(!parsed["overlays"].as_array().unwrap().is_empty());

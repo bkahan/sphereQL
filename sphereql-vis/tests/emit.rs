@@ -119,17 +119,16 @@ fn scene_serde_round_trips() {
 
 /// Extract the embedded `const D=<JSON>;` payload from emitted HTML.
 ///
-/// Anchored on the app-unique `\nconst pts=D.points` line (now in the inlined
-/// viewer runtime, no longer adjacent to the data line) so we never latch onto
-/// a `const D=` inside the minified three.js blob. The payload is emitted as a
-/// single physical line (`serde_json::to_string` is newline-free), so we take
-/// the last `\nconst D=` before the app script and read just that one line.
+/// Anchored on the payload script's opening `<script>\nconst D=` — unique to
+/// our data block (the inlined three.js scripts open with their license/code,
+/// never `const D=`), so we never latch onto a `const D=` inside the minified
+/// runtime. The payload is emitted as a single physical line
+/// (`serde_json::to_string` is newline-free), so we read to the next newline
+/// and drop the trailing `;`.
 fn embedded_payload(html: &str) -> &str {
-    let pts_marker = "\nconst pts=D.points";
-    let pi = html.find(pts_marker).expect("app script present");
-    let before = &html[..pi];
-    let di = before.rfind("\nconst D=").expect("data assignment present") + "\nconst D=".len();
-    let line = &before[di..];
+    let marker = "<script>\nconst D=";
+    let di = html.find(marker).expect("data assignment present") + marker.len();
+    let line = &html[di..];
     let end = line.find('\n').expect("data line is terminated");
     line[..end]
         .strip_suffix(';')
