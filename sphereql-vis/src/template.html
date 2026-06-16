@@ -118,6 +118,16 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 #reticle::after{top:50%;left:-6px;height:1px;width:6px;margin-top:-.5px}
 #sellabel{position:fixed;z-index:28;pointer-events:none;display:none;transform:translate(-50%,-100%);background:var(--panel-solid);border:1px solid var(--line);border-bottom:2px solid var(--accent);padding:4px 9px;font-size:11px;color:var(--ink);border-radius:2px;white-space:nowrap;box-shadow:0 6px 18px -8px #000}
 .sl-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;box-shadow:0 0 6px currentColor;vertical-align:middle}
+#labels{position:fixed;inset:0;z-index:8;pointer-events:none}
+.vlabel{position:absolute;transform:translate(-50%,-100%);margin-top:-9px;pointer-events:auto;cursor:pointer;
+  display:flex;align-items:center;gap:5px;white-space:nowrap;line-height:1.3;
+  background:rgba(11,13,28,0.72);border:1px solid var(--line);border-radius:3px;padding:2px 7px;
+  color:var(--ink);backdrop-filter:blur(4px);transition:background .12s,border-color .12s}
+.vlabel:hover{background:rgba(92,200,255,0.18);border-color:var(--accent)}
+.vlabel.solo{background:rgba(92,200,255,0.22);border-color:var(--accent)}
+.vlabel .vdot{width:6px;height:6px;border-radius:50%;flex:none;box-shadow:0 0 6px currentColor}
+.vlabel::after{content:"";position:absolute;left:50%;bottom:-8px;width:1px;height:8px;background:var(--line);transform:translateX(-50%)}
+.hud-hidden #labels{display:none}
 
 #empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:5;color:var(--ink-faint);font-size:13px;letter-spacing:.1em;text-transform:uppercase}
 #help{position:absolute;bottom:38px;left:50%;transform:translateX(-50%);z-index:5;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);pointer-events:none;white-space:nowrap;animation:rise 1s ease 1.1s backwards}
@@ -220,6 +230,11 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
       </select>
     </div>
     <div class="sep"></div>
+    <div class="set">
+      <div class="lab"><span>Labels</span></div>
+      <div id="label-toggles"></div>
+      <div class="hint">Click a label to focus · click a domain label to solo it.</div>
+    </div>
     <label class="orow"><input type="checkbox" id="globe" checked><span>Reference globe</span></label>
     <label class="orow"><input type="checkbox" id="autorot"><span>Auto-rotate</span></label>
     <div class="seg" style="margin-top:12px"><button id="save-cfg">Save .toml</button><button id="load-cfg">Load .toml</button></div>
@@ -239,6 +254,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 <div id="minimap" class="panel"><h3>Sky chart</h3><canvas id="mini" width="236" height="118"></canvas><div class="cap">θ → φ · click to aim</div></div>
 <div id="search" class="panel"><div class="wrap"><span class="slash">⌕</span><input type="text" id="search-input" placeholder="filter labels…" spellcheck="false"></div></div>
 
+<div id="labels"></div>
 <div id="tooltip"></div>
 <div id="reticle"></div>
 <div id="sellabel"></div>
@@ -377,16 +393,16 @@ function capRing(dir,ha,col){const d=v3(dir).normalize(),rr=SR*Math.sin(ha),off=
   ring.position.copy(d.clone().multiplyScalar(off));ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),d);return ring;}
 function lineBetween(a,b,col,op){return new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(a),v3(b)]),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op}));}
 function marker(pos,col,rad){const m=new THREE.Mesh(new THREE.SphereGeometry(rad,14,14),new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.6,roughness:0.35}));m.position.copy(v3(pos));return m;}
-const overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={};
+const overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={},labelData=[];
 overlays.forEach(o=>{
   overlayKinds.add(o.kind);const g=groupFor(o.kind);const col=o.color?new THREE.Color(o.color).getHex():0x5cc8ff;
-  if(o.kind==="centroid"){g.add(marker(o.pos,col,SR*0.022));}
+  if(o.kind==="centroid"){g.add(marker(o.pos,col,SR*0.022));labelData.push({kind:"centroid",anchor:o.pos,text:o.label,color:o.color||"#5cc8ff",cat:o.label});}
   else if(o.kind==="bridge"){const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;const ln=lineBetween(o.from,o.to,ch,0.18+0.55*(o.strength||0.5));g.add(ln);const fi=posIndex.get(o.from[0]+"|"+o.from[1]+"|"+o.from[2]),fidx=fi===undefined?-1:fi;bridgeLines.push({line:ln,from:o.from,to:o.to,fromIndex:fidx,color:ch});if(fidx>=0)(bridgesByPoint[fidx]||(bridgesByPoint[fidx]=[])).push({to:o.to,color:ch});}
   else if(o.kind==="geodesic_path"){g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints((o.vertices||[]).map(v3)),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9})));}
   else if(o.kind==="voronoi_cap"){g.add(capRing(o.center,o.half_angle,col));}
-  else if(o.kind==="antipode"){g.add(marker(o.centroid,col,SR*0.016));g.add(marker(o.antipode,col,SR*0.016));g.add(lineBetween(o.centroid,o.antipode,col,0.18));}
+  else if(o.kind==="antipode"){g.add(marker(o.centroid,col,SR*0.016));g.add(marker(o.antipode,col,SR*0.016));g.add(lineBetween(o.centroid,o.antipode,col,0.18));labelData.push({kind:"antipode",anchor:o.antipode,text:"⤬ "+o.label,color:o.color||"#5cc8ff"});}
   else if(o.kind==="coverage_void"){(o.caps||[]).forEach(c=>g.add(capRing(c.center,c.half_angle,0x5cc8ff)));(o.voids||[]).forEach(vp=>g.add(marker(vp,0x222a40,SR*0.006)));}
-  else if(o.kind==="domain_group"){g.add(marker(o.centroid,col,SR*0.027));(o.members||[]).forEach(m=>g.add(lineBetween(o.centroid,m,col,0.28)));}
+  else if(o.kind==="domain_group"){g.add(marker(o.centroid,col,SR*0.027));(o.members||[]).forEach(m=>g.add(lineBetween(o.centroid,m,col,0.28)));labelData.push({kind:"domain_group",anchor:o.centroid,text:o.label,color:o.color||"#5cc8ff"});}
   else if(o.kind==="glob"){const m=new THREE.Mesh(new THREE.SphereGeometry(o.radius,22,22),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.1,depthWrite:false}));m.position.copy(v3(o.center));g.add(m);}
   else if(o.kind==="manifold_slice"){const pl=new THREE.Mesh(new THREE.PlaneGeometry(SR,SR),new THREE.MeshBasicMaterial({color:0x6f8fc8,transparent:true,opacity:0.12,side:THREE.DoubleSide}));pl.position.copy(v3(o.center));pl.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),v3(o.normal).normalize());g.add(pl);}
 });
@@ -599,6 +615,12 @@ function resetDefaults(){
   schemeSel.value=DEF.palette;applyPalette(DEF.palette);
   globeCb.checked=DEF.globe;globeGroup.visible=DEF.globe;
   autorot.checked=DEF.autorot;controls.autoRotate=DEF.autorot;
+  labelKindsPresent.forEach(k => (labelKindOn[k] = true));
+  labelTogglesDiv.querySelectorAll("input").forEach(cb => {
+    cb.checked = true;
+  });
+  soloCat = null;
+  setAll(true);
   searchInput.value="";applyTransform();frameCamera();
 }
 document.getElementById("reset").addEventListener("click",resetDefaults);
@@ -659,6 +681,61 @@ if(st.sampled_from)rows+=`<div class="note">▴ sample of ${st.sampled_from.toLo
 if(st.dropped_nonfinite)rows+=`<div class="note">▴ ${st.dropped_nonfinite} non-finite dropped</div>`;
 statsDiv.innerHTML=rows;
 
+// ── Floating overlay labels (centroids / antipodes / domain groups) ─────
+// DOM labels anchored to the 3D markers: projected each frame, scaled by
+// camera distance, hidden when behind the globe, and clickable (focus +
+// solo-domain). Tied to the matching overlay-group visibility.
+const labelsDiv=document.getElementById("labels"),labelEls=[];
+let soloCat=null;
+const LABEL_KIND_NAMES={centroid:"Centroids",antipode:"Antipodes",domain_group:"Domain groups"};
+const labelKindOn={};
+function focusLabel(ld){
+  if(ld.kind==="centroid"){
+    if(soloCat===ld.cat){soloCat=null;setAll(true);}
+    else{soloCat=ld.cat;catSet.forEach(c=>{catVisible[c]=c===ld.cat;if(legendRows[c])legendRows[c].classList.toggle("dim",c!==ld.cat);});updateVisibility();}
+  }
+  tweenTarget(new THREE.Vector3(ld.anchor[0]*curScale,ld.anchor[1]*curScale,ld.anchor[2]*curScale));
+}
+labelData.forEach(ld=>{
+  const el=document.createElement("div");el.className="vlabel";
+  const dot=document.createElement("span");dot.className="vdot";dot.style.background=ld.color;dot.style.color=ld.color;
+  const txt=document.createElement("span");txt.textContent=ld.text;
+  el.appendChild(dot);el.appendChild(txt);
+  el.title="click to focus"+(ld.kind==="centroid"?" · solo domain":"");
+  el.addEventListener("click",ev=>{ev.stopPropagation();focusLabel(ld);});
+  labelsDiv.appendChild(el);labelEls.push({el,ld});
+});
+// Per-kind label toggles — one checkbox per label kind present in the scene.
+const labelTogglesDiv=document.getElementById("label-toggles");
+const labelKindsPresent=[...new Set(labelData.map(l=>l.kind))].sort();
+if(labelKindsPresent.length===0)labelTogglesDiv.innerHTML='<div class="muted">No labelled overlays.</div>';
+labelKindsPresent.forEach(kind=>{
+  labelKindOn[kind]=true;
+  const row=document.createElement("label");row.className="orow";
+  row.innerHTML=`<input type="checkbox" checked><span></span>`;
+  row.querySelector("span").textContent=LABEL_KIND_NAMES[kind]||kind;
+  row.querySelector("input").addEventListener("change",e=>{labelKindOn[kind]=e.target.checked;});
+  labelTogglesDiv.appendChild(row);
+});
+const _av=new THREE.Vector3(),_cd=new THREE.Vector3();
+const labelRefDist=DEF.scale*maxR*2.6;
+function updateLabels(){
+  _cd.copy(camera.position).normalize();
+  for(const {el,ld} of labelEls){
+    const grp=overlayGroups[ld.kind];
+    if(!labelKindOn[ld.kind]||!grp||!grp.visible){el.style.display="none";continue;}
+    _av.set(ld.anchor[0]*curScale,ld.anchor[1]*curScale,ld.anchor[2]*curScale);
+    const al=Math.hypot(_av.x,_av.y,_av.z)||1;
+    const facing=(_av.x*_cd.x+_av.y*_cd.y+_av.z*_cd.z)/al>-0.15; // front hemisphere
+    const sp=projectToScreen(ld.anchor);
+    if(sp.vis&&facing){
+      const dist=camera.position.distanceTo(_av),s=clamp(labelRefDist/Math.max(dist,1e-3),0.7,1.7);
+      el.style.display="flex";el.style.left=sp.x+"px";el.style.top=sp.y+"px";el.style.fontSize=(10.5*s).toFixed(1)+"px";
+      el.classList.toggle("solo",ld.kind==="centroid"&&soloCat===ld.cat);
+    }else el.style.display="none";
+  }
+}
+
 // ── Init view (default scale + framing) + render loop ───────────────────
 applyScale(DEF.scale);frameCamera();
 window.addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
@@ -669,6 +746,7 @@ function animate(){
   controls.update();
   if(hoveredIdx>=0){const sp=projectToScreen(curPos(hoveredIdx));if(sp.vis){reticle.style.display="block";reticle.style.left=sp.x+"px";reticle.style.top=sp.y+"px";}else reticle.style.display="none";}else reticle.style.display="none";
   if(selectedIdx>=0){const sp=projectToScreen(curPos(selectedIdx));if(sp.vis){sellabel.style.display="block";sellabel.style.left=sp.x+"px";sellabel.style.top=(sp.y-16)+"px";}else sellabel.style.display="none";}
+  updateLabels();
   drawMinimap();renderer.render(scene,camera);
 }
 animate();
