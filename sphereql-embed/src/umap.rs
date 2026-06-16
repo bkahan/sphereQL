@@ -116,6 +116,10 @@ pub struct UmapGraph {
     /// L2-normalized embeddings used for graph construction.
     /// Retained for the Adam optimizer's similarity lookups.
     pub(crate) normalized: Vec<Vec<f64>>,
+    /// Raw (pre-normalization) L2 magnitudes, one per embedding. Retained so
+    /// the radial coordinate and any corpus-wide magnitude bounds can be
+    /// resolved from a reused graph without the original embeddings.
+    pub(crate) magnitudes: Vec<f64>,
     /// PCA warm-start positions on S² (unit vectors in ℝ³).
     pub(crate) warm_start: Vec<[f64; 3]>,
     /// Embedding dimensionality.
@@ -165,6 +169,7 @@ impl UmapGraph {
         }
 
         let normalized: Vec<Vec<f64>> = embeddings.iter().map(|e| e.normalized()).collect();
+        let magnitudes: Vec<f64> = embeddings.iter().map(|e| e.magnitude()).collect();
         let k = n_neighbors.min(n - 1).max(1);
         let (knn, dists, ann) = build_knn_graph(&normalized, k);
         let weights = fuzzy_simplicial_weights(&knn, &dists);
@@ -174,6 +179,7 @@ impl UmapGraph {
             knn,
             weights,
             normalized,
+            magnitudes,
             warm_start,
             dim,
             k,

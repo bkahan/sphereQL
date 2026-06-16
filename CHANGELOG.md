@@ -6,6 +6,19 @@ versions.
 
 ## [Unreleased]
 
+### Added — configurable radial coordinate
+
+- **`PipelineConfig.radial` (`RadialConfig` / `RadialMode`)** — control how
+  the radial coordinate `r` is assigned. `Magnitude` (default) is the
+  faithful embedding-magnitude pass-through; `Stretch` percentile-maps the
+  corpus magnitude band onto a configurable `[lo, hi]` range so `r` no longer
+  clusters in a narrow near-maximum band on sparse/uniform corpora; `Fixed`
+  pins all points to the shell. New `RadialStrategy::MagnitudeStretch` carries
+  the corpus-derived bounds (resolved once at fit time, applied consistently
+  to corpus points and queries). PCA's volumetric mode is auto-disabled when a
+  non-default mode is chosen so the strategy takes effect. The
+  `visualize_corpus` example gains `--radial lo:hi`.
+
 ### Added — `sphereql-vis` crate + first-class Rust visualization
 
 - **New `sphereql-vis` crate** — a pure, data-agnostic 3D-visualization

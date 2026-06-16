@@ -21,7 +21,8 @@
 //! opens a browser when `--open` is passed.
 
 use sphereql::embed::{
-    CompositeMetric, PipelineConfig, PipelineInput, ProjectionKind, SearchStrategy, auto_tune,
+    CompositeMetric, PipelineConfig, PipelineInput, ProjectionKind, RadialConfig, RadialMode,
+    SearchStrategy, auto_tune,
 };
 use sphereql_corpus::{CorpusId, embed};
 use sphereql_examples::{build_corpus_scene, tuning_params};
@@ -31,6 +32,7 @@ struct Args {
     out: String,
     cdn: bool,
     open: bool,
+    radial: Option<(f64, f64)>,
 }
 
 fn parse_args() -> Args {
@@ -38,6 +40,7 @@ fn parse_args() -> Args {
     let mut out = "target/sphere_viz.html".to_string();
     let mut cdn = false;
     let mut open = false;
+    let mut radial = None;
 
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -59,6 +62,15 @@ fn parse_args() -> Args {
             }
             "--cdn" => cdn = true,
             "--open" => open = true,
+            "--radial" => {
+                radial = it.next().and_then(|spec| {
+                    let (a, b) = spec.split_once(':')?;
+                    Some((a.trim().parse::<f64>().ok()?, b.trim().parse::<f64>().ok()?))
+                });
+                if radial.is_none() {
+                    eprintln!("--radial expects lo:hi (e.g. 0.2:1.8)");
+                }
+            }
             other => eprintln!("ignoring unknown arg '{other}'"),
         }
     }
@@ -67,6 +79,7 @@ fn parse_args() -> Args {
         out,
         cdn,
         open,
+        radial,
     }
 }
 
@@ -99,6 +112,20 @@ fn main() {
     ];
     let (budget, space) = tuning_params(corpus.len(), &all_kinds);
     let metric = CompositeMetric::default_composite();
+
+    // Base config; optionally remap the radial coordinate so r fills a wider
+    // band instead of clustering near the embedding-magnitude maximum.
+    let mut config = PipelineConfig::default();
+    if let Some((lo, hi)) = args.radial {
+        config.radial = RadialConfig {
+            mode: RadialMode::Stretch,
+            lo,
+            hi,
+            percentile: 0.02,
+        };
+        println!("Radial stretch: r -> [{lo}, {hi}] (2nd/98th-percentile magnitude band)");
+    }
+
     println!(
         "Auto-tuning (budget={budget}) over {:?}...",
         space.projection_kinds
@@ -116,7 +143,7 @@ fn main() {
             seed: 0x5EED_C0FFEE,
             max_wall_secs: None,
         },
-        &PipelineConfig::default(),
+        &config,
     )
     .expect("auto_tune failed");
 
@@ -127,6 +154,13 @@ fn main() {
         report.best_score,
         evr * 100.0
     );
+    let (rmin, rmax) = pipeline
+        .exported_points()
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(p.r), hi.max(p.r))
+        });
+    println!("  radius range: [{rmin:.3}, {rmax:.3}]");
 
     let title = format!("SphereQL — {}", args.corpus.name());
     let scene = build_corpus_scene(&title, &pipeline, &labels, evr);

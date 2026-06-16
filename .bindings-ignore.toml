@@ -43,6 +43,14 @@ name = "SpatialConfig"
 reason = "sub-config inside PipelineConfig"
 
 [[exempt]]
+name = "RadialConfig"
+reason = "sub-config inside PipelineConfig; reached via config['radial'] dict"
+
+[[exempt]]
+name = "RadialMode"
+reason = "exposed as string in config['radial']['mode'] (magnitude|fixed|stretch)"
+
+[[exempt]]
 name = "QualityConfig"
 reason = "internal pipeline knob; not user-facing"
 
