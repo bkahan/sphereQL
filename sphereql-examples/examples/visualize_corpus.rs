@@ -152,6 +152,10 @@ fn main() {
     } else {
         println!("(self-contained — opens offline, no network needed)");
     }
+    println!(
+        "Embed:  <iframe src=\"{}\" style=\"width:100%;height:640px;border:0\"></iframe>",
+        args.out
+    );
 
     if args.open {
         open_in_browser(&abs.to_string_lossy());

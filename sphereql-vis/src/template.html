@@ -13,15 +13,15 @@
   --mono:ui-monospace,"JetBrains Mono","Cascadia Code","SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%}
+html,body{height:100%;width:100%;overflow:hidden;overscroll-behavior:none}
 body{background:radial-gradient(130% 100% at 72% -10%, #1a1b3e 0%, #0c0d22 42%, #06060f 100%),var(--bg);
-  color:var(--ink);font-family:var(--mono);overflow:hidden;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+  color:var(--ink);font-family:var(--mono);-webkit-font-smoothing:antialiased;letter-spacing:.01em}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;mix-blend-mode:overlay;opacity:.05;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%)}
-canvas{position:absolute;top:0;left:0;z-index:0}
+canvas{position:absolute;top:0;left:0;z-index:0;touch-action:none}
 
-.panel{position:absolute;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:2px;
+.panel{position:fixed;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:2px;
   backdrop-filter:blur(14px) saturate(1.15);-webkit-backdrop-filter:blur(14px) saturate(1.15);
   box-shadow:0 12px 40px -18px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.03);
   padding:14px 16px;zoom:var(--ui,1);animation:rise .7s cubic-bezier(.16,.84,.34,1) backwards}
@@ -131,6 +131,32 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
 ::-webkit-scrollbar-track{background:transparent}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Hide-UI toggle (clean view for embedding / mobile) */
+#hud-toggle{background:none;border:none;color:var(--ink-faint);font-size:13px;line-height:1;cursor:pointer;padding:0 0 0 4px;transition:color .15s}
+#hud-toggle:hover{color:var(--accent)}
+.hud-hidden .panel:not(#hdr){display:none}
+.hud-hidden #help,.hud-hidden #credit,.hud-hidden #sellabel,.hud-hidden #tooltip,.hud-hidden #reticle{display:none!important}
+
+/* Responsive / touch — keeps the viewer usable when embedded in a small
+   iframe or on a phone. The header spans the top; controls + info share the
+   upper row (half width each); the filter is a full-width bar pinned to the
+   very bottom so it can never land mid-screen. Minimap + hints drop out. */
+@media (max-width:720px){
+  .panel{padding:11px 13px}
+  h3{font-size:9px;margin-bottom:9px}
+  #minimap{display:none}
+  #help{display:none}
+  #hdr{left:8px;right:8px;width:auto;transform:none;gap:10px;padding:8px 12px;animation-name:rise}
+  #hdr .sub{display:none}
+  #hdr #hud-toggle{margin-left:auto}
+  #controls{top:54px;left:8px;width:calc(50vw - 12px);max-width:230px;max-height:44vh}
+  #info{top:54px;right:8px;left:auto;width:calc(50vw - 12px);max-width:260px;max-height:44vh}
+  #stats{left:8px;bottom:58px;font-size:11px;min-width:0}
+  #search{left:8px;right:8px;bottom:8px}
+  #search .wrap{justify-content:flex-start}
+  #search input{width:auto;flex:1}
+}
 </style>
 </head>
 <body>
@@ -140,6 +166,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
   <span class="mark">◐ Sphere<b>QL</b></span>
   <span class="sub" id="hdr-sub"></span>
   <span class="pill" id="hdr-pill"></span>
+  <button id="hud-toggle" title="Hide / show panels (clean view)">⛶</button>
 </div>
 
 <div id="controls" class="panel">
@@ -286,6 +313,9 @@ let baseSize=DEF.size;
 for(let i=0;i<N;i++){const p=pts[i],c=new THREE.Color(catColor[p.cat]);
   origPos[i*3]=p.x;origPos[i*3+1]=p.y;origPos[i*3+2]=p.z;positions[i*3]=p.x;positions[i*3+1]=p.y;positions[i*3+2]=p.z;
   colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b;sizes[i]=baseSize;}
+// Map a point's full-precision (x,y,z) → its index, so a bridge endpoint can
+// be tied to its exact source sphere (bridge.from === a point's xyz).
+const posIndex=new Map();for(let i=0;i<N;i++)posIndex.set(pts[i].x+"|"+pts[i].y+"|"+pts[i].z,i);
 const catDir={};
 {const sum={},cnt={};catSet.forEach(c=>{sum[c]=[0,0,0];cnt[c]=0;});
  for(let i=0;i<N;i++){const p=pts[i],m=Math.hypot(p.x,p.y,p.z)||1;sum[p.cat][0]+=p.x/m;sum[p.cat][1]+=p.y/m;sum[p.cat][2]+=p.z/m;cnt[p.cat]++;}
@@ -332,7 +362,7 @@ function applyTransform(){
     pa[i*3]=dx*nmag;pa[i*3+1]=dy*nmag;pa[i*3+2]=dz*nmag;
   }
   pointsGeo.getAttribute("position").needsUpdate=true;pointsGeo.computeBoundingSphere();
-  for(const b of bridgeLines){const a=transformPos(b.from),c=transformPos(b.to),pos=b.line.geometry.getAttribute("position");pos.setXYZ(0,a[0],a[1],a[2]);pos.setXYZ(1,c[0],c[1],c[2]);pos.needsUpdate=true;}
+  for(const b of bridgeLines){const a=b.fromIndex>=0?curPos(b.fromIndex):transformPos(b.from),c=transformPos(b.to),pos=b.line.geometry.getAttribute("position");pos.setXYZ(0,a[0],a[1],a[2]);pos.setXYZ(1,c[0],c[1],c[2]);pos.needsUpdate=true;}
   if(selectedIdx>=0)deselectPoint();drawMinimapBase();
 }
 function applySize(sz){baseSize=sz;const sa=pointsGeo.getAttribute("size").array;for(let i=0;i<N;i++)sa[i]=catVisible[pts[i].cat]?sz:0;pointsGeo.getAttribute("size").needsUpdate=true;if(selectedIdx>=0)deselectPoint();}
@@ -347,11 +377,11 @@ function capRing(dir,ha,col){const d=v3(dir).normalize(),rr=SR*Math.sin(ha),off=
   ring.position.copy(d.clone().multiplyScalar(off));ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),d);return ring;}
 function lineBetween(a,b,col,op){return new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(a),v3(b)]),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op}));}
 function marker(pos,col,rad){const m=new THREE.Mesh(new THREE.SphereGeometry(rad,14,14),new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.6,roughness:0.35}));m.position.copy(v3(pos));return m;}
-const overlayKinds=new Set(),bridgeLines=[];
+const overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={};
 overlays.forEach(o=>{
   overlayKinds.add(o.kind);const g=groupFor(o.kind);const col=o.color?new THREE.Color(o.color).getHex():0x5cc8ff;
   if(o.kind==="centroid"){g.add(marker(o.pos,col,SR*0.022));}
-  else if(o.kind==="bridge"){const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;const ln=lineBetween(o.from,o.to,ch,0.18+0.55*(o.strength||0.5));g.add(ln);bridgeLines.push({line:ln,from:o.from,to:o.to});}
+  else if(o.kind==="bridge"){const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;const ln=lineBetween(o.from,o.to,ch,0.18+0.55*(o.strength||0.5));g.add(ln);const fi=posIndex.get(o.from[0]+"|"+o.from[1]+"|"+o.from[2]),fidx=fi===undefined?-1:fi;bridgeLines.push({line:ln,from:o.from,to:o.to,fromIndex:fidx,color:ch});if(fidx>=0)(bridgesByPoint[fidx]||(bridgesByPoint[fidx]=[])).push({to:o.to,color:ch});}
   else if(o.kind==="geodesic_path"){g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints((o.vertices||[]).map(v3)),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9})));}
   else if(o.kind==="voronoi_cap"){g.add(capRing(o.center,o.half_angle,col));}
   else if(o.kind==="antipode"){g.add(marker(o.centroid,col,SR*0.016));g.add(marker(o.antipode,col,SR*0.016));g.add(lineBetween(o.centroid,o.antipode,col,0.18));}
@@ -382,6 +412,30 @@ function projectToScreen(p){
   _pv.project(camera);
   return{x:(_pv.x*0.5+0.5)*innerWidth,y:(-_pv.y*0.5+0.5)*innerHeight,vis:inFront&&_pv.z<=1};
 }
+// Zoom to cursor: keep the world point under the pointer fixed on screen while
+// dollying. OrbitControls r128 has no zoomToCursor, so we intercept the wheel
+// in the capture phase and stop it reaching OrbitControls; touch pinch still
+// uses OrbitControls' built-in zoom.
+const _zc=new THREE.Vector3(),_zd=new THREE.Vector3(),_zn=new THREE.Vector3();
+function worldUnderCursor(mx,my){
+  _zc.set((mx/innerWidth)*2-1,-(my/innerHeight)*2+1,0.5).unproject(camera);
+  _zd.copy(_zc).sub(camera.position).normalize();
+  camera.getWorldDirection(_zn);
+  const denom=_zd.dot(_zn);
+  if(Math.abs(denom)<1e-6)return controls.target.clone();
+  const tt=(_zn.dot(controls.target)-_zn.dot(camera.position))/denom;
+  return camera.position.clone().add(_zd.multiplyScalar(tt));
+}
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();e.stopImmediatePropagation();
+  const f=worldUnderCursor(e.clientX,e.clientY);
+  const s=Math.exp(Math.sign(e.deltaY)*Math.min(Math.abs(e.deltaY),120)/120*controls.zoomSpeed*0.2);
+  camera.position.sub(f).multiplyScalar(s).add(f);
+  controls.target.sub(f).multiplyScalar(s).add(f);
+  const d=camera.position.distanceTo(controls.target),cd=clamp(d,controls.minDistance,controls.maxDistance);
+  if(d!==cd)camera.position.copy(controls.target).addScaledVector(_tmp.copy(camera.position).sub(controls.target).normalize(),cd);
+  controls.update();
+},{capture:true,passive:false});
 function getHovered(e){
   mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
   raycaster.setFromCamera(mouse,camera);
@@ -420,11 +474,16 @@ function selectPoint(idx){
   while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
   const lm=new THREE.LineBasicMaterial({color:0x5cc8ff,transparent:true,opacity:0.5});
   for(const d of dists){const c=curPos(d.i);linesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(P[0],P[1],P[2]),new THREE.Vector3(c[0],c[1],c[2])]),lm));}
+  // This sphere's bridges (item → target domain), drawn from the sphere itself
+  // so highlighting always reveals its bridges regardless of the global toggle.
+  const myBridges=bridgesByPoint[idx];
+  if(myBridges)for(const br of myBridges){const c=transformPos(br.to);
+    linesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(P[0],P[1],P[2]),new THREE.Vector3(c[0],c[1],c[2])]),new THREE.LineBasicMaterial({color:br.color,transparent:true,opacity:0.9})));}
   const p=pts[idx],info=document.getElementById("info");
   sellabel.innerHTML=`<span class="sl-dot" style="background:${catColor[p.cat]};color:${catColor[p.cat]}"></span>${escHtml(p.label||"Point "+idx)}`;
   document.getElementById("info-label").textContent=p.label||"Point "+idx;
   const tag=document.getElementById("info-cat");tag.textContent=p.cat;tag.style.color=catColor[p.cat];tag.style.background=catColor[p.cat]+"18";
-  document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${p.theta.toFixed(4)}</b><span>φ</span><b>${p.phi.toFixed(4)}</b><span>r</span><b>${p.r.toFixed(4)}</b>`;
+  document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${p.theta.toFixed(4)}</b><span>φ</span><b>${p.phi.toFixed(4)}</b><span>r</span><b>${p.r.toFixed(4)}</b>${myBridges?`<span>bridges</span><b>${myBridges.length}</b>`:""}`;
   const nb=document.getElementById("info-neighbors");
   nb.innerHTML=dists.map(d=>{const dc=catColor[pts[d.i].cat];return `<div class="nb" data-idx="${d.i}" style="background:${dc}22;border-left:2px solid ${dc}"><span>${escHtml(pts[d.i].label||"Point "+d.i)}</span><span class="dist">${d.d.toFixed(3)}</span></div>`;}).join("");
   nb.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));
@@ -445,6 +504,7 @@ document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   document.querySelectorAll(".tabpane").forEach(x=>x.classList.remove("active"));
   t.classList.add("active");document.getElementById("tab-"+t.dataset.tab).classList.add("active");}));
+document.getElementById("hud-toggle").addEventListener("click",()=>document.body.classList.toggle("hud-hidden"));
 
 // ── Legend + select all/none ────────────────────────────────────────────
 const legendDiv=document.getElementById("legend-items"),catCounts={},legendRows={};
