@@ -30,6 +30,34 @@
 //! assert!(html.contains("PCA variance"));
 //! assert!(!html.contains("src=\"http")); // offline: no external script loads
 //! ```
+//!
+//! # Scene JSON (the runtime contract)
+//!
+//! The emitted viewer is not a frozen render: it rebuilds itself from a
+//! [`Scene`] at runtime, so the same page can load a different scene by
+//! drag-and-drop (or, in the WASM studio, from a live in-browser pipeline).
+//! [`Scene::to_json`] / [`Scene::from_json`] are the canonical wire form, and
+//! the viewer's drag-drop loader accepts that shape:
+//!
+//! ```jsonc
+//! {
+//!   "title": "My corpus",
+//!   "points": [
+//!     // each point needs finite x/y/z OR finite r/theta/phi — the loader
+//!     // derives the missing pair (x=r·sinφ·cosθ, y=r·sinφ·sinθ, z=r·cosφ;
+//!     // θ=atan2(y,x)∈[0,2π), φ=acos(z/r)). cat/label default to "".
+//!     {"id": "doc-1", "x": 0.9, "y": 0.1, "z": 0.4, "cat": "science", "label": "…"}
+//!   ],
+//!   "overlays": [ /* {"kind": "centroid"|"bridge"|… , …}, see Overlay */ ],
+//!   "stats": {"projection_kind": "pca", "evr": 0.83, "evr_label": "PCA variance"},
+//!   "surface_radius": 1.0,  // optional; defaults to the median ‖xyz‖
+//!   "show_axes": false
+//! }
+//! ```
+//!
+//! The loader is permissive on input (a bare `points` array, or minimal points
+//! with only coordinates, are accepted and normalized) but always renders the
+//! full [`Scene`] shape internally.
 
 mod emit;
 mod template;

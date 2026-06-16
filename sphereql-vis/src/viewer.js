@@ -51,6 +51,8 @@ const autorot=document.getElementById("autorot");
 const uiS=document.getElementById("ui"),uiVal=document.getElementById("ui-val");
 const schemeSel=document.getElementById("scheme");
 const cfgFile=document.getElementById("cfg-file");
+const sceneFile=document.getElementById("scene-file");
+const dropzone=document.getElementById("dropzone");
 const mini=document.getElementById("mini"),mctx=mini.getContext("2d"),MW=mini.width,MH=mini.height;
 const miniBase=document.createElement("canvas");miniBase.width=MW;miniBase.height=MH;const mbctx=miniBase.getContext("2d");
 
@@ -365,6 +367,16 @@ cfgFile.addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;con
 };r.readAsText(f);cfgFile.value="";});
 document.getElementById("reset").addEventListener("click",resetDefaults);
 
+// Open / drop a Scene JSON → rebuild the viewer around it.
+document.getElementById("open-scene").addEventListener("click",()=>sceneFile.click());
+sceneFile.addEventListener("change",e=>{loadSceneFromFile(e.target.files[0]);sceneFile.value="";});
+const isFileDrag=e=>e.dataTransfer&&Array.from(e.dataTransfer.types||[]).indexOf("Files")>=0;
+let _dragDepth=0;
+window.addEventListener("dragenter",e=>{if(!isFileDrag(e))return;e.preventDefault();_dragDepth++;dropzone.classList.add("on");});
+window.addEventListener("dragover",e=>{if(!isFileDrag(e))return;e.preventDefault();e.dataTransfer.dropEffect="copy";});
+window.addEventListener("dragleave",e=>{if(!isFileDrag(e))return;_dragDepth=Math.max(0,_dragDepth-1);if(_dragDepth===0)dropzone.classList.remove("on");});
+window.addEventListener("drop",e=>{e.preventDefault();_dragDepth=0;dropzone.classList.remove("on");const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)loadSceneFromFile(f);});
+
 // Search
 searchInput.addEventListener("input",()=>{
   if(!pointsGeo)return;
@@ -383,6 +395,60 @@ mini.addEventListener("click",e=>{
   camera.position.copy(dir.multiplyScalar(camera.position.length()));controls.autoRotate=false;autorot.checked=false;controls.update();});
 
 window.addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+// ── Open / drop a foreign Scene ──────────────────────────────────────────
+// Normalize an arbitrary parsed object into the Scene shape rebuild() expects.
+// Accepts the full Scene (the `Scene::to_json` shape) or a bare points array,
+// and tolerates minimal points: a point needs only finite x/y/z OR finite
+// r/theta/phi — the missing pair is derived using the same convention as
+// sphereql-core (x=r·sinφ·cosθ, y=r·sinφ·sinθ, z=r·cosφ; θ=atan2(y,x)∈[0,2π),
+// φ=acos(z/r)). Throws (with a human message) when there is nothing to show.
+function parseScene(obj){
+  if(obj==null||typeof obj!=="object")throw new Error("not a JSON object");
+  const raw=Array.isArray(obj)?{points:obj}:obj;
+  if(!Array.isArray(raw.points))throw new Error("missing a `points` array");
+  const out=[];
+  for(const p of raw.points){
+    if(!p||typeof p!=="object")continue;
+    let x=+p.x,y=+p.y,z=+p.z,r=+p.r,theta=+p.theta,phi=+p.phi;
+    const hasXYZ=isFinite(x)&&isFinite(y)&&isFinite(z);
+    const hasSph=isFinite(r)&&isFinite(theta)&&isFinite(phi);
+    if(!hasXYZ&&!hasSph)continue;
+    if(!hasXYZ){const sp=Math.sin(phi);x=r*sp*Math.cos(theta);y=r*sp*Math.sin(theta);z=r*Math.cos(phi);}
+    if(!hasSph){r=Math.hypot(x,y,z);theta=Math.atan2(y,x);if(theta<0)theta+=2*Math.PI;phi=Math.acos(clamp(r>1e-12?z/r:0,-1,1));}
+    const q={x,y,z,r,theta,phi,cat:p.cat!=null?String(p.cat):"",label:p.label!=null?String(p.label):""};
+    if(p.id!=null)q.id=String(p.id);
+    if(isFinite(+p.certainty))q.certainty=+p.certainty;
+    if(isFinite(+p.intensity))q.intensity=+p.intensity;
+    out.push(q);
+  }
+  if(out.length===0)throw new Error("no usable points (each needs finite x/y/z or r/theta/phi)");
+  // surface_radius: honour an explicit finite value, else median ‖xyz‖ (the
+  // same shell sphereql-vis computes), falling back to 1.0.
+  let sr=+raw.surface_radius;
+  if(!isFinite(sr)||sr<=0){const norms=out.map(p=>Math.hypot(p.x,p.y,p.z)).sort((a,b)=>a-b);sr=norms.length?norms[norms.length>>1]:1.0;if(!isFinite(sr)||sr<=0)sr=1.0;}
+  const st=raw.stats&&typeof raw.stats==="object"?raw.stats:{};
+  return{
+    title:raw.title!=null?String(raw.title):"Imported scene",
+    points:out,
+    overlays:Array.isArray(raw.overlays)?raw.overlays:[],
+    stats:{projection_kind:st.projection_kind!=null?String(st.projection_kind):"imported",evr:isFinite(+st.evr)?+st.evr:0,evr_label:st.evr_label!=null?String(st.evr_label):"explained variance",sampled_from:st.sampled_from,dropped_nonfinite:st.dropped_nonfinite},
+    surface_radius:sr,
+    show_axes:!!raw.show_axes
+  };
+}
+// Transient feedback on a button (✓/✗) without disturbing the rest of the UI.
+function flashButton(id,text,ms){const b=document.getElementById(id);if(!b)return;const t=b.textContent;b.textContent=text;setTimeout(()=>{b.textContent=t;},ms||1500);}
+function loadSceneFromText(text){
+  let obj;
+  try{obj=JSON.parse(text);}catch(err){console.warn("SphereQL: scene is not valid JSON:",err);flashButton("open-scene","✗ not JSON");return;}
+  let sc;
+  try{sc=parseScene(obj);}catch(err){console.warn("SphereQL: not a Scene:",err.message);flashButton("open-scene","✗ "+err.message,2200);return;}
+  rebuild(sc);
+  // Switch to the Overlays/Legend so the freshly-loaded scene is visible.
+  flashButton("open-scene","✓ "+sc.points.length+" points");
+}
+function loadSceneFromFile(f){if(!f)return;const r=new FileReader();r.onload=()=>loadSceneFromText(r.result);r.onerror=()=>flashButton("open-scene","✗ read error");r.readAsText(f);}
 
 // ── Scene swap ─────────────────────────────────────────────────────────────
 function teardown(){
