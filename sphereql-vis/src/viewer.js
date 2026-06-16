@@ -57,7 +57,10 @@ const mini=document.getElementById("mini"),mctx=mini.getContext("2d"),MW=mini.wi
 const miniBase=document.createElement("canvas");miniBase.width=MW;miniBase.height=MH;const mbctx=miniBase.getContext("2d");
 
 // ── THREE setup (persistent) ─────────────────────────────────────────────
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+// preserveDrawingBuffer keeps the last frame readable so PNG export
+// (canvas.toDataURL) is reliable across browsers without an off-screen
+// render-target; the modest VRAM cost is acceptable for an explorer UI.
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,preserveDrawingBuffer:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x06060f);
@@ -69,6 +72,11 @@ scene.add(new THREE.AmbientLight(0x44557a,2.1));
 const dl=new THREE.DirectionalLight(0xcfe2ff,0.55);dl.position.set(3,5,4);scene.add(dl);
 const raycaster=new THREE.Raycaster();raycaster.params.Points.threshold=0.045;
 const mouse=new THREE.Vector2();
+// Persistent tool layer: the great-circle ruler draws here. Scaled with the
+// scene (added to `scalables` in rebuild); its content is scene-scoped and
+// cleared on teardown.
+const rulerGroup=new THREE.Group();scene.add(rulerGroup);
+const rulerReadout=document.getElementById("ruler-readout");
 const _pv=new THREE.Vector3(),_fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
 const _zc=new THREE.Vector3(),_zd=new THREE.Vector3(),_zn=new THREE.Vector3();
 const _av=new THREE.Vector3(),_cd=new THREE.Vector3();
@@ -85,6 +93,7 @@ let scalables=[];
 let baseSize=DEF.size,curScale=DEF.scale,spreadF=DEF.spread,radialG=DEF.radial,uiScale=DEF.ui;
 let selectedIdx=-1,hoveredIdx=-1;
 let tgtTween=null,pendingTransform=false;
+let rulerOn=false,rulerPicks=[],rulerLast=null;
 
 // ── Module functions (operate on the current scene state) ─────────────────
 function buildCatColor(name){const pal=PALETTES[name]||PALETTES.aurora;catSet.forEach((c,i)=>catColor[c]=pal[i%pal.length]);}
@@ -323,13 +332,16 @@ canvas.addEventListener("mousemove",e=>{
   }else{tooltip.style.display="none";canvas.style.cursor="grab";}
 });
 canvas.addEventListener("mouseleave",()=>{hoveredIdx=-1;tooltip.style.display="none";});
-window.addEventListener("keydown",e=>{if(e.key==="Escape"&&selectedIdx>=0)deselectPoint(true);});
+window.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(rulerOn&&rulerPicks.length){clearRuler();return;}if(selectedIdx>=0)deselectPoint(true);});
 // Click detection via pointer down/up + movement threshold — the `click`
 // event is unreliable while OrbitControls is handling pointer gestures.
 let _downX=0,_downY=0;
 canvas.addEventListener("pointerdown",e=>{_downX=e.clientX;_downY=e.clientY;});
 canvas.addEventListener("pointerup",e=>{
-  if(Math.hypot(e.clientX-_downX,e.clientY-_downY)<5){const idx=getHovered(e);if(idx>=0)selectPoint(idx);else deselectPoint(true);}
+  if(Math.hypot(e.clientX-_downX,e.clientY-_downY)>=5)return; // a drag, not a click
+  const idx=getHovered(e);
+  if(rulerOn){if(idx>=0)rulerAddPick(curPos(idx));return;} // ruler snaps to data points
+  if(idx>=0)selectPoint(idx);else deselectPoint(true);
 });
 
 // Tabs + HUD toggle
@@ -377,6 +389,11 @@ window.addEventListener("dragover",e=>{if(!isFileDrag(e))return;e.preventDefault
 window.addEventListener("dragleave",e=>{if(!isFileDrag(e))return;_dragDepth=Math.max(0,_dragDepth-1);if(_dragDepth===0)dropzone.classList.remove("on");});
 window.addEventListener("drop",e=>{e.preventDefault();_dragDepth=0;dropzone.classList.remove("on");const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)loadSceneFromFile(f);});
 
+// Tools: ruler / PNG snapshot / shareable link.
+document.getElementById("tool-ruler").addEventListener("click",()=>setRuler(!rulerOn));
+document.getElementById("tool-png").addEventListener("click",exportPNG);
+document.getElementById("tool-share").addEventListener("click",shareLink);
+
 // Search
 searchInput.addEventListener("input",()=>{
   if(!pointsGeo)return;
@@ -395,6 +412,83 @@ mini.addEventListener("click",e=>{
   camera.position.copy(dir.multiplyScalar(camera.position.length()));controls.autoRotate=false;autorot.checked=false;controls.update();});
 
 window.addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+// ── Great-circle ruler ───────────────────────────────────────────────────
+// Click two points; measure the angle between their directions (acos of the
+// clamped dot of the unit vectors) and draw the connecting geodesic on the
+// shell via slerp — the same arc construction as overlay.rs's geodesic_path.
+function clearRuler(){rulerPicks=[];while(rulerGroup.children.length){const c=rulerGroup.children[0];disposeObject(c);rulerGroup.remove(c);}rulerReadout.classList.remove("on");}
+function setRuler(on){
+  rulerOn=on;document.getElementById("tool-ruler").classList.toggle("active",on);
+  if(on){rulerReadout.querySelector(".rr-ang").textContent="—";rulerReadout.querySelector(".rr-sub").textContent="click two points · Esc to clear";rulerReadout.classList.add("on");}
+  else clearRuler();
+}
+function rulerMeasure(){
+  const a=rulerPicks[0],b=rulerPicks[1];
+  const om=Math.acos(clamp(a[0]*b[0]+a[1]*b[1]+a[2]*b[2],-1,1));
+  const v=[],SEG=72;
+  if(om<1e-4){
+    // Coincident directions: draw a short visible segment (a 1-vertex line
+    // renders nothing) rather than degenerate slerp.
+    v.push(new THREE.Vector3(a[0]*SR,a[1]*SR,a[2]*SR),new THREE.Vector3(b[0]*SR,b[1]*SR,b[2]*SR));
+  }else if(om>Math.PI-1e-3){
+    // (Near-)antipodal: sin(om)→0 makes slerp explode (the arc would collapse
+    // through the globe interior). The geodesic is ambiguous, so sweep a clean
+    // great semicircle from `a` about an axis perpendicular to it.
+    const h=Math.abs(a[0])<0.9?[1,0,0]:[0,1,0];
+    const d=h[0]*a[0]+h[1]*a[1]+h[2]*a[2];
+    let px=h[0]-d*a[0],py=h[1]-d*a[1],pz=h[2]-d*a[2];const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;
+    for(let i=0;i<=SEG;i++){const th=om*i/SEG,c=Math.cos(th),sn=Math.sin(th);
+      v.push(new THREE.Vector3((a[0]*c+px*sn)*SR,(a[1]*c+py*sn)*SR,(a[2]*c+pz*sn)*SR));}
+  }else{const s=Math.sin(om);for(let i=0;i<=SEG;i++){const t=i/SEG,w1=Math.sin((1-t)*om)/s,w2=Math.sin(t*om)/s;
+    v.push(new THREE.Vector3((a[0]*w1+b[0]*w2)*SR,(a[1]*w1+b[1]*w2)*SR,(a[2]*w1+b[2]*w2)*SR));}}
+  rulerGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:0xffb454,transparent:true,opacity:0.95})));
+  const deg=om*180/Math.PI;rulerLast={rad:om,deg:deg,chord:2*Math.sin(om/2)};
+  rulerReadout.querySelector(".rr-ang").textContent=deg.toFixed(1)+"°  ·  "+om.toFixed(3)+" rad";
+  rulerReadout.querySelector(".rr-sub").textContent="great-circle · chord "+(2*Math.sin(om/2)).toFixed(3);
+  rulerReadout.classList.add("on");
+}
+function rulerAddPick(P){
+  if(rulerPicks.length>=2)clearRuler();
+  const m=Math.hypot(P[0],P[1],P[2])||1;
+  rulerPicks.push([P[0]/m,P[1]/m,P[2]/m]);
+  rulerGroup.add(marker(P,0xffb454,SR*0.02));
+  if(rulerPicks.length===2)rulerMeasure();
+  else{rulerReadout.querySelector(".rr-ang").textContent="•";rulerReadout.querySelector(".rr-sub").textContent="pick the second point";rulerReadout.classList.add("on");}
+}
+
+// ── PNG snapshot ─────────────────────────────────────────────────────────
+function exportPNG(){
+  try{renderer.render(scene,camera);const url=canvas.toDataURL("image/png");const a=document.createElement("a");a.href=url;a.download="sphereql-view.png";a.click();flashButton("tool-png","✓",1200);}
+  catch(err){console.warn("SphereQL: PNG export failed:",err);flashButton("tool-png","✗");}
+}
+
+// ── Shareable view link (camera + settings only; never scene data) ────────
+function shareLink(){
+  const state={cam:[camera.position.x,camera.position.y,camera.position.z,controls.target.x,controls.target.y,controls.target.z],set:currentSettings(),tools:{ruler:rulerOn}};
+  let hash;
+  try{hash=btoa(encodeURIComponent(JSON.stringify(state)));}catch(err){flashButton("tool-share","✗");return;}
+  try{history.replaceState(null,"","#v="+hash);}catch(err){location.hash="v="+hash;}
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(location.href).then(()=>flashButton("tool-share","✓ copied",1600),()=>flashButton("tool-share","✓ in URL",1600));
+  else flashButton("tool-share","✓ in URL",1600);
+}
+// Restore a view from the URL hash (called once after the initial rebuild).
+// Reads only numbers + known setting keys, all validated, so there is no
+// injection surface even though the hash is attacker-controllable.
+function applyViewHash(){
+  if(typeof location==="undefined"||!location.hash)return;
+  const m=location.hash.match(/[#&]v=([^&]+)/);if(!m)return;
+  let state;
+  try{state=JSON.parse(decodeURIComponent(atob(m[1])));}catch(err){console.warn("SphereQL: ignoring malformed view hash");return;}
+  if(!state||typeof state!=="object")return;
+  if(state.set&&typeof state.set==="object")applySettings(state.set);
+  if(Array.isArray(state.cam)&&state.cam.length===6&&state.cam.every(v=>isFinite(+v))){
+    camera.position.set(+state.cam[0],+state.cam[1],+state.cam[2]);
+    controls.target.set(+state.cam[3],+state.cam[4],+state.cam[5]);
+    controls.update();
+  }
+  if(state.tools&&state.tools.ruler)setRuler(true);
+}
 
 // ── Open / drop a foreign Scene ──────────────────────────────────────────
 // Normalize an arbitrary parsed object into the Scene shape rebuild() expects.
@@ -423,16 +517,21 @@ function parseScene(obj){
     out.push(q);
   }
   if(out.length===0)throw new Error("no usable points (each needs finite x/y/z or r/theta/phi)");
-  // surface_radius: honour an explicit finite value, else median ‖xyz‖ (the
-  // same shell sphereql-vis computes), falling back to 1.0.
+  // surface_radius: honour an explicit finite value, else the upper-median
+  // ‖xyz‖ — matching Rust `Scene::surface_radius_for` (norms[len/2]) so a
+  // dropped scene lands on the same shell the producer would compute.
   let sr=+raw.surface_radius;
   if(!isFinite(sr)||sr<=0){const norms=out.map(p=>Math.hypot(p.x,p.y,p.z)).sort((a,b)=>a-b);sr=norms.length?norms[norms.length>>1]:1.0;if(!isFinite(sr)||sr<=0)sr=1.0;}
   const st=raw.stats&&typeof raw.stats==="object"?raw.stats:{};
+  // Coerce the count fields to finite numbers (they are interpolated into the
+  // stats panel) so a hostile dropped scene can't smuggle markup through them.
+  const sampled=isFinite(+st.sampled_from)?+st.sampled_from:undefined;
+  const dropped=isFinite(+st.dropped_nonfinite)?+st.dropped_nonfinite:undefined;
   return{
     title:raw.title!=null?String(raw.title):"Imported scene",
     points:out,
-    overlays:Array.isArray(raw.overlays)?raw.overlays:[],
-    stats:{projection_kind:st.projection_kind!=null?String(st.projection_kind):"imported",evr:isFinite(+st.evr)?+st.evr:0,evr_label:st.evr_label!=null?String(st.evr_label):"explained variance",sampled_from:st.sampled_from,dropped_nonfinite:st.dropped_nonfinite},
+    overlays:Array.isArray(raw.overlays)?raw.overlays.filter(o=>o&&typeof o==="object"&&typeof o.kind==="string"):[],
+    stats:{projection_kind:st.projection_kind!=null?String(st.projection_kind):"imported",evr:isFinite(+st.evr)?+st.evr:0,evr_label:st.evr_label!=null?String(st.evr_label):"explained variance",sampled_from:sampled,dropped_nonfinite:dropped},
     surface_radius:sr,
     show_axes:!!raw.show_axes
   };
@@ -461,6 +560,7 @@ function teardown(){
   legendDiv.innerHTML="";oi.innerHTML="";labelTogglesDiv.innerHTML="";labelsDiv.innerHTML="";
   const info=document.getElementById("info");if(info)info.classList.remove("visible");
   tooltip.style.display="none";reticle.style.display="none";sellabel.style.display="none";
+  setRuler(false); // fully disarm the ruler (flag + button + picks) on scene swap
   selectedIdx=-1;hoveredIdx=-1;tgtTween=null;pendingTransform=false;
 }
 
@@ -528,6 +628,10 @@ function rebuild(sc){
   // ── Overlays ────────────────────────────────────────────────────────────
   overlayGroups={};overlayKinds=new Set();bridgeLines=[];bridgesByPoint={};labelData=[];
   overlays.forEach(o=>{
+   // A single malformed overlay (e.g. a dropped scene's bridge missing `from`)
+   // must not abort the whole rebuild — skip it and keep the rest of the scene.
+   try{
+    if(!o||typeof o!=="object"||typeof o.kind!=="string")return;
     overlayKinds.add(o.kind);const g=groupFor(o.kind);const col=o.color?new THREE.Color(o.color).getHex():0x5cc8ff;
     if(o.kind==="centroid"){g.add(marker(o.pos,col,SR*0.022));labelData.push({kind:"centroid",anchor:o.pos,text:o.label,color:o.color||"#5cc8ff",cat:o.label});}
     else if(o.kind==="bridge"){const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;const ln=lineBetween(o.from,o.to,ch,0.18+0.55*(o.strength||0.5));g.add(ln);const fi=posIndex.get(o.from[0]+"|"+o.from[1]+"|"+o.from[2]),fidx=fi===undefined?-1:fi;bridgeLines.push({line:ln,from:o.from,to:o.to,fromIndex:fidx,color:ch});if(fidx>=0)(bridgesByPoint[fidx]||(bridgesByPoint[fidx]=[])).push({to:o.to,color:ch});}
@@ -538,10 +642,11 @@ function rebuild(sc){
     else if(o.kind==="domain_group"){g.add(marker(o.centroid,col,SR*0.027));(o.members||[]).forEach(m=>g.add(lineBetween(o.centroid,m,col,0.28)));labelData.push({kind:"domain_group",anchor:o.centroid,text:o.label,color:o.color||"#5cc8ff"});}
     else if(o.kind==="glob"){const m=new THREE.Mesh(new THREE.SphereGeometry(o.radius,22,22),new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:0.1,depthWrite:false}));m.position.copy(v3(o.center));g.add(m);}
     else if(o.kind==="manifold_slice"){const pl=new THREE.Mesh(new THREE.PlaneGeometry(SR,SR),new THREE.MeshBasicMaterial({color:0x6f8fc8,transparent:true,opacity:0.12,side:THREE.DoubleSide}));pl.position.copy(v3(o.center));pl.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),v3(o.normal).normalize());g.add(pl);}
+   }catch(err){console.warn("SphereQL: skipping malformed overlay",o&&o.kind,err);}
   });
   overlayKinds.forEach(k=>{if(overlayDefaultOff.has(k))overlayGroups[k].visible=false;});
 
-  scalables=[pointsMesh,linesGroup,globeGroup,...Object.values(overlayGroups)];
+  scalables=[pointsMesh,linesGroup,globeGroup,rulerGroup,...Object.values(overlayGroups)];
 
   // ── Legend + counts ─────────────────────────────────────────────────────
   legendRows={};
@@ -599,8 +704,8 @@ function rebuild(sc){
 <div class="srow"><span>θ</span><span class="v">${fmin(thV).toFixed(2)} – ${fmax(thV).toFixed(2)}</span></div>
 <div class="srow"><span>φ</span><span class="v">${fmin(phV).toFixed(2)} – ${fmax(phV).toFixed(2)}</span></div>`;
   }else{rows=`<div class="srow"><span>points</span><span class="v">0</span></div>`;}
-  if(st.sampled_from)rows+=`<div class="note">▴ sample of ${st.sampled_from.toLocaleString()}</div>`;
-  if(st.dropped_nonfinite)rows+=`<div class="note">▴ ${st.dropped_nonfinite} non-finite dropped</div>`;
+  if(st.sampled_from)rows+=`<div class="note">▴ sample of ${escHtml(st.sampled_from.toLocaleString())}</div>`;
+  if(st.dropped_nonfinite)rows+=`<div class="note">▴ ${escHtml(st.dropped_nonfinite.toLocaleString())} non-finite dropped</div>`;
   statsDiv.innerHTML=rows;
 
   // ── Sync the static controls back to defaults for this scene ─────────────
@@ -621,6 +726,7 @@ function rebuild(sc){
 
 // ── Boot + render loop ─────────────────────────────────────────────────────
 rebuild(D);
+applyViewHash(); // restore a shared camera/settings view, if the URL carries one
 function animate(){
   requestAnimationFrame(animate);
   if(pendingTransform){applyTransform();pendingTransform=false;}

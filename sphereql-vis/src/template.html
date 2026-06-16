@@ -151,6 +151,14 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 /* Hide-UI toggle (clean view for embedding / mobile) */
 #hud-toggle{background:none;border:none;color:var(--ink-faint);font-size:13px;line-height:1;cursor:pointer;padding:0 0 0 4px;transition:color .15s}
 #hud-toggle:hover{color:var(--accent)}
+.hbtn{background:none;border:none;color:var(--ink-faint);font-size:13px;line-height:1;cursor:pointer;padding:0 2px;transition:color .15s,text-shadow .15s}
+.hbtn:hover{color:var(--accent)}
+.hbtn.active{color:var(--accent);text-shadow:0 0 10px var(--accent)}
+#ruler-readout{top:62px;left:50%;transform:translateX(-50%);display:none;flex-direction:column;align-items:center;
+  gap:2px;padding:8px 16px;z-index:11;animation:none}
+#ruler-readout.on{display:flex}
+#ruler-readout .rr-ang{font-size:15px;color:var(--accent);letter-spacing:.04em}
+#ruler-readout .rr-sub{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
 .hud-hidden .panel:not(#hdr){display:none}
 .hud-hidden #help,.hud-hidden #credit,.hud-hidden #sellabel,.hud-hidden #tooltip,.hud-hidden #reticle{display:none!important}
 
@@ -182,8 +190,12 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
   <span class="mark">◐ Sphere<b>QL</b></span>
   <span class="sub" id="hdr-sub"></span>
   <span class="pill" id="hdr-pill"></span>
+  <button id="tool-ruler" class="hbtn" title="Great-circle ruler — click two points to measure the angle between them">⟀</button>
+  <button id="tool-png" class="hbtn" title="Save a PNG snapshot of the current view">⤓</button>
+  <button id="tool-share" class="hbtn" title="Copy a shareable link (camera + settings, no data)">🔗</button>
   <button id="hud-toggle" title="Hide / show panels (clean view)">⛶</button>
 </div>
+<div id="ruler-readout" class="panel"><span class="rr-ang">—</span><span class="rr-sub">click two points · Esc to clear</span></div>
 
 <div id="controls" class="panel">
   <div class="tabs">
