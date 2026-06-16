@@ -3435,6 +3435,8 @@ dependencies = [
  "sphereql-core",
  "sphereql-embed",
  "sphereql-index",
+ "sphereql-lingua",
+ "sphereql-vis",
  "tsify",
  "wasm-bindgen",
  "wasm-bindgen-test",
