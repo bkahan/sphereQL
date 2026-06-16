@@ -116,6 +116,8 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 #reticle::before,#reticle::after{content:"";position:absolute;background:var(--accent)}
 #reticle::before{left:50%;top:-6px;width:1px;height:6px;margin-left:-.5px}
 #reticle::after{top:50%;left:-6px;height:1px;width:6px;margin-top:-.5px}
+#sellabel{position:fixed;z-index:28;pointer-events:none;display:none;transform:translate(-50%,-100%);background:var(--panel-solid);border:1px solid var(--line);border-bottom:2px solid var(--accent);padding:4px 9px;font-size:11px;color:var(--ink);border-radius:2px;white-space:nowrap;box-shadow:0 6px 18px -8px #000}
+.sl-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;box-shadow:0 0 6px currentColor;vertical-align:middle}
 
 #empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:5;color:var(--ink-faint);font-size:13px;letter-spacing:.1em;text-transform:uppercase}
 #help{position:absolute;bottom:38px;left:50%;transform:translateX(-50%);z-index:5;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);pointer-events:none;white-space:nowrap;animation:rise 1s ease 1.1s backwards}
@@ -153,9 +155,14 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
   <div class="tabpane" id="tab-overlays"><div id="overlay-items"></div></div>
   <div class="tabpane" id="tab-settings">
     <div class="set">
-      <div class="lab"><span>Scale</span><span class="val" id="scale-val">5.0×</span></div>
-      <input type="range" id="scale" min="1" max="50" step="0.5" value="5">
+      <div class="lab"><span>Scale</span><span class="val" id="scale-val">12.0×</span></div>
+      <input type="range" id="scale" min="1" max="100" step="0.5" value="12">
       <div class="hint">Spreads the model apart on screen (points keep their pixel size, so they stop overlapping). Higher = roomier.</div>
+    </div>
+    <div class="set">
+      <div class="lab"><span>Zoom speed</span><span class="val" id="zoom-val">0.50×</span></div>
+      <input type="range" id="zoom" min="0.1" max="2" step="0.05" value="0.5">
+      <div class="hint">Sensitivity of scroll-wheel zoom.</div>
     </div>
     <div class="set">
       <div class="lab"><span>Radial spread</span><span class="val" id="radial-val">1.0×</span></div>
@@ -188,6 +195,8 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
     <div class="sep"></div>
     <label class="orow"><input type="checkbox" id="globe" checked><span>Reference globe</span></label>
     <label class="orow"><input type="checkbox" id="autorot"><span>Auto-rotate</span></label>
+    <div class="seg" style="margin-top:12px"><button id="save-cfg">Save .toml</button><button id="load-cfg">Load .toml</button></div>
+    <input type="file" id="cfg-file" accept=".toml,.txt" style="display:none">
     <button id="reset" class="resetbtn">↺ Reset to defaults</button>
   </div>
 </div>
@@ -205,6 +214,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 
 <div id="tooltip"></div>
 <div id="reticle"></div>
+<div id="sellabel"></div>
 <div id="empty">no points — empty corpus</div>
 <div id="help">drag · orbit&nbsp;&nbsp;scroll · zoom&nbsp;&nbsp;click · inspect</div>
 <a id="credit" href="https://github.com/bkahan/sphereQL" target="_blank" rel="noopener noreferrer">© bkahan/sphereQL ↗</a>
@@ -214,7 +224,7 @@ const D=/*__SPHEREQL_DATA__*/;
 const pts=D.points||[],N=pts.length;
 const overlays=D.overlays||[];
 const SR=D.surface_radius||1.0;
-const DEF={scale:5,radial:1,spread:1,size:3.5,globe:true,autorot:false,ui:1,palette:"aurora"};
+const DEF={scale:12,radial:1,spread:1,size:3.5,globe:true,autorot:false,ui:1,palette:"aurora",zoom:0.5};
 let maxR=1;for(const p of pts){const m=Math.hypot(p.x,p.y,p.z);if(m>maxR)maxR=m;}
 const escHtml=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const fmin=a=>a.reduce((m,v)=>v<m?v:m,Infinity);
@@ -243,9 +253,13 @@ scene.background=new THREE.Color(0x06060f);
 const camera=new THREE.PerspectiveCamera(54,innerWidth/innerHeight,0.01,200000);
 const controls=new THREE.OrbitControls(camera,canvas);
 controls.enableDamping=true;controls.dampingFactor=0.07;
-controls.minDistance=maxR*0.15;controls.maxDistance=maxR*50*6;
-controls.autoRotate=false;controls.autoRotateSpeed=0.35;
+controls.minDistance=maxR*0.05;controls.maxDistance=maxR*100*8;
+controls.autoRotate=false;controls.autoRotateSpeed=0.35;controls.zoomSpeed=DEF.zoom;
 function frameCamera(){const d=DEF.scale*maxR*2.6;camera.position.set(d*0.12,d*0.3,d);controls.target.set(0,0,0);controls.update();}
+// Smooth orbit-target tween — recenters the view on a selected sphere and
+// reverts to origin on deselect.
+let tgtTween=null;
+function tweenTarget(to){tgtTween={from:controls.target.clone(),to:to.clone(),t:0,dur:reduceMotion?1:22};}
 scene.add(new THREE.AmbientLight(0x44557a,2.1));
 const dl=new THREE.DirectionalLight(0xcfe2ff,0.55);dl.position.set(3,5,4);scene.add(dl);
 if(N===0)document.getElementById("empty").style.display="flex";
@@ -276,6 +290,23 @@ const catDir={};
 {const sum={},cnt={};catSet.forEach(c=>{sum[c]=[0,0,0];cnt[c]=0;});
  for(let i=0;i<N;i++){const p=pts[i],m=Math.hypot(p.x,p.y,p.z)||1;sum[p.cat][0]+=p.x/m;sum[p.cat][1]+=p.y/m;sum[p.cat][2]+=p.z/m;cnt[p.cat]++;}
  catSet.forEach(c=>{const s=sum[c],m=Math.hypot(s[0],s[1],s[2]);catDir[c]=m>1e-9?[s[0]/m,s[1]/m,s[2]/m]:[0,0,1];});}
+const catDirArr=Object.values(catDir);
+// Apply the same angular(domain)+radial transform to an arbitrary position,
+// using the nearest domain centroid as the spread pivot. Used to keep bridge
+// endpoints attached as the point cloud spreads.
+function transformPos(p){
+  const x=p[0],y=p[1],z=p[2],mag=Math.hypot(x,y,z);
+  if(mag<1e-9)return [x,y,z];
+  let dx=x/mag,dy=y/mag,dz=z/mag;
+  if(spreadF!==1){
+    let bc=null,bd=-2;for(const c of catDirArr){const dt=c[0]*dx+c[1]*dy+c[2]*dz;if(dt>bd){bd=dt;bc=c;}}
+    const om=Math.acos(clamp(bd,-1,1));
+    if(bc&&om>=1e-4){const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
+      const nx=bc[0]*w1+dx*w2,ny=bc[1]*w1+dy*w2,nz=bc[2]*w1+dz*w2,nm=Math.hypot(nx,ny,nz)||1;dx=nx/nm;dy=ny/nm;dz=nz/nm;}
+  }
+  const nmag=Math.max(0.02,SR+(mag-SR)*radialG);
+  return [dx*nmag,dy*nmag,dz*nmag];
+}
 const pointsGeo=new THREE.BufferGeometry();
 pointsGeo.setAttribute("position",new THREE.BufferAttribute(positions,3));
 pointsGeo.setAttribute("color",new THREE.BufferAttribute(colors,3));
@@ -301,6 +332,7 @@ function applyTransform(){
     pa[i*3]=dx*nmag;pa[i*3+1]=dy*nmag;pa[i*3+2]=dz*nmag;
   }
   pointsGeo.getAttribute("position").needsUpdate=true;pointsGeo.computeBoundingSphere();
+  for(const b of bridgeLines){const a=transformPos(b.from),c=transformPos(b.to),pos=b.line.geometry.getAttribute("position");pos.setXYZ(0,a[0],a[1],a[2]);pos.setXYZ(1,c[0],c[1],c[2]);pos.needsUpdate=true;}
   if(selectedIdx>=0)deselectPoint();drawMinimapBase();
 }
 function applySize(sz){baseSize=sz;const sa=pointsGeo.getAttribute("size").array;for(let i=0;i<N;i++)sa[i]=catVisible[pts[i].cat]?sz:0;pointsGeo.getAttribute("size").needsUpdate=true;if(selectedIdx>=0)deselectPoint();}
@@ -315,11 +347,11 @@ function capRing(dir,ha,col){const d=v3(dir).normalize(),rr=SR*Math.sin(ha),off=
   ring.position.copy(d.clone().multiplyScalar(off));ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),d);return ring;}
 function lineBetween(a,b,col,op){return new THREE.Line(new THREE.BufferGeometry().setFromPoints([v3(a),v3(b)]),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:op}));}
 function marker(pos,col,rad){const m=new THREE.Mesh(new THREE.SphereGeometry(rad,14,14),new THREE.MeshStandardMaterial({color:col,emissive:col,emissiveIntensity:0.6,roughness:0.35}));m.position.copy(v3(pos));return m;}
-const overlayKinds=new Set();
+const overlayKinds=new Set(),bridgeLines=[];
 overlays.forEach(o=>{
   overlayKinds.add(o.kind);const g=groupFor(o.kind);const col=o.color?new THREE.Color(o.color).getHex():0x5cc8ff;
   if(o.kind==="centroid"){g.add(marker(o.pos,col,SR*0.022));}
-  else if(o.kind==="bridge"){const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;g.add(lineBetween(o.from,o.to,ch,0.18+0.55*(o.strength||0.5)));}
+  else if(o.kind==="bridge"){const ch=classColor[o.classification]!==undefined?classColor[o.classification]:col;const ln=lineBetween(o.from,o.to,ch,0.18+0.55*(o.strength||0.5));g.add(ln);bridgeLines.push({line:ln,from:o.from,to:o.to});}
   else if(o.kind==="geodesic_path"){g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints((o.vertices||[]).map(v3)),new THREE.LineBasicMaterial({color:col,transparent:true,opacity:0.9})));}
   else if(o.kind==="voronoi_cap"){g.add(capRing(o.center,o.half_angle,col));}
   else if(o.kind==="antipode"){g.add(marker(o.centroid,col,SR*0.016));g.add(marker(o.antipode,col,SR*0.016));g.add(lineBetween(o.centroid,o.antipode,col,0.18));}
@@ -340,8 +372,16 @@ function applyScale(s){curScale=s;scalables.forEach(o=>o.scale.setScalar(s));ray
 // ── Picking ───────────────────────────────────────────────────────────
 const raycaster=new THREE.Raycaster();raycaster.params.Points.threshold=SR*0.045;
 const mouse=new THREE.Vector2();
-const tooltip=document.getElementById("tooltip"),reticle=document.getElementById("reticle");
-let selectedIdx=-1;
+const tooltip=document.getElementById("tooltip"),reticle=document.getElementById("reticle"),sellabel=document.getElementById("sellabel");
+let selectedIdx=-1,hoveredIdx=-1;
+const _pv=new THREE.Vector3(),_fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
+function projectToScreen(p){
+  _pv.set(p[0]*curScale,p[1]*curScale,p[2]*curScale);
+  camera.getWorldDirection(_fwd);
+  const inFront=_tmp.copy(_pv).sub(camera.position).dot(_fwd)>0; // robust behind-camera reject
+  _pv.project(camera);
+  return{x:(_pv.x*0.5+0.5)*innerWidth,y:(-_pv.y*0.5+0.5)*innerHeight,vis:inFront&&_pv.z<=1};
+}
 function getHovered(e){
   mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
   raycaster.setFromCamera(mouse,camera);
@@ -351,23 +391,25 @@ function getHovered(e){
 }
 function curPos(i){const a=pointsGeo.getAttribute("position").array;return[a[i*3],a[i*3+1],a[i*3+2]];}
 canvas.addEventListener("mousemove",e=>{
-  const idx=getHovered(e);
+  const idx=getHovered(e);hoveredIdx=idx;
   if(idx>=0){const p=pts[idx];
     tooltip.innerHTML=`<div class="tt-lbl">${escHtml(p.label||"Point "+idx)}</div><div class="tt-meta">${escHtml(p.cat)} · θ ${p.theta.toFixed(2)}  φ ${p.phi.toFixed(2)}  r ${p.r.toFixed(2)}</div>`;
-    tooltip.style.display="block";tooltip.style.left=(e.clientX+16)+"px";tooltip.style.top=(e.clientY+14)+"px";
-    reticle.style.display="block";reticle.style.left=e.clientX+"px";reticle.style.top=e.clientY+"px";canvas.style.cursor="crosshair";
-  }else{tooltip.style.display="none";reticle.style.display="none";canvas.style.cursor="grab";}
+    tooltip.style.display="block";tooltip.style.left=(e.clientX+16)+"px";tooltip.style.top=(e.clientY+14)+"px";canvas.style.cursor="crosshair";
+  }else{tooltip.style.display="none";canvas.style.cursor="grab";}
 });
+canvas.addEventListener("mouseleave",()=>{hoveredIdx=-1;tooltip.style.display="none";});
+window.addEventListener("keydown",e=>{if(e.key==="Escape"&&selectedIdx>=0)deselectPoint(true);});
 // Click detection via pointer down/up + movement threshold — the `click`
 // event is unreliable while OrbitControls is handling pointer gestures.
 let _downX=0,_downY=0;
 canvas.addEventListener("pointerdown",e=>{_downX=e.clientX;_downY=e.clientY;});
 canvas.addEventListener("pointerup",e=>{
-  if(Math.hypot(e.clientX-_downX,e.clientY-_downY)<5){const idx=getHovered(e);if(idx>=0)selectPoint(idx);else deselectPoint();}
+  if(Math.hypot(e.clientX-_downX,e.clientY-_downY)<5){const idx=getHovered(e);if(idx>=0)selectPoint(idx);else deselectPoint(true);}
 });
 
 function selectPoint(idx){
-  selectedIdx=idx;const P=curPos(idx);
+  selectedIdx=idx;hoveredIdx=-1;const P=curPos(idx);
+  tweenTarget(new THREE.Vector3(P[0]*curScale,P[1]*curScale,P[2]*curScale)); // auto-center on this sphere
   const dists=pts.map((q,i)=>{if(i===idx||!catVisible[q.cat])return{i,d:Infinity};const c=curPos(i),dx=P[0]-c[0],dy=P[1]-c[1],dz=P[2]-c[2];return{i,d:Math.sqrt(dx*dx+dy*dy+dz*dz)};}).filter(d=>d.d<Infinity).sort((a,b)=>a.d-b.d).slice(0,5);
   const near=new Set([idx,...dists.map(d=>d.i)]);
   const sa=pointsGeo.getAttribute("size").array,ca=pointsGeo.getAttribute("color").array;
@@ -379,6 +421,7 @@ function selectPoint(idx){
   const lm=new THREE.LineBasicMaterial({color:0x5cc8ff,transparent:true,opacity:0.5});
   for(const d of dists){const c=curPos(d.i);linesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(P[0],P[1],P[2]),new THREE.Vector3(c[0],c[1],c[2])]),lm));}
   const p=pts[idx],info=document.getElementById("info");
+  sellabel.innerHTML=`<span class="sl-dot" style="background:${catColor[p.cat]};color:${catColor[p.cat]}"></span>${escHtml(p.label||"Point "+idx)}`;
   document.getElementById("info-label").textContent=p.label||"Point "+idx;
   const tag=document.getElementById("info-cat");tag.textContent=p.cat;tag.style.color=catColor[p.cat];tag.style.background=catColor[p.cat]+"18";
   document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${p.theta.toFixed(4)}</b><span>φ</span><b>${p.phi.toFixed(4)}</b><span>r</span><b>${p.r.toFixed(4)}</b>`;
@@ -387,12 +430,14 @@ function selectPoint(idx){
   nb.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));
   info.classList.add("visible");
 }
-function deselectPoint(){
-  selectedIdx=-1;const sa=pointsGeo.getAttribute("size").array,ca=pointsGeo.getAttribute("color").array;
+function deselectPoint(revertCam){
+  selectedIdx=-1;sellabel.style.display="none";
+  const sa=pointsGeo.getAttribute("size").array,ca=pointsGeo.getAttribute("color").array;
   for(let i=0;i<N;i++){sa[i]=catVisible[pts[i].cat]?baseSize:0;const c=new THREE.Color(catColor[pts[i].cat]);ca[i*3]=c.r;ca[i*3+1]=c.g;ca[i*3+2]=c.b;}
   pointsGeo.getAttribute("size").needsUpdate=true;pointsGeo.getAttribute("color").needsUpdate=true;pointsMat.uniforms.opacity.value=1.0;
   while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
   document.getElementById("info").classList.remove("visible");
+  if(revertCam)tweenTarget(new THREE.Vector3(0,0,0)); // return to the main sphere
 }
 
 // ── Tabs ────────────────────────────────────────────────────────────────
@@ -434,14 +479,17 @@ const radial=document.getElementById("radial"),radialVal=document.getElementById
 radial.addEventListener("input",e=>{radialG=parseFloat(e.target.value);radialVal.textContent=radialG.toFixed(1)+"×";pendingTransform=true;});
 const scaleS=document.getElementById("scale"),scaleVal=document.getElementById("scale-val");
 scaleS.addEventListener("input",e=>{const s=parseFloat(e.target.value);scaleVal.textContent=s.toFixed(1)+"×";applyScale(s);});
+const zoomS=document.getElementById("zoom"),zoomVal=document.getElementById("zoom-val");
+zoomS.addEventListener("input",e=>{const v=parseFloat(e.target.value);zoomVal.textContent=v.toFixed(2)+"×";controls.zoomSpeed=v;});
 const psize=document.getElementById("psize"),sizeVal=document.getElementById("size-val");
 psize.addEventListener("input",e=>{const v=parseFloat(e.target.value);sizeVal.textContent=v.toFixed(1);applySize(v);});
 const globeCb=document.getElementById("globe");globeCb.addEventListener("change",e=>{globeGroup.visible=e.target.checked;});
 const autorot=document.getElementById("autorot");autorot.checked=false;
 autorot.addEventListener("change",e=>{controls.autoRotate=e.target.checked;});
 controls.addEventListener("start",()=>{controls.autoRotate=false;autorot.checked=false;});
+let uiScale=DEF.ui;
 const uiS=document.getElementById("ui"),uiVal=document.getElementById("ui-val");
-uiS.addEventListener("input",e=>{document.documentElement.style.setProperty("--ui",e.target.value);uiVal.textContent=parseFloat(e.target.value).toFixed(2)+"×";});
+uiS.addEventListener("input",e=>{uiScale=parseFloat(e.target.value);document.documentElement.style.setProperty("--ui",uiScale);uiVal.textContent=uiScale.toFixed(2)+"×";});
 const schemeSel=document.getElementById("scheme");
 schemeSel.addEventListener("change",e=>applyPalette(e.target.value));
 function applyPalette(name){
@@ -451,14 +499,43 @@ function applyPalette(name){
   pointsGeo.getAttribute("color").needsUpdate=true;
   catSet.forEach(c=>{const dot=legendRows[c]&&legendRows[c].querySelector(".ldot");if(dot){dot.style.background=catColor[c];dot.style.color=catColor[c];}});
   pointsMat.uniforms.opacity.value=1.0;drawMinimapBase();
-  if(selectedIdx>=0){const k=selectedIdx;deselectPoint();selectPoint(k);}
+  if(selectedIdx>=0)selectPoint(selectedIdx); // re-apply highlight in place (no info-panel flicker)
 }
+
+// ── Config (TOML) save / load ───────────────────────────────────────────
+function currentSettings(){return{scale:curScale,zoom_speed:controls.zoomSpeed,radial:radialG,domain_spread:spreadF,point_size:baseSize,ui_scale:uiScale,color_scheme:schemeSel.value,reference_globe:globeCb.checked,auto_rotate:autorot.checked};}
+function toToml(o){return"# SphereQL view settings\n"+Object.entries(o).map(([k,v])=>{const val=typeof v==="string"?`"${v}"`:(typeof v==="boolean"?(v?"true":"false"):v);return `${k} = ${val}`;}).join("\n")+"\n";}
+function parseToml(text){const o={};text.split(/\r?\n/).forEach(line=>{line=line.trim();if(!line||line[0]==="#")return;const i=line.indexOf("=");if(i<0)return;const k=line.slice(0,i).trim();let v=line.slice(i+1).trim();if(/^".*"$/.test(v))v=v.slice(1,-1);else if(v==="true")v=true;else if(v==="false")v=false;else{const n=parseFloat(v);if(!isNaN(n))v=n;}o[k]=v;});return o;}
+function applySettings(o){
+  if("scale"in o){const s=+o.scale;scaleS.value=s;scaleVal.textContent=s.toFixed(1)+"×";applyScale(s);}
+  if("zoom_speed"in o){const v=+o.zoom_speed;zoomS.value=v;zoomVal.textContent=v.toFixed(2)+"×";controls.zoomSpeed=v;}
+  if("radial"in o){radialG=+o.radial;radial.value=radialG;radialVal.textContent=radialG.toFixed(1)+"×";}
+  if("domain_spread"in o){spreadF=+o.domain_spread;spread.value=spreadF;spreadVal.textContent=spreadF.toFixed(1)+"×";}
+  if("point_size"in o){const v=+o.point_size;psize.value=v;sizeVal.textContent=v.toFixed(1);applySize(v);}
+  if("ui_scale"in o){uiScale=+o.ui_scale;uiS.value=uiScale;uiVal.textContent=uiScale.toFixed(2)+"×";document.documentElement.style.setProperty("--ui",uiScale);}
+  if("color_scheme"in o&&PALETTES[o.color_scheme]){schemeSel.value=o.color_scheme;applyPalette(o.color_scheme);}
+  if("reference_globe"in o){globeCb.checked=!!o.reference_globe;globeGroup.visible=!!o.reference_globe;}
+  if("auto_rotate"in o){autorot.checked=!!o.auto_rotate;controls.autoRotate=!!o.auto_rotate;}
+  applyTransform();
+}
+document.getElementById("save-cfg").addEventListener("click",()=>{
+  const blob=new Blob([toToml(currentSettings())],{type:"text/plain"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download="sphereql-view.toml";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+const cfgFile=document.getElementById("cfg-file");
+document.getElementById("load-cfg").addEventListener("click",()=>cfgFile.click());
+cfgFile.addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{
+  try{applySettings(parseToml(r.result));}
+  catch(err){console.warn("SphereQL: failed to load settings:",err);const b=document.getElementById("load-cfg"),t=b.textContent;b.textContent="✗ bad file";setTimeout(()=>{b.textContent=t;},1500);}
+};r.readAsText(f);cfgFile.value="";});
+
 function resetDefaults(){
   scaleS.value=DEF.scale;scaleVal.textContent=DEF.scale.toFixed(1)+"×";applyScale(DEF.scale);
+  zoomS.value=DEF.zoom;zoomVal.textContent=DEF.zoom.toFixed(2)+"×";controls.zoomSpeed=DEF.zoom;
   radial.value=DEF.radial;radialVal.textContent=DEF.radial.toFixed(1)+"×";radialG=DEF.radial;
   spread.value=DEF.spread;spreadVal.textContent=DEF.spread.toFixed(1)+"×";spreadF=DEF.spread;
   psize.value=DEF.size;sizeVal.textContent=DEF.size.toFixed(1);applySize(DEF.size);
-  uiS.value=DEF.ui;uiVal.textContent=DEF.ui.toFixed(2)+"×";document.documentElement.style.setProperty("--ui",DEF.ui);
+  uiScale=DEF.ui;uiS.value=DEF.ui;uiVal.textContent=DEF.ui.toFixed(2)+"×";document.documentElement.style.setProperty("--ui",DEF.ui);
   schemeSel.value=DEF.palette;applyPalette(DEF.palette);
   globeCb.checked=DEF.globe;globeGroup.visible=DEF.globe;
   autorot.checked=DEF.autorot;controls.autoRotate=DEF.autorot;
@@ -525,7 +602,15 @@ statsDiv.innerHTML=rows;
 // ── Init view (default scale + framing) + render loop ───────────────────
 applyScale(DEF.scale);frameCamera();
 window.addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
-function animate(){requestAnimationFrame(animate);if(pendingTransform){applyTransform();pendingTransform=false;}controls.update();drawMinimap();renderer.render(scene,camera);}
+function animate(){
+  requestAnimationFrame(animate);
+  if(pendingTransform){applyTransform();pendingTransform=false;}
+  if(tgtTween){tgtTween.t++;const k=Math.min(1,tgtTween.t/tgtTween.dur),e=k*k*(3-2*k);controls.target.lerpVectors(tgtTween.from,tgtTween.to,e);if(k>=1)tgtTween=null;}
+  controls.update();
+  if(hoveredIdx>=0){const sp=projectToScreen(curPos(hoveredIdx));if(sp.vis){reticle.style.display="block";reticle.style.left=sp.x+"px";reticle.style.top=sp.y+"px";}else reticle.style.display="none";}else reticle.style.display="none";
+  if(selectedIdx>=0){const sp=projectToScreen(curPos(selectedIdx));if(sp.vis){sellabel.style.display="block";sellabel.style.left=sp.x+"px";sellabel.style.top=(sp.y-16)+"px";}else sellabel.style.display="none";}
+  drawMinimap();renderer.render(scene,camera);
+}
 animate();
 </script>
 </body>
