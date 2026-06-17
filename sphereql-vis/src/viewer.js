@@ -19,7 +19,7 @@ const fmin=a=>a.reduce((m,v)=>v<m?v:m,Infinity);
 const fmax=a=>a.reduce((m,v)=>v>m?v:m,-Infinity);
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 const reduceMotion=matchMedia("(prefers-reduced-motion:reduce)").matches;
-const DEF={scale:12,radial:1,spread:1,size:3.5,globe:true,autorot:false,ui:1,palette:"aurora",zoom:0.5};
+const DEF={scale:12,radial:1,spread:1,size:3.5,globe:true,autorot:false,ui:1,palette:"aurora",zoom:0.5,density:false};
 const PALETTES={
   aurora:["#5cc8ff","#ff8a65","#86e0a8","#c79bff","#ffd95c","#ff7fa8","#4dd0e1","#bfa07a","#9fb2d4","#b6e07a","#8aa0ff","#ffb454","#ff6f6f","#74b9ff","#dce07a","#a98bff"],
   spectral:["#9e0142","#d53e4f","#f46d43","#fdae61","#fee08b","#e6f598","#abdda4","#66c2a5","#3288bd","#5e4fa2","#f1a340","#998ec3"],
@@ -50,9 +50,11 @@ const globeCb=document.getElementById("globe");
 const autorot=document.getElementById("autorot");
 const uiS=document.getElementById("ui"),uiVal=document.getElementById("ui-val");
 const schemeSel=document.getElementById("scheme");
+const densityCb=document.getElementById("density");
 const cfgFile=document.getElementById("cfg-file");
 const sceneFile=document.getElementById("scene-file");
 const dropzone=document.getElementById("dropzone");
+const pinsDiv=document.getElementById("pins");
 const mini=document.getElementById("mini"),mctx=mini.getContext("2d"),MW=mini.width,MH=mini.height;
 const miniBase=document.createElement("canvas");miniBase.width=MW;miniBase.height=MH;const mbctx=miniBase.getContext("2d");
 
@@ -80,6 +82,8 @@ const rulerReadout=document.getElementById("ruler-readout");
 // Persistent query layer: semantic-query neighbor geodesics draw here (scaled
 // with the scene; content is scene-scoped, cleared on teardown / new query).
 const queryGroup=new THREE.Group();scene.add(queryGroup);
+// Persistent pin layer: user-dropped (θ,φ) annotation markers on the shell.
+const pinGroup=new THREE.Group();scene.add(pinGroup);
 const _pv=new THREE.Vector3(),_fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
 const _zc=new THREE.Vector3(),_zd=new THREE.Vector3(),_zn=new THREE.Vector3();
 const _av=new THREE.Vector3(),_cd=new THREE.Vector3();
@@ -99,6 +103,7 @@ let baseSize=DEF.size,curScale=DEF.scale,spreadF=DEF.spread,radialG=DEF.radial,u
 let selectedIdx=-1,hoveredIdx=-1;
 let tgtTween=null,pendingTransform=false;
 let rulerOn=false,rulerPicks=[],rulerLast=null;
+let pins=[],pinEls=[],pinOn=false; // (θ,φ) annotation markers + their DOM labels
 
 // ── Module functions (operate on the current scene state) ─────────────────
 function buildCatColor(name){const pal=PALETTES[name]||PALETTES.aurora;catSet.forEach((c,i)=>catColor[c]=pal[i%pal.length]);}
@@ -235,7 +240,7 @@ function applyPalette(name){
 }
 
 // ── Config (TOML) save / load ────────────────────────────────────────────
-function currentSettings(){return{scale:curScale,zoom_speed:controls.zoomSpeed,radial:radialG,domain_spread:spreadF,point_size:baseSize,ui_scale:uiScale,color_scheme:schemeSel.value,reference_globe:globeCb.checked,auto_rotate:autorot.checked};}
+function currentSettings(){return{scale:curScale,zoom_speed:controls.zoomSpeed,radial:radialG,domain_spread:spreadF,point_size:baseSize,ui_scale:uiScale,color_scheme:schemeSel.value,reference_globe:globeCb.checked,auto_rotate:autorot.checked,density:densityCb.checked,pins:btoa(encodeURIComponent(JSON.stringify(pins)))};}
 function toToml(o){return"# SphereQL view settings\n"+Object.entries(o).map(([k,v])=>{const val=typeof v==="string"?`"${v}"`:(typeof v==="boolean"?(v?"true":"false"):v);return `${k} = ${val}`;}).join("\n")+"\n";}
 function parseToml(text){const o={};text.split(/\r?\n/).forEach(line=>{line=line.trim();if(!line||line[0]==="#")return;const i=line.indexOf("=");if(i<0)return;const k=line.slice(0,i).trim();let v=line.slice(i+1).trim();if(/^".*"$/.test(v))v=v.slice(1,-1);else if(v==="true")v=true;else if(v==="false")v=false;else{const n=parseFloat(v);if(!isNaN(n))v=n;}o[k]=v;});return o;}
 function applySettings(o){
@@ -248,6 +253,8 @@ function applySettings(o){
   if("color_scheme"in o&&PALETTES[o.color_scheme]){schemeSel.value=o.color_scheme;applyPalette(o.color_scheme);}
   if("reference_globe"in o){globeCb.checked=!!o.reference_globe;globeGroup.visible=!!o.reference_globe;}
   if("auto_rotate"in o){autorot.checked=!!o.auto_rotate;controls.autoRotate=!!o.auto_rotate;}
+  if("density"in o){densityCb.checked=!!o.density;if(pointsMat)pointsMat.uniforms.densityOn.value=o.density?1:0;}
+  if("pins"in o){try{const arr=JSON.parse(decodeURIComponent(atob(o.pins)));if(Array.isArray(arr)){pins=arr.filter(p=>p&&isFinite(+p.theta)&&isFinite(+p.phi)).map(p=>({theta:+p.theta,phi:+p.phi,label:String(p.label||"")}));renderPins();}}catch(err){console.warn("SphereQL: ignoring bad pins in settings");}}
   applyTransform();
 }
 function resetDefaults(){
@@ -260,6 +267,8 @@ function resetDefaults(){
   schemeSel.value=DEF.palette;applyPalette(DEF.palette);
   globeCb.checked=DEF.globe;globeGroup.visible=DEF.globe;
   autorot.checked=DEF.autorot;controls.autoRotate=DEF.autorot;
+  densityCb.checked=DEF.density;if(pointsMat)pointsMat.uniforms.densityOn.value=DEF.density?1:0;
+  setPinMode(false);clearPins();
   labelKindsPresent.forEach(k => (labelKindOn[k] = true));
   labelTogglesDiv.querySelectorAll("input").forEach(cb => {
     cb.checked = true;
@@ -337,13 +346,20 @@ canvas.addEventListener("mousemove",e=>{
   }else{tooltip.style.display="none";canvas.style.cursor="grab";}
 });
 canvas.addEventListener("mouseleave",()=>{hoveredIdx=-1;tooltip.style.display="none";});
-window.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(rulerOn&&rulerPicks.length){clearRuler();return;}if(selectedIdx>=0)deselectPoint(true);});
+window.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(pinOn){setPinMode(false);return;}if(rulerOn&&rulerPicks.length){clearRuler();return;}if(selectedIdx>=0)deselectPoint(true);});
 // Click detection via pointer down/up + movement threshold — the `click`
 // event is unreliable while OrbitControls is handling pointer gestures.
 let _downX=0,_downY=0;
 canvas.addEventListener("pointerdown",e=>{_downX=e.clientX;_downY=e.clientY;});
 canvas.addEventListener("pointerup",e=>{
   if(Math.hypot(e.clientX-_downX,e.clientY-_downY)>=5)return; // a drag, not a click
+  if(pinOn){ // pin mode: drop a marker where the ray meets the globe shell
+    mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
+    raycaster.setFromCamera(mouse,camera);
+    const hit=globeGroup&&raycaster.intersectObject(globeGroup,true)[0];
+    if(hit){const p=hit.point,m=Math.hypot(p.x,p.y,p.z)||1;let th=Math.atan2(p.y,p.x);if(th<0)th+=2*Math.PI;addPin(th,Math.acos(clamp(p.z/m,-1,1)));}
+    return;
+  }
   const idx=getHovered(e);
   if(rulerOn){if(idx>=0)rulerAddPick(curPos(idx));return;} // ruler snaps to data points
   if(idx>=0)selectPoint(idx);else deselectPoint(true);
@@ -398,6 +414,8 @@ window.addEventListener("drop",e=>{e.preventDefault();_dragDepth=0;dropzone.clas
 document.getElementById("tool-ruler").addEventListener("click",()=>setRuler(!rulerOn));
 document.getElementById("tool-png").addEventListener("click",exportPNG);
 document.getElementById("tool-share").addEventListener("click",shareLink);
+document.getElementById("tool-pin").addEventListener("click",()=>setPinMode(!pinOn));
+densityCb.addEventListener("change",e=>{if(pointsMat)pointsMat.uniforms.densityOn.value=e.target.checked?1:0;});
 
 // Search
 searchInput.addEventListener("input",()=>{
@@ -558,6 +576,35 @@ function applyMorph(t){
 }
 function clearMorph(){morphTarget=null;morphT=0;}
 
+// ── Pins (drop annotated (θ,φ) markers on the globe shell) ────────────────
+function setPinMode(on){pinOn=on;document.getElementById("tool-pin").classList.toggle("active",on);}
+function clearPins(){pins=[];renderPins();}
+function renderPins(){
+  while(pinGroup.children.length){const c=pinGroup.children[0];disposeObject(c);pinGroup.remove(c);}
+  pinsDiv.innerHTML="";pinEls=[];
+  for(const pin of pins){
+    const sp=Math.sin(pin.phi),dir=[sp*Math.cos(pin.theta),sp*Math.sin(pin.theta),Math.cos(pin.phi)],pos=[dir[0]*SR,dir[1]*SR,dir[2]*SR];
+    pinGroup.add(marker(pos,0xffb454,SR*0.018));
+    const el=document.createElement("div");el.className="plabel";
+    const dot=document.createElement("span");dot.className="pdot";dot.textContent="📍";
+    const txt=document.createElement("span");txt.textContent=pin.label; // textContent — never innerHTML
+    el.appendChild(dot);el.appendChild(txt);el.title="click to remove";
+    el.addEventListener("click",ev=>{ev.stopPropagation();const i=pins.indexOf(pin);if(i>=0){pins.splice(i,1);renderPins();}});
+    pinsDiv.appendChild(el);pinEls.push({el,anchor:pos});
+  }
+}
+function addPin(theta,phi,label){pins.push({theta,phi,label:label||("pin "+(pins.length+1))});renderPins();}
+function updatePinLabels(){
+  _cd.copy(camera.position).normalize();
+  for(const {el,anchor} of pinEls){
+    _av.set(anchor[0]*curScale,anchor[1]*curScale,anchor[2]*curScale);
+    const al=Math.hypot(_av.x,_av.y,_av.z)||1;
+    const facing=(_av.x*_cd.x+_av.y*_cd.y+_av.z*_cd.z)/al>-0.15;
+    const sp=projectToScreen(anchor);
+    if(sp.vis&&facing){el.style.display="flex";el.style.left=sp.x+"px";el.style.top=sp.y+"px";}else el.style.display="none";
+  }
+}
+
 // ── Open / drop a foreign Scene ──────────────────────────────────────────
 // Normalize an arbitrary parsed object into the Scene shape rebuild() expects.
 // Accepts the full Scene (the `Scene::to_json` shape) or a bare points array,
@@ -629,6 +676,7 @@ function teardown(){
   const info=document.getElementById("info");if(info)info.classList.remove("visible");
   tooltip.style.display="none";reticle.style.display="none";sellabel.style.display="none";
   setRuler(false); // fully disarm the ruler (flag + button + picks) on scene swap
+  setPinMode(false);clearPins(); // pins annotated the outgoing scene's shell
   clearQuery(); // drop query geodesics referencing the outgoing scene
   clearMorph(); // morph target referenced the outgoing scene's ids
   selectedIdx=-1;hoveredIdx=-1;tgtTween=null;pendingTransform=false;
@@ -690,9 +738,18 @@ function rebuild(sc){
   pointsGeo.setAttribute("position",new THREE.BufferAttribute(positions,3));
   pointsGeo.setAttribute("color",new THREE.BufferAttribute(colors,3));
   pointsGeo.setAttribute("size",new THREE.BufferAttribute(sizes,1));
-  pointsMat=new THREE.ShaderMaterial({vertexColors:true,transparent:true,depthWrite:false,uniforms:{opacity:{value:1.0}},
-    vertexShader:`attribute float size;varying vec3 vc;void main(){vc=color;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=size*330.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
-    fragmentShader:`uniform float opacity;varying vec3 vc;void main(){float d=length(gl_PointCoord-0.5);if(d>0.5)discard;float a=smoothstep(0.5,0.44,d)*opacity;float core=smoothstep(0.32,0.0,d);vec3 col=mix(vc,vec3(1.0),core*0.4);gl_FragColor=vec4(col,a);}`});
+  // Per-point angular density: bin the (original) directions into a θ×φ grid
+  // (the minimap's scheme) and give each point its bin's normalized count, for
+  // the density-shading heatmap toggle.
+  {const GW=24,GH=12,bins=new Int32Array(GW*GH),binOf=new Int32Array(N),dens=new Float32Array(N);
+   for(let i=0;i<N;i++){const p=pts[i],r=Math.hypot(p.x,p.y,p.z)||1;let th=Math.atan2(p.y,p.x);if(th<0)th+=2*Math.PI;const ph=Math.acos(clamp(p.z/r,-1,1));
+     const gx=Math.min(GW-1,Math.floor(th/(2*Math.PI)*GW)),gy=Math.min(GH-1,Math.floor(ph/Math.PI*GH)),b=gy*GW+gx;binOf[i]=b;bins[b]++;}
+   let maxBin=1;for(const v of bins)if(v>maxBin)maxBin=v;
+   for(let i=0;i<N;i++)dens[i]=bins[binOf[i]]/maxBin;
+   pointsGeo.setAttribute("density",new THREE.BufferAttribute(dens,1));}
+  pointsMat=new THREE.ShaderMaterial({vertexColors:true,transparent:true,depthWrite:false,uniforms:{opacity:{value:1.0},densityOn:{value:DEF.density?1:0}},
+    vertexShader:`attribute float size;attribute float density;varying vec3 vc;varying float vd;void main(){vc=color;vd=density;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=size*330.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`uniform float opacity;uniform float densityOn;varying vec3 vc;varying float vd;void main(){float d=length(gl_PointCoord-0.5);if(d>0.5)discard;float a=smoothstep(0.5,0.44,d)*opacity;float core=smoothstep(0.32,0.0,d);vec3 col=mix(vc,vec3(1.0),core*0.4);if(densityOn>0.5){vec3 cold=vec3(0.25,0.5,1.0),hot=vec3(1.0,0.62,0.22);col=mix(cold,hot,vd);a*=mix(0.5,1.0,vd);}gl_FragColor=vec4(col,a);}`});
   pointsMesh=new THREE.Points(pointsGeo,pointsMat);scene.add(pointsMesh);
   linesGroup=new THREE.Group();scene.add(linesGroup);
 
@@ -717,7 +774,7 @@ function rebuild(sc){
   });
   overlayKinds.forEach(k=>{if(overlayDefaultOff.has(k))overlayGroups[k].visible=false;});
 
-  scalables=[pointsMesh,linesGroup,globeGroup,rulerGroup,queryGroup,...Object.values(overlayGroups)];
+  scalables=[pointsMesh,linesGroup,globeGroup,rulerGroup,queryGroup,pinGroup,...Object.values(overlayGroups)];
 
   // ── Legend + counts ─────────────────────────────────────────────────────
   legendRows={};
@@ -789,6 +846,7 @@ function rebuild(sc){
   schemeSel.value=DEF.palette;
   globeCb.checked=DEF.globe;globeGroup.visible=DEF.globe;
   autorot.checked=DEF.autorot;controls.autoRotate=DEF.autorot;
+  densityCb.checked=DEF.density; // densityOn uniform already seeded from DEF
   searchInput.value="";
 
   // ── Init view (default scale + framing) ─────────────────────────────────
@@ -805,7 +863,7 @@ function animate(){
   controls.update();
   if(hoveredIdx>=0){const sp=projectToScreen(curPos(hoveredIdx));if(sp.vis){reticle.style.display="block";reticle.style.left=sp.x+"px";reticle.style.top=sp.y+"px";}else reticle.style.display="none";}else reticle.style.display="none";
   if(selectedIdx>=0){const sp=projectToScreen(curPos(selectedIdx));if(sp.vis){sellabel.style.display="block";sellabel.style.left=sp.x+"px";sellabel.style.top=(sp.y-16)+"px";}else sellabel.style.display="none";}
-  updateLabels();
+  updateLabels();updatePinLabels();
   drawMinimap();renderer.render(scene,camera);
 }
 animate();

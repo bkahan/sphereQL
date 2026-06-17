@@ -128,6 +128,15 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 .vlabel .vdot{width:6px;height:6px;border-radius:50%;flex:none;box-shadow:0 0 6px currentColor}
 .vlabel::after{content:"";position:absolute;left:50%;bottom:-8px;width:1px;height:8px;background:var(--line);transform:translateX(-50%)}
 .hud-hidden #labels{display:none}
+#pins{position:fixed;inset:0;z-index:8;pointer-events:none}
+.plabel{position:absolute;transform:translate(-50%,-100%);margin-top:-9px;pointer-events:auto;cursor:pointer;
+  display:flex;align-items:center;gap:5px;white-space:nowrap;line-height:1.3;font-size:10.5px;
+  background:rgba(28,20,8,0.78);border:1px solid var(--accent-warm);border-radius:3px;padding:2px 7px;
+  color:var(--ink);backdrop-filter:blur(4px)}
+.plabel:hover{background:rgba(255,180,84,0.2)}
+.plabel .pdot{color:var(--accent-warm)}
+.plabel::after{content:"";position:absolute;left:50%;bottom:-8px;width:1px;height:8px;background:var(--accent-warm);transform:translateX(-50%)}
+.hud-hidden #pins{display:none}
 
 #empty{position:absolute;inset:0;display:none;align-items:center;justify-content:center;z-index:5;color:var(--ink-faint);font-size:13px;letter-spacing:.1em;text-transform:uppercase}
 #dropzone{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:40;
@@ -193,6 +202,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
   <button id="tool-ruler" class="hbtn" title="Great-circle ruler — click two points to measure the angle between them">⟀</button>
   <button id="tool-png" class="hbtn" title="Save a PNG snapshot of the current view">⤓</button>
   <button id="tool-share" class="hbtn" title="Copy a shareable link (camera + settings, no data)">🔗</button>
+  <button id="tool-pin" class="hbtn" title="Pin mode — click the globe to drop an annotated marker">📍</button>
   <button id="hud-toggle" title="Hide / show panels (clean view)">⛶</button>
 </div>
 <div id="ruler-readout" class="panel"><span class="rr-ang">—</span><span class="rr-sub">click two points · Esc to clear</span></div>
@@ -255,6 +265,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
     </div>
     <label class="orow"><input type="checkbox" id="globe" checked><span>Reference globe</span></label>
     <label class="orow"><input type="checkbox" id="autorot"><span>Auto-rotate</span></label>
+    <label class="orow"><input type="checkbox" id="density"><span>Density shading</span></label>
     <div class="seg" style="margin-top:12px"><button id="save-cfg">Save .toml</button><button id="load-cfg">Load .toml</button></div>
     <input type="file" id="cfg-file" accept=".toml,.txt" style="display:none">
     <div class="sep"></div>
@@ -277,6 +288,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 <div id="search" class="panel"><div class="wrap"><span class="slash">⌕</span><input type="text" id="search-input" placeholder="filter labels…" spellcheck="false"></div></div>
 
 <div id="labels"></div>
+<div id="pins"></div>
 <div id="tooltip"></div>
 <div id="reticle"></div>
 <div id="sellabel"></div>
