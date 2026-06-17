@@ -4,7 +4,7 @@
 // that ran just before this script). Debounced so typing re-projects live
 // without flooding the worker; stale worker responses are dropped by id.
 
-/* global rebuild, parseScene, highlightByIds, setMorphTarget, applyMorph, clearMorph */
+/* global rebuild, parseScene, highlightByIds, setMorphTarget, applyMorph, clearMorph, D */
 (function () {
   "use strict";
 
@@ -47,11 +47,16 @@
   const morphProj = document.getElementById("studio-morph-proj");
   const morphSlider = document.getElementById("studio-morph");
 
-  let mode = "lingua";
+  let mode = "corpus"; // open on Corpus mode (showing the baked 775 demo scene)
   let wasmReady = false;
+  let pendingRun = false; // a run requested before wasm finished loading
   let latestId = 0;
   let debounce = null;
   const morphPending = {}; // ids whose corpus response is a morph target, not a rebuild
+  // Per-mode input buffers: Corpus starts EMPTY (paste your own; the default
+  // *scene* is the baked 775 demo, restored via rebuild(D)). Lingua seeds the
+  // prose example.
+  const buffers = { corpus: "", lingua: LINGUA_EXAMPLE };
 
   function resetMorphUI() {
     morphProj.value = "";
@@ -65,8 +70,13 @@
   }
 
   function run() {
-    if (!wasmReady) return;
+    if (!wasmReady) { pendingRun = true; return; }
     const text = input.value;
+    if (!text.trim()) {
+      // Nothing to build — keep whatever scene is showing (e.g. the demo).
+      if (mode === "corpus") setStatus("paste a corpus, or stay on the demo scene");
+      return;
+    }
     const id = ++latestId;
     setStatus("computing…", "busy");
     if (mode === "lingua") {
@@ -78,8 +88,23 @@
   }
 
   function schedule() {
+    // Live re-projection only in lingua mode; corpus JSON is run explicitly
+    // (it's large, and the default is the baked demo scene).
+    if (mode !== "lingua") return;
     clearTimeout(debounce);
     debounce = setTimeout(run, 320);
+  }
+
+  // Restore the baked 775-point demo scene instantly (no wasm) — the Corpus
+  // mode default and what we show on returning to Corpus mode.
+  function restoreDemoScene() {
+    try {
+      rebuild(D);
+      resetMorphUI();
+      setStatus("✓ demo corpus · " + (D.points ? D.points.length : 0) + " points");
+    } catch (err) {
+      setStatus("✗ " + err.message, "err");
+    }
   }
 
   worker.onmessage = (e) => {
@@ -89,7 +114,8 @@
       // don't auto-run over it. The user drives it from here (type / example /
       // corpus mode / morph).
       wasmReady = true;
-      setStatus("ready — showing the demo corpus · type or load an example");
+      setStatus("ready — demo corpus · paste your own, or try Lingua text");
+      if (pendingRun) { pendingRun = false; run(); }
       return;
     }
     if (m.type === "fatal") {
@@ -139,6 +165,7 @@
       morphSlider.disabled = true;
       return;
     }
+    if (!input.value.trim()) { setStatus("paste & run a corpus first to morph", "err"); resetMorphUI(); return; }
     const id = ++latestId;
     morphPending[id] = true;
     setStatus("building morph target…", "busy");
@@ -168,29 +195,40 @@
   morphProj.addEventListener("change", buildMorphTarget);
   morphSlider.addEventListener("input", () => applyMorph(parseFloat(morphSlider.value)));
   exBtn.addEventListener("click", () => {
+    // Load the matching example template and run it (explicit user action).
     input.value = mode === "lingua" ? LINGUA_EXAMPLE : CORPUS_EXAMPLE;
     run();
   });
   collapse.addEventListener("click", () => panel.classList.toggle("collapsed"));
 
+  // Reflect the active mode in the chrome (button + which rows / placeholder).
+  function showModeUI() {
+    document.querySelectorAll(".st-mode").forEach((x) => x.classList.toggle("active", x.dataset.mode === mode));
+    const corpus = mode === "corpus";
+    corpusOpts.style.display = corpus ? "flex" : "none";
+    queryRow.style.display = corpus ? "flex" : "none";
+    morphRow.style.display = corpus ? "flex" : "none";
+    input.placeholder = corpus
+      ? 'Paste corpus JSON {"categories":[…],"embeddings":[[…],…]} and Run — or stay on the demo scene'
+      : "Paste prose — concepts are placed on the sphere as you type…";
+  }
+
+  function switchMode(next) {
+    if (next === mode) return;
+    buffers[mode] = input.value; // remember this workspace
+    mode = next;
+    input.value = buffers[mode]; // restore the target workspace
+    if (mode !== "corpus") resetMorphUI();
+    showModeUI();
+    if (mode === "corpus") restoreDemoScene(); // Corpus default = the baked 775 scene
+    else run(); // Lingua: build from the (example) prose
+  }
+
   document.querySelectorAll(".st-mode").forEach((b) =>
-    b.addEventListener("click", () => {
-      if (b.dataset.mode === mode) return;
-      mode = b.dataset.mode;
-      document.querySelectorAll(".st-mode").forEach((x) => x.classList.toggle("active", x === b));
-      corpusOpts.style.display = mode === "corpus" ? "flex" : "none";
-      queryRow.style.display = mode === "corpus" ? "flex" : "none";
-      morphRow.style.display = mode === "corpus" ? "flex" : "none";
-      if (mode !== "corpus") resetMorphUI();
-      input.placeholder =
-        mode === "lingua"
-          ? "Paste prose — concepts are placed on the sphere as you type…"
-          : 'Paste corpus JSON: {"categories":[…],"embeddings":[[…],…]}';
-      // Swap to the matching example if the box still holds the other one.
-      if (input.value === LINGUA_EXAMPLE || input.value === CORPUS_EXAMPLE || !input.value) {
-        input.value = mode === "lingua" ? LINGUA_EXAMPLE : CORPUS_EXAMPLE;
-      }
-      run();
-    })
+    b.addEventListener("click", () => switchMode(b.dataset.mode))
   );
+
+  // ── Initial state: Corpus mode, demo scene already baked + showing ───────
+  input.value = buffers[mode];
+  showModeUI();
 })();
