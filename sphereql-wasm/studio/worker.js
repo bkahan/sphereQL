@@ -7,8 +7,10 @@
 // Message protocol
 //   main → worker: { id, kind:'lingua', text }
 //                  { id, kind:'corpus', corpus, config?, title? }
+//                  { id, kind:'query',  query, k? }     against the last corpus
 //   worker → main: { type:'ready' }                     once wasm is initialized
 //                  { id, ok:true, json }                a Scene JSON string
+//                  { id, ok:true, neighbors }           nearest hits [{id,…}]
 //                  { id, ok:false, error }              per-request failure
 //                  { type:'fatal', error }              wasm failed to load
 
@@ -16,6 +18,7 @@
 importScripts("pkg/sphereql_wasm.js");
 
 let studio = null; // reused LinguaStudio instance
+let pipeline = null; // last corpus Pipeline, kept alive so queries can reuse it
 let ready = false;
 let queued = null; // newest message received before wasm finished loading
 
@@ -35,19 +38,21 @@ wasm_bindgen("pkg/sphereql_wasm_bg.wasm")
 function handle(msg) {
   const { id, kind } = msg;
   try {
-    let json;
     if (kind === "lingua") {
-      json = studio.process(msg.text || "");
+      postMessage({ id, ok: true, json: studio.process(msg.text || "") });
     } else if (kind === "corpus") {
-      const p = msg.config
+      if (pipeline && pipeline.free) pipeline.free(); // release the previous corpus
+      pipeline = msg.config
         ? wasm_bindgen.Pipeline.newWithConfig(msg.corpus, msg.config)
         : new wasm_bindgen.Pipeline(msg.corpus);
-      json = p.buildSceneJson(msg.title || "Corpus");
-      if (p.free) p.free(); // release the wasm-owned pipeline
+      postMessage({ id, ok: true, json: pipeline.buildSceneJson(msg.title || "Corpus") });
+    } else if (kind === "query") {
+      if (!pipeline) throw new Error("run a corpus first");
+      const neighbors = pipeline.nearest(msg.query, msg.k || 8);
+      postMessage({ id, ok: true, neighbors });
     } else {
       throw new Error("unknown kind: " + kind);
     }
-    postMessage({ id, ok: true, json });
   } catch (e) {
     postMessage({ id, ok: false, error: String((e && e.message) || e) });
   }

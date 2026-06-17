@@ -4,7 +4,7 @@
 // that ran just before this script). Debounced so typing re-projects live
 // without flooding the worker; stale worker responses are dropped by id.
 
-/* global rebuild, parseScene */
+/* global rebuild, parseScene, highlightByIds */
 (function () {
   "use strict";
 
@@ -39,6 +39,10 @@
   const exBtn = document.getElementById("studio-example");
   const collapse = document.getElementById("studio-collapse");
   const panel = document.getElementById("studio");
+  const queryRow = document.getElementById("st-query-row");
+  const queryInput = document.getElementById("studio-query");
+  const kInput = document.getElementById("studio-k");
+  const findBtn = document.getElementById("studio-find");
 
   let mode = "lingua";
   let wasmReady = false;
@@ -81,23 +85,49 @@
       return;
     }
     if (m.id < latestId) return; // a newer request superseded this one
-    if (m.ok) {
+    if (!m.ok) {
+      setStatus("✗ " + m.error, "err");
+      return;
+    }
+    if (m.neighbors !== undefined) {
+      // Query result: highlight the nearest points by id on the current scene.
       try {
-        const scene = parseScene(JSON.parse(m.json));
-        rebuild(scene);
-        setStatus("✓ " + scene.points.length + " points · " + scene.overlays.length + " overlays");
+        const n = highlightByIds(m.neighbors);
+        setStatus("◎ " + n + " / " + m.neighbors.length + " neighbors");
       } catch (err) {
         setStatus("✗ " + err.message, "err");
       }
-    } else {
-      setStatus("✗ " + m.error, "err");
+      return;
+    }
+    try {
+      const scene = parseScene(JSON.parse(m.json));
+      rebuild(scene);
+      setStatus("✓ " + scene.points.length + " points · " + scene.overlays.length + " overlays");
+    } catch (err) {
+      setStatus("✗ " + err.message, "err");
     }
   };
+
+  function find() {
+    if (!wasmReady || mode !== "corpus") return;
+    const query = queryInput.value.trim();
+    if (!query) {
+      setStatus("enter a query vector", "err");
+      return;
+    }
+    const id = ++latestId;
+    setStatus("querying…", "busy");
+    worker.postMessage({ id, kind: "query", query, k: parseInt(kInput.value, 10) || 8 });
+  }
 
   // ── chrome wiring ───────────────────────────────────────────────────────
   input.addEventListener("input", schedule);
   runBtn.addEventListener("click", run);
   proj.addEventListener("change", run);
+  findBtn.addEventListener("click", find);
+  queryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") find();
+  });
   exBtn.addEventListener("click", () => {
     input.value = mode === "lingua" ? LINGUA_EXAMPLE : CORPUS_EXAMPLE;
     run();
@@ -110,6 +140,7 @@
       mode = b.dataset.mode;
       document.querySelectorAll(".st-mode").forEach((x) => x.classList.toggle("active", x === b));
       corpusOpts.style.display = mode === "corpus" ? "flex" : "none";
+      queryRow.style.display = mode === "corpus" ? "flex" : "none";
       input.placeholder =
         mode === "lingua"
           ? "Paste prose — concepts are placed on the sphere as you type…"

@@ -77,6 +77,9 @@ const mouse=new THREE.Vector2();
 // cleared on teardown.
 const rulerGroup=new THREE.Group();scene.add(rulerGroup);
 const rulerReadout=document.getElementById("ruler-readout");
+// Persistent query layer: semantic-query neighbor geodesics draw here (scaled
+// with the scene; content is scene-scoped, cleared on teardown / new query).
+const queryGroup=new THREE.Group();scene.add(queryGroup);
 const _pv=new THREE.Vector3(),_fwd=new THREE.Vector3(),_tmp=new THREE.Vector3();
 const _zc=new THREE.Vector3(),_zd=new THREE.Vector3(),_zn=new THREE.Vector3();
 const _av=new THREE.Vector3(),_cd=new THREE.Vector3();
@@ -84,6 +87,7 @@ const _av=new THREE.Vector3(),_cd=new THREE.Vector3();
 // ── Per-scene state (reassigned by rebuild) ──────────────────────────────
 let pts=[],N=0,overlays=[],SR=1.0,maxR=1,showAxes=false;
 let catSet=[],catColor={},catVisible={},catCounts={},catDir={},catDirArr=[],posIndex=new Map();
+let idToIndex=new Map(); // stable id → point index, for semantic-query highlight
 let origPos=new Float32Array(0);
 let pointsGeo=null,pointsMat=null,pointsMesh=null,globeGroup=null,linesGroup=null;
 let overlayGroups={},overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={};
@@ -423,18 +427,16 @@ function setRuler(on){
   if(on){rulerReadout.querySelector(".rr-ang").textContent="—";rulerReadout.querySelector(".rr-sub").textContent="click two points · Esc to clear";rulerReadout.classList.add("on");}
   else clearRuler();
 }
-function rulerMeasure(){
-  const a=rulerPicks[0],b=rulerPicks[1];
+// Great-circle arc between two unit directions, sampled on the display shell
+// (radius SR). Robust at the degenerate ends: coincident → a short segment;
+// (near-)antipodal → a clean semicircle about a ⟂ axis (slerp's 1/sin(om)
+// blows up there); else standard slerp. Shared by the ruler and query fans.
+function shellArc(a,b){
   const om=Math.acos(clamp(a[0]*b[0]+a[1]*b[1]+a[2]*b[2],-1,1));
   const v=[],SEG=72;
   if(om<1e-4){
-    // Coincident directions: draw a short visible segment (a 1-vertex line
-    // renders nothing) rather than degenerate slerp.
     v.push(new THREE.Vector3(a[0]*SR,a[1]*SR,a[2]*SR),new THREE.Vector3(b[0]*SR,b[1]*SR,b[2]*SR));
   }else if(om>Math.PI-1e-3){
-    // (Near-)antipodal: sin(om)→0 makes slerp explode (the arc would collapse
-    // through the globe interior). The geodesic is ambiguous, so sweep a clean
-    // great semicircle from `a` about an axis perpendicular to it.
     const h=Math.abs(a[0])<0.9?[1,0,0]:[0,1,0];
     const d=h[0]*a[0]+h[1]*a[1]+h[2]*a[2];
     let px=h[0]-d*a[0],py=h[1]-d*a[1],pz=h[2]-d*a[2];const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;
@@ -442,7 +444,12 @@ function rulerMeasure(){
       v.push(new THREE.Vector3((a[0]*c+px*sn)*SR,(a[1]*c+py*sn)*SR,(a[2]*c+pz*sn)*SR));}
   }else{const s=Math.sin(om);for(let i=0;i<=SEG;i++){const t=i/SEG,w1=Math.sin((1-t)*om)/s,w2=Math.sin(t*om)/s;
     v.push(new THREE.Vector3((a[0]*w1+b[0]*w2)*SR,(a[1]*w1+b[1]*w2)*SR,(a[2]*w1+b[2]*w2)*SR));}}
-  rulerGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(v),new THREE.LineBasicMaterial({color:0xffb454,transparent:true,opacity:0.95})));
+  return v;
+}
+function rulerMeasure(){
+  const a=rulerPicks[0],b=rulerPicks[1];
+  const om=Math.acos(clamp(a[0]*b[0]+a[1]*b[1]+a[2]*b[2],-1,1));
+  rulerGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(shellArc(a,b)),new THREE.LineBasicMaterial({color:0xffb454,transparent:true,opacity:0.95})));
   const deg=om*180/Math.PI;rulerLast={rad:om,deg:deg,chord:2*Math.sin(om/2)};
   rulerReadout.querySelector(".rr-ang").textContent=deg.toFixed(1)+"°  ·  "+om.toFixed(3)+" rad";
   rulerReadout.querySelector(".rr-sub").textContent="great-circle · chord "+(2*Math.sin(om/2)).toFixed(3);
@@ -488,6 +495,30 @@ function applyViewHash(){
     controls.update();
   }
   if(state.tools&&state.tools.ruler)setRuler(true);
+}
+
+// ── Semantic query highlight (driven by the studio's pipeline.nearest) ────
+// Emphasize a set of points by stable id (closest first), dim the rest, and
+// fan geodesics from the nearest match to the others across the shell. Accepts
+// an array of ids or of {id,...} objects (e.g. NearestOut). Returns the count
+// of resolved matches. Pass an empty array to clear.
+function clearQuery(){while(queryGroup.children.length){const c=queryGroup.children[0];disposeObject(c);queryGroup.remove(c);}}
+function highlightByIds(ids){
+  if(!pointsGeo)return 0;
+  clearQuery();
+  const order=[],seen=new Set();
+  for(const raw of ids||[]){const key=String(raw&&raw.id!=null?raw.id:raw);const idx=idToIndex.get(key);if(idx!==undefined&&!seen.has(idx)){seen.add(idx);order.push(idx);}}
+  if(order.length===0){deselectPoint();return 0;}
+  const sa=pointsGeo.getAttribute("size").array,ca=pointsGeo.getAttribute("color").array;
+  for(let i=0;i<N;i++){const c=new THREE.Color(catColor[pts[i].cat]);
+    if(seen.has(i)){const top=i===order[0];sa[i]=baseSize*(top?1.8:1.4);ca[i*3]=c.r;ca[i*3+1]=c.g;ca[i*3+2]=c.b;}
+    else{sa[i]=catVisible[pts[i].cat]?baseSize*0.4:0;ca[i*3]=c.r*0.22;ca[i*3+1]=c.g*0.22;ca[i*3+2]=c.b*0.22;}}
+  pointsGeo.getAttribute("size").needsUpdate=true;pointsGeo.getAttribute("color").needsUpdate=true;pointsMat.uniforms.opacity.value=0.6;
+  const a=curPos(order[0]),am=Math.hypot(a[0],a[1],a[2])||1,ad=[a[0]/am,a[1]/am,a[2]/am];
+  const mat=new THREE.LineBasicMaterial({color:0xffd95c,transparent:true,opacity:0.7});
+  for(let j=1;j<order.length;j++){const b=curPos(order[j]),bm=Math.hypot(b[0],b[1],b[2])||1,bd=[b[0]/bm,b[1]/bm,b[2]/bm];
+    queryGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(shellArc(ad,bd)),mat));}
+  return order.length;
 }
 
 // ── Open / drop a foreign Scene ──────────────────────────────────────────
@@ -561,6 +592,7 @@ function teardown(){
   const info=document.getElementById("info");if(info)info.classList.remove("visible");
   tooltip.style.display="none";reticle.style.display="none";sellabel.style.display="none";
   setRuler(false); // fully disarm the ruler (flag + button + picks) on scene swap
+  clearQuery(); // drop query geodesics referencing the outgoing scene
   selectedIdx=-1;hoveredIdx=-1;tgtTween=null;pendingTransform=false;
 }
 
@@ -610,6 +642,7 @@ function rebuild(sc){
   // Map a point's full-precision (x,y,z) → its index, so a bridge endpoint can
   // be tied to its exact source sphere (bridge.from === a point's xyz).
   posIndex=new Map();for(let i=0;i<N;i++)posIndex.set(pts[i].x+"|"+pts[i].y+"|"+pts[i].z,i);
+  idToIndex=new Map();for(let i=0;i<N;i++){if(pts[i].id!=null)idToIndex.set(String(pts[i].id),i);}
   catDir={};
   {const sum={},cnt={};catSet.forEach(c=>{sum[c]=[0,0,0];cnt[c]=0;});
    for(let i=0;i<N;i++){const p=pts[i],m=Math.hypot(p.x,p.y,p.z)||1;sum[p.cat][0]+=p.x/m;sum[p.cat][1]+=p.y/m;sum[p.cat][2]+=p.z/m;cnt[p.cat]++;}
@@ -646,7 +679,7 @@ function rebuild(sc){
   });
   overlayKinds.forEach(k=>{if(overlayDefaultOff.has(k))overlayGroups[k].visible=false;});
 
-  scalables=[pointsMesh,linesGroup,globeGroup,rulerGroup,...Object.values(overlayGroups)];
+  scalables=[pointsMesh,linesGroup,globeGroup,rulerGroup,queryGroup,...Object.values(overlayGroups)];
 
   // ── Legend + counts ─────────────────────────────────────────────────────
   legendRows={};

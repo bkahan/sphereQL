@@ -24,6 +24,11 @@
         </select>
       </label>
     </div>
+    <div class="st-row" id="st-query-row" style="display:none">
+      <input type="text" id="studio-query" class="st-q" spellcheck="false" placeholder="nearest to a query vector, e.g. [0.9, 0.1, 0.0, 0.2]">
+      <input type="number" id="studio-k" class="st-k" value="8" min="1" max="50" title="number of neighbors">
+      <button id="studio-find" class="st-ex">find&nbsp;◎</button>
+    </div>
     <div class="st-row">
       <button id="studio-run">Run&nbsp;▸</button>
       <button id="studio-example" class="st-ex">example</button>
@@ -58,6 +63,12 @@
 .st-ex{background:none;border:1px solid var(--line);color:var(--ink-faint);font:inherit;font-size:10px;
   letter-spacing:.06em;padding:6px 10px;border-radius:2px;cursor:pointer;transition:.12s}
 .st-ex:hover{color:var(--accent);border-color:var(--accent)}
+.st-q{flex:1;min-width:0;background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px;
+  color:var(--ink);font-family:var(--mono);font-size:11px;padding:6px 9px;outline:none}
+.st-q:focus{border-color:var(--accent)}
+.st-k{width:50px;background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px;
+  color:var(--ink);font-family:var(--mono);font-size:11px;padding:6px 6px;outline:none}
+.st-k:focus{border-color:var(--accent)}
 .st-status{font-size:10px;letter-spacing:.08em;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
 .st-status.busy{color:var(--accent-warm)}
 .st-status.err{color:#ff7a7a}
