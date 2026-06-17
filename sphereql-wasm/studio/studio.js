@@ -19,11 +19,22 @@
   // without dumping ~2 MB of vectors into the textarea. The textarea is for
   // pasting your OWN corpus; an empty box falls back to this demo.
   let demoCorpus = "";
+  let demoPrimed = false; // demo pipeline built in the worker yet?
+  let corpusRan = false; // has the user run/morphed a corpus of their own?
   fetch("demo-corpus.json")
     .then((r) => (r.ok ? r.text() : ""))
-    .then((t) => { demoCorpus = t; })
+    .then((t) => { demoCorpus = t; primeDemo(); })
     .catch(() => {});
   const corpusText = () => input.value.trim() || demoCorpus;
+
+  // Build the demo corpus pipeline in the worker (no scene, so the displayed
+  // baked scene is untouched) so a query works immediately against the demo —
+  // even with the textarea empty. Skipped once the user runs their own corpus.
+  function primeDemo() {
+    if (!wasmReady || !demoCorpus || demoPrimed || corpusRan) return;
+    demoPrimed = true;
+    worker.postMessage({ id: ++latestId, kind: "load", corpus: demoCorpus, config: null });
+  }
 
   const worker = new Worker("worker.js");
   const input = document.getElementById("studio-input");
@@ -76,6 +87,7 @@
       const corpus = corpusText(); // your paste, else the demo corpus
       if (!corpus) { setStatus("paste a corpus to run", "err"); return; }
       const cfg = proj.value ? JSON.stringify({ projection_kind: proj.value }) : null;
+      corpusRan = true;
       setStatus("computing…", "busy");
       worker.postMessage({ id, kind: "corpus", corpus, config: cfg, title: "Corpus" });
     }
@@ -110,6 +122,7 @@
       wasmReady = true;
       setStatus("ready — demo corpus · paste your own, or try Lingua text");
       if (pendingRun) { pendingRun = false; run(); }
+      primeDemo(); // make the demo queryable in the background
       return;
     }
     if (m.type === "fatal") {
@@ -121,6 +134,7 @@
       setStatus("✗ " + m.error, "err");
       return;
     }
+    if (m.loaded) return; // demo pipeline primed in the worker — query is now ready
     if (m.neighbors !== undefined) {
       // Query result: highlight the nearest points by id on the current scene.
       try {
@@ -161,6 +175,7 @@
     }
     const corpus = corpusText(); // your paste, else the demo corpus
     if (!corpus) { setStatus("paste a corpus first to morph", "err"); resetMorphUI(); return; }
+    corpusRan = true;
     const id = ++latestId;
     morphPending[id] = true;
     setStatus("building morph target…", "busy");

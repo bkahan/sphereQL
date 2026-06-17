@@ -7,10 +7,12 @@
 // Message protocol
 //   main → worker: { id, kind:'lingua', text }
 //                  { id, kind:'corpus', corpus, config?, title? }
-//                  { id, kind:'query',  query, k? }     against the last corpus
+//                  { id, kind:'load',   corpus, config? }  build pipeline, no scene
+//                  { id, kind:'query',  query, k? }     against the last corpus/load
 //   worker → main: { type:'ready' }                     once wasm is initialized
 //                  { id, ok:true, json }                a Scene JSON string
 //                  { id, ok:true, neighbors }           nearest hits [{id,…}]
+//                  { id, ok:true, loaded:true }         pipeline primed (no scene)
 //                  { id, ok:false, error }              per-request failure
 //                  { type:'fatal', error }              wasm failed to load
 
@@ -46,6 +48,14 @@ function handle(msg) {
         ? wasm_bindgen.Pipeline.newWithConfig(msg.corpus, msg.config)
         : new wasm_bindgen.Pipeline(msg.corpus);
       postMessage({ id, ok: true, json: pipeline.buildSceneJson(msg.title || "Corpus") });
+    } else if (kind === "load") {
+      // Prime the pipeline (for queries) without producing a scene — keeps the
+      // currently displayed scene (e.g. the baked demo) untouched.
+      if (pipeline && pipeline.free) pipeline.free();
+      pipeline = msg.config
+        ? wasm_bindgen.Pipeline.newWithConfig(msg.corpus, msg.config)
+        : new wasm_bindgen.Pipeline(msg.corpus);
+      postMessage({ id, ok: true, loaded: true });
     } else if (kind === "query") {
       if (!pipeline) throw new Error("run a corpus first");
       const neighbors = pipeline.nearest(msg.query, msg.k || 8);
