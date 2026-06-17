@@ -17,7 +17,10 @@ graphql = ["index", "dep:sphereql-graphql"]
 vectordb = ["embed", "dep:sphereql-vectordb"]
 pinecone = ["vectordb", "sphereql-vectordb/pinecone"]
 retain-embeddings = ["sphereql-embed/retain-embeddings"]
-full = ["core", "index", "layout", "embed", "graphql", "vectordb", "retain-embeddings"]
+# Self-contained 3D visualization. Independent of the other features —
+# `sphereql-vis` carries its own `sphereql-core` dependency.
+vis = ["dep:sphereql-vis"]
+full = ["core", "index", "layout", "embed", "graphql", "vectordb", "retain-embeddings", "vis"]
 
 [dependencies]
 sphereql-core = { version = "0.3.0", path = "../sphereql-core", optional = true }
@@ -26,3 +29,4 @@ sphereql-layout = { version = "0.3.0", path = "../sphereql-layout", optional = t
 sphereql-embed = { version = "0.3.0", path = "../sphereql-embed", optional = true }
 sphereql-graphql = { version = "0.3.0", path = "../sphereql-graphql", optional = true }
 sphereql-vectordb = { version = "0.3.0", path = "../sphereql-vectordb", optional = true }
+sphereql-vis = { version = "0.3.0", path = "../sphereql-vis", optional = true }

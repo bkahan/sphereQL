@@ -93,3 +93,37 @@ class TestVisualizePipeline:
             content = f.read()
         assert "<script" in content
         assert "THREE" in content
+
+    def test_projection_aware_label(self, tmp_path):
+        # A non-PCA pipeline must report its own projection family + metric,
+        # not the hardcoded "PCA variance" label (the historical drift bug).
+        cats, embs = make_data()
+        pipeline = sphereql.Pipeline(
+            cats, embs, config={"projection_kind": "LaplacianEigenmap"}
+        )
+        assert pipeline.projection_kind == "laplacian_eigenmap"
+        out = str(tmp_path / "test_label.html")
+        sphereql.visualize_pipeline(pipeline, output=out, open_browser=False)
+        with open(out) as f:
+            content = f.read()
+        assert "laplacian_eigenmap" in content
+        assert "Connectivity ratio" in content
+        assert "PCA variance" not in content
+
+
+class TestSelfContained:
+    def test_offline_no_external_scripts(self, tmp_path):
+        # The runtime is inlined: the file must not load any external script,
+        # so it works with no network (the docstring's "self-contained" claim
+        # is now true).
+        cats, embs = make_data()
+        out = str(tmp_path / "test_offline.html")
+        sphereql.visualize(cats, embs, output=out, open_browser=False)
+        with open(out) as f:
+            content = f.read()
+        assert 'src="http' not in content
+        assert "src='http" not in content
+        # Real orbit controls are wired up (upgraded from hand-rolled drag).
+        assert "THREE.OrbitControls" in content
+        # The megabyte runtime is actually present inline.
+        assert len(content) > 500_000

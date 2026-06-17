@@ -22,13 +22,21 @@ crate-type = ["cdylib", "rlib"]
 # in `console_error_panic_hook` so panics get a JS stack trace instead
 # of a silent unreachable trap. Off by default — release builds are
 # panic = abort, console hook adds ~10 KB and isn't useful there.
-default = []
+default = ["scene", "lingua"]
 debug = ["dep:console_error_panic_hook"]
+# `scene` exposes Pipeline.buildSceneJson (maps the fitted pipeline into a
+# sphereql-vis Scene). `lingua` adds LinguaStudio (free text → concept graph →
+# Scene) and pulls in `scene` for the Scene type. Both default-on so
+# `cargo --all-features` and the wasm jobs build them.
+scene = ["dep:sphereql-vis"]
+lingua = ["dep:sphereql-lingua", "scene"]
 
 [dependencies]
 sphereql-core = { path = "../sphereql-core" }
 sphereql-index = { path = "../sphereql-index" }
 sphereql-embed = { path = "../sphereql-embed" }
+sphereql-vis = { path = "../sphereql-vis", version = "0.3.0", optional = true }
+sphereql-lingua = { path = "../sphereql-lingua", version = "0.3.0", optional = true }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -48,3 +56,8 @@ console_error_panic_hook = { version = "0.1", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+# Native-only, used by the `build_studio` example to bake the default 775-point
+# demo scene (auto-tuned HandCrafted corpus). Dev-deps are not compiled into
+# the wasm cdylib, so they don't affect the shipped bundle.
+sphereql-examples = { path = "../sphereql-examples" }
+sphereql-corpus = { path = "../sphereql-corpus" }

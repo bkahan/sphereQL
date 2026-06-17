@@ -175,6 +175,18 @@ pub enum RadialStrategy {
     /// projection-supplied per-point fidelity score. Higher r ⇒ this
     /// point is well-explained by the 3D projection.
     Certainty { scale: f64 },
+    /// r = affine map of the embedding magnitude from the corpus source
+    /// band `[m_lo, m_hi]` onto a target radial range `[r_lo, r_hi]`
+    /// (clamped). Lets a narrow magnitude distribution fill a configurable
+    /// radial range — the fix for "r only sits near max" on sparse/uniform
+    /// corpora. The source bounds are precomputed from the corpus at fit
+    /// time; see [`RadialConfig`](crate::config::RadialConfig).
+    MagnitudeStretch {
+        m_lo: f64,
+        m_hi: f64,
+        r_lo: f64,
+        r_hi: f64,
+    },
     /// r = f(&context). Escape hatch for arbitrary per-point logic over
     /// any combination of the [`RadialContext`] signals.
     Custom(Arc<dyn Fn(&RadialContext) -> f64 + Send + Sync>),
@@ -188,6 +200,17 @@ impl Clone for RadialStrategy {
             Self::MagnitudeTransform(f) => Self::MagnitudeTransform(Arc::clone(f)),
             Self::ProjectionMagnitude => Self::ProjectionMagnitude,
             Self::Certainty { scale } => Self::Certainty { scale: *scale },
+            Self::MagnitudeStretch {
+                m_lo,
+                m_hi,
+                r_lo,
+                r_hi,
+            } => Self::MagnitudeStretch {
+                m_lo: *m_lo,
+                m_hi: *m_hi,
+                r_lo: *r_lo,
+                r_hi: *r_hi,
+            },
             Self::Custom(f) => Self::Custom(Arc::clone(f)),
         }
     }
@@ -201,6 +224,15 @@ impl std::fmt::Debug for RadialStrategy {
             Self::MagnitudeTransform(_) => write!(f, "MagnitudeTransform(<fn>)"),
             Self::ProjectionMagnitude => write!(f, "ProjectionMagnitude"),
             Self::Certainty { scale } => write!(f, "Certainty {{ scale: {scale} }}"),
+            Self::MagnitudeStretch {
+                m_lo,
+                m_hi,
+                r_lo,
+                r_hi,
+            } => write!(
+                f,
+                "MagnitudeStretch {{ m: [{m_lo}, {m_hi}], r: [{r_lo}, {r_hi}] }}"
+            ),
             Self::Custom(_) => write!(f, "Custom(<fn>)"),
         }
     }
@@ -216,6 +248,20 @@ impl RadialStrategy {
             Self::MagnitudeTransform(f) => f(ctx.embedding_magnitude),
             Self::ProjectionMagnitude => ctx.projection_magnitude,
             Self::Certainty { scale } => scale * ctx.certainty,
+            Self::MagnitudeStretch {
+                m_lo,
+                m_hi,
+                r_lo,
+                r_hi,
+            } => {
+                let span = m_hi - m_lo;
+                let t = if span.abs() < 1e-12 {
+                    0.5
+                } else {
+                    ((ctx.embedding_magnitude - m_lo) / span).clamp(0.0, 1.0)
+                };
+                r_lo + t * (r_hi - r_lo)
+            }
             Self::Custom(f) => f(ctx),
         }
     }
@@ -244,6 +290,32 @@ mod tests {
         let n = e.normalized();
         assert!((n[0] - 0.6).abs() < 1e-12);
         assert!((n[1] - 0.8).abs() < 1e-12);
+    }
+
+    #[test]
+    fn magnitude_stretch_maps_to_target_range() {
+        let s = RadialStrategy::MagnitudeStretch {
+            m_lo: 1.0,
+            m_hi: 2.0,
+            r_lo: 0.5,
+            r_hi: 1.5,
+        };
+        // Source-band endpoints map onto the target-range endpoints.
+        assert!((s.compute(1.0) - 0.5).abs() < 1e-12);
+        assert!((s.compute(2.0) - 1.5).abs() < 1e-12);
+        // Midpoint maps to the middle.
+        assert!((s.compute(1.5) - 1.0).abs() < 1e-12);
+        // Out-of-band magnitudes clamp to the range, not extrapolate.
+        assert!((s.compute(0.0) - 0.5).abs() < 1e-12);
+        assert!((s.compute(3.0) - 1.5).abs() < 1e-12);
+        // Degenerate source band → middle of the target range (no NaN).
+        let d = RadialStrategy::MagnitudeStretch {
+            m_lo: 2.0,
+            m_hi: 2.0,
+            r_lo: 0.0,
+            r_hi: 1.0,
+        };
+        assert!((d.compute(2.0) - 0.5).abs() < 1e-12);
     }
 
     #[test]

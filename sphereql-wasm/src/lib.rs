@@ -1541,6 +1541,276 @@ pub fn cache_write(path: &str, json: &str) -> Result<(), JsError> {
     }
 }
 
+// ── sphereql-vis Scene bridge (feature `scene`) ─────────────────────────────
+//
+// Maps the fitted pipeline — and, with `lingua`, free text — into a
+// sphereql-vis Scene serialized as JSON: the exact shape the viewer's drag-drop
+// loader and the studio consume. Returned as a `String` rather than a tsify
+// type because a Scene is deep/recursive and the viewer parses JSON anyway;
+// this keeps the generated `.d.ts` small (matching `export_json`/`config`).
+
+#[cfg(feature = "scene")]
+use sphereql_vis::{Overlay, Scene, ScenePoint, SceneStats};
+
+/// Aurora palette + sorted-unique assignment — identical to the viewer's
+/// `catColor`, so overlay colors match the point colors the viewer draws.
+#[cfg(feature = "scene")]
+const AURORA: [&str; 16] = [
+    "#5cc8ff", "#ff8a65", "#86e0a8", "#c79bff", "#ffd95c", "#ff7fa8", "#4dd0e1", "#bfa07a",
+    "#9fb2d4", "#b6e07a", "#8aa0ff", "#ffb454", "#ff6f6f", "#74b9ff", "#dce07a", "#a98bff",
+];
+
+#[cfg(feature = "scene")]
+fn scene_evr_label_for(kind: &str) -> &'static str {
+    match kind {
+        "pca" => "PCA variance",
+        "kernel_pca" => "Kernel EVR",
+        "laplacian_eigenmap" => "Connectivity ratio",
+        "umap_sphere" => "UMAP kNN-recall",
+        _ => "Explained variance ratio",
+    }
+}
+
+#[cfg(feature = "scene")]
+fn scene_category_colors(
+    categories: &[String],
+) -> std::collections::BTreeMap<String, &'static str> {
+    let mut sorted: Vec<&String> = categories.iter().collect();
+    sorted.sort();
+    sorted.dedup();
+    sorted
+        .into_iter()
+        .enumerate()
+        .map(|(i, c)| (c.clone(), AURORA[i % AURORA.len()]))
+        .collect()
+}
+
+/// Build a sphereql-vis Scene from a fitted pipeline: projected points (stable
+/// ids + quality), category centroids, classified bridges, Voronoi territory
+/// caps, and domain-group spokes. Antipode/coverage analysis is intentionally
+/// omitted — it is heavier and not needed for the live studio re-projection.
+#[cfg(feature = "scene")]
+fn build_scene(pipeline: &SphereQLPipeline, title: &str) -> Scene {
+    let exported = pipeline.exported_points();
+    let layer = pipeline.category_layer();
+    let categories: Vec<String> = exported.iter().map(|p| p.category.clone()).collect();
+    let colors = scene_category_colors(&categories);
+    let color_of = |cat: &str| -> &'static str { colors.get(cat).copied().unwrap_or("#9fb2d4") };
+
+    let points: Vec<ScenePoint> = exported
+        .iter()
+        .map(|p| {
+            ScenePoint::from_cartesian(p.category.clone(), p.id.clone(), [p.x, p.y, p.z])
+                .with_id(p.id.clone())
+                .with_quality(p.certainty, p.intensity)
+        })
+        .collect();
+    let sr = Scene::surface_radius_for(&points);
+
+    let mut overlays: Vec<Overlay> = Vec::new();
+    let summaries = &layer.summaries;
+
+    // Centroids.
+    for s in summaries {
+        overlays.push(Overlay::centroid(
+            &s.centroid_position,
+            sr,
+            color_of(&s.name),
+            s.name.clone(),
+            s.member_count,
+        ));
+    }
+    // Classified bridges (item → target domain centroid), capped per pair.
+    for (&(_ci, cj), items) in &layer.graph.bridges {
+        let Some(target) = summaries.get(cj) else {
+            continue;
+        };
+        for item in items.iter().take(2) {
+            let Some(p) = exported.get(item.item_index) else {
+                continue;
+            };
+            overlays.push(Overlay::bridge(
+                [p.x, p.y, p.z],
+                &target.centroid_position,
+                sr,
+                item.bridge_strength,
+                classification_name(item.classification),
+                color_of(&target.name),
+            ));
+        }
+    }
+    // Voronoi territory caps.
+    for s in summaries {
+        if s.voronoi_area > 0.0 {
+            overlays.push(Overlay::voronoi_cap(
+                &s.centroid_position,
+                sr,
+                s.voronoi_area,
+                color_of(&s.name),
+                s.name.clone(),
+            ));
+        }
+    }
+    // Domain-group hubs + spokes.
+    for (gi, g) in pipeline.domain_groups().iter().enumerate() {
+        let members: Vec<sphereql_core::SphericalPoint> = g
+            .member_categories
+            .iter()
+            .filter_map(|&i| summaries.get(i).map(|s| s.centroid_position))
+            .collect();
+        overlays.push(Overlay::domain_group(
+            &g.centroid,
+            &members,
+            sr,
+            AURORA[gi % AURORA.len()],
+            format!("group {gi}: {}", g.category_names.join(", ")),
+        ));
+    }
+
+    let kind = pipeline.projection_kind().name();
+    let evr = pipeline.explained_variance_ratio();
+    Scene::builder()
+        .title(title)
+        .points(points)
+        .overlays(overlays)
+        .stats(SceneStats::new(kind, evr).with_label(scene_evr_label_for(kind)))
+        .surface_radius(sr)
+        .show_axes(true)
+        .build()
+}
+
+#[cfg(feature = "scene")]
+#[wasm_bindgen]
+impl Pipeline {
+    /// Build a sphereql-vis Scene (JSON) from the fitted pipeline — the point
+    /// cloud (stable ids + quality), centroids, classified bridges, Voronoi
+    /// caps, and domain-group spokes, plus projection stats. Hand the string
+    /// straight to the sphereql-vis viewer (`rebuild`/drag-drop shape).
+    #[wasm_bindgen(js_name = buildSceneJson)]
+    pub fn build_scene_json(&self, title: &str) -> String {
+        build_scene(&self.inner, title).to_json()
+    }
+}
+
+// ── Lingua-live studio (feature `lingua`) ───────────────────────────────────
+
+#[cfg(feature = "lingua")]
+fn relation_label(t: sphereql_lingua::RelationType) -> &'static str {
+    use sphereql_lingua::RelationType::*;
+    match t {
+        IsA => "is-a",
+        InstanceOf => "instance-of",
+        Contains => "contains",
+        RelatedTo => "related-to",
+        TransformsTo => "transforms-to",
+        Parameterizes => "parameterizes",
+        Demonstrates => "demonstrates",
+        Near => "near",
+        FarFrom => "far-from",
+    }
+}
+
+/// Turn a lingua [`ConceptGraph`] into a Scene: each placed concept is a point
+/// (domain → category, surface form → label, normalized form → id); each typed
+/// relation is a geodesic path between its two concepts.
+#[cfg(feature = "lingua")]
+fn lingua_scene(graph: &sphereql_lingua::ConceptGraph) -> Scene {
+    let points: Vec<ScenePoint> = graph
+        .concepts
+        .iter()
+        .filter_map(|c| {
+            c.point.as_ref().map(|p| {
+                let cat = c
+                    .domain_hint
+                    .clone()
+                    .unwrap_or_else(|| "concept".to_string());
+                ScenePoint::from_spherical(cat, c.text.clone(), p.r, p.theta, p.phi)
+                    .with_id(c.normalized.clone())
+            })
+        })
+        .collect();
+    let sr = Scene::surface_radius_for(&points);
+
+    let mut overlays: Vec<Overlay> = Vec::new();
+    for rel in &graph.relations {
+        let (Some(s), Some(t)) = (
+            graph.concepts.get(rel.source_idx),
+            graph.concepts.get(rel.target_idx),
+        ) else {
+            continue;
+        };
+        let (Some(sp), Some(tp)) = (s.point.as_ref(), t.point.as_ref()) else {
+            continue;
+        };
+        overlays.push(Overlay::geodesic_path(
+            &[*sp, *tp],
+            sr,
+            16,
+            "#8aa0ff",
+            format!(
+                "{} {} {}",
+                s.text,
+                relation_label(rel.relation_type),
+                t.text
+            ),
+        ));
+    }
+
+    // Mean salience of placed concepts as the headline quality number.
+    let placed: Vec<f64> = graph
+        .concepts
+        .iter()
+        .filter(|c| c.point.is_some())
+        .map(|c| c.salience_score)
+        .collect();
+    let mean_sal = if placed.is_empty() {
+        0.0
+    } else {
+        placed.iter().sum::<f64>() / placed.len() as f64
+    };
+
+    Scene::builder()
+        .title("Lingua studio")
+        .points(points)
+        .overlays(overlays)
+        .stats(SceneStats::new("lingua", mean_sal).with_label("mean salience"))
+        .surface_radius(sr)
+        .show_axes(true)
+        .build()
+}
+
+/// In-browser lingua pipeline: free text → concept graph → sphereql-vis Scene.
+#[cfg(feature = "lingua")]
+#[wasm_bindgen]
+pub struct LinguaStudio {
+    inner: sphereql_lingua::LinguaPipeline,
+}
+
+#[cfg(feature = "lingua")]
+#[wasm_bindgen]
+impl LinguaStudio {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> LinguaStudio {
+        install_panic_hook();
+        LinguaStudio {
+            inner: sphereql_lingua::LinguaPipeline::new(),
+        }
+    }
+
+    /// Run the pipeline on free text and return a Scene (JSON) ready for the
+    /// viewer. Empty / concept-less text yields a valid empty scene.
+    pub fn process(&self, text: &str) -> String {
+        lingua_scene(&self.inner.process(text)).to_json()
+    }
+}
+
+#[cfg(feature = "lingua")]
+impl Default for LinguaStudio {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod laplacian_tests {
     use super::*;
@@ -1657,5 +1927,59 @@ mod laplacian_tests {
         // Distances must be sorted ascending.
         assert!(results[0].distance <= results[1].distance);
         assert!(results[1].distance <= results[2].distance);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32"), feature = "scene"))]
+mod scene_bridge_tests {
+    use super::*;
+
+    fn corpus_json() -> &'static str {
+        r#"{
+            "categories": ["science","cooking","science","cooking","science","cooking","science","cooking"],
+            "embeddings": [
+                [0.90,0.10,0.00,0.10],[0.10,0.90,0.10,0.00],
+                [0.85,0.15,0.05,0.10],[0.05,0.95,0.00,0.10],
+                [0.80,0.20,0.10,0.00],[0.10,0.85,0.20,0.05],
+                [0.95,0.05,0.00,0.10],[0.00,0.90,0.10,0.10]
+            ]
+        }"#
+    }
+
+    #[test]
+    fn build_scene_json_has_points_overlays_and_stats() {
+        let p = Pipeline::new(corpus_json()).expect("pipeline build failed");
+        let json = p.build_scene_json("demo");
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid scene JSON");
+        assert_eq!(v["title"], "demo");
+        let pts = v["points"].as_array().expect("points array");
+        assert_eq!(pts.len(), 8);
+        // Stable id + quality signals are carried into the Scene.
+        assert!(pts[0]["id"].is_string(), "point carries a stable id");
+        assert!(pts[0]["certainty"].is_number(), "point carries certainty");
+        // At minimum the per-category centroids are emitted as overlays.
+        assert!(
+            !v["overlays"].as_array().expect("overlays array").is_empty(),
+            "scene has overlays"
+        );
+        assert!(v["stats"]["projection_kind"].is_string());
+        assert!(v["surface_radius"].is_number());
+    }
+
+    #[test]
+    #[cfg(feature = "lingua")]
+    fn lingua_studio_builds_a_valid_scene() {
+        // Smoke test: concept extraction depends on the built-in vocabulary, so
+        // we assert the bridge produces a well-formed Scene rather than a
+        // specific concept count.
+        let studio = LinguaStudio::new();
+        let json = studio.process(
+            "A neural network is a model. Gradient descent transforms the model. Cooking uses heat to transform food.",
+        );
+        let v: serde_json::Value = serde_json::from_str(&json).expect("valid scene JSON");
+        assert_eq!(v["title"], "Lingua studio");
+        assert!(v["points"].is_array());
+        assert!(v["overlays"].is_array());
+        assert_eq!(v["stats"]["evr_label"], "mean salience");
     }
 }

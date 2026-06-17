@@ -178,6 +178,7 @@ in the browser.
 | `sphereql-embed` | Projections, query pipeline, Category Enrichment Layer, metalearning framework. |
 | `sphereql-graphql` | async-graphql schema: spatial queries (cone/shell/band/wedge), the full category enrichment surface, subscriptions, and a pluggable `TextEmbedder` trait for text query input. |
 | `sphereql-vectordb` | Vector store bridge (InMemory, Qdrant, Pinecone) with hybrid search. |
+| `sphereql-vis` | Self-contained 3D visualization: a serializable scene model + a hardened, offline Three.js emitter (points + centroids, bridges, geodesic paths, Voronoi caps, antipodes, coverage, domain groups). |
 | `sphereql-python` | Python bindings via PyO3/maturin. |
 | `sphereql-wasm` | WASM bindings via wasm-bindgen. |
 | `sphereql-corpus` | Shared example corpora: 775-concept built-in (31 academic domains) and 300-concept stress corpus, plus bulk-ingested parquet corpora from DBpedia (500K) and Wikidata (50K). |

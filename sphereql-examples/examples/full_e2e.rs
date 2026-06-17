@@ -40,109 +40,19 @@ use dialoguer::MultiSelect;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use sphereql::core::SphericalPoint;
-use sphereql::core::angular_distance;
 use sphereql::core::spatial::*;
 use sphereql::embed::{
-    BridgeClassification, CategoryLayer, CompositeMetric, CorpusFeatures, CorpusQuality,
+    BridgeClassification, CompositeMetric, CorpusFeatures, CorpusQuality,
     DistanceWeightedMetaModel, Embedding, FeedbackAggregator, FeedbackEvent, MetaModel,
     MetaTrainingRecord, NavigatorConfig, NearestNeighborMetaModel, PipelineConfig, PipelineInput,
-    PipelineQuery, Projection, ProjectionKind, QualityMetric, SearchSpace, SearchStrategy,
-    SelfTuneConfig, SphereQLOutput, SphereQLPipeline, SphereQLQuery, TunableConcept, auto_tune,
+    PipelineQuery, Projection, ProjectionKind, QualityMetric, SearchStrategy, SelfTuneConfig,
+    SphereQLOutput, SphereQLPipeline, SphereQLQuery, TunableConcept, auto_tune,
     category_geodesic_sweep, category_path_deviation, gap_confidence, run_full_analysis,
     run_self_tune,
 };
 use sphereql_corpus::axes::*;
 use sphereql_corpus::{Concept, CorpusId, DIM, embed};
-
-/// Runtime-discovered category samples used across the demo. Replaces
-/// the previous hand-written `"physics"` / `"music"` / `"computer_science"`
-/// literals so the example runs against any corpus (HandCrafted, Stress,
-/// Wikidata, custom Parquet).
-///
-/// Entries are sorted descending by member count; the picker layers
-/// "most populous" on top of that ordering and computes "pairwise most
-/// distinct" via greedy farthest-point sampling against the projected
-/// centroids.
-struct CategoryPicker {
-    by_count: Vec<(String, SphericalPoint)>,
-}
-
-impl CategoryPicker {
-    fn new(layer: &CategoryLayer) -> Self {
-        let mut entries: Vec<(String, usize, SphericalPoint)> = layer
-            .summaries
-            .iter()
-            .map(|s| (s.name.clone(), s.member_count, s.centroid_position))
-            .collect();
-        entries.sort_by_key(|e| std::cmp::Reverse(e.1));
-        Self {
-            by_count: entries.into_iter().map(|(n, _, c)| (n, c)).collect(),
-        }
-    }
-
-    fn most_populous(&self, k: usize) -> Vec<String> {
-        self.by_count
-            .iter()
-            .take(k)
-            .map(|(n, _)| n.clone())
-            .collect()
-    }
-
-    /// Greedy farthest-point set on S²: start from the most populous
-    /// centroid, then repeatedly add the centroid whose nearest already-
-    /// picked centroid is the furthest away. Produces k pairwise-distant
-    /// category names while still rooting the selection in a category
-    /// big enough to be meaningful.
-    fn distinct_set(&self, k: usize) -> Vec<String> {
-        if self.by_count.is_empty() {
-            return Vec::new();
-        }
-        let cap = k.min(self.by_count.len());
-        let mut picked: Vec<usize> = Vec::with_capacity(cap);
-        picked.push(0);
-        while picked.len() < cap {
-            let mut best_i = 0;
-            let mut best_min = f64::NEG_INFINITY;
-            for i in 0..self.by_count.len() {
-                if picked.contains(&i) {
-                    continue;
-                }
-                let min_d = picked
-                    .iter()
-                    .map(|&p| angular_distance(&self.by_count[i].1, &self.by_count[p].1))
-                    .fold(f64::INFINITY, f64::min);
-                if min_d > best_min {
-                    best_min = min_d;
-                    best_i = i;
-                }
-            }
-            picked.push(best_i);
-        }
-        picked
-            .into_iter()
-            .map(|i| self.by_count[i].0.clone())
-            .collect()
-    }
-
-    fn distinct_pair(&self) -> Option<(String, String)> {
-        let set = self.distinct_set(2);
-        match set.as_slice() {
-            [a, b] => Some((a.clone(), b.clone())),
-            _ => None,
-        }
-    }
-
-    /// Build k cross-domain pairs by drawing 2k pairwise-distant
-    /// categories from [`Self::distinct_set`] and chunking them into
-    /// disjoint pairs. Each returned pair has internal angular distance
-    /// inherited from the diversity of the underlying set.
-    fn distinct_pairs(&self, k: usize) -> Vec<(String, String)> {
-        let set = self.distinct_set((2 * k).min(self.by_count.len()));
-        set.chunks_exact(2)
-            .map(|c| (c[0].clone(), c[1].clone()))
-            .collect()
-    }
-}
+use sphereql_examples::{CategoryPicker, tuning_params};
 
 fn main() {
     let selected = select_corpora();
@@ -327,64 +237,6 @@ fn load_and_embed(id: &CorpusId) -> Option<(Vec<Concept>, Vec<Vec<f64>>)> {
     pb.finish_and_clear();
 
     Some((corpus, embeddings))
-}
-
-// ─── Tuning params ────────────────────────────────────────────────────────────
-
-/// Returns `(budget, search_space)` scaled to corpus size.
-///
-/// Laplacian eigenmap needs an O(n²) affinity matrix and is automatically
-/// filtered out above 10k concepts even if the user requested it. UMAP
-/// uses the ANN-backed kNN graph, so it stays affordable into the 10k–100k
-/// range. The base search space comes from the size bucket; the caller's
-/// `selected_kinds` then narrows `projection_kinds` (intersection with
-/// what's feasible at this corpus size).
-fn tuning_params(n: usize, selected_kinds: &[ProjectionKind]) -> (usize, SearchSpace) {
-    let (budget, mut space) = if n <= 10_000 {
-        (
-            16,
-            SearchSpace {
-                projection_kinds: vec![
-                    ProjectionKind::Pca,
-                    ProjectionKind::LaplacianEigenmap,
-                    ProjectionKind::UmapSphere,
-                    ProjectionKind::KernelPca,
-                ],
-                ..SearchSpace::default()
-            },
-        )
-    } else if n <= 100_000 {
-        (8, SearchSpace::large_corpus())
-    } else {
-        (
-            4,
-            SearchSpace {
-                projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::UmapSphere],
-                ..SearchSpace::default()
-            },
-        )
-    };
-
-    // Intersect the user's selection with what this corpus size supports.
-    let feasible: Vec<ProjectionKind> = space.projection_kinds.clone();
-    space.projection_kinds = selected_kinds
-        .iter()
-        .copied()
-        .filter(|k| feasible.contains(k))
-        .collect();
-
-    // Fall back to PCA if every selected kind was filtered out (e.g. user
-    // picked only Laplacian on a 500k corpus). Better to run something
-    // than to crash the demo with an empty search space.
-    if space.projection_kinds.is_empty() {
-        eprintln!(
-            "  Note: none of the selected projections are feasible at n={}; falling back to PCA.",
-            n
-        );
-        space.projection_kinds = vec![ProjectionKind::Pca];
-    }
-
-    (budget, space)
 }
 
 // ─── Main demo (7 phases) ─────────────────────────────────────────────────────

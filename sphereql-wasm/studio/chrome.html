@@ -1,0 +1,91 @@
+<!-- SphereQL Studio chrome — injected into the self-contained viewer page by
+     examples/build_studio.rs (right after <body>). Reuses the viewer's CSS
+     variables (--panel/--line/--ink/--accent/--mono). The studio input drives
+     a Web Worker that runs the wasm pipeline off-thread and calls the viewer's
+     global rebuild()/parseScene() with the resulting Scene. -->
+<div id="studio" class="panel">
+  <div class="st-head">
+    <span class="st-title">◐ Studio</span>
+    <div class="st-modes">
+      <button class="st-mode active" data-mode="corpus">Corpus&nbsp;JSON</button>
+      <button class="st-mode" data-mode="lingua">Lingua&nbsp;text</button>
+    </div>
+    <button id="studio-collapse" title="collapse / expand">▾</button>
+  </div>
+  <div class="st-body">
+    <textarea id="studio-input" spellcheck="false" placeholder="Paste prose — concepts are placed on the sphere as you type…"></textarea>
+    <div class="st-row" id="st-corpus-opts" style="display:none">
+      <label class="st-lab">Projection
+        <select id="studio-proj" class="sel">
+          <option value="">PCA (default)</option>
+          <option value="UmapSphere">UMAP sphere</option>
+          <option value="LaplacianEigenmap">Laplacian eigenmap</option>
+          <option value="KernelPca">Kernel PCA</option>
+        </select>
+      </label>
+    </div>
+    <div class="st-row" id="st-query-row" style="display:none">
+      <input type="text" id="studio-query" class="st-q" spellcheck="false" placeholder="nearest to a query vector, e.g. [0.9, 0.1, 0.0, 0.2]">
+      <input type="number" id="studio-k" class="st-k" value="8" min="1" max="50" title="number of neighbors">
+      <button id="studio-find" class="st-ex">find&nbsp;◎</button>
+    </div>
+    <div class="st-row" id="st-morph-row" style="display:none">
+      <label class="st-lab">morph →
+        <select id="studio-morph-proj" class="sel">
+          <option value="">(off)</option>
+          <option value="Pca">PCA</option>
+          <option value="UmapSphere">UMAP sphere</option>
+          <option value="LaplacianEigenmap">Laplacian</option>
+          <option value="KernelPca">Kernel PCA</option>
+        </select>
+      </label>
+      <input type="range" id="studio-morph" class="st-morph" min="0" max="1" step="0.02" value="0" disabled title="A ↔ B">
+      <a id="studio-compare" class="st-ex" href="compare.html" target="_blank" rel="noopener" title="open the side-by-side compare view">side&nbsp;by&nbsp;side&nbsp;↗</a>
+    </div>
+    <div class="st-row">
+      <button id="studio-run">Run&nbsp;▸</button>
+      <button id="studio-example" class="st-ex">example</button>
+      <span id="studio-status" class="st-status">loading wasm…</span>
+    </div>
+  </div>
+</div>
+<style>
+#studio{left:50%;bottom:64px;transform:translateX(-50%);width:min(560px,92vw);z-index:12;
+  display:flex;flex-direction:column;gap:9px;padding:12px 14px}
+#studio.collapsed .st-body{display:none}
+#studio.collapsed #studio-collapse{transform:rotate(180deg)}
+.st-head{display:flex;align-items:center;gap:12px}
+.st-title{font-size:11px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;color:var(--ink)}
+.st-title::first-letter{color:var(--accent)}
+.st-modes{display:flex;gap:4px;margin-left:auto}
+.st-mode{background:rgba(120,160,255,.05);border:1px solid var(--line);color:var(--ink-dim);
+  font:inherit;font-size:10px;letter-spacing:.06em;padding:4px 9px;border-radius:2px;cursor:pointer;transition:.12s}
+.st-mode:hover{color:var(--ink);border-color:var(--accent)}
+.st-mode.active{color:var(--accent);border-color:var(--accent);background:rgba(92,200,255,.08)}
+#studio-collapse{background:none;border:none;color:var(--ink-faint);font-size:12px;cursor:pointer;padding:0 2px;transition:.15s}
+#studio-collapse:hover{color:var(--accent)}
+.st-body{display:flex;flex-direction:column;gap:9px}
+#studio-input{width:100%;height:74px;resize:vertical;background:rgba(6,8,20,.6);border:1px solid var(--line);
+  border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:12px;line-height:1.5;padding:9px 11px;outline:none}
+#studio-input:focus{border-color:var(--accent)}
+.st-row{display:flex;align-items:center;gap:10px}
+.st-lab{font-size:10px;letter-spacing:.08em;color:var(--ink-dim);text-transform:uppercase;display:flex;gap:6px;align-items:center}
+#studio-run{background:rgba(92,200,255,.1);border:1px solid var(--accent);color:var(--accent);
+  font:inherit;font-size:11px;letter-spacing:.08em;padding:6px 14px;border-radius:2px;cursor:pointer;transition:.12s}
+#studio-run:hover{background:rgba(92,200,255,.18)}
+.st-ex{background:none;border:1px solid var(--line);color:var(--ink-faint);font:inherit;font-size:10px;
+  letter-spacing:.06em;padding:6px 10px;border-radius:2px;cursor:pointer;transition:.12s}
+.st-ex:hover{color:var(--accent);border-color:var(--accent)}
+.st-q{flex:1;min-width:0;background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px;
+  color:var(--ink);font-family:var(--mono);font-size:11px;padding:6px 9px;outline:none}
+.st-q:focus{border-color:var(--accent)}
+.st-k{width:50px;background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px;
+  color:var(--ink);font-family:var(--mono);font-size:11px;padding:6px 6px;outline:none}
+.st-k:focus{border-color:var(--accent)}
+.st-morph{flex:1;min-width:0;accent-color:var(--accent)}
+a.st-ex{text-decoration:none;display:inline-flex;align-items:center}
+.st-status{font-size:10px;letter-spacing:.08em;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
+.st-status.busy{color:var(--accent-warm)}
+.st-status.err{color:#ff7a7a}
+@media (max-width:720px){#studio{bottom:8px;width:calc(100vw - 16px)}}
+</style>

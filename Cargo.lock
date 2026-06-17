@@ -3259,6 +3259,7 @@ dependencies = [
  "sphereql-index",
  "sphereql-layout",
  "sphereql-vectordb",
+ "sphereql-vis",
 ]
 
 [[package]]
@@ -3386,6 +3387,7 @@ dependencies = [
  "sphereql-layout",
  "sphereql-lingua",
  "sphereql-vectordb",
+ "sphereql-vis",
  "tokio",
 ]
 
@@ -3412,6 +3414,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sphereql-vis"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sphereql-core",
+]
+
+[[package]]
 name = "sphereql-wasm"
 version = "0.3.0"
 dependencies = [
@@ -3422,8 +3433,12 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_json",
  "sphereql-core",
+ "sphereql-corpus",
  "sphereql-embed",
+ "sphereql-examples",
  "sphereql-index",
+ "sphereql-lingua",
+ "sphereql-vis",
  "tsify",
  "wasm-bindgen",
  "wasm-bindgen-test",

@@ -1,0 +1,15 @@
+[package]
+name = "sphereql-vis"
+description = "Self-contained Three.js scene emitter for sphereQL spherical layouts"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["visualization", "threejs", "sphere", "embeddings", "webgl"]
+categories = ["visualization", "graphics"]
+
+[dependencies]
+sphereql-core = { path = "../sphereql-core", version = "0.3.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
