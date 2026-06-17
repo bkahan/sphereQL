@@ -898,4 +898,7 @@ animate();
       applying=false;
     }
   });
+  // Tell the compare host our listener is live, so it can (re)inject a scene
+  // even if it built one before this iframe finished loading.
+  try{parent.postMessage({type:"sphereql-embed-ready"},"*");}catch(err){/* no/again cross-origin parent */}
 })();

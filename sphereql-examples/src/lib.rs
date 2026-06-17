@@ -220,6 +220,25 @@ pub fn demo_scene(corpus: CorpusId) -> Scene {
     build_corpus_scene(&title, &pipeline, &labels, evr)
 }
 
+/// The raw `{categories, embeddings}` input JSON for a built-in corpus — the
+/// shape the WASM `Pipeline` constructor consumes. The studio ships this as a
+/// fetched file so the worker can re-project / compare / query the demo corpus
+/// (the textarea stays for the user's own paste).
+pub fn demo_corpus_json(corpus: CorpusId) -> String {
+    let loaded = corpus.load().expect("built-in corpus loads");
+    let categories: Vec<String> = loaded.iter().map(|c| c.category.to_string()).collect();
+    let embeddings: Vec<Vec<f64>> = loaded
+        .iter()
+        .enumerate()
+        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
+        .collect();
+    serde_json::to_string(&serde_json::json!({
+        "categories": categories,
+        "embeddings": embeddings,
+    }))
+    .expect("corpus input serializes")
+}
+
 fn classification_name(c: BridgeClassification) -> &'static str {
     match c {
         BridgeClassification::Genuine => "Genuine",

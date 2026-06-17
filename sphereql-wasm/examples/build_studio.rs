@@ -35,6 +35,17 @@ fn main() -> std::io::Result<()> {
     // accepts an injected scene + synced camera over postMessage.
     std::fs::write(dir.join("embed.html"), &base)?;
     eprintln!("wrote {}", dir.join("embed.html").display());
+
+    // The raw demo corpus — fetched by the studio / compare worker so the demo
+    // can be re-projected, compared, morphed and queried (the textarea stays
+    // empty for the user's own paste).
+    let corpus = sphereql_examples::demo_corpus_json(sphereql_corpus::CorpusId::HandCrafted);
+    std::fs::write(dir.join("demo-corpus.json"), &corpus)?;
+    eprintln!(
+        "wrote {} ({} bytes)",
+        dir.join("demo-corpus.json").display(),
+        corpus.len()
+    );
     Ok(())
 }
 

@@ -14,21 +14,16 @@
     "A transformer is a neural network for language. Cooking transforms raw " +
     "ingredients with heat. A recipe is a set of instructions for cooking.";
 
-  const CORPUS_EXAMPLE = JSON.stringify(
-    {
-      categories: ["science", "cooking", "science", "cooking", "science", "cooking"],
-      embeddings: [
-        [0.9, 0.1, 0.0, 0.1],
-        [0.1, 0.9, 0.1, 0.0],
-        [0.85, 0.15, 0.05, 0.1],
-        [0.05, 0.95, 0.0, 0.1],
-        [0.8, 0.2, 0.1, 0.0],
-        [0.1, 0.85, 0.2, 0.05],
-      ],
-    },
-    null,
-    0
-  );
+  // The built-in demo corpus (raw {categories, embeddings}), fetched lazily so
+  // corpus operations (run / morph / query) can act on the 775-point demo
+  // without dumping ~2 MB of vectors into the textarea. The textarea is for
+  // pasting your OWN corpus; an empty box falls back to this demo.
+  let demoCorpus = "";
+  fetch("demo-corpus.json")
+    .then((r) => (r.ok ? r.text() : ""))
+    .then((t) => { demoCorpus = t; })
+    .catch(() => {});
+  const corpusText = () => input.value.trim() || demoCorpus;
 
   const worker = new Worker("worker.js");
   const input = document.getElementById("studio-input");
@@ -71,19 +66,18 @@
 
   function run() {
     if (!wasmReady) { pendingRun = true; return; }
-    const text = input.value;
-    if (!text.trim()) {
-      // Nothing to build — keep whatever scene is showing (e.g. the demo).
-      if (mode === "corpus") setStatus("paste a corpus, or stay on the demo scene");
-      return;
-    }
     const id = ++latestId;
-    setStatus("computing…", "busy");
     if (mode === "lingua") {
+      const text = input.value;
+      if (!text.trim()) return;
+      setStatus("computing…", "busy");
       worker.postMessage({ id, kind: "lingua", text });
     } else {
+      const corpus = corpusText(); // your paste, else the demo corpus
+      if (!corpus) { setStatus("paste a corpus to run", "err"); return; }
       const cfg = proj.value ? JSON.stringify({ projection_kind: proj.value }) : null;
-      worker.postMessage({ id, kind: "corpus", corpus: text, config: cfg, title: "Corpus" });
+      setStatus("computing…", "busy");
+      worker.postMessage({ id, kind: "corpus", corpus, config: cfg, title: "Corpus" });
     }
   }
 
@@ -165,11 +159,12 @@
       morphSlider.disabled = true;
       return;
     }
-    if (!input.value.trim()) { setStatus("paste & run a corpus first to morph", "err"); resetMorphUI(); return; }
+    const corpus = corpusText(); // your paste, else the demo corpus
+    if (!corpus) { setStatus("paste a corpus first to morph", "err"); resetMorphUI(); return; }
     const id = ++latestId;
     morphPending[id] = true;
     setStatus("building morph target…", "busy");
-    worker.postMessage({ id, kind: "corpus", corpus: input.value, config: JSON.stringify({ projection_kind: morphProj.value }), title: "B" });
+    worker.postMessage({ id, kind: "corpus", corpus, config: JSON.stringify({ projection_kind: morphProj.value }), title: "B" });
   }
 
   function find() {
@@ -195,8 +190,9 @@
   morphProj.addEventListener("change", buildMorphTarget);
   morphSlider.addEventListener("input", () => applyMorph(parseFloat(morphSlider.value)));
   exBtn.addEventListener("click", () => {
-    // Load the matching example template and run it (explicit user action).
-    input.value = mode === "lingua" ? LINGUA_EXAMPLE : CORPUS_EXAMPLE;
+    // Lingua-only: load the prose example and run it. (Hidden in corpus mode —
+    // the corpus default is the baked demo scene.)
+    input.value = LINGUA_EXAMPLE;
     run();
   });
   collapse.addEventListener("click", () => panel.classList.toggle("collapsed"));
@@ -208,6 +204,7 @@
     corpusOpts.style.display = corpus ? "flex" : "none";
     queryRow.style.display = corpus ? "flex" : "none";
     morphRow.style.display = corpus ? "flex" : "none";
+    exBtn.style.display = corpus ? "none" : "inline-flex"; // example is lingua-only
     input.placeholder = corpus
       ? 'Paste corpus JSON {"categories":[…],"embeddings":[[…],…]} and Run — or stay on the demo scene'
       : "Paste prose — concepts are placed on the sphere as you type…";
