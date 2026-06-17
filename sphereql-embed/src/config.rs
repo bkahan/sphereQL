@@ -246,14 +246,26 @@ pub struct BridgeConfig {
     /// affinity to both sides as the bottom-25% of items have to
     /// their own home category.
     pub balanced_affinity_quantile: f64,
-    /// EVR below which bridge classification is unreliable. When the
-    /// outer projection's EVR is below this threshold, all bridges
-    /// are labeled `Weak` (honest uncertainty) rather than attempting
-    /// territorial-factor-based classification — which collapses to
-    /// 100% `OverlapArtifact` when caps overlap everywhere on a
-    /// low-EVR projection, flattening the tuner landscape. Default
-    /// 0.20.
+    /// Quantile of the full-dim centroid-separation distribution
+    /// (`1 − cos(centroid_a, centroid_b)` over bridged category pairs) below
+    /// which a bridged pair is `OverlapArtifact`: the two "categories" occupy
+    /// the same region of embedding space (duplicate/sibling labels) and cannot
+    /// host a genuine cross-domain bridge. Projection-INDEPENDENT (full-dim
+    /// centroids), robust where the S² territorial factor is unreliable on a
+    /// low-recall layout. Smaller = stricter. Default 0.10.
+    #[serde(default = "default_overlap_separation_quantile")]
+    pub overlap_separation_quantile: f64,
+    /// DEPRECATED (2026-06): formerly gated bridge classification on the outer
+    /// projection's EVR, but for UmapSphere that EVR is a kNN-recall score
+    /// (neighbourhood preservation) orthogonal to relation validity, so it
+    /// suppressed every bridge to `Weak`. Classification now runs
+    /// unconditionally from full-dim affinity + centroid separation. Retained
+    /// for serde/back-compat only; no longer consulted.
     pub min_evr_for_classification: f64,
+}
+
+fn default_overlap_separation_quantile() -> f64 {
+    0.10
 }
 
 impl Default for BridgeConfig {
@@ -263,6 +275,7 @@ impl Default for BridgeConfig {
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
             balanced_affinity_quantile: 0.25,
+            overlap_separation_quantile: default_overlap_separation_quantile(),
             min_evr_for_classification: 0.20,
         }
     }
