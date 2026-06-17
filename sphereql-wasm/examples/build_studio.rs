@@ -27,6 +27,12 @@ fn main() -> std::io::Result<()> {
     let out = dir.join("index.html");
     std::fs::write(&out, html)?;
     eprintln!("wrote {}", out.display());
+
+    // A plain viewer (no studio chrome) for the side-by-side compare iframes.
+    // Loaded as `embed.html#embed`, where viewer.js's compare-embed block
+    // accepts an injected scene + synced camera over postMessage.
+    std::fs::write(dir.join("embed.html"), &base)?;
+    eprintln!("wrote {}", dir.join("embed.html").display());
     Ok(())
 }
 

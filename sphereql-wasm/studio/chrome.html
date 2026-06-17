@@ -29,6 +29,19 @@
       <input type="number" id="studio-k" class="st-k" value="8" min="1" max="50" title="number of neighbors">
       <button id="studio-find" class="st-ex">find&nbsp;◎</button>
     </div>
+    <div class="st-row" id="st-morph-row" style="display:none">
+      <label class="st-lab">morph →
+        <select id="studio-morph-proj" class="sel">
+          <option value="">(off)</option>
+          <option value="Pca">PCA</option>
+          <option value="UmapSphere">UMAP sphere</option>
+          <option value="LaplacianEigenmap">Laplacian</option>
+          <option value="KernelPca">Kernel PCA</option>
+        </select>
+      </label>
+      <input type="range" id="studio-morph" class="st-morph" min="0" max="1" step="0.02" value="0" disabled title="A ↔ B">
+      <a id="studio-compare" class="st-ex" href="compare.html" target="_blank" rel="noopener" title="open the side-by-side compare view">side&nbsp;by&nbsp;side&nbsp;↗</a>
+    </div>
     <div class="st-row">
       <button id="studio-run">Run&nbsp;▸</button>
       <button id="studio-example" class="st-ex">example</button>
@@ -69,6 +82,8 @@
 .st-k{width:50px;background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px;
   color:var(--ink);font-family:var(--mono);font-size:11px;padding:6px 6px;outline:none}
 .st-k:focus{border-color:var(--accent)}
+.st-morph{flex:1;min-width:0;accent-color:var(--accent)}
+a.st-ex{text-decoration:none;display:inline-flex;align-items:center}
 .st-status{font-size:10px;letter-spacing:.08em;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
 .st-status.busy{color:var(--accent-warm)}
 .st-status.err{color:#ff7a7a}

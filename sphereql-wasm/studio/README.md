@@ -47,6 +47,26 @@ index.html ── inlined viewer.js (global rebuild/parseScene) + studio chrome
   the viewer's own `parseScene()` before `rebuild()`, so a studio-built scene
   gets the same validation as a dropped file.
 
+## Compare & morph
+
+In **Corpus JSON** mode the studio adds two ways to compare projections:
+
+- **Morph slider** — pick a second projection under *morph →*; the studio
+  builds it as a target and the slider interpolates every point from its
+  position in the current projection (A) to its id-matched position in the
+  target (B) along the shell. t=0 is A, t=1 is B. Points with no id match stay
+  put. This is one viewport, so it reads as an animation between projections.
+
+- **Side by side** (`compare.html`) — two viewer iframes (`embed.html#embed`),
+  each fed a Scene for a different projection of the same corpus by one shared
+  worker. The panes broadcast their camera moves to the parent, which relays
+  them to the other pane, so orbiting one orbits both. The relay can't echo
+  into a feedback loop: the viewer epsilon-gates its own broadcasts so the
+  damping that follows an applied camera update is swallowed.
+
+Both align points by **stable id** (`s-0000…`), so morph/relay only ever match
+the same item across projections.
+
 ## Packaging
 
 Separate-file is the default (smaller `index.html`, the `.wasm` loads

@@ -32,8 +32,8 @@ else
   fi
 fi
 
-echo "4/4  copy worker + driver…"
-cp "$HERE/worker.js" "$HERE/studio.js" "$DIST/"
+echo "4/4  copy worker + drivers…"
+cp "$HERE/worker.js" "$HERE/studio.js" "$HERE/compare.js" "$HERE/compare.html" "$DIST/"
 
-echo "✓ Studio built → $DIST/index.html"
+echo "✓ Studio built → $DIST/index.html  (compare: $DIST/compare.html)"
 echo "  serve:  (cd '$DIST' && python -m http.server 8080)  →  http://localhost:8080/"

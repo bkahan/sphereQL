@@ -88,6 +88,7 @@ const _av=new THREE.Vector3(),_cd=new THREE.Vector3();
 let pts=[],N=0,overlays=[],SR=1.0,maxR=1,showAxes=false;
 let catSet=[],catColor={},catVisible={},catCounts={},catDir={},catDirArr=[],posIndex=new Map();
 let idToIndex=new Map(); // stable id → point index, for semantic-query highlight
+let morphTarget=null,morphT=0; // id → {d:unit dir, r} of a second scene, + slider t
 let origPos=new Float32Array(0);
 let pointsGeo=null,pointsMat=null,pointsMesh=null,globeGroup=null,linesGroup=null;
 let overlayGroups={},overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={};
@@ -521,6 +522,42 @@ function highlightByIds(ids){
   return order.length;
 }
 
+// ── Compare / morph (interpolate the cloud toward a second scene by id) ───
+// setMorphTarget(sceneB) keys B's points by stable id; applyMorph(t) slerps
+// each A-point's direction toward its id-matched B-direction (and lerps the
+// radius) by t∈[0,1] — t=0 is A, t=1 is B. Points with no B match stay put.
+function setMorphTarget(sceneB){
+  morphTarget=null;
+  if(!sceneB||!Array.isArray(sceneB.points))return 0;
+  const map=new Map();
+  for(const p of sceneB.points){if(p.id==null)continue;const x=+p.x,y=+p.y,z=+p.z;if(!isFinite(x)||!isFinite(y)||!isFinite(z))continue;const m=Math.hypot(x,y,z)||1;map.set(String(p.id),{d:[x/m,y/m,z/m],r:m});}
+  morphTarget=map;
+  let matched=0;for(let i=0;i<N;i++){if(pts[i].id!=null&&map.has(String(pts[i].id)))matched++;}
+  return matched;
+}
+function applyMorph(t){
+  morphT=clamp(t,0,1);
+  if(!pointsGeo)return;
+  if(!morphTarget||morphT<=0){applyTransform();return;} // t=0 → the normal (spread/radial) A view
+  const pa=pointsGeo.getAttribute("position").array;
+  for(let i=0;i<N;i++){
+    const ox=origPos[i*3],oy=origPos[i*3+1],oz=origPos[i*3+2],am=Math.hypot(ox,oy,oz);
+    const tgt=pts[i].id!=null?morphTarget.get(String(pts[i].id)):undefined;
+    if(!tgt||am<1e-9){pa[i*3]=ox;pa[i*3+1]=oy;pa[i*3+2]=oz;continue;}
+    const ad=[ox/am,oy/am,oz/am],bd=tgt.d;
+    const om=Math.acos(clamp(ad[0]*bd[0]+ad[1]*bd[1]+ad[2]*bd[2],-1,1));
+    let dx,dy,dz;
+    if(om<1e-5){dx=ad[0];dy=ad[1];dz=ad[2];}
+    else if(om>Math.PI-1e-4){dx=ad[0]+(bd[0]-ad[0])*morphT;dy=ad[1]+(bd[1]-ad[1])*morphT;dz=ad[2]+(bd[2]-ad[2])*morphT;const nm=Math.hypot(dx,dy,dz)||1;dx/=nm;dy/=nm;dz/=nm;}
+    else{const s=Math.sin(om),w1=Math.sin((1-morphT)*om)/s,w2=Math.sin(morphT*om)/s;dx=ad[0]*w1+bd[0]*w2;dy=ad[1]*w1+bd[1]*w2;dz=ad[2]*w1+bd[2]*w2;}
+    const rr=am+(tgt.r-am)*morphT;
+    pa[i*3]=dx*rr;pa[i*3+1]=dy*rr;pa[i*3+2]=dz*rr;
+  }
+  pointsGeo.getAttribute("position").needsUpdate=true;pointsGeo.computeBoundingSphere();
+  if(selectedIdx>=0)deselectPoint();drawMinimapBase();
+}
+function clearMorph(){morphTarget=null;morphT=0;}
+
 // ── Open / drop a foreign Scene ──────────────────────────────────────────
 // Normalize an arbitrary parsed object into the Scene shape rebuild() expects.
 // Accepts the full Scene (the `Scene::to_json` shape) or a bare points array,
@@ -593,6 +630,7 @@ function teardown(){
   tooltip.style.display="none";reticle.style.display="none";sellabel.style.display="none";
   setRuler(false); // fully disarm the ruler (flag + button + picks) on scene swap
   clearQuery(); // drop query geodesics referencing the outgoing scene
+  clearMorph(); // morph target referenced the outgoing scene's ids
   selectedIdx=-1;hoveredIdx=-1;tgtTween=null;pendingTransform=false;
 }
 
@@ -771,3 +809,35 @@ function animate(){
   drawMinimap();renderer.render(scene,camera);
 }
 animate();
+
+// ── Compare embedding (opt-in via #embed) ────────────────────────────────
+// When the viewer is hosted in a compare iframe (its URL hash contains
+// `embed`), it accepts a scene + camera over postMessage and broadcasts its
+// own camera moves to the parent. The broadcast is epsilon-gated (not a bare
+// flag) so OrbitControls damping — which re-emits `change` for several frames
+// after an applied update — cannot start a feedback storm. Inert otherwise, so
+// the baked viewer never posts messages.
+(function(){
+  if(typeof location==="undefined"||!/(^|[#&])embed/.test(location.hash||""))return;
+  let lastSent=null,applying=false;
+  const camState=()=>[camera.position.x,camera.position.y,camera.position.z,controls.target.x,controls.target.y,controls.target.z];
+  const drift=(a,b)=>{if(!a||!b)return Infinity;let d=0;for(let i=0;i<6;i++)d=Math.max(d,Math.abs(a[i]-b[i]));return d;};
+  const eps=()=>1e-3*Math.max(1,maxR*curScale);
+  controls.addEventListener("change",()=>{
+    if(applying)return;
+    const s=camState();
+    if(drift(s,lastSent)<eps())return; // within tolerance of the last broadcast → skip (kills the damping echo)
+    lastSent=s;
+    try{parent.postMessage({type:"sphereql-cam",s},"*");}catch(err){/* cross-origin parent */}
+  });
+  window.addEventListener("message",e=>{
+    const m=e.data;if(!m||typeof m!=="object")return;
+    if(m.type==="sphereql-scene"&&m.scene){try{rebuild(parseScene(m.scene));}catch(err){console.warn("SphereQL: bad injected scene",err);}}
+    else if(m.type==="sphereql-cam"&&Array.isArray(m.s)&&m.s.length===6&&m.s.every(v=>isFinite(v))){
+      applying=true;
+      camera.position.set(m.s[0],m.s[1],m.s[2]);controls.target.set(m.s[3],m.s[4],m.s[5]);controls.update();
+      lastSent=m.s.slice(); // baseline at the applied pose so our own `change` is within eps
+      applying=false;
+    }
+  });
+})();

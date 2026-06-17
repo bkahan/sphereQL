@@ -4,7 +4,7 @@
 // that ran just before this script). Debounced so typing re-projects live
 // without flooding the worker; stale worker responses are dropped by id.
 
-/* global rebuild, parseScene, highlightByIds */
+/* global rebuild, parseScene, highlightByIds, setMorphTarget, applyMorph, clearMorph */
 (function () {
   "use strict";
 
@@ -43,11 +43,21 @@
   const queryInput = document.getElementById("studio-query");
   const kInput = document.getElementById("studio-k");
   const findBtn = document.getElementById("studio-find");
+  const morphRow = document.getElementById("st-morph-row");
+  const morphProj = document.getElementById("studio-morph-proj");
+  const morphSlider = document.getElementById("studio-morph");
 
   let mode = "lingua";
   let wasmReady = false;
   let latestId = 0;
   let debounce = null;
+  const morphPending = {}; // ids whose corpus response is a morph target, not a rebuild
+
+  function resetMorphUI() {
+    morphProj.value = "";
+    morphSlider.value = "0";
+    morphSlider.disabled = true;
+  }
 
   function setStatus(text, cls) {
     statusEl.textContent = text;
@@ -101,12 +111,37 @@
     }
     try {
       const scene = parseScene(JSON.parse(m.json));
-      rebuild(scene);
-      setStatus("✓ " + scene.points.length + " points · " + scene.overlays.length + " overlays");
+      if (morphPending[m.id]) {
+        delete morphPending[m.id];
+        const matched = setMorphTarget(scene); // A stays; B becomes the morph target
+        morphSlider.value = "0";
+        morphSlider.disabled = false;
+        applyMorph(0);
+        setStatus("morph ready · " + matched + " points aligned");
+      } else {
+        rebuild(scene); // a fresh scene clears any morph (teardown) — reset its UI
+        resetMorphUI();
+        setStatus("✓ " + scene.points.length + " points · " + scene.overlays.length + " overlays");
+      }
     } catch (err) {
       setStatus("✗ " + err.message, "err");
     }
   };
+
+  function buildMorphTarget() {
+    if (!wasmReady || mode !== "corpus") return;
+    if (!morphProj.value) {
+      clearMorph();
+      applyMorph(0);
+      morphSlider.value = "0";
+      morphSlider.disabled = true;
+      return;
+    }
+    const id = ++latestId;
+    morphPending[id] = true;
+    setStatus("building morph target…", "busy");
+    worker.postMessage({ id, kind: "corpus", corpus: input.value, config: JSON.stringify({ projection_kind: morphProj.value }), title: "B" });
+  }
 
   function find() {
     if (!wasmReady || mode !== "corpus") return;
@@ -128,6 +163,8 @@
   queryInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") find();
   });
+  morphProj.addEventListener("change", buildMorphTarget);
+  morphSlider.addEventListener("input", () => applyMorph(parseFloat(morphSlider.value)));
   exBtn.addEventListener("click", () => {
     input.value = mode === "lingua" ? LINGUA_EXAMPLE : CORPUS_EXAMPLE;
     run();
@@ -141,6 +178,8 @@
       document.querySelectorAll(".st-mode").forEach((x) => x.classList.toggle("active", x === b));
       corpusOpts.style.display = mode === "corpus" ? "flex" : "none";
       queryRow.style.display = mode === "corpus" ? "flex" : "none";
+      morphRow.style.display = mode === "corpus" ? "flex" : "none";
+      if (mode !== "corpus") resetMorphUI();
       input.placeholder =
         mode === "lingua"
           ? "Paste prose — concepts are placed on the sphere as you type…"
