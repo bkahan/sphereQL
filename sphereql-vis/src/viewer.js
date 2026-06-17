@@ -579,7 +579,16 @@ function applyMorph(t){
     const om=Math.acos(clamp(ad[0]*bd[0]+ad[1]*bd[1]+ad[2]*bd[2],-1,1));
     let dx,dy,dz;
     if(om<1e-5){dx=ad[0];dy=ad[1];dz=ad[2];}
-    else if(om>Math.PI-1e-4){dx=ad[0]+(bd[0]-ad[0])*morphT;dy=ad[1]+(bd[1]-ad[1])*morphT;dz=ad[2]+(bd[2]-ad[2])*morphT;const nm=Math.hypot(dx,dy,dz)||1;dx/=nm;dy/=nm;dz/=nm;}
+    else if(om>Math.PI-1e-4){
+      // Antipodal: a→b direction is ambiguous and lerp collapses to the origin
+      // at the midpoint. Sweep a clean unit great-circle about a ⟂ axis instead
+      // (same trick as shellArc), so the morph path stays on the sphere.
+      const h=Math.abs(ad[0])<0.9?[1,0,0]:[0,1,0];
+      const hd=h[0]*ad[0]+h[1]*ad[1]+h[2]*ad[2];
+      let px=h[0]-hd*ad[0],py=h[1]-hd*ad[1],pz=h[2]-hd*ad[2];const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;
+      const th=morphT*om,c2=Math.cos(th),s2=Math.sin(th);
+      dx=ad[0]*c2+px*s2;dy=ad[1]*c2+py*s2;dz=ad[2]*c2+pz*s2;
+    }
     else{const s=Math.sin(om),w1=Math.sin((1-morphT)*om)/s,w2=Math.sin(morphT*om)/s;dx=ad[0]*w1+bd[0]*w2;dy=ad[1]*w1+bd[1]*w2;dz=ad[2]*w1+bd[2]*w2;}
     const rr=am+(tgt.r-am)*morphT;
     pa[i*3]=dx*rr;pa[i*3+1]=dy*rr;pa[i*3+2]=dz*rr;
@@ -645,11 +654,13 @@ function parseScene(obj){
     out.push(q);
   }
   if(out.length===0)throw new Error("no usable points (each needs finite x/y/z or r/theta/phi)");
-  // surface_radius: honour an explicit finite value, else the upper-median
-  // ‖xyz‖ — matching Rust `Scene::surface_radius_for` (norms[len/2]) so a
-  // dropped scene lands on the same shell the producer would compute.
+  // surface_radius: honour an explicit finite value, else the median ‖xyz‖.
+  // Must match Rust `Scene::surface_radius_for` exactly — same filter
+  // (finite AND > 0, so origin points don't drag the median down) and same
+  // median index (norms[len/2]) — so a dropped scene lands on the same shell
+  // the producer baked.
   let sr=+raw.surface_radius;
-  if(!isFinite(sr)||sr<=0){const norms=out.map(p=>Math.hypot(p.x,p.y,p.z)).sort((a,b)=>a-b);sr=norms.length?norms[norms.length>>1]:1.0;if(!isFinite(sr)||sr<=0)sr=1.0;}
+  if(!isFinite(sr)||sr<=0){const norms=out.map(p=>Math.hypot(p.x,p.y,p.z)).filter(n=>isFinite(n)&&n>0).sort((a,b)=>a-b);sr=norms.length?norms[norms.length>>1]:1.0;if(!isFinite(sr)||sr<=0)sr=1.0;}
   const st=raw.stats&&typeof raw.stats==="object"?raw.stats:{};
   // Coerce the count fields to finite numbers (they are interpolated into the
   // stats panel) so a hostile dropped scene can't smuggle markup through them.
@@ -902,6 +913,10 @@ animate();
     try{parent.postMessage({type:"sphereql-cam",s},"*");}catch(err){/* cross-origin parent */}
   });
   window.addEventListener("message",e=>{
+    // Only the embedding parent (the compare host) may drive this pane — reject
+    // sibling/other-window messages. Scene data is still parseScene-sanitized,
+    // so this guards against camera/lock spoofing, not XSS.
+    if(e.source!==parent)return;
     const m=e.data;if(!m||typeof m!=="object")return;
     if(m.type==="sphereql-scene"&&m.scene){try{rebuild(parseScene(m.scene));}catch(err){console.warn("SphereQL: bad injected scene",err);}}
     else if(m.type==="sphereql-cam"&&Array.isArray(m.s)&&m.s.length===6&&m.s.every(v=>isFinite(v))){

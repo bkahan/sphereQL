@@ -24,26 +24,30 @@
   const lockZoomBtn = document.getElementById("lockZoom");
 
   let ready = false; // wasm worker ready
+  let wasmFailed = false; // wasm module failed to load (needs page reload)
+  let demoFailed = false; // demo-corpus.json fetch failed
   let lockRotate = false, lockZoom = false; // independent camera locks across panes
   let nextId = 0;
   const pend = {}; // id → the iframe whose pane the response should fill
   const paneReady = new Map(); // iframe → its embed viewer registered its listener
   const pendingScene = new Map(); // iframe → scene awaiting a not-yet-ready pane
+  const received = new Set(); // panes that got a scene this compare run
 
   let demoCorpus = "";
   fetch("demo-corpus.json")
-    .then((r) => (r.ok ? r.text() : ""))
+    .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
     .then((t) => { demoCorpus = t; refreshStatus(); })
-    .catch(() => {});
+    .catch(() => { demoFailed = true; refreshStatus(); });
 
   const projName = (v) =>
     ({ "": "PCA", UmapSphere: "UMAP sphere", LaplacianEigenmap: "Laplacian", KernelPca: "Kernel PCA" }[v] || v);
 
   function refreshStatus() {
+    if (wasmFailed) { statusEl.textContent = "✗ wasm failed to load — reload the page"; return; }
     if (!ready) return;
     statusEl.textContent = demoCorpus
-      ? "ready — press compare (uses the demo corpus, or paste your own)"
-      : "ready — paste a corpus, pick two projections";
+      ? "ready — press compare (demo corpus, or paste your own)"
+      : (demoFailed ? "ready — demo unavailable · paste a corpus" : "ready — paste a corpus, pick two projections");
   }
 
   // Inject a scene into a pane once that pane's viewer is ready (else queue it).
@@ -59,17 +63,23 @@
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === "ready") { ready = true; refreshStatus(); return; }
-    if (m.type === "fatal") { statusEl.textContent = "✗ wasm failed: " + m.error; return; }
+    if (m.type === "fatal") { wasmFailed = true; refreshStatus(); return; }
     const pane = pend[m.id];
     if (m.id !== undefined) delete pend[m.id];
     if (!m.ok) { statusEl.textContent = "✗ " + m.error; return; }
-    if (pane && m.json !== undefined) { inject(pane, m.json); statusEl.textContent = "✓ compared"; }
+    if (pane && m.json !== undefined) {
+      inject(pane, m.json);
+      received.add(pane);
+      statusEl.textContent = received.size >= 2 ? "✓ compared" : "building… (1/2)";
+    }
   };
 
   function build() {
+    if (wasmFailed) { statusEl.textContent = "✗ wasm failed — reload the page"; return; }
     if (!ready) return;
     const c = corpus.value.trim() || demoCorpus;
-    if (!c) { statusEl.textContent = "paste corpus JSON (demo not loaded yet)"; return; }
+    if (!c) { statusEl.textContent = demoFailed ? "demo unavailable — paste corpus JSON" : "paste corpus JSON (demo loading…)"; return; }
+    received.clear();
     statusEl.textContent = "building…";
     tagA.textContent = projName(projA.value);
     tagB.textContent = projName(projB.value);

@@ -22,7 +22,7 @@ echo "3/4  generate no-modules glue (wasm-bindgen)…"
 # Prefer wasm-pack if present (applies wasm-opt itself); else wasm-bindgen + opt.
 if command -v wasm-pack >/dev/null 2>&1; then
   ( cd "$ROOT" && wasm-pack build sphereql-wasm --release --target no-modules --out-dir "$DIST/pkg" )
-else
+elif command -v wasm-bindgen >/dev/null 2>&1; then
   wasm-bindgen --target no-modules --no-typescript \
     --out-dir "$DIST/pkg" \
     "$ROOT/target/wasm32-unknown-unknown/release/sphereql_wasm.wasm"
@@ -30,6 +30,10 @@ else
     wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int \
       "$DIST/pkg/sphereql_wasm_bg.wasm" -o "$DIST/pkg/sphereql_wasm_bg.wasm"
   fi
+else
+  echo "error: need wasm-pack or wasm-bindgen-cli." >&2
+  echo "  install one:  cargo install wasm-pack   (or)   cargo install wasm-bindgen-cli" >&2
+  exit 1
 fi
 
 echo "4/4  copy worker + drivers…"
