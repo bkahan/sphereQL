@@ -186,6 +186,46 @@ fn nonfinite_points_are_dropped_and_json_stays_valid() {
 }
 
 #[test]
+fn to_json_is_panic_free_on_nonfinite_coordinates() {
+    // The builder filters non-finite *points*, but the fields are public, so a
+    // hand-built (or pipeline-edge) Scene can carry NaN/Inf coordinates that the
+    // builder never sees. `serde_json` renders non-finite floats as JSON `null`
+    // rather than erroring, so `Scene::to_json`'s expect cannot panic — this
+    // locks that guarantee in (the WASM bridge's buildSceneJson relies on it to
+    // never trap the worker).
+    let scene = Scene {
+        title: "nan".into(),
+        points: vec![ScenePoint {
+            id: None,
+            x: f64::NAN,
+            y: f64::INFINITY,
+            z: f64::NEG_INFINITY,
+            r: f64::NAN,
+            theta: 0.0,
+            phi: 0.0,
+            cat: "c".into(),
+            label: "l".into(),
+            certainty: Some(f64::NAN),
+            intensity: None,
+        }],
+        overlays: Vec::new(),
+        stats: SceneStats::new("pca", f64::NAN),
+        surface_radius: f64::NAN,
+        show_axes: false,
+    };
+    let json = scene.to_json(); // must not panic
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("non-finite coords serialize to valid JSON (as null)");
+    assert!(parsed["points"][0]["x"].is_null(), "NaN x → JSON null");
+    assert!(parsed["surface_radius"].is_null(), "NaN surface_radius → JSON null");
+    // Rust from_json can't read those nulls back into f64 (serde rejects
+    // null→f64) — that's fine: the runtime consumer is the viewer's JS
+    // parseScene, which coerces null→0. Non-finite scenes are never produced by
+    // the builder; this just documents the serialize-side guarantee.
+    assert!(Scene::from_json(&json).is_err());
+}
+
+#[test]
 fn overlays_land_on_the_surface_radius() {
     let sr = 2.5;
     let dirs = [
