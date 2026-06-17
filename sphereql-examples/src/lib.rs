@@ -10,10 +10,12 @@ use std::collections::BTreeMap;
 
 use sphereql::core::{SphericalPoint, angular_distance};
 use sphereql::embed::{
-    BridgeClassification, CategoryLayer, NavigatorConfig, ProjectionKind, SearchSpace,
-    SphereQLPipeline, run_full_analysis,
+    BridgeClassification, CategoryLayer, CompositeMetric, NavigatorConfig, PipelineConfig,
+    PipelineInput, ProjectionKind, SearchSpace, SearchStrategy, SphereQLPipeline, auto_tune,
+    run_full_analysis,
 };
 use sphereql::vis::{Overlay, Scene, ScenePoint, SceneStats, cap_ring};
+use sphereql_corpus::{CorpusId, embed};
 
 /// Stable category color palette — mirrors the one baked into the
 /// `sphereql-vis` template so overlay colors match the point colors.
@@ -173,6 +175,49 @@ pub fn tuning_params(n: usize, selected_kinds: &[ProjectionKind]) -> (usize, Sea
     }
 
     (budget, space)
+}
+
+/// Load a built-in corpus, embed it, let the auto-tuner pick a projection
+/// (deterministic seed), and return the rich [`Scene`] — the same picture the
+/// `visualize_corpus` example renders. Shared so the WASM studio can bake an
+/// identical default scene without duplicating the pipeline setup.
+pub fn demo_scene(corpus: CorpusId) -> Scene {
+    let loaded = corpus.load().expect("built-in corpus loads");
+    let categories: Vec<String> = loaded.iter().map(|c| c.category.to_string()).collect();
+    let labels: Vec<&str> = loaded.iter().map(|c| c.label).collect();
+    let embeddings: Vec<Vec<f64>> = loaded
+        .iter()
+        .enumerate()
+        .map(|(i, c)| embed(&c.features, 1000 + i as u64))
+        .collect();
+
+    let all_kinds = [
+        ProjectionKind::Pca,
+        ProjectionKind::UmapSphere,
+        ProjectionKind::LaplacianEigenmap,
+        ProjectionKind::KernelPca,
+    ];
+    let (budget, space) = tuning_params(loaded.len(), &all_kinds);
+    let metric = CompositeMetric::default_composite();
+    let (pipeline, _report) = auto_tune(
+        PipelineInput {
+            categories,
+            embeddings,
+        },
+        &space,
+        &metric,
+        SearchStrategy::Random {
+            budget,
+            seed: 0x5EED_C0FFEE,
+            max_wall_secs: None,
+        },
+        &PipelineConfig::default(),
+    )
+    .expect("auto_tune succeeds on a built-in corpus");
+
+    let evr = pipeline.explained_variance_ratio();
+    let title = format!("SphereQL — {}", corpus.name());
+    build_corpus_scene(&title, &pipeline, &labels, evr)
 }
 
 fn classification_name(c: BridgeClassification) -> &'static str {

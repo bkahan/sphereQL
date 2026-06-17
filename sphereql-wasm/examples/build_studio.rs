@@ -10,10 +10,12 @@
 
 #[cfg(feature = "scene")]
 fn main() -> std::io::Result<()> {
-    use sphereql_vis::Scene;
-
+    // Bake the 775-point HandCrafted demo scene (auto-tuned, full overlays — the
+    // same picture `visualize_corpus` renders) as the studio's opening scene, so
+    // it lands on something rich instead of an empty sphere. The live
+    // lingua/corpus/compare modes still drive rebuild() from there.
     let chrome = include_str!("../studio/chrome.html");
-    let base = Scene::builder().title("SphereQL Studio").build().to_html();
+    let base = sphereql_examples::demo_scene(sphereql_corpus::CorpusId::HandCrafted).to_html();
 
     // Inject the chrome right after <body>, and the studio driver right before
     // </body> (after the inlined viewer, so its global rebuild()/parseScene()

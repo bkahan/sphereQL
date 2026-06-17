@@ -85,9 +85,11 @@
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === "ready") {
+      // The baked default scene (the 775-point demo corpus) is already showing;
+      // don't auto-run over it. The user drives it from here (type / example /
+      // corpus mode / morph).
       wasmReady = true;
-      if (!input.value) input.value = LINGUA_EXAMPLE;
-      run();
+      setStatus("ready — showing the demo corpus · type or load an example");
       return;
     }
     if (m.type === "fatal") {

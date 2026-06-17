@@ -56,3 +56,8 @@ console_error_panic_hook = { version = "0.1", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+# Native-only, used by the `build_studio` example to bake the default 775-point
+# demo scene (auto-tuned HandCrafted corpus). Dev-deps are not compiled into
+# the wasm cdylib, so they don't affect the shipped bundle.
+sphereql-examples = { path = "../sphereql-examples" }
+sphereql-corpus = { path = "../sphereql-corpus" }
