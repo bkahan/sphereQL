@@ -55,8 +55,19 @@ const cfgFile=document.getElementById("cfg-file");
 const sceneFile=document.getElementById("scene-file");
 const dropzone=document.getElementById("dropzone");
 const pinsDiv=document.getElementById("pins");
-const mini=document.getElementById("mini"),mctx=mini.getContext("2d"),MW=mini.width,MH=mini.height;
+const mini=document.getElementById("mini"),mctx=mini.getContext("2d");
+let MW=mini.width,MH=mini.height; // minimap buffer size — tracks its (resizable) CSS size
 const miniBase=document.createElement("canvas");miniBase.width=MW;miniBase.height=MH;const mbctx=miniBase.getContext("2d");
+// Drag-to-resize the minimap (CSS `resize:both` on #mini): keep the drawing
+// buffer matched to the element's size so the sky chart stays crisp.
+if(typeof ResizeObserver!=="undefined"){
+  new ResizeObserver(()=>{
+    const w=Math.max(60,Math.round(mini.clientWidth)),h=Math.max(30,Math.round(mini.clientHeight));
+    if(w===MW&&h===MH)return;
+    MW=w;MH=h;mini.width=MW;mini.height=MH;miniBase.width=MW;miniBase.height=MH;
+    drawMinimapBase();
+  }).observe(mini);
+}
 
 // ── THREE setup (persistent) ─────────────────────────────────────────────
 // preserveDrawingBuffer keeps the last frame readable so PNG export
@@ -103,6 +114,7 @@ let baseSize=DEF.size,curScale=DEF.scale,spreadF=DEF.spread,radialG=DEF.radial,u
 let selectedIdx=-1,hoveredIdx=-1;
 let tgtTween=null,pendingTransform=false;
 let rulerOn=false,rulerPicks=[],rulerLast=null;
+let zoomLocked=false; // compare-mode wheel-zoom lock (set via #embed sphereql-lock)
 let pins=[],pinEls=[],pinOn=false; // (θ,φ) annotation markers + their DOM labels
 
 // ── Module functions (operate on the current scene state) ─────────────────
@@ -330,6 +342,7 @@ function disposeObject(o){if(!o)return;o.traverse(c=>{if(c.geometry)c.geometry.d
 // ── Static event bindings (attached once; act on the current scene) ───────
 canvas.addEventListener("wheel",e=>{
   e.preventDefault();e.stopImmediatePropagation();
+  if(zoomLocked)return; // compare-mode zoom lock
   const f=worldUnderCursor(e.clientX,e.clientY);
   const s=Math.exp(Math.sign(e.deltaY)*Math.min(Math.abs(e.deltaY),120)/120*controls.zoomSpeed*0.2);
   camera.position.sub(f).multiplyScalar(s).add(f);
@@ -896,6 +909,11 @@ animate();
       camera.position.set(m.s[0],m.s[1],m.s[2]);controls.target.set(m.s[3],m.s[4],m.s[5]);controls.update();
       lastSent=m.s.slice(); // baseline at the applied pose so our own `change` is within eps
       applying=false;
+    }
+    else if(m.type==="sphereql-lock"){ // independent orbit / zoom locks from the compare host
+      controls.enableRotate=!m.lockRotate;
+      controls.enableZoom=!m.lockZoom; // touch-pinch zoom
+      zoomLocked=!!m.lockZoom;         // wheel zoom
     }
   });
   // Tell the compare host our listener is live, so it can (re)inject a scene

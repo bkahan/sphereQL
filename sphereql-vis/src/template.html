@@ -33,7 +33,8 @@ h3{font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;c
   margin-bottom:11px;display:flex;align-items:center;gap:8px;white-space:nowrap}
 h3::before{content:"";width:14px;height:1px;background:linear-gradient(90deg,var(--accent),transparent);flex:none}
 
-#hdr{top:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:9px 18px;animation-delay:.02s}
+#hdr{top:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:9px 18px;animation-delay:.02s;max-width:calc(100vw - 32px);box-sizing:border-box}
+#hdr .mark{flex:none}#hdr .sub{flex:0 1 auto;min-width:0}
 #hdr .mark{font-size:14px;font-weight:600;letter-spacing:.34em;color:var(--ink);text-transform:uppercase}
 #hdr .mark b{color:var(--accent);font-weight:600}
 #hdr .sub{font-size:11px;color:var(--ink-faint);letter-spacing:.06em;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -100,7 +101,8 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 .note{color:var(--accent-warm);font-size:11px;margin-top:7px;opacity:.85}
 
 #minimap{bottom:70px;right:16px;padding:13px 14px 11px;animation-delay:.2s}
-#minimap canvas{display:block;width:236px;height:118px;border:1px solid var(--line-soft);border-radius:2px;cursor:crosshair;background:rgba(6,8,20,.5)}
+#minimap canvas{display:block;width:236px;height:118px;border:1px solid var(--line-soft);border-radius:2px;cursor:crosshair;background:rgba(6,8,20,.5);
+  resize:both;overflow:hidden;min-width:150px;min-height:75px;max-width:60vw;max-height:46vh}
 #minimap .cap{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-top:7px;text-align:center}
 
 #search{bottom:16px;right:16px;padding:0;animation-delay:.22s;overflow:hidden}

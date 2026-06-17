@@ -9,7 +9,8 @@
   --ink-faint:#596084;--accent:#5cc8ff;--mono:ui-monospace,"JetBrains Mono","Cascadia Code","SF Mono",Menlo,Consolas,monospace}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--mono);overflow:hidden}
-#bar{position:fixed;top:0;left:0;right:0;height:auto;z-index:10;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+body{display:flex;flex-direction:column}
+#bar{flex:none;z-index:10;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
   padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}
 .brand{font-size:11px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;color:var(--ink)}
 .brand::first-letter{color:var(--accent)}
@@ -25,8 +26,14 @@ select{background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px
 #go{background:rgba(92,200,255,.1);border:1px solid var(--accent);color:var(--accent);font-family:var(--mono);
   font-size:11px;letter-spacing:.08em;padding:7px 16px;border-radius:2px;cursor:pointer}
 #go:hover{background:rgba(92,200,255,.18)}
-#status{font-size:10px;letter-spacing:.08em;color:var(--ink-faint);margin-left:auto;white-space:nowrap}
-#panes{position:absolute;top:53px;left:0;right:0;bottom:0;display:flex}
+.lock{background:rgba(120,160,255,.05);border:1px solid var(--line);color:var(--ink-dim);font-family:var(--mono);
+  font-size:10px;letter-spacing:.06em;padding:6px 9px;border-radius:2px;cursor:pointer;white-space:nowrap;transition:.12s}
+.lock:hover{color:var(--ink);border-color:var(--accent)}
+.lock.on{color:var(--accent);border-color:var(--accent);background:rgba(92,200,255,.1)}
+/* Fixed width so status-text changes never reflow (shift) the bar controls. */
+#status{flex:0 0 170px;width:170px;text-align:right;font-size:10px;letter-spacing:.08em;color:var(--ink-faint);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#panes{flex:1;min-height:0;display:flex}
 #panes iframe{flex:1;width:50%;height:100%;border:0;border-left:1px solid var(--line)}
 #panes iframe:first-child{border-left:0}
 .tag{position:fixed;bottom:10px;z-index:5;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);pointer-events:none}
@@ -49,6 +56,8 @@ select{background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px
     <option value="LaplacianEigenmap">Laplacian</option><option value="KernelPca">Kernel PCA</option>
   </select>
   <button id="go">compare ▸</button>
+  <button id="lockOrbit" class="lock" title="lock orbit (rotation) across both panes">⟲ orbit</button>
+  <button id="lockZoom" class="lock" title="lock zoom across both panes">⊙ zoom</button>
   <span id="status">loading wasm…</span>
 </div>
 <div id="panes">

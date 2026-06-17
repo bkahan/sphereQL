@@ -20,8 +20,11 @@
   const statusEl = document.getElementById("status");
   const tagA = document.getElementById("tagA");
   const tagB = document.getElementById("tagB");
+  const lockOrbitBtn = document.getElementById("lockOrbit");
+  const lockZoomBtn = document.getElementById("lockZoom");
 
   let ready = false; // wasm worker ready
+  let lockRotate = false, lockZoom = false; // independent camera locks across panes
   let nextId = 0;
   const pend = {}; // id → the iframe whose pane the response should fill
   const paneReady = new Map(); // iframe → its embed viewer registered its listener
@@ -79,6 +82,14 @@
 
   go.addEventListener("click", build);
 
+  // Independent orbit / zoom locks, broadcast to both panes.
+  const lockMsg = () => ({ type: "sphereql-lock", lockRotate, lockZoom });
+  function broadcastLock() {
+    [paneA, paneB].forEach((p) => { try { p.contentWindow.postMessage(lockMsg(), "*"); } catch (err) { /* not loaded */ } });
+  }
+  lockOrbitBtn.addEventListener("click", () => { lockRotate = !lockRotate; lockOrbitBtn.classList.toggle("on", lockRotate); broadcastLock(); });
+  lockZoomBtn.addEventListener("click", () => { lockZoom = !lockZoom; lockZoomBtn.classList.toggle("on", lockZoom); broadcastLock(); });
+
   window.addEventListener("message", (e) => {
     const m = e.data;
     if (!m || typeof m !== "object") return;
@@ -89,6 +100,7 @@
       const pane = fromA ? paneA : fromB ? paneB : null;
       if (pane) {
         paneReady.set(pane, true);
+        try { pane.contentWindow.postMessage(lockMsg(), "*"); } catch (err) { /* */ } // apply current locks
         const queued = pendingScene.get(pane);
         if (queued) { pendingScene.delete(pane); inject(pane, queued); }
       }
