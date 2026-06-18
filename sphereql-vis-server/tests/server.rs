@@ -23,6 +23,16 @@ fn router() -> axum::Router {
     build_router(Arc::new(state))
 }
 
+/// Build the router and also surface the corpus's category names + embedding
+/// dim, so the trace tests can address real categories / sized vectors.
+fn router_with_meta() -> (Vec<String>, usize, axum::Router) {
+    let state =
+        AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
+    let names = state.cat_names.clone();
+    let dim = state.dim;
+    (names, dim, build_router(Arc::new(state)))
+}
+
 async fn body_bytes(resp: axum::response::Response) -> Vec<u8> {
     to_bytes(resp.into_body(), BODY_CAP)
         .await
@@ -164,6 +174,103 @@ async fn nearest_with_wrong_length_vector_does_not_panic() {
     assert_eq!(resp.status(), StatusCode::OK);
     let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
     assert!(v["neighbors"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn globs_detects_clusters() {
+    let resp = get(router(), "/globs?max_k=8").await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let globs = v["globs"].as_array().unwrap();
+    assert!(
+        !globs.is_empty(),
+        "structured stress corpus should yield globs"
+    );
+    for g in globs {
+        assert_eq!(
+            g["centroid"].as_array().unwrap().len(),
+            3,
+            "glob centroid is 3-D"
+        );
+        assert!(g["member_count"].as_u64().unwrap() >= 1);
+        assert!(g["top_categories"].is_array());
+    }
+}
+
+#[tokio::test]
+async fn path_between_two_categories() {
+    let (names, _dim, app) = router_with_meta();
+    assert!(names.len() >= 2, "stress corpus has multiple categories");
+    let resp = post_json(
+        app,
+        "/path",
+        json!({ "source": names[0], "target": names[1] }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    assert!(v.get("path").is_some(), "response has a `path` field");
+    if let Some(steps) = v["path"]["steps"].as_array() {
+        assert!(!steps.is_empty(), "a found path has steps");
+        assert_eq!(
+            steps[0]["category_name"],
+            serde_json::json!(names[0]),
+            "path starts at source"
+        );
+    }
+}
+
+#[tokio::test]
+async fn path_unknown_category_is_a_400() {
+    let (names, _dim, app) = router_with_meta();
+    let resp = post_json(
+        app,
+        "/path",
+        json!({ "source": "__no_such_category__", "target": names[0] }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn drill_down_within_a_category() {
+    let (names, dim, app) = router_with_meta();
+    let vector = vec![0.0_f64; dim]; // valid length; projects to a point we drill from
+    let resp = post_json(
+        app,
+        "/drill_down",
+        json!({ "category": names[0], "k": 5, "vector": vector }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    let results = v["results"].as_array().unwrap();
+    assert!(
+        !results.is_empty() && results.len() <= 5,
+        "≤k results, non-empty (category has members)"
+    );
+    for r in results {
+        assert_eq!(
+            r["category"],
+            serde_json::json!(names[0]),
+            "drill-down stays within the category"
+        );
+        assert!(
+            r["row"].is_u64() && r["distance"].is_number() && r["used_inner_sphere"].is_boolean()
+        );
+    }
+}
+
+#[tokio::test]
+async fn drill_down_wrong_dim_vector_is_a_400() {
+    let (names, _dim, app) = router_with_meta();
+    let resp = post_json(
+        app,
+        "/drill_down",
+        json!({ "category": names[0], "k": 5, "vector": [1.0, 2.0, 3.0] }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

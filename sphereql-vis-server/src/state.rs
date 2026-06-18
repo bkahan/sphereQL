@@ -90,6 +90,10 @@ pub struct AppState {
     pub dim: usize,
     /// Palette index → category name.
     pub cat_names: Vec<String>,
+    /// The full projection pipeline, retained so the trace endpoints (`/path`,
+    /// `/globs`, `/drill_down`) can query the category-enrichment graph, glob
+    /// clustering, and inner-sphere drill-down against the live projection.
+    pub pipeline: SphereQLPipeline,
 }
 
 /// Why building [`AppState`] from a corpus failed.
@@ -310,6 +314,7 @@ impl AppState {
             ann,
             dim,
             cat_names,
+            pipeline,
         })
     }
 }

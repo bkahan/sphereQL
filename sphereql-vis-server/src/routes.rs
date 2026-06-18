@@ -11,11 +11,12 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Query, State},
-    http::{HeaderValue, header},
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
+use sphereql_embed::{PipelineQuery, SphereQLOutput, SphereQLQuery};
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -46,6 +47,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/points", post(points))
         .route("/nearest", post(nearest))
         .route("/category_stats", get(category_stats))
+        .route("/path", post(path))
+        .route("/globs", get(globs))
+        .route("/drill_down", post(drill_down))
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(cors)
         .layer(CatchPanicLayer::new())
@@ -183,4 +187,197 @@ pub fn collect_nearest(state: &AppState, req: &NearestRequest) -> NearestRespons
 
 async fn nearest(State(state): State<Arc<AppState>>, Json(req): Json<NearestRequest>) -> Response {
     Json(collect_nearest(&state, &req)).into_response()
+}
+
+// ── Trace endpoints (category graph / globs / drill-down) ───────────────────
+//
+// These run pipeline queries against the retained projection + category layer.
+// The category/glob queries ignore the query embedding, but `pipeline.query`
+// builds one unconditionally, so we hand it a zero vector of the right length.
+
+fn zero_query(state: &AppState) -> PipelineQuery {
+    PipelineQuery {
+        embedding: vec![0.0; state.dim.max(1)],
+    }
+}
+
+/// Map a handler-level failure to a 400 with the message (most failures here
+/// are unknown category / dim mismatch — caller errors, not server faults).
+fn bad_request(msg: impl std::fmt::Display) -> Response {
+    (StatusCode::BAD_REQUEST, msg.to_string()).into_response()
+}
+
+// /path — shortest path between two categories through the category graph.
+
+#[derive(Debug, Deserialize)]
+pub struct PathRequest {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PathStepDto {
+    pub category_index: usize,
+    pub category_name: String,
+    pub cumulative_distance: f64,
+    pub hop_confidence: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PathDto {
+    pub steps: Vec<PathStepDto>,
+    pub total_distance: f64,
+    pub path_confidence: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PathResponse {
+    /// `None` when the two categories are not connected in the graph.
+    pub path: Option<PathDto>,
+}
+
+async fn path(State(state): State<Arc<AppState>>, Json(req): Json<PathRequest>) -> Response {
+    let q = SphereQLQuery::CategoryConceptPath {
+        source_category: &req.source,
+        target_category: &req.target,
+    };
+    match state.pipeline.query(q, &zero_query(&state)) {
+        Ok(SphereQLOutput::CategoryConceptPath(opt)) => Json(PathResponse {
+            path: opt.map(|p| PathDto {
+                total_distance: p.total_distance,
+                path_confidence: p.path_confidence,
+                steps: p
+                    .steps
+                    .into_iter()
+                    .map(|s| PathStepDto {
+                        category_index: s.category_index,
+                        category_name: s.category_name,
+                        cumulative_distance: s.cumulative_distance,
+                        hop_confidence: s.hop_confidence,
+                    })
+                    .collect(),
+            }),
+        })
+        .into_response(),
+        Ok(_) => bad_request("unexpected query output"),
+        Err(e) => bad_request(e),
+    }
+}
+
+// /globs — concept-cluster detection over the whole projected cloud.
+
+#[derive(Debug, Deserialize)]
+pub struct GlobParams {
+    /// Fixed cluster count; omit for silhouette-based auto-selection.
+    pub k: Option<usize>,
+    /// Upper bound on the auto-selected k.
+    pub max_k: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GlobDto {
+    pub id: usize,
+    pub centroid: [f64; 3],
+    pub member_count: usize,
+    pub radius: f64,
+    pub top_categories: Vec<(String, usize)>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GlobsResponse {
+    pub globs: Vec<GlobDto>,
+}
+
+async fn globs(State(state): State<Arc<AppState>>, Query(q): Query<GlobParams>) -> Response {
+    let max_k = q.max_k.unwrap_or(12).clamp(2, 64);
+    let k = q.k.filter(|&k| k >= 2);
+    match state
+        .pipeline
+        .query(SphereQLQuery::DetectGlobs { k, max_k }, &zero_query(&state))
+    {
+        Ok(SphereQLOutput::Globs(globs)) => Json(GlobsResponse {
+            globs: globs
+                .into_iter()
+                .map(|g| GlobDto {
+                    id: g.id,
+                    centroid: g.centroid,
+                    member_count: g.member_count,
+                    radius: g.radius,
+                    top_categories: g.top_categories,
+                })
+                .collect(),
+        })
+        .into_response(),
+        Ok(_) => bad_request("unexpected query output"),
+        Err(e) => bad_request(e),
+    }
+}
+
+// /drill_down — k-NN within one category, relative to a query vector, using the
+// category's inner-sphere projection when available.
+
+#[derive(Debug, Deserialize)]
+pub struct DrillRequest {
+    pub category: String,
+    pub k: Option<usize>,
+    /// Query embedding (length must equal the corpus embedding dim).
+    pub vector: Vec<f64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DrillResultDto {
+    /// Global row index (also the tile `row` and `/points` key).
+    pub row: u32,
+    pub label: String,
+    pub category: String,
+    pub distance: f64,
+    /// Whether the inner-sphere projection was used (vs the outer fallback).
+    pub used_inner_sphere: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DrillResponse {
+    pub results: Vec<DrillResultDto>,
+}
+
+async fn drill_down(State(state): State<Arc<AppState>>, Json(req): Json<DrillRequest>) -> Response {
+    let k = req.k.unwrap_or(10).clamp(1, MAX_NEAREST_K);
+    if req.vector.len() != state.dim {
+        return bad_request(format!(
+            "vector length {} != embedding dim {}",
+            req.vector.len(),
+            state.dim
+        ));
+    }
+    let qe = PipelineQuery {
+        embedding: req.vector.clone(),
+    };
+    match state.pipeline.query(
+        SphereQLQuery::DrillDown {
+            category: &req.category,
+            k,
+        },
+        &qe,
+    ) {
+        Ok(SphereQLOutput::DrillDown(rows)) => Json(DrillResponse {
+            results: rows
+                .into_iter()
+                .map(|r| {
+                    let p = state.points.get(r.item_index);
+                    DrillResultDto {
+                        row: r.item_index as u32,
+                        label: p.map(|p| p.label.clone()).unwrap_or_default(),
+                        category: p
+                            .and_then(|p| state.cat_names.get(p.cat as usize).cloned())
+                            .unwrap_or_default(),
+                        distance: r.distance,
+                        used_inner_sphere: r.used_inner_sphere,
+                    }
+                })
+                .collect(),
+        })
+        .into_response(),
+        Ok(_) => bad_request("unexpected query output"),
+        Err(e) => bad_request(e),
+    }
 }
