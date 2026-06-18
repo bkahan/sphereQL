@@ -137,6 +137,7 @@ function run(viewerPath, D, opts) {
     "get rulerOn(){return rulerOn;},get rulerPicks(){return rulerPicks;},get rulerLast(){return rulerLast;}," +
     "get curScale(){return curScale;},get radialG(){return radialG;},get spreadF(){return spreadF;}," +
     "set radialG(v){radialG=v;},set spreadF(v){spreadF=v;},get camera(){return camera;},get controls(){return controls;},get downloads(){return globalThis.__dl;},get rulerGroup(){return rulerGroup;}," +
+    "get catDir(){return catDir;},get uniforms(){return pointsMat?pointsMat.uniforms:null;},applyTransform,pickEncode,pickDecode,getHovered," +
     "highlightByIds,clearQuery,get queryGroup(){return queryGroup;},get idCount(){return idToIndex.size;}," +
     "setMorphTarget,applyMorph,clearMorph,curPos,get morphT(){return morphT;}," +
     "setPinMode,addPin,clearPins,currentSettings,applySettings,get pins(){return pins;},get pinOn(){return pinOn;},get pinGroup(){return pinGroup;},get zoomLocked(){return zoomLocked;}," +

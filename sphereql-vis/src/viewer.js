@@ -32,6 +32,42 @@ const OVERLAY_LABELS={centroid:"Centroids",bridge:"Bridges",geodesic_path:"Geode
 const LABEL_KIND_NAMES={centroid:"Centroids",antipode:"Antipodes",domain_group:"Domain groups"};
 const overlayDefaultOff=new Set(["voronoi_cap","coverage_void","glob","manifold_slice","bridge"]);
 
+// Vertex-shader transform shared by the points material (and, later, the
+// id-buffer pick material): the GPU equivalent of `curPos(i)`. Declares the
+// per-point transform attributes + uniforms and defines sphTransform(origPos) →
+// displayed position — spread/radial, or the morph slerp when uHasMorph/uMorphT
+// are set. KEEP THIS IN LOCKSTEP WITH curPos(): they must compute the same
+// position, or CPU features (selection/minimap/ruler) drift from what's drawn.
+const VERTEX_TRANSFORM=`
+attribute vec3 aCatDir;attribute vec3 aMorphDir;attribute float aMorphR;attribute float aMorphHas;
+uniform float uSpread;uniform float uRadial;uniform float uSR;uniform float uMorphT;uniform float uHasMorph;
+vec3 sphTransform(vec3 o){
+  float mag=length(o);
+  if(mag<1e-9) return o;
+  vec3 d=o/mag;
+  if(uHasMorph>0.5 && uMorphT>0.0){
+    if(aMorphHas<0.5) return o;
+    vec3 bd=aMorphDir;
+    float om=acos(clamp(dot(d,bd),-1.0,1.0));
+    vec3 n;
+    if(om<1e-5){ n=d; }
+    else if(om>3.141592653589793-1e-4){
+      vec3 h=abs(d.x)<0.9?vec3(1.0,0.0,0.0):vec3(0.0,1.0,0.0);
+      float hd=dot(h,d);vec3 p=normalize(h-hd*d);
+      float th=uMorphT*om;n=d*cos(th)+p*sin(th);
+    } else {
+      float s=sin(om);float w1=sin((1.0-uMorphT)*om)/s;float w2=sin(uMorphT*om)/s;n=d*w1+bd*w2;
+    }
+    return n*(mag+(aMorphR-mag)*uMorphT);
+  }
+  if(uSpread!=1.0){
+    float dt=clamp(dot(aCatDir,d),-1.0,1.0);float om=acos(dt);
+    if(om>=1e-4){float s=sin(om);float w1=sin((1.0-uSpread)*om)/s;float w2=sin(uSpread*om)/s;d=normalize(aCatDir*w1+d*w2);}
+  }
+  return d*max(0.02,uSR+(mag-uSR)*uRadial);
+}
+`;
+
 // ── DOM refs (persistent) ────────────────────────────────────────────────
 const canvas=document.getElementById("c");
 const tooltip=document.getElementById("tooltip"),reticle=document.getElementById("reticle"),sellabel=document.getElementById("sellabel");
@@ -85,6 +121,11 @@ scene.add(new THREE.AmbientLight(0x44557a,2.1));
 const dl=new THREE.DirectionalLight(0xcfe2ff,0.55);dl.position.set(3,5,4);scene.add(dl);
 const raycaster=new THREE.Raycaster();raycaster.params.Points.threshold=0.045;
 const mouse=new THREE.Vector2();
+// Offscreen 1×1 target for GPU id-buffer picking: render only the points (each
+// carrying its index baked into color) to the cursor pixel and read it back —
+// O(1) picking at any N vs the raycaster's O(N) intersect. Null (→ CPU fallback)
+// when render targets aren't available (e.g. the headless test stub).
+const pickRT=typeof THREE.WebGLRenderTarget==="function"?new THREE.WebGLRenderTarget(1,1):null;
 // Persistent tool layer: the great-circle ruler draws here. Scaled with the
 // scene (added to `scalables` in rebuild); its content is scene-scoped and
 // cleared on teardown.
@@ -105,7 +146,7 @@ let catSet=[],catColor={},catVisible={},catCounts={},catDir={},catDirArr=[],posI
 let idToIndex=new Map(); // stable id → point index, for semantic-query highlight
 let morphTarget=null,morphT=0; // id → {d:unit dir, r} of a second scene, + slider t
 let origPos=new Float32Array(0);
-let pointsGeo=null,pointsMat=null,pointsMesh=null,globeGroup=null,linesGroup=null;
+let pointsGeo=null,pointsMat=null,pickMat=null,pointsMesh=null,globeGroup=null,linesGroup=null;
 let overlayGroups={},overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={};
 let labelData=[],labelEls=[],labelKindOn={},labelKindsPresent=[],soloCat=null,labelRefDist=1;
 let legendRows={};
@@ -139,20 +180,16 @@ function transformPos(p){
   const nmag=Math.max(0.02,SR+(mag-SR)*radialG);
   return [dx*nmag,dy*nmag,dz*nmag];
 }
-// Combined angular (domain spread) + radial transform; always from origPos.
+// Combined angular (domain spread) + radial + morph transform. The per-point
+// math now runs in the vertex shader (see `sphTransform`); this just pushes the
+// current parameters as uniforms and refreshes the CPU-side bits that read
+// displayed positions — bridge endpoints, the minimap, and any active
+// selection. O(bridges) instead of the old O(N) buffer rewrite per slider tick.
 function applyTransform(){
-  const pa=pointsGeo.getAttribute("position").array;
-  for(let i=0;i<N;i++){
-    const ox=origPos[i*3],oy=origPos[i*3+1],oz=origPos[i*3+2],mag=Math.hypot(ox,oy,oz);
-    if(mag<1e-9){pa[i*3]=ox;pa[i*3+1]=oy;pa[i*3+2]=oz;continue;}
-    let dx=ox/mag,dy=oy/mag,dz=oz/mag;
-    if(spreadF!==1){const c=catDir[pts[i].cat];let dot=clamp(c[0]*dx+c[1]*dy+c[2]*dz,-1,1),om=Math.acos(dot);
-      if(om>=1e-4){const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
-        const nx=c[0]*w1+dx*w2,ny=c[1]*w1+dy*w2,nz=c[2]*w1+dz*w2,nm=Math.hypot(nx,ny,nz)||1;dx=nx/nm;dy=ny/nm;dz=nz/nm;}}
-    const nmag=Math.max(0.02,SR+(mag-SR)*radialG);
-    pa[i*3]=dx*nmag;pa[i*3+1]=dy*nmag;pa[i*3+2]=dz*nmag;
-  }
-  pointsGeo.getAttribute("position").needsUpdate=true;pointsGeo.computeBoundingSphere();
+  if(!pointsMat)return;
+  const u=pointsMat.uniforms;
+  u.uSpread.value=spreadF;u.uRadial.value=radialG;u.uSR.value=SR;
+  u.uMorphT.value=morphTarget?morphT:0;u.uHasMorph.value=morphTarget?1:0;
   for(const b of bridgeLines){const a=b.fromIndex>=0?curPos(b.fromIndex):transformPos(b.from),c=transformPos(b.to),pos=b.line.geometry.getAttribute("position");pos.setXYZ(0,a[0],a[1],a[2]);pos.setXYZ(1,c[0],c[1],c[2]);pos.needsUpdate=true;}
   if(selectedIdx>=0)deselectPoint();drawMinimapBase();
 }
@@ -190,15 +227,83 @@ function worldUnderCursor(mx,my){
   const tt=(_zn.dot(controls.target)-_zn.dot(camera.position))/denom;
   return camera.position.clone().add(_zd.multiplyScalar(tt));
 }
+// Bake point index i into an RGB color (id = i+1, so 0 = background/no point)
+// and recover it from the read-back bytes. 24-bit id space (≤16M points).
+function pickEncode(i){const id=i+1;return[(id&255)/255,((id>>8)&255)/255,((id>>16)&255)/255];}
+function pickDecode(r,g,b){return((r&255)|((g&255)<<8)|((b&255)<<16))-1;} // byte args; -1 = background
+// GPU id-buffer pick: render ONLY the points (with pickMat baking each id into
+// color) to the 1px target focused on the cursor, read it back, decode. Returns
+// the point index, -1 for empty, or -2 when the pick path is unavailable (so
+// the caller falls back to the CPU pick). Restores all render state in finally.
+function pickGPU(e){
+  if(!pickRT||!pickMat||!pointsMesh||!renderer.readRenderTargetPixels)return -2;
+  const prev=renderer.getRenderTarget?renderer.getRenderTarget():null,vis=[];
+  // Capture the clear color/alpha too — we set them for the pick pass and must
+  // put them back (the main loop relies on scene.background today, but a
+  // transparent embed would clear to black/transparent if we leaked this).
+  const pcol=renderer.getClearColor?renderer.getClearColor(new THREE.Color()):null,palpha=renderer.getClearAlpha?renderer.getClearAlpha():1;
+  scene.children.forEach(c=>{vis.push(c.visible);if(c!==pointsMesh)c.visible=false;});
+  try{
+    pointsMesh.material=pickMat;
+    camera.setViewOffset(innerWidth,innerHeight,e.clientX,e.clientY,1,1);
+    renderer.setRenderTarget(pickRT);
+    if(renderer.setClearColor)renderer.setClearColor(0x000000,0);
+    renderer.clear();renderer.render(scene,camera);
+    const buf=new Uint8Array(4);renderer.readRenderTargetPixels(pickRT,0,0,1,1,buf);
+    return pickDecode(buf[0],buf[1],buf[2]);
+  }finally{
+    camera.clearViewOffset();renderer.setRenderTarget(prev);
+    if(pcol&&renderer.setClearColor)renderer.setClearColor(pcol,palpha);
+    pointsMesh.material=pointsMat;scene.children.forEach((c,i)=>{c.visible=vis[i];});
+  }
+}
+// CPU fallback: project every visible point through the SAME transform the GPU
+// uses (curPos) and pick the nearest to the cursor within a small radius. O(N),
+// but transform-correct (the raycaster would intersect untransformed origPos).
+function pickCPU(e){
+  let best=-1,bestD=14*14;
+  for(let i=0;i<N;i++){if(!catVisible[pts[i].cat])continue;const sp=projectToScreen(curPos(i));if(!sp.vis)continue;
+    const dx=sp.x-e.clientX,dy=sp.y-e.clientY,d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=i;}}
+  return best;
+}
 function getHovered(e){
   if(!pointsMesh)return -1;
-  mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;
-  raycaster.setFromCamera(mouse,camera);
-  const hits=raycaster.intersectObject(pointsMesh);
-  if(hits.length>0){const idx=hits[0].index;if(catVisible[pts[idx].cat])return idx;}
+  let idx=-2;
+  try{idx=pickGPU(e);}catch(err){idx=-2;}
+  if(idx===-2)return pickCPU(e); // GPU path unavailable/failed
+  if(idx>=0&&idx<N&&catVisible[pts[idx].cat])return idx;
   return -1;
 }
-function curPos(i){const a=pointsGeo.getAttribute("position").array;return[a[i*3],a[i*3+1],a[i*3+2]];}
+// Current (displayed) position of point i, computed from its ORIGINAL position
+// by the same spread/radial (or morph) transform the vertex shader applies on
+// the GPU. This is the single CPU-side source of truth for displayed positions
+// (selection, minimap, ruler, query/bridge geodesics) now that the per-frame
+// O(N) position-buffer rewrite is gone — the GLSL `sphTransform` in the points
+// shader is a line-for-line transcription of this, so CPU features agree with
+// what's drawn. Morph and spread/radial are mutually exclusive (matching the
+// old applyTransform/applyMorph): while morphing, matched points morph and
+// unmatched points hold at the original position.
+function curPos(i){
+  const ox=origPos[i*3],oy=origPos[i*3+1],oz=origPos[i*3+2],mag=Math.hypot(ox,oy,oz);
+  if(mag<1e-9)return[ox,oy,oz];
+  let dx=ox/mag,dy=oy/mag,dz=oz/mag;
+  if(morphTarget&&morphT>0){
+    const tgt=pts[i].id!=null?morphTarget.get(String(pts[i].id)):undefined;
+    if(!tgt)return[ox,oy,oz];
+    const bd=tgt.d,om=Math.acos(clamp(dx*bd[0]+dy*bd[1]+dz*bd[2],-1,1));
+    let nx,ny,nz;
+    if(om<1e-5){nx=dx;ny=dy;nz=dz;}
+    else if(om>Math.PI-1e-4){const h=Math.abs(dx)<0.9?[1,0,0]:[0,1,0];const hd=h[0]*dx+h[1]*dy+h[2]*dz;let px=h[0]-hd*dx,py=h[1]-hd*dy,pz=h[2]-hd*dz;const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;const th=morphT*om,c2=Math.cos(th),s2=Math.sin(th);nx=dx*c2+px*s2;ny=dy*c2+py*s2;nz=dz*c2+pz*s2;}
+    else{const s=Math.sin(om),w1=Math.sin((1-morphT)*om)/s,w2=Math.sin(morphT*om)/s;nx=dx*w1+bd[0]*w2;ny=dy*w1+bd[1]*w2;nz=dz*w1+bd[2]*w2;}
+    const rr=mag+(tgt.r-mag)*morphT;
+    return[nx*rr,ny*rr,nz*rr];
+  }
+  if(spreadF!==1){const c=catDir[pts[i].cat];const dot=clamp(c[0]*dx+c[1]*dy+c[2]*dz,-1,1),om=Math.acos(dot);
+    if(om>=1e-4){const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
+      const nx=c[0]*w1+dx*w2,ny=c[1]*w1+dy*w2,nz=c[2]*w1+dz*w2,nm=Math.hypot(nx,ny,nz)||1;dx=nx/nm;dy=ny/nm;dz=nz/nm;}}
+  const nmag=Math.max(0.02,SR+(mag-SR)*radialG);
+  return[dx*nmag,dy*nmag,dz*nmag];
+}
 
 function selectPoint(idx){
   selectedIdx=idx;hoveredIdx=-1;const P=curPos(idx);
@@ -297,8 +402,7 @@ function drawMinimapBase(){
   for(let i=1;i<3;i++){const y=MH*i/3;mbctx.beginPath();mbctx.moveTo(0,y);mbctx.lineTo(MW,y);mbctx.stroke();}
   for(let i=1;i<6;i++){const x=MW*i/6;mbctx.beginPath();mbctx.moveTo(x,0);mbctx.lineTo(x,MH);mbctx.stroke();}
   if(!pointsGeo)return;
-  const a=pointsGeo.getAttribute("position").array;
-  for(let i=0;i<N;i++){if(!catVisible[pts[i].cat])continue;const[th,ph]=tpOf(a[i*3],a[i*3+1],a[i*3+2]);
+  for(let i=0;i<N;i++){if(!catVisible[pts[i].cat])continue;const c=curPos(i),[th,ph]=tpOf(c[0],c[1],c[2]);
     mbctx.fillStyle=catColor[pts[i].cat];mbctx.fillRect(th/(2*Math.PI)*MW-0.6,ph/Math.PI*MH-0.6,1.7,1.7);}}
 function drawMinimap(){
   mctx.clearRect(0,0,MW,MH);mctx.drawImage(miniBase,0,0);
@@ -351,14 +455,22 @@ canvas.addEventListener("wheel",e=>{
   if(d!==cd)camera.position.copy(controls.target).addScaledVector(_tmp.copy(camera.position).sub(controls.target).normalize(),cd);
   controls.update();
 },{capture:true,passive:false});
-canvas.addEventListener("mousemove",e=>{
+// Hover picking is coalesced to one pick per frame (run by animate via
+// updateHover): a synchronous GPU readback per raw mousemove could fire several
+// times a frame on a high-frequency mouse. We just stash the latest event.
+let _hoverEv=null;
+canvas.addEventListener("mousemove",e=>{_hoverEv=e;});
+canvas.addEventListener("mouseleave",()=>{_hoverEv=null;hoveredIdx=-1;tooltip.style.display="none";});
+// One hover pick for the latest pointer position → tooltip + cursor. Called
+// once per frame from animate(), so at most one GPU readback per frame.
+function updateHover(){
+  if(!_hoverEv)return;const e=_hoverEv;_hoverEv=null;
   const idx=getHovered(e);hoveredIdx=idx;
   if(idx>=0){const p=pts[idx];
     tooltip.innerHTML=`<div class="tt-lbl">${escHtml(p.label||"Point "+idx)}</div><div class="tt-meta">${escHtml(p.cat)} · θ ${p.theta.toFixed(2)}  φ ${p.phi.toFixed(2)}  r ${p.r.toFixed(2)}</div>`;
     tooltip.style.display="block";tooltip.style.left=(e.clientX+16)+"px";tooltip.style.top=(e.clientY+14)+"px";canvas.style.cursor="crosshair";
   }else{tooltip.style.display="none";canvas.style.cursor="grab";}
-});
-canvas.addEventListener("mouseleave",()=>{hoveredIdx=-1;tooltip.style.display="none";});
+}
 window.addEventListener("keydown",e=>{if(e.key!=="Escape")return;if(pinOn){setPinMode(false);return;}if(rulerOn&&rulerPicks.length){clearRuler();return;}if(selectedIdx>=0)deselectPoint(true);});
 // Click detection via pointer down/up + movement threshold — the `click`
 // event is unreliable while OrbitControls is handling pointer gestures.
@@ -563,40 +675,27 @@ function setMorphTarget(sceneB){
   const map=new Map();
   for(const p of sceneB.points){if(p.id==null)continue;const x=+p.x,y=+p.y,z=+p.z;if(!isFinite(x)||!isFinite(y)||!isFinite(z))continue;const m=Math.hypot(x,y,z)||1;map.set(String(p.id),{d:[x/m,y/m,z/m],r:m});}
   morphTarget=map;
-  let matched=0;for(let i=0;i<N;i++){if(pts[i].id!=null&&map.has(String(pts[i].id)))matched++;}
+  // Push per-point morph targets into the GPU attributes the shader reads:
+  // matched points carry their B direction/radius + a "has target" flag;
+  // unmatched points are flagged off so the shader holds them at origPos.
+  let matched=0;
+  if(pointsGeo){
+    const md=pointsGeo.getAttribute("aMorphDir"),mr=pointsGeo.getAttribute("aMorphR"),mh=pointsGeo.getAttribute("aMorphHas");
+    for(let i=0;i<N;i++){const tgt=pts[i].id!=null?map.get(String(pts[i].id)):undefined;
+      if(tgt){md.array[i*3]=tgt.d[0];md.array[i*3+1]=tgt.d[1];md.array[i*3+2]=tgt.d[2];mr.array[i]=tgt.r;mh.array[i]=1;matched++;}
+      else{mh.array[i]=0;}}
+    md.needsUpdate=true;mr.needsUpdate=true;mh.needsUpdate=true;
+  }else{for(let i=0;i<N;i++)if(pts[i].id!=null&&map.has(String(pts[i].id)))matched++;}
   return matched;
 }
-function applyMorph(t){
-  morphT=clamp(t,0,1);
-  if(!pointsGeo)return;
-  if(!morphTarget||morphT<=0){applyTransform();return;} // t=0 → the normal (spread/radial) A view
-  const pa=pointsGeo.getAttribute("position").array;
-  for(let i=0;i<N;i++){
-    const ox=origPos[i*3],oy=origPos[i*3+1],oz=origPos[i*3+2],am=Math.hypot(ox,oy,oz);
-    const tgt=pts[i].id!=null?morphTarget.get(String(pts[i].id)):undefined;
-    if(!tgt||am<1e-9){pa[i*3]=ox;pa[i*3+1]=oy;pa[i*3+2]=oz;continue;}
-    const ad=[ox/am,oy/am,oz/am],bd=tgt.d;
-    const om=Math.acos(clamp(ad[0]*bd[0]+ad[1]*bd[1]+ad[2]*bd[2],-1,1));
-    let dx,dy,dz;
-    if(om<1e-5){dx=ad[0];dy=ad[1];dz=ad[2];}
-    else if(om>Math.PI-1e-4){
-      // Antipodal: a→b direction is ambiguous and lerp collapses to the origin
-      // at the midpoint. Sweep a clean unit great-circle about a ⟂ axis instead
-      // (same trick as shellArc), so the morph path stays on the sphere.
-      const h=Math.abs(ad[0])<0.9?[1,0,0]:[0,1,0];
-      const hd=h[0]*ad[0]+h[1]*ad[1]+h[2]*ad[2];
-      let px=h[0]-hd*ad[0],py=h[1]-hd*ad[1],pz=h[2]-hd*ad[2];const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;
-      const th=morphT*om,c2=Math.cos(th),s2=Math.sin(th);
-      dx=ad[0]*c2+px*s2;dy=ad[1]*c2+py*s2;dz=ad[2]*c2+pz*s2;
-    }
-    else{const s=Math.sin(om),w1=Math.sin((1-morphT)*om)/s,w2=Math.sin(morphT*om)/s;dx=ad[0]*w1+bd[0]*w2;dy=ad[1]*w1+bd[1]*w2;dz=ad[2]*w1+bd[2]*w2;}
-    const rr=am+(tgt.r-am)*morphT;
-    pa[i*3]=dx*rr;pa[i*3+1]=dy*rr;pa[i*3+2]=dz*rr;
-  }
-  pointsGeo.getAttribute("position").needsUpdate=true;pointsGeo.computeBoundingSphere();
-  if(selectedIdx>=0)deselectPoint();drawMinimapBase();
-}
-function clearMorph(){morphTarget=null;morphT=0;}
+// Morph slider: interpolate the cloud toward the id-matched target scene by
+// t∈[0,1]. The per-point slerp runs in the vertex shader (gated on
+// uHasMorph/uMorphT, using the aMorphDir/aMorphR/aMorphHas attributes that
+// setMorphTarget filled); the antipodal great-circle sweep + radius lerp live
+// in `sphTransform` (and its CPU mirror `curPos`). applyTransform pushes the
+// uniforms and refreshes bridges/minimap.
+function applyMorph(t){morphT=clamp(t,0,1);applyTransform();}
+function clearMorph(){morphTarget=null;morphT=0;if(pointsMat){pointsMat.uniforms.uMorphT.value=0;pointsMat.uniforms.uHasMorph.value=0;}}
 
 // ── Pins (drop annotated (θ,φ) markers on the globe shell) ────────────────
 function setPinMode(on){pinOn=on;document.getElementById("tool-pin").classList.toggle("active",on);}
@@ -695,7 +794,8 @@ function teardown(){
   disposeObject(linesGroup);if(linesGroup)scene.remove(linesGroup);
   for(const k in overlayGroups){disposeObject(overlayGroups[k]);scene.remove(overlayGroups[k]);}
   overlayGroups={};
-  pointsMesh=null;pointsGeo=null;pointsMat=null;globeGroup=null;linesGroup=null;
+  if(pickMat&&pickMat.dispose)pickMat.dispose();
+  pointsMesh=null;pointsGeo=null;pointsMat=null;pickMat=null;globeGroup=null;linesGroup=null;
   legendDiv.innerHTML="";oi.innerHTML="";labelTogglesDiv.innerHTML="";labelsDiv.innerHTML="";
   const info=document.getElementById("info");if(info)info.classList.remove("visible");
   tooltip.style.display="none";reticle.style.display="none";sellabel.style.display="none";
@@ -771,10 +871,34 @@ function rebuild(sc){
    let maxBin=1;for(const v of bins)if(v>maxBin)maxBin=v;
    for(let i=0;i<N;i++)dens[i]=bins[binOf[i]]/maxBin;
    pointsGeo.setAttribute("density",new THREE.BufferAttribute(dens,1));}
-  pointsMat=new THREE.ShaderMaterial({vertexColors:true,transparent:true,depthWrite:false,uniforms:{opacity:{value:1.0},densityOn:{value:DEF.density?1:0}},
-    vertexShader:`attribute float size;attribute float density;varying vec3 vc;varying float vd;void main(){vc=color;vd=density;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=size*330.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
+  // Per-point transform inputs for the vertex shader: each point's category
+  // centroid direction (the spread pivot) + its morph target (filled later by
+  // setMorphTarget; benign identity defaults until then). With these the shader
+  // transforms origPos by the uSpread/uRadial/uSR/uMorphT uniforms, so a slider
+  // tick is a uniform write rather than an O(N) CPU buffer rewrite.
+  {const cd=new Float32Array(N*3),mdv=new Float32Array(N*3),mrv=new Float32Array(N),mhv=new Float32Array(N);
+   for(let i=0;i<N;i++){const c=catDir[pts[i].cat]||[0,0,1];cd[i*3]=c[0];cd[i*3+1]=c[1];cd[i*3+2]=c[2];mdv[i*3+2]=1;mrv[i]=1;}
+   pointsGeo.setAttribute("aCatDir",new THREE.BufferAttribute(cd,3));
+   pointsGeo.setAttribute("aMorphDir",new THREE.BufferAttribute(mdv,3));
+   pointsGeo.setAttribute("aMorphR",new THREE.BufferAttribute(mrv,1));
+   pointsGeo.setAttribute("aMorphHas",new THREE.BufferAttribute(mhv,1));}
+  // Per-point pick id baked as an RGB color (read back from a 1px render in
+  // getHovered to identify the point under the cursor).
+  {const pc=new Float32Array(N*3);for(let i=0;i<N;i++){const c=pickEncode(i);pc[i*3]=c[0];pc[i*3+1]=c[1];pc[i*3+2]=c[2];}
+   pointsGeo.setAttribute("aPickColor",new THREE.BufferAttribute(pc,3));}
+  pointsMat=new THREE.ShaderMaterial({vertexColors:true,transparent:true,depthWrite:false,
+    uniforms:{opacity:{value:1.0},densityOn:{value:DEF.density?1:0},uSpread:{value:DEF.spread},uRadial:{value:DEF.radial},uSR:{value:SR},uMorphT:{value:0},uHasMorph:{value:0}},
+    vertexShader:VERTEX_TRANSFORM+`attribute float size;attribute float density;varying vec3 vc;varying float vd;void main(){vc=color;vd=density;vec3 tp=sphTransform(position);vec4 mv=modelViewMatrix*vec4(tp,1.0);gl_PointSize=size*330.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
     fragmentShader:`uniform float opacity;uniform float densityOn;varying vec3 vc;varying float vd;void main(){float d=length(gl_PointCoord-0.5);if(d>0.5)discard;float a=smoothstep(0.5,0.44,d)*opacity;float core=smoothstep(0.32,0.0,d);vec3 col=mix(vc,vec3(1.0),core*0.4);if(densityOn>0.5){vec3 cold=vec3(0.25,0.5,1.0),hot=vec3(1.0,0.62,0.22);col=mix(cold,hot,vd);a*=mix(0.5,1.0,vd);}gl_FragColor=vec4(col,a);}`});
-  pointsMesh=new THREE.Points(pointsGeo,pointsMat);scene.add(pointsMesh);
+  // Pick material: same transform (shares pointsMat's uniform objects, so
+  // slider/morph updates apply to both) + size, but writes each point's baked
+  // id-color instead of its shaded color. Used only by the offscreen pick pass.
+  pickMat=new THREE.ShaderMaterial({uniforms:pointsMat.uniforms,
+    vertexShader:VERTEX_TRANSFORM+`attribute float size;attribute vec3 aPickColor;varying vec3 vpick;void main(){vpick=aPickColor;vec3 tp=sphTransform(position);vec4 mv=modelViewMatrix*vec4(tp,1.0);gl_PointSize=size*330.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`varying vec3 vpick;void main(){gl_FragColor=vec4(vpick,1.0);}`});
+  // The shader can push points beyond origPos's bounding sphere (radial/spread),
+  // so skip frustum culling — otherwise the whole cloud can vanish at the edges.
+  pointsMesh=new THREE.Points(pointsGeo,pointsMat);pointsMesh.frustumCulled=false;scene.add(pointsMesh);
   linesGroup=new THREE.Group();scene.add(linesGroup);
 
   // ── Overlays ────────────────────────────────────────────────────────────
@@ -1060,6 +1184,7 @@ applyViewHash(); // restore a shared camera/settings view, if the URL carries on
 function animate(){
   requestAnimationFrame(animate);
   if(pendingTransform){applyTransform();pendingTransform=false;}
+  updateHover(); // coalesced hover pick (≤1 GPU readback/frame)
   if(tgtTween){tgtTween.t++;const k=Math.min(1,tgtTween.t/tgtTween.dur),e=k*k*(3-2*k);controls.target.lerpVectors(tgtTween.from,tgtTween.to,e);if(k>=1)tgtTween=null;}
   controls.update();
   if(hoveredIdx>=0){const sp=projectToScreen(curPos(hoveredIdx));if(sp.vis){reticle.style.display="block";reticle.style.left=sp.x+"px";reticle.style.top=sp.y+"px";}else reticle.style.display="none";}else reticle.style.display="none";
