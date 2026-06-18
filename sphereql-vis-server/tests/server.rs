@@ -141,6 +141,32 @@ async fn nearest_by_row_excludes_self() {
 }
 
 #[tokio::test]
+async fn nearest_by_vector_returns_neighbors() {
+    // A correctly-sized (128-d) query vector is accepted by the ANN index.
+    let vector: Vec<f64> = (0..128).map(|i| (i as f64) * 0.01).collect();
+    let resp = post_json(router(), "/nearest", json!({ "vector": vector, "k": 4 })).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    assert!(!v["neighbors"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn nearest_with_wrong_length_vector_does_not_panic() {
+    // Regression: a vector whose length != the index dim (128) would panic
+    // `AnnIndex::query`'s assert. The handler must reject it gracefully with an
+    // empty result, not a 500 / dropped connection.
+    let resp = post_json(
+        router(),
+        "/nearest",
+        json!({ "vector": [1.0, 2.0, 3.0], "k": 5 }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    assert!(v["neighbors"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn category_stats_lists_the_palette() {
     let resp = get(router(), "/category_stats").await;
     assert_eq!(resp.status(), StatusCode::OK);

@@ -16,6 +16,7 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -30,8 +31,9 @@ const MAX_NEAREST_K: usize = 256;
 const BODY_LIMIT: usize = 4 * 1024 * 1024;
 
 /// Build the router over a shared [`AppState`]. Adds permissive CORS (the
-/// viewer is typically served from `file://` or a different origin) and a body
-/// limit on the POST endpoints.
+/// viewer is typically served from `file://` or a different origin), a body
+/// limit on the POST endpoints, and a panic catcher so a handler fault returns
+/// 500 instead of dropping the connection.
 pub fn build_router(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -46,6 +48,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/category_stats", get(category_stats))
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(cors)
+        .layer(CatchPanicLayer::new())
         .with_state(state)
 }
 
@@ -153,14 +156,19 @@ pub struct NearestResponse {
 }
 
 /// Resolve a nearest-neighbor query against the ANN index. Returns an empty
-/// list when the request names neither a valid row nor a vector.
+/// list when the request names neither a valid row nor a usable vector.
+///
+/// A query vector whose length doesn't match the index dimensionality
+/// ([`AppState::dim`]) is rejected here rather than passed through:
+/// `AnnIndex::query` asserts on the length, so a mismatched vector would
+/// otherwise panic the handler (a remotely-triggerable fault).
 pub fn collect_nearest(state: &AppState, req: &NearestRequest) -> NearestResponse {
     let k = req.k.unwrap_or(10).clamp(1, MAX_NEAREST_K);
     let hits = match (req.row, &req.vector) {
         (Some(row), _) if (row as usize) < state.points.len() => {
             state.ann.query_by_index(row as usize, k)
         }
-        (_, Some(v)) if !v.is_empty() => state.ann.query(v, k),
+        (_, Some(v)) if v.len() == state.dim => state.ann.query(v, k),
         _ => Vec::new(),
     };
     let neighbors = hits

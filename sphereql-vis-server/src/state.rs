@@ -84,6 +84,10 @@ pub struct AppState {
     pub spatial: SpatialIndex<PointItem>,
     /// Raw embeddings, indexed for semantic nearest-neighbor (trace) queries.
     pub ann: AnnIndex,
+    /// Embedding dimensionality the ANN index expects. A `/nearest` query
+    /// vector of any other length would panic `AnnIndex::query`, so callers
+    /// must reject mismatches against this.
+    pub dim: usize,
     /// Palette index → category name.
     pub cat_names: Vec<String>,
 }
@@ -177,6 +181,7 @@ impl AppState {
         // each vector for the inspector — both borrow `embeddings` before it is
         // moved into the pipeline.
         let ann = AnnIndex::build(&embeddings, &AnnConfig::default());
+        let dim = embeddings.first().map(Vec::len).unwrap_or(0);
         let f32_vecs: Vec<Vec<f32>> = embeddings
             .iter()
             .map(|v| v.iter().map(|&x| x as f32).collect())
@@ -303,6 +308,7 @@ impl AppState {
             points,
             spatial,
             ann,
+            dim,
             cat_names,
         })
     }
@@ -359,8 +365,10 @@ mod tests {
             state.manifest.format_version,
             sphereql_vis::MANIFEST_VERSION
         );
-        // Every stored point carries a 128-d raw vector for the inspector.
+        // Every stored point carries a 128-d raw vector for the inspector, and
+        // the recorded ANN dim matches (so /nearest can length-check queries).
         assert_eq!(state.points[0].vector.len(), sphereql_corpus::DIM);
+        assert_eq!(state.dim, sphereql_corpus::DIM);
         // Palette counts cover the whole corpus.
         let palette_total: usize = state.manifest.palette.iter().map(|c| c.count).sum();
         assert_eq!(palette_total, 300);
