@@ -877,8 +877,185 @@ function rebuild(sc){
   applyScale(DEF.scale);drawMinimapBase();frameCamera();
 }
 
+// ── DataSource: where scene data comes from (inline blob vs streaming) ────
+// Two ways to feed the viewer behind one async interface, so callers (the
+// studio, a future streaming renderer) don't care which backs them:
+//   manifest()      → {title,total_points,surface_radius,bounds,stats,overlays,palette,lod}
+//   tiles(params)   → {count, positions:Float32Array(3n), cats:Uint16Array(n), rows:Uint32Array(n)}
+//   pointMeta(rows) → [{row,label,cat,category,certainty,intensity,x,y,z,r,theta,phi}]
+//   nearest(q,k)    → [{row,similarity}]   (q = {row} | {vector:[…]})
+// The offline baked file inlines the whole scene as `D` and renders all of it
+// (InlineSource). A server-backed build streams the visible working set as
+// binary tiles (ServerSource); wiring that into a per-tile renderer is a later
+// phase, but the contract + client live here and are exercised by js-tests.
+// `tiles()` params {theta,phi,half_angle,budget,lod} describe a viewport cone +
+// detail budget; InlineSource has the whole cloud so it ignores the cone and
+// only honours `budget` (the same stratified decimation the server uses).
+
+// Decode a binary SQT1 tile — the wire form emitted by sphereql-vis tile.rs:
+//   header 16B: magic "SQT1" · version u16 · flags u16 · count u32 · reserved u32
+//   record 20B: x f32 · y f32 · z f32 · cat u16 · _pad u16 · row u32   (all LE)
+// Accepts an ArrayBuffer or a Uint8Array; throws on a malformed/short buffer.
+function decodeTile(input){
+  const bytes=input instanceof Uint8Array?input:new Uint8Array(input);
+  if(bytes.length<16)throw new Error("tile shorter than 16-byte header");
+  if(bytes[0]!==0x53||bytes[1]!==0x51||bytes[2]!==0x54||bytes[3]!==0x31)throw new Error("tile magic is not SQT1");
+  const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  const version=dv.getUint16(4,true);
+  if(version>1)throw new Error("unsupported tile version "+version);
+  const count=dv.getUint32(8,true),REC=20,actual=Math.floor((bytes.length-16)/REC);
+  if(actual!==count)throw new Error("tile declares "+count+" records but holds "+actual);
+  const positions=new Float32Array(count*3),cats=new Uint16Array(count),rows=new Uint32Array(count);
+  for(let i=0;i<count;i++){const o=16+i*REC;
+    positions[i*3]=dv.getFloat32(o,true);positions[i*3+1]=dv.getFloat32(o+4,true);positions[i*3+2]=dv.getFloat32(o+8,true);
+    cats[i]=dv.getUint16(o+12,true);rows[i]=dv.getUint32(o+16,true);}
+  return{count,positions,cats,rows};
+}
+// Sorted-unique category names — the stable cat→id ordering shared by rebuild()
+// (`catSet`) and the server palette, so a tile's `cat` ids mean the same thing
+// no matter which source produced it.
+function catOrder(points){return[...new Set((points||[]).map(p=>p&&p.cat!=null?String(p.cat):""))].sort();}
+// Proportional-per-category + even-stride thinning to ~budget indices; mirrors
+// the server's stratified tile decimation so both sources thin a cloud the same
+// deterministic way (every non-empty category keeps at least one point).
+function stratify(points,catIds,budget){
+  if(points.length<=budget)return points.map((_,i)=>i);
+  const groups=new Map();
+  for(let i=0;i<points.length;i++){const c=catIds[i];let g=groups.get(c);if(!g){g=[];groups.set(c,g);}g.push(i);}
+  const total=points.length,out=[];
+  for(const c of[...groups.keys()].sort((a,b)=>a-b)){const grp=groups.get(c);
+    const share=Math.round(grp.length/total*budget),take=Math.max(1,Math.min(share,grp.length)),stride=Math.max(1,Math.floor(grp.length/take));
+    for(let i=0,n=0;i<grp.length&&n<take;i+=stride,n++)out.push(grp[i]);}
+  if(out.length>budget)out.length=budget;
+  return out;
+}
+// Build the /tiles query string from a params object (finite fields only).
+function tileQuery(p){p=p||{};const q=[];for(const k of["theta","phi","half_angle","budget","lod"])if(p[k]!=null&&isFinite(+p[k]))q.push(k+"="+(+p[k]));return q.join("&");}
+
+// InlineSource — the offline blob. Renders all of `D`; serves the streaming
+// interface from the in-memory scene. nearest() here is a *positional* cosine
+// (the inline file has no raw embeddings) — a local stand-in for the server's
+// ANN over the original vectors.
+class InlineSource{
+  constructor(scene){this.scene=scene&&typeof scene==="object"?scene:{points:[]};const pts=this.scene.points||[];this._cats=catOrder(pts);this._catId=new Map(this._cats.map((c,i)=>[c,i]));}
+  _id(cat){const v=this._catId.get(cat!=null?String(cat):"");return v===undefined?0:v;}
+  async manifest(){
+    const pts=this.scene.points||[],counts={};for(const p of pts){const c=p.cat!=null?String(p.cat):"";counts[c]=(counts[c]||0)+1;}
+    let sr=+this.scene.surface_radius;if(!isFinite(sr)||sr<=0)sr=1;
+    const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
+    for(const p of pts){const c=[+p.x,+p.y,+p.z];for(let k=0;k<3;k++){if(c[k]<min[k])min[k]=c[k];if(c[k]>max[k])max[k]=c[k];}}
+    if(!pts.length){min[0]=min[1]=min[2]=-1;max[0]=max[1]=max[2]=1;}
+    const pal=PALETTES.aurora;
+    return{title:this.scene.title||"",total_points:pts.length,surface_radius:sr,bounds:{min,max},
+      stats:this.scene.stats||{},overlays:this.scene.overlays||[],
+      palette:this._cats.map((name,i)=>({name,color:pal[i%pal.length],count:counts[name]||0})),
+      lod:{levels:4,base_budget:20000}};
+  }
+  async tiles(params){
+    const pts=this.scene.points||[],catIds=pts.map(p=>this._id(p.cat));
+    const budget=Math.max(1,(params&&+params.budget)||pts.length||1);
+    const idx=stratify(pts,catIds,budget);
+    const positions=new Float32Array(idx.length*3),cats=new Uint16Array(idx.length),rows=new Uint32Array(idx.length);
+    for(let j=0;j<idx.length;j++){const i=idx[j],p=pts[i];positions[j*3]=+p.x;positions[j*3+1]=+p.y;positions[j*3+2]=+p.z;cats[j]=catIds[i];rows[j]=i;}
+    return{count:idx.length,positions,cats,rows};
+  }
+  async pointMeta(rows){
+    const pts=this.scene.points||[],out=[];
+    for(const row of rows||[]){const p=pts[row];if(!p)continue;
+      const x=+p.x,y=+p.y,z=+p.z;let r=+p.r,theta=+p.theta,phi=+p.phi;
+      // Derive missing spherical coords from xyz (same convention as parseScene)
+      // so meta is complete even for a scene that only carried Cartesian coords.
+      if(!(isFinite(r)&&isFinite(theta)&&isFinite(phi))){r=Math.hypot(x,y,z);theta=Math.atan2(y,x);if(theta<0)theta+=2*Math.PI;phi=Math.acos(clamp(r>1e-12?z/r:0,-1,1));}
+      out.push({row,label:p.label||"",cat:this._id(p.cat),category:p.cat!=null?String(p.cat):"",
+        certainty:isFinite(+p.certainty)?+p.certainty:null,intensity:isFinite(+p.intensity)?+p.intensity:null,
+        x,y,z,r,theta,phi});}
+    return out;
+  }
+  async nearest(q,k){
+    const pts=this.scene.points||[];k=Math.max(1,Math.min(k||10,256));
+    let rx,ry,rz,self=-1;
+    if(q&&q.row!=null&&pts[q.row]){const p=pts[q.row],m=Math.hypot(p.x,p.y,p.z)||1;rx=p.x/m;ry=p.y/m;rz=p.z/m;self=q.row;}
+    else if(q&&Array.isArray(q.vector)&&q.vector.length>=3){const v=q.vector,m=Math.hypot(v[0],v[1],v[2])||1;rx=v[0]/m;ry=v[1]/m;rz=v[2]/m;}
+    else return[];
+    const hits=[];
+    for(let i=0;i<pts.length;i++){if(i===self)continue;const p=pts[i],m=Math.hypot(p.x,p.y,p.z)||1;hits.push({row:i,similarity:(p.x*rx+p.y*ry+p.z*rz)/m});}
+    hits.sort((a,b)=>b.similarity-a.similarity);
+    return hits.slice(0,k);
+  }
+}
+
+// Bounded in-memory (LRU) + optional IndexedDB cache for fetched tile blobs,
+// keyed by the tile request. IndexedDB persists across reloads when present
+// (browser); the memory tier alone suffices for tests and locked-down embeds.
+function idbReq(req){return new Promise((res,rej)=>{req.onsuccess=()=>res(req.result);req.onerror=()=>rej(req.error);});}
+class TileCache{
+  constructor(opts){opts=opts||{};this.max=opts.max||256;this.mem=new Map();this.dbName=opts.dbName||"sphereql-tiles";this.store="tiles";
+    this._idb=opts.indexedDB!==undefined?opts.indexedDB:(typeof indexedDB!=="undefined"?indexedDB:null);this._dbp=null;}
+  _touch(key,val){this.mem.delete(key);this.mem.set(key,val);while(this.mem.size>this.max)this.mem.delete(this.mem.keys().next().value);}
+  async get(key){
+    if(this.mem.has(key)){const v=this.mem.get(key);this._touch(key,v);return v;}
+    const db=await this._open();if(!db)return null;
+    try{const v=await idbReq(db.transaction(this.store,"readonly").objectStore(this.store).get(key));if(v!=null){this._touch(key,v);return v;}}catch(e){}
+    return null;
+  }
+  async put(key,buf){this._touch(key,buf);const db=await this._open();if(!db)return;
+    try{db.transaction(this.store,"readwrite").objectStore(this.store).put(buf,key);}catch(e){}}
+  _open(){
+    if(!this._idb)return Promise.resolve(null);
+    if(!this._dbp)this._dbp=new Promise(resolve=>{try{const req=this._idb.open(this.dbName,1);
+      req.onupgradeneeded=()=>{try{req.result.createObjectStore(this.store);}catch(e){}};
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>resolve(null);}catch(e){resolve(null);}});
+    return this._dbp;
+  }
+}
+
+// ServerSource — streams from the sphereql-vis-server HTTP API. Tiles arrive as
+// binary SQT1 and are decoded (off-thread via a Worker-backed `decode`, else
+// inline); blobs can be cached. The injectable `fetch` keeps it testable. Used
+// by the streaming renderer and the studio's "connect to server" mode.
+class ServerSource{
+  constructor(baseUrl,opts){opts=opts||{};this.base=String(baseUrl||"").replace(/\/+$/,"");
+    this._fetch=opts.fetch||(typeof fetch!=="undefined"?fetch.bind(typeof globalThis!=="undefined"?globalThis:null):null);
+    this.cache=opts.cache||null;this.decode=opts.decode||decodeTile;}
+  async manifest(){return this._json("/manifest");}
+  async categoryStats(){return this._json("/category_stats");}
+  async tiles(params){
+    const key="/tiles?"+tileQuery(params);
+    let buf=this.cache?await this.cache.get(key):null;
+    if(buf==null){const res=await this._fetch(this.base+key);if(!res.ok)throw new Error("tiles → "+res.status);buf=await res.arrayBuffer();if(this.cache)await this.cache.put(key,buf);}
+    // Decode a throwaway copy when caching: a worker-backed `decode` transfers
+    // (detaches) the buffer it is handed, which would corrupt the retained
+    // cache entry and break every subsequent cache hit. The cache keeps the
+    // pristine blob; the copy is what gets transferred.
+    return this.decode(this.cache?buf.slice(0):buf);
+  }
+  async pointMeta(rows){return(await this._post("/points",{rows:rows||[]})).points||[];}
+  async nearest(q,k){const body={k:k||10};if(q&&q.row!=null)body.row=q.row;if(q&&Array.isArray(q.vector))body.vector=q.vector;return(await this._post("/nearest",body)).neighbors||[];}
+  async _json(path){const res=await this._fetch(this.base+path);if(!res.ok)throw new Error(path+" → "+res.status);return res.json();}
+  async _post(path,body){const res=await this._fetch(this.base+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!res.ok)throw new Error(path+" → "+res.status);return res.json();}
+}
+
+// Off-thread tile decode: a tiny Worker built from inlined source (so the file
+// stays self-contained) that runs decodeTile and transfers the typed arrays
+// back. Returns an async decode(buf); falls back to inline decode when Workers
+// are unavailable (Node tests, locked-down embeds).
+function makeWorkerDecoder(){
+  if(typeof Worker==="undefined"||typeof URL==="undefined"||!URL.createObjectURL||typeof Blob==="undefined")return decodeTile;
+  let worker;const pending=new Map();let seq=0;
+  try{
+    const src="var decodeTile="+decodeTile.toString()+";self.onmessage=function(e){try{var d=decodeTile(e.data.buf);self.postMessage({id:e.data.id,d:d},[d.positions.buffer,d.cats.buffer,d.rows.buffer]);}catch(err){self.postMessage({id:e.data.id,err:String(err&&err.message||err)});}};";
+    worker=new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
+    worker.onmessage=e=>{const cb=pending.get(e.data.id);if(!cb)return;pending.delete(e.data.id);if(e.data.err)cb.rej(new Error(e.data.err));else cb.res(e.data.d);};
+  }catch(err){return decodeTile;}
+  return buf=>new Promise((res,rej)=>{const id=++seq;pending.set(id,{res,rej});try{worker.postMessage({id,buf},[buf]);}catch(err){pending.delete(id);try{res(decodeTile(buf));}catch(e2){rej(e2);}}});
+}
+
 // ── Boot + render loop ─────────────────────────────────────────────────────
-rebuild(D);
+// The baked offline file inlines the whole scene as `D` and renders all of it
+// through InlineSource. `dataSource` stays module-visible so the studio (and a
+// future server-backed streaming renderer) can query/stream through one seam.
+let dataSource=new InlineSource(D);
+rebuild(dataSource.scene);
 applyViewHash(); // restore a shared camera/settings view, if the URL carries one
 function animate(){
   requestAnimationFrame(animate);

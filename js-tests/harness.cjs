@@ -119,10 +119,17 @@ function run(viewerPath, D, opts) {
     escape, unescape, encodeURIComponent, decodeURIComponent,
     window: { addEventListener: (t, f) => { (winListeners[t] || (winListeners[t] = [])).push(f); } },
     Math, JSON, Set, Map, Array, Object, String, Number, isFinite, parseFloat, parseInt, Float32Array, Infinity, NaN,
+    // Streaming-client primitives need these intrinsics; expose the OUTER
+    // realm's copies so typed arrays/buffers built in a test are identity-
+    // compatible with what viewer.js produces.
+    Promise, Uint8Array, Uint16Array, Uint32Array, Int32Array, DataView, ArrayBuffer,
   };
   sandbox.window.innerWidth = 1200;
   sandbox.globalThis = sandbox;
   sandbox.D = D;
+  // Tests may inject extra globals (e.g. a `fetch`/`indexedDB`/`Worker` stub for
+  // the ServerSource / TileCache suites) via opts.globals.
+  if (opts && opts.globals) Object.assign(sandbox, opts.globals);
   const ctx = vm.createContext(sandbox);
   // Expose internals for assertions by appending an export shim.
   const shim = "\n;globalThis.__vt={parseScene,rebuild,setRuler,rulerAddPick,shareLink,applyViewHash,exportPNG,applyScale,currentSettings," +
@@ -133,6 +140,7 @@ function run(viewerPath, D, opts) {
     "highlightByIds,clearQuery,get queryGroup(){return queryGroup;},get idCount(){return idToIndex.size;}," +
     "setMorphTarget,applyMorph,clearMorph,curPos,get morphT(){return morphT;}," +
     "setPinMode,addPin,clearPins,currentSettings,applySettings,get pins(){return pins;},get pinOn(){return pinOn;},get pinGroup(){return pinGroup;},get zoomLocked(){return zoomLocked;}," +
+    "decodeTile,catOrder,stratify,tileQuery,InlineSource,ServerSource,TileCache,makeWorkerDecoder,get dataSource(){return dataSource;}," +
     "get densityArr(){return pointsGeo&&pointsGeo.getAttribute('density')&&pointsGeo.getAttribute('density').array;},get densityOn(){return pointsMat?pointsMat.uniforms.densityOn.value:0;}};";
   ctx.__dl = downloads;
   vm.runInContext(src + shim, ctx, { filename: "viewer.js" });

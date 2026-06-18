@@ -14,8 +14,10 @@ node js-tests/04-morph.test.cjs  # a single suite
 `harness.cjs` evaluates `viewer.js` in a `vm` context with thin THREE/DOM
 stubs (a `BufferAttribute` stub keeps the real typed array, so geometry loops
 run on correctly-sized buffers) and exposes the module's internals for
-assertions. The worker suite stubs the `wasm_bindgen` no-modules global and
-drives the message protocol.
+assertions. `run(viewer, D, {globals})` merges extra globals into the sandbox
+(e.g. a `fetch` / `indexedDB` stub for the `ServerSource` / `TileCache` suites).
+The worker suite stubs the `wasm_bindgen` no-modules global and drives the
+message protocol.
 
 Coverage:
 
@@ -28,6 +30,9 @@ Coverage:
 | `05-embed-sync` | compare camera broadcast + echo guard, scene injection, locks, non-parent rejection |
 | `06-density-pins` | density θ×φ histogram + toggle, pins + TOML round-trip |
 | `07-worker` | worker protocol: queue-before-ready, lingua/corpus/query/load dispatch, errors |
+| `08-tile-decode` | SQT1 binary tile `decodeTile` vs a **cross-language golden** (the exact bytes `tile.rs` `golden_bytes_match` asserts), incl. u16/u32 LE + error paths |
+| `09-datasource` | `InlineSource` manifest/tiles/pointMeta/nearest + boot routes through it unchanged |
+| `10-server-source` | `ServerSource` URL/method/body shaping vs the server routes, tile decode over a mock fetch, `TileCache` LRU + worker-decoder fallback |
 
 `01` has an optional integration check that round-trips a real emitted page —
 set `SPHEREQL_EMIT_HTML` to a file produced by `visualize_corpus` to enable it;

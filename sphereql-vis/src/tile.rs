@@ -191,6 +191,40 @@ mod tests {
         assert_eq!(decode_tile(&b), Err(TileError::UnsupportedVersion(99)));
     }
 
+    /// Cross-language wire-format lock. The JS viewer's `decodeTile`
+    /// (sphereql-vis/src/viewer.js) is tested against this exact byte string
+    /// (js-tests/08-tile-decode.test.cjs), so any change here that isn't
+    /// mirrored there — or vice versa — breaks one side's suite. `cat=260` and
+    /// `row=70000` exceed a byte, pinning u16/u32 little-endian layout.
+    #[test]
+    fn golden_bytes_match() {
+        let pts = vec![
+            TilePoint {
+                x: 1.5,
+                y: -2.0,
+                z: 0.5,
+                cat: 3,
+                row: 7,
+            },
+            TilePoint {
+                x: 0.0,
+                y: 0.25,
+                z: -0.75,
+                cat: 260,
+                row: 70000,
+            },
+        ];
+        let hex: String = encode_tile(&pts)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            hex,
+            "535154310100000002000000000000000000c03f000000c00000003f030000000700000000000000\
+             0000803e000040bf0401000070110100"
+        );
+    }
+
     #[test]
     fn rejects_truncated_body() {
         let mut b = encode_tile(&sample());
