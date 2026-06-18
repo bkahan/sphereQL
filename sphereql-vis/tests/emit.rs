@@ -217,7 +217,10 @@ fn to_json_is_panic_free_on_nonfinite_coordinates() {
     let parsed: serde_json::Value =
         serde_json::from_str(&json).expect("non-finite coords serialize to valid JSON (as null)");
     assert!(parsed["points"][0]["x"].is_null(), "NaN x → JSON null");
-    assert!(parsed["surface_radius"].is_null(), "NaN surface_radius → JSON null");
+    assert!(
+        parsed["surface_radius"].is_null(),
+        "NaN surface_radius → JSON null"
+    );
     // Rust from_json can't read those nulls back into f64 (serde rejects
     // null→f64) — that's fine: the runtime consumer is the viewer's JS
     // parseScene, which coerces null→0. Non-finite scenes are never produced by

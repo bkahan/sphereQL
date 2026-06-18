@@ -62,8 +62,12 @@
 mod emit;
 mod template;
 
+pub mod manifest;
 pub mod overlay;
 pub mod scene;
+pub mod tile;
 
+pub use manifest::{Bounds, CategoryInfo, LodScheme, MANIFEST_VERSION, Manifest};
 pub use overlay::{CapRing, Overlay, cap_ring, half_angle_from_solid_angle};
 pub use scene::{Scene, SceneBuilder, ScenePoint, SceneStats, on_surface};
+pub use tile::{TILE_VERSION, TileError, TilePoint, decode_tile, encode_tile};
