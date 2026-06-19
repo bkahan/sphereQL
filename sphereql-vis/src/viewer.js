@@ -266,7 +266,23 @@ function pickCPU(e){
     const dx=sp.x-e.clientX,dy=sp.y-e.clientY,d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=i;}}
   return best;
 }
+// Streaming-mode pick: project every loaded tile point and return the GLOBAL
+// row nearest the cursor (within a small radius), stashing its position for the
+// reticle. O(loaded points), coalesced to one pick/frame by updateHover.
+function pickStreamCPU(e){
+  _streamHoverPos=null;
+  if(!streamGroup)return -1;
+  let best=-1,bestD=14*14;
+  for(const mesh of streamGroup.children){
+    const pos=mesh.geometry&&mesh.geometry.getAttribute&&mesh.geometry.getAttribute("position"),rows=mesh.userData&&mesh.userData.rows;
+    if(!pos||!rows)continue;const a=pos.array;
+    for(let i=0;i<rows.length;i++){const x=a[i*3],y=a[i*3+1],z=a[i*3+2],sp=projectToScreen([x,y,z]);if(!sp.vis)continue;
+      const dx=sp.x-e.clientX,dy=sp.y-e.clientY,d=dx*dx+dy*dy;if(d<bestD){bestD=d;best=rows[i];_streamHoverPos=[x,y,z];}}
+  }
+  return best;
+}
 function getHovered(e){
+  if(streamGroup&&streamStreamer)return pickStreamCPU(e); // streaming → global row
   if(!pointsMesh)return -1;
   let idx=-2;
   try{idx=pickGPU(e);}catch(err){idx=-2;}
@@ -466,6 +482,12 @@ canvas.addEventListener("mouseleave",()=>{_hoverEv=null;hoveredIdx=-1;tooltip.st
 function updateHover(){
   if(!_hoverEv)return;const e=_hoverEv;_hoverEv=null;
   const idx=getHovered(e);hoveredIdx=idx;
+  if(streamStreamer){ // streaming: idx is a global row; pts[] is empty, so no
+    // per-hover metadata fetch — a minimal tooltip, full detail on click.
+    if(idx>=0){tooltip.innerHTML=`<div class="tt-lbl">point #${idx}</div><div class="tt-meta">click to inspect</div>`;tooltip.style.display="block";tooltip.style.left=(e.clientX+16)+"px";tooltip.style.top=(e.clientY+14)+"px";canvas.style.cursor="crosshair";}
+    else{tooltip.style.display="none";canvas.style.cursor="grab";}
+    return;
+  }
   if(idx>=0){const p=pts[idx];
     tooltip.innerHTML=`<div class="tt-lbl">${escHtml(p.label||"Point "+idx)}</div><div class="tt-meta">${escHtml(p.cat)} · θ ${p.theta.toFixed(2)}  φ ${p.phi.toFixed(2)}  r ${p.r.toFixed(2)}</div>`;
     tooltip.style.display="block";tooltip.style.left=(e.clientX+16)+"px";tooltip.style.top=(e.clientY+14)+"px";canvas.style.cursor="crosshair";
@@ -486,6 +508,12 @@ canvas.addEventListener("pointerup",e=>{
     return;
   }
   const idx=getHovered(e);
+  if(streamStreamer){ // streaming: idx is a global row; inspect via the server
+    if(rulerOn){if(_streamHoverPos)rulerAddPick(_streamHoverPos);return;}
+    if(idx>=0)selectStreamRow(idx);
+    else{const info=document.getElementById("info");if(info)info.classList.remove("visible");}
+    return;
+  }
   if(rulerOn){if(idx>=0)rulerAddPick(curPos(idx));return;} // ruler snaps to data points
   if(idx>=0)selectPoint(idx);else deselectPoint(true);
 });
@@ -1287,6 +1315,7 @@ function tileMeshSink(group,palette,material){
     geo.setAttribute("size",new THREE.BufferAttribute(size,1));
     geo.setAttribute("aPickColor",new THREE.BufferAttribute(pick,3));
     const mesh=new THREE.Points(geo,material);mesh.frustumCulled=true;
+    mesh.userData={rows:data.rows}; // global rows, for CPU picking → inspector
     group.add(mesh);meshes.set(key,mesh);
   }
   // Dispose only the per-tile geometry — the material is shared across all
@@ -1317,17 +1346,36 @@ function streamColorMaterial(){
 // the #server hash names).
 function safeColor(c){return typeof c==="string"&&/^#[0-9a-fA-F]{3,8}$|^rgba?\([\d.,\s%]+\)$|^hsla?\([\d.,\s%]+\)$|^[a-zA-Z]+$/.test(c.trim())?c.trim():"#90a4ae";}
 function buildStreamLegend(palette){
-  legendDiv.innerHTML="";legendRows={};
+  legendDiv.innerHTML="";legendRows={};catColor={};catVisible={};
   (palette||[]).forEach(c=>{
-    const col=safeColor(c.color);
-    const row=document.createElement("div");row.className="lrow";
+    const col=safeColor(c.color);catColor[c.name]=col;catVisible[c.name]=!_streamFilterOff.has(c.name);
+    const row=document.createElement("div");row.className="lrow"+(_streamFilterOff.has(c.name)?" dim":"");
     row.innerHTML=`<span class="ldot" style="background:${col};color:${col}"></span><span class="lbl"></span><span class="lcnt">${(c.count||0).toLocaleString()}</span>`;
-    row.querySelector(".lbl").textContent=c.name;legendRows[c.name]=row;legendDiv.appendChild(row);
+    row.querySelector(".lbl").textContent=c.name;legendRows[c.name]=row;
+    // Click a category to filter it out of the stream (server-side tile filter).
+    row.addEventListener("click",()=>{
+      if(_streamFilterOff.has(c.name))_streamFilterOff.delete(c.name);else _streamFilterOff.add(c.name);
+      row.classList.toggle("dim",_streamFilterOff.has(c.name));catVisible[c.name]=!_streamFilterOff.has(c.name);
+      applyStreamFilter();
+    });
+    legendDiv.appendChild(row);
   });
+}
+// Recompute the streaming filter (enabled categories + min-certainty) and push
+// it to the streamer, then refresh diagnostics.
+function applyStreamFilter(){
+  if(!streamStreamer)return;
+  const cats=[];_streamPalette.forEach((c,i)=>{if(!_streamFilterOff.has(c.name))cats.push(i);});
+  const allOn=cats.length===_streamPalette.length;
+  const mcEl=document.getElementById("mincert"),mc=mcEl?parseFloat(mcEl.value)||0:0;
+  streamStreamer.setFilter({cats:allOn?[]:cats,minCertainty:mc>0?mc:undefined}).then(()=>loadDiagnostics());
 }
 
 // ── Connect to a server (streaming, out-of-core) ──────────────────────────
 let streamGroup=null,streamStreamer=null,_streamOnMove=null,_streamTimer=null;
+let _streamHoverPos=null;       // xyz of the last hovered streamed point (for the reticle)
+let _streamFilterOff=new Set(); // category names toggled OFF in streaming filter
+let _streamPalette=[];          // the connected manifest's palette (cat → color/count)
 // Point the viewer at a sphereql-vis-server: fetch the manifest, build the scene
 // chrome (globe + overlays + stats + a palette legend) with NO inline points,
 // then stream point tiles by viewport via a TileStreamer. Returns the streamer.
@@ -1341,10 +1389,11 @@ async function connectToServer(baseUrl,opts){
   // overlays (manifest.overlays — same Overlay shape), and stats panel populate;
   // the empty pointsMesh costs nothing. The palette legend replaces the
   // (empty) per-point legend.
+  _streamFilterOff=new Set();_streamPalette=manifest.palette||[];
   rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]});
-  buildStreamLegend(manifest.palette||[]);
+  buildStreamLegend(_streamPalette);
   streamGroup=new THREE.Group();scene.add(streamGroup);scalables.push(streamGroup);streamGroup.scale.setScalar(curScale);
-  const sink=tileMeshSink(streamGroup,manifest.palette||[],streamColorMaterial());
+  const sink=tileMeshSink(streamGroup,_streamPalette,streamColorMaterial());
   streamStreamer=new TileStreamer(source,sink,opts);
   await streamStreamer.startWith(manifest);
   // Camera → viewport tile updates, throttled so a drag doesn't spam requests.
@@ -1352,7 +1401,22 @@ async function connectToServer(baseUrl,opts){
   let pend=false;
   _streamOnMove=()=>{if(pend)return;pend=true;_streamTimer=setTimeout(()=>{pend=false;_streamTimer=null;if(streamStreamer)streamStreamer.update(camToReq());},120);};
   controls.addEventListener("change",_streamOnMove);
+  // Debugger controls: show + wire the tune (re-project) + filter (min-certainty)
+  // rows, and load the diagnostics dashboard.
+  const showRow=id=>{const el=document.getElementById(id);if(el)el.style.display="block";};
+  showRow("tune-row");showRow("filter-row");
+  const tune=document.getElementById("tune-proj");
+  if(tune)tune.onchange=async()=>{
+    try{const m=await source.reproject(tune.value);
+      document.getElementById("hdr-pill").textContent=(m.stats&&m.stats.projection_kind)||"";
+      streamStreamer.clear();streamStreamer.tiles=new Map();await streamStreamer.startWith(m);streamStreamer.update(camToReq());
+      loadDiagnostics();
+    }catch(err){console.warn("SphereQL: reproject failed",err);}
+  };
+  const mc=document.getElementById("mincert");
+  if(mc)mc.oninput=()=>{const v=document.getElementById("mincert-val");if(v)v.textContent=(+mc.value).toFixed(2);applyStreamFilter();};
   streamStreamer.update(camToReq());
+  loadDiagnostics();
   return streamStreamer;
 }
 // Tear down an active server stream (its tile group + camera listener).
@@ -1362,6 +1426,69 @@ function disconnectServer(){
   if(_streamTimer){clearTimeout(_streamTimer);_streamTimer=null;}
   if(streamStreamer){streamStreamer.clear();streamStreamer=null;}
   if(streamGroup){scene.remove(streamGroup);disposeObject(streamGroup);const i=scalables.indexOf(streamGroup);if(i>=0)scalables.splice(i,1);streamGroup=null;}
+}
+
+// ── Server debugger UI: inspect · diagnostics · tune · filter ──────────────
+// Tiny diverging bar sparkline of a raw embedding vector into the inspector
+// canvas (+x blue, −x warm); empty/absent vector hides the panel.
+function renderVectorSparkline(vec){
+  const cv=document.getElementById("info-vector"),wrap=document.getElementById("info-vector-wrap");
+  if(!wrap)return;
+  if(!vec||!vec.length){wrap.style.display="none";return;}
+  wrap.style.display="block";
+  const ctx=cv&&cv.getContext&&cv.getContext("2d");if(!ctx)return;
+  const W=cv.width,H=cv.height,mid=H/2;ctx.clearRect(0,0,W,H);
+  let mx=1e-9;for(const v of vec)mx=Math.max(mx,Math.abs(v));
+  const n=vec.length,bw=W/n;
+  for(let i=0;i<n;i++){const v=vec[i],h=Math.abs(v)/mx*(mid-1);
+    ctx.fillStyle=v>=0?"#5cc8ff":"#ff8a65";ctx.fillRect(i*bw,v>=0?mid-h:mid,Math.max(1,bw-0.3),Math.max(1,h));}
+  ctx.strokeStyle="rgba(120,160,255,0.25)";ctx.beginPath();ctx.moveTo(0,mid);ctx.lineTo(W,mid);ctx.stroke();
+}
+// Inspect a streamed point by global row: fetch its metadata + ANN neighbors
+// from the server and fill the info panel (label, category, coords, raw-vector
+// sparkline, clickable neighbors). The inline selectPoint path is untouched.
+async function selectStreamRow(row){
+  if(!streamStreamer)return;
+  const src=streamStreamer.source,info=document.getElementById("info");
+  let meta,nbrs=[];
+  try{const ms=await src.pointMeta([row]);meta=ms&&ms[0];if(!meta)return;nbrs=await src.nearest({row},6);}
+  catch(err){console.warn("SphereQL: inspect fetch failed",err);return;}
+  document.getElementById("info-label").textContent=meta.label||("point #"+row);
+  const tag=document.getElementById("info-cat"),col=catColor[meta.category]||"#5cc8ff";
+  tag.textContent=meta.category||"";tag.style.color=col;tag.style.background=col+"18";
+  const f=x=>isFinite(+x)?(+x).toFixed(4):"—";
+  document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${f(meta.theta)}</b><span>φ</span><b>${f(meta.phi)}</b><span>r</span><b>${f(meta.r)}</b><span>cert</span><b>${f(meta.certainty)}</b>`;
+  renderVectorSparkline(meta.vector);
+  const nb=document.getElementById("info-neighbors"),rows=nbrs.map(h=>h.row),lab={};
+  try{for(const m of await src.pointMeta(rows))lab[m.row]=m;}catch(err){/* labels are best-effort */}
+  nb.innerHTML=nbrs.map(h=>{const m=lab[h.row],c=m?(catColor[m.category]||"#5cc8ff"):"#5cc8ff";
+    return `<div class="nb" data-row="${h.row}" style="background:${c}22;border-left:2px solid ${c}"><span>${escHtml(m?(m.label||("#"+h.row)):("#"+h.row))}</span><span class="dist">${(+h.similarity).toFixed(3)}</span></div>`;}).join("");
+  nb.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectStreamRow(parseInt(el.dataset.row))));
+  document.getElementById("info-nb-head").textContent="Nearest · cosine";
+  info.classList.add("visible");
+}
+// Render the /diagnostics payload (EVR + warnings + histograms + outliers) into
+// the Diag tab; outliers are clickable → inspect.
+function renderDiagnostics(d){
+  const el=document.getElementById("diag-content");if(!el)return;
+  if(!d){el.innerHTML='<div class="muted">no diagnostics</div>';return;}
+  const evr=clamp((d.evr||0)*100,0,100);
+  const hist=h=>{const bins=(h&&h.bins)||[],mx=Math.max(1,...bins);
+    return `<div class="histo">${bins.map(b=>`<i style="height:${(b/mx*100).toFixed(1)}%"></i>`).join("")}</div><div class="histo-cap"><span>${h&&isFinite(h.min)?h.min.toFixed(2):""}</span><span>${h&&isFinite(h.max)?h.max.toFixed(2):""}</span></div>`;};
+  let html=`<div class="srow"><span>projection</span><span class="v hl">${escHtml(d.projection_kind||"?")}</span></div>`;
+  html+=`<div class="srow"><span>${escHtml(d.evr_label||"EVR")}</span><span class="v">${evr.toFixed(1)}%</span></div><div class="bar"><i style="width:${evr.toFixed(1)}%"></i></div>`;
+  html+=`<div class="srow"><span>points</span><span class="v">${(d.total_points||0).toLocaleString()}</span></div>`;
+  for(const w of d.warnings||[])html+=`<div class="warn ${escHtml(w.severity||"info")}">${escHtml(w.message||"")}</div>`;
+  html+=`<h3 style="margin:13px 0 4px">Certainty</h3>${hist(d.certainty)}`;
+  html+=`<h3 style="margin:13px 0 4px">Intensity</h3>${hist(d.intensity)}`;
+  if((d.outliers||[]).length){html+='<h3 style="margin:13px 0 5px">Low-certainty outliers</h3>';
+    html+=(d.outliers||[]).map(o=>`<div class="nb" data-row="${o.row}"><span>${escHtml(o.label||("#"+o.row))}</span><span class="dist">${(+o.certainty).toFixed(3)}</span></div>`).join("");}
+  el.innerHTML=html;
+  el.querySelectorAll(".nb[data-row]").forEach(x=>x.addEventListener("click",()=>selectStreamRow(parseInt(x.dataset.row))));
+}
+async function loadDiagnostics(){
+  if(!streamStreamer)return;
+  try{renderDiagnostics(await streamStreamer.source.diagnostics());}catch(err){console.warn("SphereQL: diagnostics failed",err);}
 }
 
 // ── Boot + render loop ─────────────────────────────────────────────────────
@@ -1387,7 +1514,8 @@ function animate(){
   updateHover(); // coalesced hover pick (≤1 GPU readback/frame)
   if(tgtTween){tgtTween.t++;const k=Math.min(1,tgtTween.t/tgtTween.dur),e=k*k*(3-2*k);controls.target.lerpVectors(tgtTween.from,tgtTween.to,e);if(k>=1)tgtTween=null;}
   controls.update();
-  if(hoveredIdx>=0){const sp=projectToScreen(curPos(hoveredIdx));if(sp.vis){reticle.style.display="block";reticle.style.left=sp.x+"px";reticle.style.top=sp.y+"px";}else reticle.style.display="none";}else reticle.style.display="none";
+  {const hp=streamStreamer?_streamHoverPos:(hoveredIdx>=0?curPos(hoveredIdx):null);
+   if(hp){const sp=projectToScreen(hp);if(sp.vis){reticle.style.display="block";reticle.style.left=sp.x+"px";reticle.style.top=sp.y+"px";}else reticle.style.display="none";}else reticle.style.display="none";}
   if(selectedIdx>=0){const sp=projectToScreen(curPos(selectedIdx));if(sp.vis){sellabel.style.display="block";sellabel.style.left=sp.x+"px";sellabel.style.top=(sp.y-16)+"px";}else sellabel.style.display="none";}
   updateLabels();updatePinLabels();
   drawMinimap();renderer.render(scene,camera);

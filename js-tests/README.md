@@ -35,6 +35,7 @@ Coverage:
 | `10-server-source` | `ServerSource` URL/method/body shaping vs the server routes, tile decode over a mock fetch, `TileCache` LRU + worker-decoder fallback |
 | `11-transform` | GPU transform parity: `curPos` matches the spread/radial/morph formula, `applyTransform` pushes the uniforms the GLSL reads (so CPU mirror + GPU agree), and the pick-id codec round-trips |
 | `12-tile-streamer` | streaming orchestration: `TileStreamer` camera→request mapping, base+detail working set, dedup, LRU eviction, load cancellation; `tileMeshSink` per-tile geometry + global-row pick ids; `safeColor` palette-injection guard |
+| `13-connect-debugger` | streaming-debugger flow against a mock fetch: `connectToServer` fetches manifest + base tile + diagnostics and installs a live streamer; `selectStreamRow` (inspect) issues /points + /nearest; `renderDiagnostics` runs clean |
 
 `01` has an optional integration check that round-trips a real emitted page —
 set `SPHEREQL_EMIT_HTML` to a file produced by `visualize_corpus` to enable it;

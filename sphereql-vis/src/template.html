@@ -92,6 +92,15 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
 .nb:hover{background:rgba(120,160,255,.11);border-color:var(--line)}
 .nb .dist{color:var(--ink-faint);font-variant-numeric:tabular-nums}
 
+/* Diagnostics dashboard + inspector sparkline (server/debugger mode) */
+#info-vector{display:block;width:100%;height:46px;background:rgba(6,8,20,.5);border:1px solid var(--line-soft);border-radius:2px}
+.histo{display:flex;align-items:flex-end;gap:1px;height:44px;margin:6px 0 2px}
+.histo>i{flex:1;min-height:1px;border-radius:1px 1px 0 0;background:linear-gradient(180deg,var(--accent),rgba(92,200,255,.22))}
+.histo-cap{display:flex;justify-content:space-between;font-size:9px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.warn{font-size:11px;line-height:1.4;padding:6px 9px;margin:5px 0;border-radius:2px;border-left:2px solid var(--accent-warm);background:rgba(255,180,84,.07);color:var(--ink-dim)}
+.warn.critical{border-left-color:#ff7a7a;background:rgba(255,122,122,.08)}
+.warn.info{border-left-color:var(--accent);background:rgba(92,200,255,.06)}
+
 #stats{bottom:16px;left:16px;min-width:208px;animation-delay:.16s}
 .srow{display:flex;justify-content:space-between;gap:18px;margin:3px 0;font-size:12px;color:var(--ink-dim)}
 .srow .v{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -214,6 +223,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
     <button class="tab active" data-tab="domains">Domains</button>
     <button class="tab" data-tab="overlays">Overlays</button>
     <button class="tab" data-tab="settings">Settings</button>
+    <button class="tab" data-tab="diag">Diag</button>
   </div>
   <div class="tabpane active" id="tab-domains">
     <div class="seg"><button id="sel-all">all</button><button id="sel-none">none</button></div>
@@ -276,13 +286,32 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
     <div class="hint">Load any SphereQL Scene — or drop a <code>.json</code> file anywhere on the page.</div>
     <button id="reset" class="resetbtn">↺ Reset to defaults</button>
   </div>
+  <div class="tabpane" id="tab-diag">
+    <div class="set" id="tune-row" style="display:none">
+      <div class="lab"><span>Projection</span></div>
+      <select id="tune-proj" class="sel">
+        <option value="pca">PCA</option>
+        <option value="umap_sphere">UMAP on S²</option>
+        <option value="laplacian">Laplacian eigenmap</option>
+        <option value="kernel_pca">Kernel PCA</option>
+      </select>
+      <div class="hint">Re-project the corpus live — the server re-runs the projection and the view re-streams (O(n²) families gate to PCA at scale).</div>
+    </div>
+    <div class="set" id="filter-row" style="display:none">
+      <div class="lab"><span>Min certainty</span><span class="val" id="mincert-val">0.00</span></div>
+      <input type="range" id="mincert" min="0" max="1" step="0.02" value="0">
+      <div class="hint">Hide streamed points whose projection certainty is below this.</div>
+    </div>
+    <div id="diag-content"><div class="muted">Launch with <code>#server=&lt;url&gt;</code> for live projection diagnostics.</div></div>
+  </div>
 </div>
 
 <div id="info" class="panel">
   <h2 id="info-label"></h2>
   <div id="info-cat" class="cat-tag"></div>
   <div id="info-coords" class="coord"></div>
-  <h3 style="margin:14px 0 7px">Nearest · chord</h3>
+  <div id="info-vector-wrap" style="display:none"><h3 style="margin:14px 0 6px">Raw vector · 128-d</h3><canvas id="info-vector" width="280" height="46"></canvas></div>
+  <h3 id="info-nb-head" style="margin:14px 0 7px">Nearest · chord</h3>
   <div id="info-neighbors"></div>
 </div>
 <div id="stats" class="panel"><h3>Instrument</h3><div id="stats-content"></div></div>
