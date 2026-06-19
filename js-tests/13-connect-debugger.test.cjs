@@ -35,7 +35,7 @@ const fetch = (url, init) => {
     certainty: { bins: [3, 1, 0, 5], min: 0.1, max: 0.9 }, intensity: { bins: [2, 2], min: 0, max: 2 },
     outliers: [{ row: 7, label: "p7", category: "A", certainty: 0.12 }],
   }));
-  if (url.endsWith("/points")) return Promise.resolve(j({ points: [{ row: 7, label: "p7", cat: 0, category: "A", certainty: 0.5, intensity: 1, vector: [0.1, -0.2, 0.3], x: 1, y: 0, z: 0, r: 1, theta: 0, phi: 1.5 }] }));
+  if (url.endsWith("/points")) return Promise.resolve(j({ points: [{ row: 7, label: "p7", cat: 0, category: "A", certainty: 0.5, intensity: 1, x: 1, y: 0, z: 0, vector: [0.1, -0.2, 0.3] }] }));
   if (url.endsWith("/nearest")) return Promise.resolve(j({ neighbors: [{ row: 42, similarity: 0.91 }] }));
   return Promise.resolve({ ok: false, status: 404 });
 };

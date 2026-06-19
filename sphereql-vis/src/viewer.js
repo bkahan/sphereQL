@@ -817,6 +817,7 @@ function loadSceneFromFile(f){if(!f)return;const r=new FileReader();r.onload=()=
 
 // ── Scene swap ─────────────────────────────────────────────────────────────
 function teardown(){
+  if(typeof disconnectServer==="function")disconnectServer(); // drop any active server stream (idempotent; no-op in pure inline)
   disposeObject(pointsMesh);if(pointsMesh)scene.remove(pointsMesh);
   disposeObject(globeGroup);if(globeGroup)scene.remove(globeGroup);
   disposeObject(linesGroup);if(linesGroup)scene.remove(linesGroup);
@@ -1390,6 +1391,8 @@ async function connectToServer(baseUrl,opts){
   // the empty pointsMesh costs nothing. The palette legend replaces the
   // (empty) per-point legend.
   _streamFilterOff=new Set();_streamPalette=manifest.palette||[];
+  // Reset the min-certainty filter slider so a reconnect starts unfiltered.
+  {const mcEl=document.getElementById("mincert");if(mcEl)mcEl.value=0;const mcv=document.getElementById("mincert-val");if(mcv)mcv.textContent="0.00";}
   rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]});
   buildStreamLegend(_streamPalette);
   streamGroup=new THREE.Group();scene.add(streamGroup);scalables.push(streamGroup);streamGroup.scale.setScalar(curScale);
@@ -1456,8 +1459,10 @@ async function selectStreamRow(row){
   document.getElementById("info-label").textContent=meta.label||("point #"+row);
   const tag=document.getElementById("info-cat"),col=catColor[meta.category]||"#5cc8ff";
   tag.textContent=meta.category||"";tag.style.color=col;tag.style.background=col+"18";
-  const f=x=>isFinite(+x)?(+x).toFixed(4):"—";
-  document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${f(meta.theta)}</b><span>φ</span><b>${f(meta.phi)}</b><span>r</span><b>${f(meta.r)}</b><span>cert</span><b>${f(meta.certainty)}</b>`;
+  const f=v=>isFinite(+v)?(+v).toFixed(4):"—";
+  // Derive r/θ/φ from the point's xyz (the meta carries position, not angles).
+  const px=+meta.x,py=+meta.y,pz=+meta.z,r=Math.hypot(px,py,pz);let th=Math.atan2(py,px);if(th<0)th+=2*Math.PI;const ph=Math.acos(clamp(r>1e-12?pz/r:0,-1,1));
+  document.getElementById("info-coords").innerHTML=`<span>θ</span><b>${f(th)}</b><span>φ</span><b>${f(ph)}</b><span>r</span><b>${f(r)}</b><span>cert</span><b>${f(meta.certainty)}</b>`;
   renderVectorSparkline(meta.vector);
   const nb=document.getElementById("info-neighbors"),rows=nbrs.map(h=>h.row),lab={};
   try{for(const m of await src.pointMeta(rows))lab[m.row]=m;}catch(err){/* labels are best-effort */}

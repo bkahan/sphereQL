@@ -111,6 +111,11 @@ pub struct PointMeta {
     pub category: String,
     pub certainty: f32,
     pub intensity: f32,
+    /// Display position on the shell (the inspector derives r/θ/φ from this, so
+    /// coords show for any inspected row — clicked, neighbor, or outlier).
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
     pub vector: Vec<f32>,
 }
 
@@ -139,6 +144,9 @@ pub fn collect_points(state: &AppState, req: &PointsRequest) -> PointsResponse {
                     .unwrap_or_default(),
                 certainty: p.certainty,
                 intensity: p.intensity,
+                x: p.xyz[0],
+                y: p.xyz[1],
+                z: p.xyz[2],
                 vector: p.vector.clone(),
             })
         })

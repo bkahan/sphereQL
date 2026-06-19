@@ -123,6 +123,8 @@ async fn points_returns_metadata_with_raw_vectors() {
     assert_eq!(pts[0]["row"], 0);
     assert!(pts[0]["label"].is_string());
     assert!(pts[0]["category"].is_string());
+    // Display position rides along (the inspector derives r/θ/φ from it).
+    assert!(pts[0]["x"].is_number() && pts[0]["y"].is_number() && pts[0]["z"].is_number());
     // 128-d raw embedding rides along for the inspector.
     assert_eq!(pts[0]["vector"].as_array().unwrap().len(), 128);
 }
