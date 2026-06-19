@@ -29,13 +29,26 @@
 use std::path::PathBuf;
 
 use sphereql_corpus::CorpusId;
+use sphereql_embed::ProjectionKind;
 
 pub mod routes;
 pub mod state;
 pub mod tiles;
 
-pub use routes::build_router;
+pub use routes::{Shared, build_router};
 pub use state::{AppState, BuildError, PointItem, StoredPoint, gate_projection};
+
+/// Resolve a projection-kind name (CLI `--projection` or the `/reproject`
+/// body). Case-insensitive, `-`/`_` interchangeable; `None` on an unknown name.
+pub fn parse_projection(s: &str) -> Option<ProjectionKind> {
+    match s.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "pca" => Some(ProjectionKind::Pca),
+        "kernel_pca" | "kernelpca" => Some(ProjectionKind::KernelPca),
+        "laplacian" | "laplacian_eigenmap" => Some(ProjectionKind::LaplacianEigenmap),
+        "umap" | "umap_sphere" => Some(ProjectionKind::UmapSphere),
+        _ => None,
+    }
+}
 
 /// Resolve a `--corpus` argument into a [`CorpusId`].
 ///

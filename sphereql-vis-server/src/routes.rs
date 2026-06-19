@@ -6,7 +6,7 @@
 //! so it can be unit-tested without a socket. The router is built by
 //! [`build_router`] and driven in tests via `tower::ServiceExt::oneshot`.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use axum::{
     Json, Router,
@@ -24,6 +24,17 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::state::AppState;
 use crate::tiles::{TileParams, build_tile};
 
+/// Shared, hot-swappable server state. Reads (tiles/queries) snapshot the inner
+/// `Arc` under a brief read lock; `/reproject` swaps in a freshly-built state
+/// under a write lock. Lock-free in practice — the read lock is held only long
+/// enough to clone the `Arc`.
+pub type Shared = Arc<RwLock<Arc<AppState>>>;
+
+/// Snapshot the current state (clone the inner `Arc`, release the lock).
+fn snapshot(shared: &Shared) -> Arc<AppState> {
+    shared.read().expect("state lock not poisoned").clone()
+}
+
 /// Cap on rows in a single `POST /points` batch — bounds the response.
 const MAX_POINTS_BATCH: usize = 4096;
 /// Cap on `k` for `POST /nearest`.
@@ -35,7 +46,7 @@ const BODY_LIMIT: usize = 4 * 1024 * 1024;
 /// viewer is typically served from `file://` or a different origin), a body
 /// limit on the POST endpoints, and a panic catcher so a handler fault returns
 /// 500 instead of dropping the connection.
-pub fn build_router(state: Arc<AppState>) -> Router {
+pub fn build_router(state: Shared) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -51,6 +62,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/globs", get(globs))
         .route("/drill_down", post(drill_down))
         .route("/diagnostics", get(diagnostics))
+        .route("/reproject", post(reproject))
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(cors)
         .layer(CatchPanicLayer::new())
@@ -61,15 +73,16 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn manifest(State(state): State<Arc<AppState>>) -> Response {
-    Json(&state.manifest).into_response()
+async fn manifest(State(shared): State<Shared>) -> Response {
+    Json(&snapshot(&shared).manifest).into_response()
 }
 
-async fn category_stats(State(state): State<Arc<AppState>>) -> Response {
-    Json(&state.manifest.palette).into_response()
+async fn category_stats(State(shared): State<Shared>) -> Response {
+    Json(&snapshot(&shared).manifest.palette).into_response()
 }
 
-async fn tiles(State(state): State<Arc<AppState>>, Query(params): Query<TileParams>) -> Response {
+async fn tiles(State(shared): State<Shared>, Query(params): Query<TileParams>) -> Response {
+    let state = snapshot(&shared);
     let bytes = build_tile(&state, &params);
     (
         [(
@@ -133,8 +146,8 @@ pub fn collect_points(state: &AppState, req: &PointsRequest) -> PointsResponse {
     PointsResponse { points }
 }
 
-async fn points(State(state): State<Arc<AppState>>, Json(req): Json<PointsRequest>) -> Response {
-    Json(collect_points(&state, &req)).into_response()
+async fn points(State(shared): State<Shared>, Json(req): Json<PointsRequest>) -> Response {
+    Json(collect_points(&snapshot(&shared), &req)).into_response()
 }
 
 // ── /nearest: semantic neighbors (trace) ────────────────────────────────────
@@ -186,8 +199,8 @@ pub fn collect_nearest(state: &AppState, req: &NearestRequest) -> NearestRespons
     NearestResponse { neighbors }
 }
 
-async fn nearest(State(state): State<Arc<AppState>>, Json(req): Json<NearestRequest>) -> Response {
-    Json(collect_nearest(&state, &req)).into_response()
+async fn nearest(State(shared): State<Shared>, Json(req): Json<NearestRequest>) -> Response {
+    Json(collect_nearest(&snapshot(&shared), &req)).into_response()
 }
 
 // ── Trace endpoints (category graph / globs / drill-down) ───────────────────
@@ -237,7 +250,8 @@ pub struct PathResponse {
     pub path: Option<PathDto>,
 }
 
-async fn path(State(state): State<Arc<AppState>>, Json(req): Json<PathRequest>) -> Response {
+async fn path(State(shared): State<Shared>, Json(req): Json<PathRequest>) -> Response {
+    let state = snapshot(&shared);
     let q = SphereQLQuery::CategoryConceptPath {
         source_category: &req.source,
         target_category: &req.target,
@@ -289,7 +303,8 @@ pub struct GlobsResponse {
     pub globs: Vec<GlobDto>,
 }
 
-async fn globs(State(state): State<Arc<AppState>>, Query(q): Query<GlobParams>) -> Response {
+async fn globs(State(shared): State<Shared>, Query(q): Query<GlobParams>) -> Response {
+    let state = snapshot(&shared);
     let max_k = q.max_k.unwrap_or(12).clamp(2, 64);
     let k = q.k.filter(|&k| k >= 2);
     match state
@@ -341,7 +356,8 @@ pub struct DrillResponse {
     pub results: Vec<DrillResultDto>,
 }
 
-async fn drill_down(State(state): State<Arc<AppState>>, Json(req): Json<DrillRequest>) -> Response {
+async fn drill_down(State(shared): State<Shared>, Json(req): Json<DrillRequest>) -> Response {
+    let state = snapshot(&shared);
     let k = req.k.unwrap_or(10).clamp(1, MAX_NEAREST_K);
     if req.vector.len() != state.dim {
         return bad_request(format!(
@@ -457,7 +473,8 @@ fn histogram(vals: &[f32], bins: usize) -> HistogramDto {
     }
 }
 
-async fn diagnostics(State(state): State<Arc<AppState>>) -> Response {
+async fn diagnostics(State(shared): State<Shared>) -> Response {
+    let state = snapshot(&shared);
     let certainty: Vec<f32> = state.points.iter().map(|p| p.certainty).collect();
     let intensity: Vec<f32> = state.points.iter().map(|p| p.intensity).collect();
     let warnings = state
@@ -510,4 +527,36 @@ async fn diagnostics(State(state): State<Arc<AppState>>) -> Response {
         outliers,
     })
     .into_response()
+}
+
+// ── /reproject: live re-projection ("tune") ────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ReprojectRequest {
+    /// `pca` | `umap_sphere` | `laplacian` | `kernel_pca` (gated by corpus size).
+    pub projection: String,
+}
+
+/// Re-project the in-memory corpus with a different kind and atomically swap it
+/// in, returning the new manifest. The heavy re-projection runs off the async
+/// runtime via `spawn_blocking`; the write lock is held only for the pointer
+/// swap, so concurrent reads (tiles/queries) are never blocked on the rebuild.
+async fn reproject(State(shared): State<Shared>, Json(req): Json<ReprojectRequest>) -> Response {
+    let Some(kind) = crate::parse_projection(&req.projection) else {
+        return bad_request(format!("unknown projection '{}'", req.projection));
+    };
+    let current = snapshot(&shared);
+    match tokio::task::spawn_blocking(move || current.reproject(kind)).await {
+        Ok(Ok(next)) => {
+            let manifest = next.manifest.clone();
+            *shared.write().expect("state lock not poisoned") = Arc::new(next);
+            Json(manifest).into_response()
+        }
+        Ok(Err(e)) => bad_request(e),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "re-projection task failed".to_string(),
+        )
+            .into_response(),
+    }
 }

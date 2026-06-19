@@ -73,8 +73,10 @@ impl SpatialItem for PointItem {
     }
 }
 
-/// Everything a running server holds. Shared behind an `Arc` across requests;
-/// never mutated after build, so no locking is needed.
+/// Everything a running server holds for one projection. An instance is
+/// immutable after build — `/reproject` ("tune") builds a fresh `AppState` and
+/// atomically swaps the shared `Arc` (see [`crate::Shared`]), so request
+/// handlers only ever read a consistent snapshot.
 pub struct AppState {
     /// The bounded scene descriptor served at `GET /manifest`.
     pub manifest: Manifest,
@@ -167,11 +169,6 @@ impl AppState {
         requested: ProjectionKind,
     ) -> Result<AppState, BuildError> {
         let concepts = corpus.load().map_err(|e| BuildError::Load(e.to_string()))?;
-        let n = concepts.len();
-        if n == 0 {
-            return Err(BuildError::Empty);
-        }
-
         // ── Corpus → dense embeddings (seed convention matches demo_scene) ──
         let categories: Vec<String> = concepts.iter().map(|c| c.category.to_string()).collect();
         let labels: Vec<String> = concepts.iter().map(|c| c.label.to_string()).collect();
@@ -180,6 +177,60 @@ impl AppState {
             .enumerate()
             .map(|(i, c)| embed(&c.features, 1000 + i as u64))
             .collect();
+        Self::assemble(
+            format!("SphereQL — {}", corpus.name()),
+            categories,
+            labels,
+            embeddings,
+            requested,
+        )
+    }
+
+    /// Re-project the in-memory corpus with a different projection kind,
+    /// reconstructing the pipeline inputs from the current state (f32 inspector
+    /// vectors → f64 embeddings, palette → category names, stored labels).
+    /// Returns a fresh `AppState` to atomically swap in — powers live "tune".
+    pub fn reproject(&self, requested: ProjectionKind) -> Result<AppState, BuildError> {
+        let categories: Vec<String> = self
+            .points
+            .iter()
+            .map(|p| {
+                self.cat_names
+                    .get(p.cat as usize)
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .collect();
+        let labels: Vec<String> = self.points.iter().map(|p| p.label.clone()).collect();
+        let embeddings: Vec<Vec<f64>> = self
+            .points
+            .iter()
+            .map(|p| p.vector.iter().map(|&x| x as f64).collect())
+            .collect();
+        Self::assemble(
+            self.manifest.title.clone(),
+            categories,
+            labels,
+            embeddings,
+            requested,
+        )
+    }
+
+    /// Project the given embeddings (with aligned categories/labels) using
+    /// `requested` (gated by size), build the spatial + ANN indexes, and
+    /// assemble the bounded manifest. Shared by [`Self::from_corpus`] and
+    /// [`Self::reproject`]. CPU-heavy and synchronous.
+    pub fn assemble(
+        title: String,
+        categories: Vec<String>,
+        labels: Vec<String>,
+        embeddings: Vec<Vec<f64>>,
+        requested: ProjectionKind,
+    ) -> Result<AppState, BuildError> {
+        let n = embeddings.len();
+        if n == 0 {
+            return Err(BuildError::Empty);
+        }
 
         // ANN over the raw embeddings (semantic neighbors), and an f32 copy of
         // each vector for the inspector — both borrow `embeddings` before it is
@@ -300,7 +351,7 @@ impl AppState {
 
         // ── Manifest ─────────────────────────────────────────────────────────
         let stats = SceneStats::new(kind_name, evr).with_label(evr_label_for(kind_name));
-        let mut manifest = Manifest::new(format!("SphereQL — {}", corpus.name()), n, stats);
+        let mut manifest = Manifest::new(title, n, stats);
         manifest.surface_radius = sr;
         manifest.bounds = bounds;
         manifest.overlays = overlays;
@@ -384,5 +435,27 @@ mod tests {
         assert_eq!(state.manifest.stats.evr_label, "PCA variance");
         // Bounded overlays present (at least one centroid per category).
         assert!(state.manifest.overlays.len() >= state.cat_names.len());
+    }
+
+    #[test]
+    fn reproject_changes_kind_preserving_corpus() {
+        let base =
+            AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
+        assert_eq!(base.manifest.stats.projection_kind, "pca");
+        // Re-project the same in-memory corpus with a different kind.
+        let re = base
+            .reproject(ProjectionKind::UmapSphere)
+            .expect("reproject succeeds");
+        assert_eq!(re.manifest.stats.projection_kind, "umap_sphere");
+        assert_eq!(
+            re.points.len(),
+            300,
+            "every point survives the re-projection"
+        );
+        assert_eq!(re.dim, sphereql_corpus::DIM);
+        assert_eq!(
+            re.cat_names, base.cat_names,
+            "categories are preserved across a re-projection"
+        );
     }
 }

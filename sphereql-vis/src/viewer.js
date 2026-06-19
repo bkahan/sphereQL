@@ -1144,6 +1144,10 @@ class ServerSource{
   async manifest(){return this._json("/manifest");}
   async categoryStats(){return this._json("/category_stats");}
   async diagnostics(){return this._json("/diagnostics");}
+  // Live "tune": ask the server to re-project the corpus with a different kind;
+  // returns the fresh manifest (re-stream tiles after this to pick up the new
+  // positions).
+  async reproject(projection){return this._post("/reproject",{projection});}
   async tiles(params){
     const key="/tiles?"+tileQuery(params);
     let buf=this.cache?await this.cache.get(key):null;

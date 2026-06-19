@@ -7,10 +7,10 @@
 //! ```
 
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use sphereql_embed::ProjectionKind;
-use sphereql_vis_server::{AppState, build_router, parse_corpus};
+use sphereql_vis_server::{AppState, build_router, parse_corpus, parse_projection};
 
 struct Args {
     corpus: String,
@@ -25,16 +25,6 @@ impl Default for Args {
             addr: "127.0.0.1:8080".to_string(),
             projection: ProjectionKind::Pca,
         }
-    }
-}
-
-fn parse_projection(s: &str) -> Option<ProjectionKind> {
-    match s.trim().to_ascii_lowercase().replace('-', "_").as_str() {
-        "pca" => Some(ProjectionKind::Pca),
-        "kernel_pca" | "kernelpca" => Some(ProjectionKind::KernelPca),
-        "laplacian" | "laplacian_eigenmap" => Some(ProjectionKind::LaplacianEigenmap),
-        "umap" | "umap_sphere" => Some(ProjectionKind::UmapSphere),
-        _ => None,
     }
 }
 
@@ -108,7 +98,7 @@ async fn main() -> ExitCode {
         state.manifest.palette.len(),
     );
 
-    let app = build_router(Arc::new(state));
+    let app = build_router(Arc::new(RwLock::new(Arc::new(state))));
     let listener = match tokio::net::TcpListener::bind(&args.addr).await {
         Ok(l) => l,
         Err(e) => {

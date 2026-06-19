@@ -4,7 +4,7 @@
 //! needed) and exercises one endpoint through the full extract → handle →
 //! serialize path.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
@@ -20,7 +20,7 @@ const BODY_CAP: usize = 64 * 1024 * 1024;
 fn router() -> axum::Router {
     let state =
         AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
-    build_router(Arc::new(state))
+    build_router(Arc::new(RwLock::new(Arc::new(state))))
 }
 
 /// Build the router and also surface the corpus's category names + embedding
@@ -30,7 +30,11 @@ fn router_with_meta() -> (Vec<String>, usize, axum::Router) {
         AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
     let names = state.cat_names.clone();
     let dim = state.dim;
-    (names, dim, build_router(Arc::new(state)))
+    (
+        names,
+        dim,
+        build_router(Arc::new(RwLock::new(Arc::new(state)))),
+    )
 }
 
 async fn body_bytes(resp: axum::response::Response) -> Vec<u8> {
@@ -309,6 +313,39 @@ async fn tiles_filter_by_category_and_certainty() {
     let none =
         decode_tile(&body_bytes(get(router(), "/tiles?min_certainty=2.0").await).await).unwrap();
     assert!(none.is_empty(), "min_certainty>1 filters everything out");
+}
+
+#[tokio::test]
+async fn reproject_swaps_the_projection_live() {
+    let app = router();
+    // PCA → UMAP: the response manifest reflects the new kind...
+    let resp = post_json(
+        app.clone(),
+        "/reproject",
+        json!({ "projection": "umap_sphere" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let m: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    assert_eq!(m["stats"]["projection_kind"], "umap_sphere");
+    assert_eq!(m["total_points"], 300);
+    // ...and the swap persisted — a fresh /manifest on the same state sees it.
+    let m2: Value = serde_json::from_slice(&body_bytes(get(app, "/manifest").await).await).unwrap();
+    assert_eq!(
+        m2["stats"]["projection_kind"], "umap_sphere",
+        "re-projection swapped the live state"
+    );
+}
+
+#[tokio::test]
+async fn reproject_unknown_kind_is_a_400() {
+    let resp = post_json(
+        router(),
+        "/reproject",
+        json!({ "projection": "not_a_projection" }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

@@ -31,6 +31,7 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "A", label: "a" }] })
     if (url.endsWith("/points")) return { ok: true, json: () => Promise.resolve({ points: [{ row: 0, label: "p0" }] }) };
     if (url.endsWith("/nearest")) return { ok: true, json: () => Promise.resolve({ neighbors: [{ row: 5, similarity: 0.9 }] }) };
     if (url.endsWith("/diagnostics")) return { ok: true, json: () => Promise.resolve({ projection_kind: "pca", evr: 0.5, total_points: 3, warnings: [], certainty: { bins: [1, 2], min: 0, max: 1 }, outliers: [] }) };
+    if (url.endsWith("/reproject")) return { ok: true, json: () => Promise.resolve({ title: "t", total_points: 3, stats: { projection_kind: "umap_sphere", evr: 0.4 } }) };
     return { ok: false, status: 404 };
   });
 
@@ -60,6 +61,11 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "A", label: "a" }] })
   const diag = await src.diagnostics();
   ok(diag.projection_kind === "pca" && diag.certainty.bins.length === 2, "GET /diagnostics parsed");
   ok(fetch.calls.some((c) => c.url.endsWith("/diagnostics")), "diagnostics() hits /diagnostics");
+
+  const rm = await src.reproject("umap_sphere");
+  ok(rm.stats.projection_kind === "umap_sphere", "reproject() returns the re-projected manifest");
+  const rc = fetch.calls.find((c) => c.url.endsWith("/reproject"));
+  ok(rc.init.method === "POST" && JSON.parse(rc.init.body).projection === "umap_sphere", "POST /reproject body carries the projection kind");
 
   // non-ok response → throws.
   let threw = false;
