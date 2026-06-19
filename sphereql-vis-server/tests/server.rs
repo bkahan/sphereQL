@@ -274,6 +274,44 @@ async fn drill_down_wrong_dim_vector_is_a_400() {
 }
 
 #[tokio::test]
+async fn diagnostics_reports_projection_health() {
+    let resp = get(router(), "/diagnostics").await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let v: Value = serde_json::from_slice(&body_bytes(resp).await).unwrap();
+    assert_eq!(v["projection_kind"], "pca");
+    assert_eq!(v["total_points"], 300);
+    assert!(v["warnings"].is_array());
+    let bins = v["certainty"]["bins"].as_array().unwrap();
+    assert_eq!(bins.len(), 16, "certainty histogram has 16 bins");
+    let total: u64 = bins.iter().map(|b| b.as_u64().unwrap()).sum();
+    assert_eq!(total, 300, "histogram covers every point");
+    let outliers = v["outliers"].as_array().unwrap();
+    assert!(!outliers.is_empty() && outliers.len() <= 16);
+    let cs: Vec<f64> = outliers
+        .iter()
+        .map(|o| o["certainty"].as_f64().unwrap())
+        .collect();
+    assert!(
+        cs.windows(2).all(|w| w[0] <= w[1]),
+        "outliers ascending by certainty (least faithful first)"
+    );
+}
+
+#[tokio::test]
+async fn tiles_filter_by_category_and_certainty() {
+    // cats=0 → only category 0 streamed.
+    let pts = decode_tile(&body_bytes(get(router(), "/tiles?cats=0").await).await).unwrap();
+    assert!(
+        !pts.is_empty() && pts.iter().all(|p| p.cat == 0),
+        "cats=0 keeps only category 0"
+    );
+    // min_certainty above the [0,1] range → empty tile.
+    let none =
+        decode_tile(&body_bytes(get(router(), "/tiles?min_certainty=2.0").await).await).unwrap();
+    assert!(none.is_empty(), "min_certainty>1 filters everything out");
+}
+
+#[tokio::test]
 async fn category_stats_lists_the_palette() {
     let resp = get(router(), "/category_stats").await;
     assert_eq!(resp.status(), StatusCode::OK);

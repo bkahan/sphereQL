@@ -30,6 +30,7 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "A", label: "a" }] })
     if (url.indexOf("/tiles") >= 0) return { ok: true, arrayBuffer: () => Promise.resolve(goldenAB()) };
     if (url.endsWith("/points")) return { ok: true, json: () => Promise.resolve({ points: [{ row: 0, label: "p0" }] }) };
     if (url.endsWith("/nearest")) return { ok: true, json: () => Promise.resolve({ neighbors: [{ row: 5, similarity: 0.9 }] }) };
+    if (url.endsWith("/diagnostics")) return { ok: true, json: () => Promise.resolve({ projection_kind: "pca", evr: 0.5, total_points: 3, warnings: [], certainty: { bins: [1, 2], min: 0, max: 1 }, outliers: [] }) };
     return { ok: false, status: 404 };
   });
 
@@ -55,6 +56,10 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "A", label: "a" }] })
   ok(nn.length === 1 && nn[0].row === 5, "POST /nearest → neighbors[]");
   const nc = fetch.calls.find((c) => c.url.endsWith("/nearest"));
   ok(JSON.parse(nc.init.body).row === 2 && JSON.parse(nc.init.body).k === 4, "POST /nearest body carries row + k");
+
+  const diag = await src.diagnostics();
+  ok(diag.projection_kind === "pca" && diag.certainty.bins.length === 2, "GET /diagnostics parsed");
+  ok(fetch.calls.some((c) => c.url.endsWith("/diagnostics")), "diagnostics() hits /diagnostics");
 
   // non-ok response → throws.
   let threw = false;

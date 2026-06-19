@@ -1143,6 +1143,7 @@ class ServerSource{
     this.cache=opts.cache||null;this.decode=opts.decode||decodeTile;}
   async manifest(){return this._json("/manifest");}
   async categoryStats(){return this._json("/category_stats");}
+  async diagnostics(){return this._json("/diagnostics");}
   async tiles(params){
     const key="/tiles?"+tileQuery(params);
     let buf=this.cache?await this.cache.get(key):null;
@@ -1193,8 +1194,14 @@ class TileStreamer{
     this.baseBudget=opts.baseBudget||20000;
     this.detailBudget=opts.detailBudget||40000;
     this.near=opts.near||1.05;this.far=opts.far||8;
-    this.tiles=new Map();this._clock=0;
+    this.tiles=new Map();this._clock=0;this.filter={};
   }
+  // The active filter as server tile params ({cats:"0,3", min_certainty:0.5}).
+  _filterParams(){const f=this.filter||{},o={};if(Array.isArray(f.cats)&&f.cats.length)o.cats=f.cats.join(",");if(isFinite(f.minCertainty))o.min_certainty=+f.minCertainty;return o;}
+  // Apply a {cats:[ids], minCertainty} filter: drop the working set and reload
+  // the base so the whole streamed view reflects it (detail tiles reload on the
+  // next update). Pass {} / null to clear.
+  async setFilter(filter){this.filter=filter||{};this.clear();this.tiles=new Map();await this._ensureBase();}
   async start(){return this.startWith(await this.source.manifest());}
   // Configure from an already-fetched manifest (connectToServer fetches it once
   // to build the scene chrome, then hands it here) and load the base tile.
@@ -1212,7 +1219,7 @@ class TileStreamer{
   async _ensureBase(){
     if(this.tiles.has("base"))return;
     this.tiles.set("base",{key:"base",base:true,state:"loading",used:this._clock++});
-    const data=await this.source.tiles({half_angle:Math.PI,budget:this.baseBudget,lod:0});
+    const data=await this.source.tiles({half_angle:Math.PI,budget:this.baseBudget,lod:0,...this._filterParams()});
     const t=this.tiles.get("base");if(!t)return; // cleared while loading
     t.state="loaded";t.data=data;this.sink.addTile("base",data);
   }
@@ -1229,7 +1236,7 @@ class TileStreamer{
     const lod=this.lodFor(cam.dist);
     const f=clamp((cam.dist-this.near)/(this.far-this.near),0,1);
     const ha=clamp(0.18+f*1.4,0.12,Math.PI);
-    return {theta:isFinite(cam.theta)?cam.theta:0,phi:isFinite(cam.phi)?cam.phi:Math.PI/2,half_angle:ha,lod,budget:this.detailBudget};
+    return {theta:isFinite(cam.theta)?cam.theta:0,phi:isFinite(cam.phi)?cam.phi:Math.PI/2,half_angle:ha,lod,budget:this.detailBudget,...this._filterParams()};
   }
   // Quantized key so small camera jitter maps to the same tile (debounce-by-key).
   keyFor(req){const q=v=>Math.round(v*12)/12;return "d:"+q(req.theta)+":"+q(req.phi)+":"+req.lod;}

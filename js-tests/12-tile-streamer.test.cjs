@@ -107,6 +107,22 @@ function mockSource() {
     ok(sink.adds.length === addsBefore, "the dropped tile is never added to the sink");
   }
 
+  // setFilter merges cats/min_certainty into every tile request and reloads the
+  // base so the whole streamed view reflects the filter.
+  {
+    const src = mockSource(), sink = mockSink(), s = new vt.TileStreamer(src, sink, {});
+    await s.start();
+    const before = src.calls.length;
+    await s.setFilter({ cats: [0, 2], minCertainty: 0.5 });
+    ok(src.calls.length > before, "setFilter reloads the base tile");
+    const baseReq = src.calls[src.calls.length - 1];
+    ok(baseReq.cats === "0,2" && baseReq.min_certainty === 0.5, "base request carries the filter params");
+    const r = s.requestFor({ theta: 0.2, phi: 1.5, dist: 1.2 });
+    ok(r.cats === "0,2" && r.min_certainty === 0.5, "detail requests carry the filter params");
+    await s.setFilter({});
+    ok(s.requestFor({ theta: 0, phi: 1.5, dist: 1.2 }).cats === undefined, "cleared filter → no cats param");
+  }
+
   // tileMeshSink: builds a THREE.Points per tile with palette colors, sizes, and
   // a pick id baked from the GLOBAL row (so picking resolves a row across tiles).
   {

@@ -16,7 +16,7 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use sphereql_embed::{PipelineQuery, SphereQLOutput, SphereQLQuery};
+use sphereql_embed::{PipelineQuery, SphereQLOutput, SphereQLQuery, WarningSeverity};
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -50,6 +50,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/path", post(path))
         .route("/globs", get(globs))
         .route("/drill_down", post(drill_down))
+        .route("/diagnostics", get(diagnostics))
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(cors)
         .layer(CatchPanicLayer::new())
@@ -380,4 +381,133 @@ async fn drill_down(State(state): State<Arc<AppState>>, Json(req): Json<DrillReq
         Ok(_) => bad_request("unexpected query output"),
         Err(e) => bad_request(e),
     }
+}
+
+// ── /diagnostics: projection-health dashboard data ──────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct HistogramDto {
+    /// Counts per equal-width bin over `[min, max]`.
+    pub bins: Vec<usize>,
+    pub min: f64,
+    pub max: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WarningDto {
+    pub message: String,
+    pub severity: &'static str,
+    pub evr: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OutlierDto {
+    pub row: u32,
+    pub label: String,
+    pub category: String,
+    pub certainty: f32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiagnosticsResponse {
+    pub projection_kind: String,
+    pub evr: f64,
+    pub evr_label: String,
+    pub total_points: usize,
+    /// Projection-fidelity warnings (empty when EVR is healthy).
+    pub warnings: Vec<WarningDto>,
+    /// Per-point certainty (projection fidelity) distribution, 16 bins.
+    pub certainty: HistogramDto,
+    /// Per-point intensity (pre-normalization magnitude) distribution, 16 bins.
+    pub intensity: HistogramDto,
+    /// The lowest-certainty points — where the projection is least trustworthy.
+    pub outliers: Vec<OutlierDto>,
+}
+
+/// Equal-width histogram of `vals` into `bins` buckets over the observed range.
+fn histogram(vals: &[f32], bins: usize) -> HistogramDto {
+    let bins = bins.max(1);
+    if vals.is_empty() {
+        return HistogramDto {
+            bins: vec![0; bins],
+            min: 0.0,
+            max: 0.0,
+        };
+    }
+    let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for &v in vals {
+        let v = v as f64;
+        if v < min {
+            min = v;
+        }
+        if v > max {
+            max = v;
+        }
+    }
+    let span = (max - min).max(1e-12);
+    let mut counts = vec![0usize; bins];
+    for &v in vals {
+        let t = (((v as f64 - min) / span) * bins as f64).floor() as usize;
+        counts[t.min(bins - 1)] += 1;
+    }
+    HistogramDto {
+        bins: counts,
+        min,
+        max,
+    }
+}
+
+async fn diagnostics(State(state): State<Arc<AppState>>) -> Response {
+    let certainty: Vec<f32> = state.points.iter().map(|p| p.certainty).collect();
+    let intensity: Vec<f32> = state.points.iter().map(|p| p.intensity).collect();
+    let warnings = state
+        .pipeline
+        .projection_warnings()
+        .iter()
+        .map(|w| WarningDto {
+            message: w.message.clone(),
+            severity: match w.severity {
+                WarningSeverity::Info => "info",
+                WarningSeverity::Warning => "warning",
+                WarningSeverity::Critical => "critical",
+            },
+            evr: w.evr,
+        })
+        .collect();
+    // Outliers = the lowest-certainty points (where the projection is least
+    // faithful), the top 16 ascending.
+    let mut order: Vec<u32> = (0..state.points.len() as u32).collect();
+    order.sort_by(|&a, &b| {
+        state.points[a as usize]
+            .certainty
+            .total_cmp(&state.points[b as usize].certainty)
+    });
+    let outliers = order
+        .iter()
+        .take(16)
+        .map(|&r| {
+            let p = &state.points[r as usize];
+            OutlierDto {
+                row: r,
+                label: p.label.clone(),
+                category: state
+                    .cat_names
+                    .get(p.cat as usize)
+                    .cloned()
+                    .unwrap_or_default(),
+                certainty: p.certainty,
+            }
+        })
+        .collect();
+    Json(DiagnosticsResponse {
+        projection_kind: state.manifest.stats.projection_kind.clone(),
+        evr: state.manifest.stats.evr,
+        evr_label: state.manifest.stats.evr_label.clone(),
+        total_points: state.points.len(),
+        warnings,
+        certainty: histogram(&certainty, 16),
+        intensity: histogram(&intensity, 16),
+        outliers,
+    })
+    .into_response()
 }

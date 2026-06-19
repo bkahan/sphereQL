@@ -39,6 +39,11 @@ pub struct TileParams {
     pub budget: Option<usize>,
     /// LOD level; maps to `base_budget << lod` when `budget` is absent.
     pub lod: Option<u8>,
+    /// Comma-separated palette category ids to keep (e.g. `cats=0,3,5`); when
+    /// present, only points in those categories are streamed.
+    pub cats: Option<String>,
+    /// Keep only points whose projection certainty is at least this (`[0,1]`).
+    pub min_certainty: Option<f32>,
 }
 
 impl TileParams {
@@ -114,11 +119,33 @@ fn stratified(state: &AppState, rows: &[u32], budget: usize) -> Vec<u32> {
     out
 }
 
-/// Build the binary tile for a `GET /tiles` request: cone-query, LOD-decimate,
-/// and encode the survivors as [`TilePoint`]s.
+/// Apply the optional category / certainty filters to candidate rows before
+/// decimation (the "query/filter power" — isolate a category, hide low-fidelity
+/// points). Returns `rows` unchanged when no filter is set.
+fn filter_rows(state: &AppState, rows: Vec<u32>, params: &TileParams) -> Vec<u32> {
+    let cats: Option<Vec<u16>> = params.cats.as_ref().map(|s| {
+        s.split(',')
+            .filter_map(|t| t.trim().parse::<u16>().ok())
+            .collect()
+    });
+    let min_c = params.min_certainty;
+    if cats.is_none() && min_c.is_none() {
+        return rows;
+    }
+    rows.into_iter()
+        .filter(|&r| {
+            let p = &state.points[r as usize];
+            cats.as_ref().is_none_or(|cs| cs.contains(&p.cat))
+                && min_c.is_none_or(|m| p.certainty >= m)
+        })
+        .collect()
+}
+
+/// Build the binary tile for a `GET /tiles` request: cone-query, filter,
+/// LOD-decimate, and encode the survivors as [`TilePoint`]s.
 pub fn build_tile(state: &AppState, params: &TileParams) -> Vec<u8> {
     let budget = params.budget(state.manifest.lod.base_budget);
-    let rows = candidate_rows(state, params);
+    let rows = filter_rows(state, candidate_rows(state, params), params);
     let chosen = stratified(state, &rows, budget);
     let pts: Vec<TilePoint> = chosen
         .iter()
@@ -213,6 +240,50 @@ mod tests {
         let pts = decode_tile(&bytes).expect("valid tile");
         assert!(pts.len() <= 50, "got {} points for budget 50", pts.len());
         assert!(!pts.is_empty());
+    }
+
+    #[test]
+    fn filters_by_category() {
+        let state = demo();
+        let cat0 = state.points[0].cat;
+        let pts = decode_tile(&build_tile(
+            &state,
+            &TileParams {
+                cats: Some(cat0.to_string()),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        assert!(!pts.is_empty());
+        assert!(
+            pts.iter().all(|p| p.cat == cat0),
+            "cats filter keeps only the requested category"
+        );
+    }
+
+    #[test]
+    fn filters_by_min_certainty() {
+        let state = demo();
+        // Certainty is in [0, 1]; an above-1 threshold filters everything out.
+        let empty = decode_tile(&build_tile(
+            &state,
+            &TileParams {
+                min_certainty: Some(2.0),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        assert!(empty.is_empty(), "min_certainty > 1 keeps nothing");
+        // A zero threshold keeps the whole (under-budget) cloud.
+        let all = decode_tile(&build_tile(
+            &state,
+            &TileParams {
+                min_certainty: Some(0.0),
+                ..Default::default()
+            },
+        ))
+        .unwrap();
+        assert_eq!(all.len(), 300, "min_certainty 0 keeps every point");
     }
 
     #[test]
