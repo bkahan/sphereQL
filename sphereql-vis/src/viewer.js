@@ -1426,6 +1426,7 @@ async function connectToServer(baseUrl,opts){
   // Reset the min-certainty filter slider so a reconnect starts unfiltered.
   {const mcEl=document.getElementById("mincert");if(mcEl)mcEl.value=0;const mcv=document.getElementById("mincert-val");if(mcv)mcv.textContent="0.00";}
   rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]});
+  {const el=document.getElementById("empty");if(el)el.style.display="none";}
   buildStreamLegend(_streamPalette);
   streamGroup=new THREE.Group();scene.add(streamGroup);scalables.push(streamGroup);streamGroup.scale.setScalar(curScale);
   const sink=tileMeshSink(streamGroup,_streamPalette,streamColorMaterial());
