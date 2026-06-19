@@ -141,7 +141,7 @@ function run(viewerPath, D, opts) {
     "highlightByIds,clearQuery,get queryGroup(){return queryGroup;},get idCount(){return idToIndex.size;}," +
     "setMorphTarget,applyMorph,clearMorph,curPos,get morphT(){return morphT;}," +
     "setPinMode,addPin,clearPins,currentSettings,applySettings,get pins(){return pins;},get pinOn(){return pinOn;},get pinGroup(){return pinGroup;},get zoomLocked(){return zoomLocked;}," +
-    "decodeTile,catOrder,stratify,tileQuery,InlineSource,ServerSource,TileCache,makeWorkerDecoder,get dataSource(){return dataSource;}," +
+    "decodeTile,catOrder,stratify,tileQuery,InlineSource,ServerSource,TileCache,makeWorkerDecoder,TileStreamer,tileMeshSink,connectToServer,disconnectServer,safeColor,get dataSource(){return dataSource;}," +
     "get densityArr(){return pointsGeo&&pointsGeo.getAttribute('density')&&pointsGeo.getAttribute('density').array;},get densityOn(){return pointsMat?pointsMat.uniforms.densityOn.value:0;}};";
   ctx.__dl = downloads;
   vm.runInContext(src + shim, ctx, { filename: "viewer.js" });

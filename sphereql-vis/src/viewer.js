@@ -1174,6 +1174,185 @@ function makeWorkerDecoder(){
   return buf=>new Promise((res,rej)=>{const id=++seq;pending.set(id,{res,rej});try{worker.postMessage({id,buf},[buf]);}catch(err){pending.delete(id);try{res(decodeTile(buf));}catch(e2){rej(e2);}}});
 }
 
+// ── Streaming tile renderer (out-of-core: only the visible working set) ────
+// TileStreamer turns camera motion into tile requests against a DataSource and
+// keeps a bounded working set of per-tile point meshes — added/removed through
+// an injected `sink` (the THREE layer) — so the renderer never holds all N
+// points. It keeps a persistent COARSE base tile (whole sphere, LOD 0) for
+// context plus a DETAIL tile for where the camera looks (finer LOD as you zoom
+// in); recently-seen detail tiles stay cached up to a mesh budget (LRU). Loads
+// are guard-checked on resolve so a tile that arrived after its entry was
+// evicted/cleared is dropped rather than shown. Pure orchestration — the only
+// THREE contact is sink.addTile(key,{count,positions,cats,rows})/removeTile(key).
+class TileStreamer{
+  constructor(source,sink,opts){
+    opts=opts||{};
+    this.source=source;this.sink=sink;this.manifest=null;
+    this.maxDetail=opts.maxDetail||48;
+    this.lodLevels=opts.lodLevels||4;
+    this.baseBudget=opts.baseBudget||20000;
+    this.detailBudget=opts.detailBudget||40000;
+    this.near=opts.near||1.05;this.far=opts.far||8;
+    this.tiles=new Map();this._clock=0;
+  }
+  async start(){return this.startWith(await this.source.manifest());}
+  // Configure from an already-fetched manifest (connectToServer fetches it once
+  // to build the scene chrome, then hands it here) and load the base tile.
+  async startWith(manifest){
+    this.manifest=manifest;
+    if(manifest){
+      const lod=manifest.lod||{};
+      if(lod.levels)this.lodLevels=lod.levels;
+      if(lod.base_budget)this.baseBudget=lod.base_budget;
+      const sr=manifest.surface_radius||1;this.near=sr*1.05;this.far=sr*8;
+    }
+    await this._ensureBase();
+    return manifest;
+  }
+  async _ensureBase(){
+    if(this.tiles.has("base"))return;
+    this.tiles.set("base",{key:"base",base:true,state:"loading",used:this._clock++});
+    const data=await this.source.tiles({half_angle:Math.PI,budget:this.baseBudget,lod:0});
+    const t=this.tiles.get("base");if(!t)return; // cleared while loading
+    t.state="loaded";t.data=data;this.sink.addTile("base",data);
+  }
+  // Camera distance → LOD: near the shell = finest, far = coarsest.
+  lodFor(dist){
+    const lv=this.lodLevels;
+    if(!isFinite(dist)||dist<=this.near)return lv-1;
+    const t=clamp((this.far-dist)/(this.far-this.near),0,1);
+    return clamp(Math.round(t*(lv-1)),0,lv-1);
+  }
+  // Camera → the detail tile request: a cone aimed where the camera looks, that
+  // narrows as you zoom in, at a distance-derived LOD/budget.
+  requestFor(cam){
+    const lod=this.lodFor(cam.dist);
+    const f=clamp((cam.dist-this.near)/(this.far-this.near),0,1);
+    const ha=clamp(0.18+f*1.4,0.12,Math.PI);
+    return {theta:isFinite(cam.theta)?cam.theta:0,phi:isFinite(cam.phi)?cam.phi:Math.PI/2,half_angle:ha,lod,budget:this.detailBudget};
+  }
+  // Quantized key so small camera jitter maps to the same tile (debounce-by-key).
+  keyFor(req){const q=v=>Math.round(v*12)/12;return "d:"+q(req.theta)+":"+q(req.phi)+":"+req.lod;}
+  // Ensure the detail tile for this camera is loaded; touch it for LRU; evict
+  // the least-recently-used detail tiles past the budget. Safe under rapid
+  // moves: an identical viewport key dedups to a touch (no refetch).
+  async update(cam){
+    const req=this.requestFor(cam),key=this.keyFor(req);
+    const existing=this.tiles.get(key);
+    if(existing){existing.used=this._clock++;return key;}
+    this.tiles.set(key,{key,base:false,state:"loading",used:this._clock++});
+    let data;
+    try{data=await this.source.tiles(req);}catch(e){this.tiles.delete(key);return null;}
+    const t=this.tiles.get(key);
+    if(!t)return null; // evicted / cleared while in flight → drop
+    t.state="loaded";t.data=data;this.sink.addTile(key,data);
+    this._evict();
+    return key;
+  }
+  _evict(){
+    const detail=[...this.tiles.values()].filter(t=>!t.base&&t.state==="loaded").sort((a,b)=>a.used-b.used);
+    for(let i=0;i<detail.length-this.maxDetail;i++){this.tiles.delete(detail[i].key);this.sink.removeTile(detail[i].key);}
+  }
+  loadedKeys(){return[...this.tiles.values()].filter(t=>t.state==="loaded").map(t=>t.key);}
+  clear(){for(const k of this.tiles.keys())this.sink.removeTile(k);this.tiles.clear();}
+}
+
+// Per-tile THREE.Points for the streamer's working set. Each tile geometry
+// carries the streamed positions, palette colours (by cat id), point sizes, and
+// the per-point pick id baked from the GLOBAL row (so id-buffer picking resolves
+// a row across tiles). Server positions are final — the streaming material does
+// no client-side transform.
+function tileMeshSink(group,palette,material){
+  const colors=(palette||[]).map(c=>new THREE.Color(c.color));
+  const meshes=new Map();
+  function addTile(key,data){
+    if(meshes.has(key))removeTile(key);
+    const n=data.count|0,geo=new THREE.BufferGeometry();
+    const col=new Float32Array(n*3),size=new Float32Array(n),pick=new Float32Array(n*3);
+    for(let i=0;i<n;i++){const c=colors[data.cats[i]]||new THREE.Color(0x90a4ae);col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;size[i]=baseSize;
+      const pc=pickEncode(data.rows[i]);pick[i*3]=pc[0];pick[i*3+1]=pc[1];pick[i*3+2]=pc[2];}
+    geo.setAttribute("position",new THREE.BufferAttribute(data.positions,3));
+    geo.setAttribute("color",new THREE.BufferAttribute(col,3));
+    geo.setAttribute("size",new THREE.BufferAttribute(size,1));
+    geo.setAttribute("aPickColor",new THREE.BufferAttribute(pick,3));
+    const mesh=new THREE.Points(geo,material);mesh.frustumCulled=true;
+    group.add(mesh);meshes.set(key,mesh);
+  }
+  // Dispose only the per-tile geometry — the material is shared across all
+  // tiles (disposing it would free an in-use GPU program and force recompiles
+  // on every eviction).
+  function removeTile(key){const m=meshes.get(key);if(m){group.remove(m);if(m.geometry&&m.geometry.dispose)m.geometry.dispose();meshes.delete(key);}}
+  function clear(){for(const k of[...meshes.keys()])removeTile(k);}
+  return {addTile,removeTile,clear,count:()=>meshes.size,meshAt:k=>meshes.get(k)};
+}
+
+// Shared material for streamed tiles (solid-disc points, palette-coloured). No
+// sphTransform — the server already projected the positions.
+let _streamColorMat=null;
+function streamColorMaterial(){
+  if(_streamColorMat)return _streamColorMat;
+  _streamColorMat=new THREE.ShaderMaterial({vertexColors:true,transparent:true,depthWrite:false,uniforms:{opacity:{value:1.0}},
+    vertexShader:`attribute float size;varying vec3 vc;void main(){vc=color;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=size*330.0/(-mv.z);gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`uniform float opacity;varying vec3 vc;void main(){float d=length(gl_PointCoord-0.5);if(d>0.5)discard;float a=smoothstep(0.5,0.44,d)*opacity;float core=smoothstep(0.32,0.0,d);gl_FragColor=vec4(mix(vc,vec3(1.0),core*0.4),a);}`});
+  return _streamColorMat;
+}
+
+// Streaming-mode legend from the manifest palette (name · count, in the
+// category colour). Category-toggle filtering of streamed tiles is a later
+// (Phase D) refinement; here it labels what's on screen.
+// Accept only a safe CSS color literal (hex / rgb[a] / hsl[a] / plain word) from
+// a server-supplied palette; otherwise fall back. Blocks CSS-attribute
+// injection via a crafted manifest color (the palette comes from whatever server
+// the #server hash names).
+function safeColor(c){return typeof c==="string"&&/^#[0-9a-fA-F]{3,8}$|^rgba?\([\d.,\s%]+\)$|^hsla?\([\d.,\s%]+\)$|^[a-zA-Z]+$/.test(c.trim())?c.trim():"#90a4ae";}
+function buildStreamLegend(palette){
+  legendDiv.innerHTML="";legendRows={};
+  (palette||[]).forEach(c=>{
+    const col=safeColor(c.color);
+    const row=document.createElement("div");row.className="lrow";
+    row.innerHTML=`<span class="ldot" style="background:${col};color:${col}"></span><span class="lbl"></span><span class="lcnt">${(c.count||0).toLocaleString()}</span>`;
+    row.querySelector(".lbl").textContent=c.name;legendRows[c.name]=row;legendDiv.appendChild(row);
+  });
+}
+
+// ── Connect to a server (streaming, out-of-core) ──────────────────────────
+let streamGroup=null,streamStreamer=null,_streamOnMove=null,_streamTimer=null;
+// Point the viewer at a sphereql-vis-server: fetch the manifest, build the scene
+// chrome (globe + overlays + stats + a palette legend) with NO inline points,
+// then stream point tiles by viewport via a TileStreamer. Returns the streamer.
+// Browser-validated (network + render loop).
+async function connectToServer(baseUrl,opts){
+  opts=opts||{};
+  disconnectServer();
+  const source=new ServerSource(baseUrl,{cache:new TileCache(),decode:makeWorkerDecoder()});
+  const manifest=await source.manifest();
+  // Chrome via rebuild with zero inline points: the globe (surface_radius),
+  // overlays (manifest.overlays — same Overlay shape), and stats panel populate;
+  // the empty pointsMesh costs nothing. The palette legend replaces the
+  // (empty) per-point legend.
+  rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]});
+  buildStreamLegend(manifest.palette||[]);
+  streamGroup=new THREE.Group();scene.add(streamGroup);scalables.push(streamGroup);streamGroup.scale.setScalar(curScale);
+  const sink=tileMeshSink(streamGroup,manifest.palette||[],streamColorMaterial());
+  streamStreamer=new TileStreamer(source,sink,opts);
+  await streamStreamer.startWith(manifest);
+  // Camera → viewport tile updates, throttled so a drag doesn't spam requests.
+  const camToReq=()=>{const p=camera.position,m=Math.hypot(p.x,p.y,p.z)||1;let th=Math.atan2(p.y,p.x);if(th<0)th+=2*Math.PI;return{theta:th,phi:Math.acos(clamp(p.z/m,-1,1)),dist:m/Math.max(curScale,1e-6)};};
+  let pend=false;
+  _streamOnMove=()=>{if(pend)return;pend=true;_streamTimer=setTimeout(()=>{pend=false;_streamTimer=null;if(streamStreamer)streamStreamer.update(camToReq());},120);};
+  controls.addEventListener("change",_streamOnMove);
+  streamStreamer.update(camToReq());
+  return streamStreamer;
+}
+// Tear down an active server stream (its tile group + camera listener).
+function disconnectServer(){
+  if(_streamOnMove&&controls.removeEventListener)controls.removeEventListener("change",_streamOnMove);
+  _streamOnMove=null;
+  if(_streamTimer){clearTimeout(_streamTimer);_streamTimer=null;}
+  if(streamStreamer){streamStreamer.clear();streamStreamer=null;}
+  if(streamGroup){scene.remove(streamGroup);disposeObject(streamGroup);const i=scalables.indexOf(streamGroup);if(i>=0)scalables.splice(i,1);streamGroup=null;}
+}
+
 // ── Boot + render loop ─────────────────────────────────────────────────────
 // The baked offline file inlines the whole scene as `D` and renders all of it
 // through InlineSource. `dataSource` stays module-visible so the studio (and a
@@ -1181,6 +1360,16 @@ function makeWorkerDecoder(){
 let dataSource=new InlineSource(D);
 rebuild(dataSource.scene);
 applyViewHash(); // restore a shared camera/settings view, if the URL carries one
+// Opt-in streaming mode: launch with `#server=<url>` to stream from a
+// sphereql-vis-server instead of rendering the inline blob. Offline by default
+// — with no such hash the viewer never touches the network.
+(function(){
+  if(typeof location==="undefined")return;
+  const m=(location.hash||"").match(/[#&]server=([^&]+)/);
+  if(!m)return;
+  let url;try{url=decodeURIComponent(m[1]);}catch(err){return;}
+  connectToServer(url).catch(err=>{console.warn("SphereQL: server connect failed",err);flashButton("open-scene","✗ server "+(err&&err.message||err),2600);});
+})();
 function animate(){
   requestAnimationFrame(animate);
   if(pendingTransform){applyTransform();pendingTransform=false;}
