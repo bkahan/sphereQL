@@ -642,9 +642,16 @@ function exportPNG(){
   catch(err){console.warn("SphereQL: PNG export failed:",err);flashButton("tool-png","✗");}
 }
 
-// ── Shareable view link (camera + settings only; never scene data) ────────
+// ── Shareable view link (camera + settings + streaming session if connected) ──
 function shareLink(){
   const state={cam:[camera.position.x,camera.position.y,camera.position.z,controls.target.x,controls.target.y,controls.target.z],set:currentSettings(),tools:{ruler:rulerOn}};
+  if(streamStreamer){
+    state.server=streamStreamer.source.base;
+    const off=[..._streamFilterOff];
+    const mcEl=document.getElementById("mincert"),mc=mcEl?parseFloat(mcEl.value)||0:0;
+    if(off.length||mc>0){state.filter={};if(off.length)state.filter.off=off;if(mc>0)state.filter.mc=mc;}
+    if(_streamSelectedRow!=null)state.selRow=_streamSelectedRow;
+  }
   let hash;
   try{hash=btoa(encodeURIComponent(JSON.stringify(state)));}catch(err){flashButton("tool-share","✗");return;}
   try{history.replaceState(null,"","#v="+hash);}catch(err){location.hash="v="+hash;}
@@ -654,12 +661,36 @@ function shareLink(){
 // Restore a view from the URL hash (called once after the initial rebuild).
 // Reads only numbers + known setting keys, all validated, so there is no
 // injection surface even though the hash is attacker-controllable.
+// Returns a Promise when restoring a streaming session (so callers/tests can
+// await full restoration); returns undefined for the offline path.
 function applyViewHash(){
   if(typeof location==="undefined"||!location.hash)return;
   const m=location.hash.match(/[#&]v=([^&]+)/);if(!m)return;
   let state;
   try{state=JSON.parse(decodeURIComponent(atob(m[1])));}catch(err){console.warn("SphereQL: ignoring malformed view hash");return;}
   if(!state||typeof state!=="object")return;
+  if(state.server&&typeof state.server==="string"){
+    // Streaming session: connectToServer calls rebuild+frameCamera internally,
+    // so apply camera/settings/filter AFTER it resolves to avoid being overwritten.
+    return connectToServer(state.server).then(()=>{
+      if(state.set&&typeof state.set==="object")applySettings(state.set);
+      if(Array.isArray(state.cam)&&state.cam.length===6&&state.cam.every(v=>isFinite(+v))){
+        camera.position.set(+state.cam[0],+state.cam[1],+state.cam[2]);
+        controls.target.set(+state.cam[3],+state.cam[4],+state.cam[5]);
+        controls.update();if(_streamOnMove)_streamOnMove();
+      }
+      if(state.tools&&state.tools.ruler)setRuler(true);
+      if(state.filter&&streamStreamer){
+        const off=Array.isArray(state.filter.off)?state.filter.off:[];
+        _streamFilterOff=new Set(off);
+        off.forEach(cat=>{catVisible[cat]=false;if(legendRows[cat])legendRows[cat].classList.toggle("dim",true);});
+        const mcEl=document.getElementById("mincert");
+        if(mcEl&&state.filter.mc>0){mcEl.value=state.filter.mc;const v=document.getElementById("mincert-val");if(v)v.textContent=(+mcEl.value).toFixed(2);}
+        applyStreamFilter();
+      }
+      if(state.selRow!=null&&streamStreamer)selectStreamRow(state.selRow);
+    });
+  }
   if(state.set&&typeof state.set==="object")applySettings(state.set);
   if(Array.isArray(state.cam)&&state.cam.length===6&&state.cam.every(v=>isFinite(+v))){
     camera.position.set(+state.cam[0],+state.cam[1],+state.cam[2]);
@@ -1377,6 +1408,7 @@ let streamGroup=null,streamStreamer=null,_streamOnMove=null,_streamTimer=null;
 let _streamHoverPos=null;       // xyz of the last hovered streamed point (for the reticle)
 let _streamFilterOff=new Set(); // category names toggled OFF in streaming filter
 let _streamPalette=[];          // the connected manifest's palette (cat → color/count)
+let _streamSelectedRow=null;    // global row id of the currently-inspected streamed point
 // Point the viewer at a sphereql-vis-server: fetch the manifest, build the scene
 // chrome (globe + overlays + stats + a palette legend) with NO inline points,
 // then stream point tiles by viewport via a TileStreamer. Returns the streamer.
@@ -1390,7 +1422,7 @@ async function connectToServer(baseUrl,opts){
   // overlays (manifest.overlays — same Overlay shape), and stats panel populate;
   // the empty pointsMesh costs nothing. The palette legend replaces the
   // (empty) per-point legend.
-  _streamFilterOff=new Set();_streamPalette=manifest.palette||[];
+  _streamFilterOff=new Set();_streamSelectedRow=null;_streamPalette=manifest.palette||[];
   // Reset the min-certainty filter slider so a reconnect starts unfiltered.
   {const mcEl=document.getElementById("mincert");if(mcEl)mcEl.value=0;const mcv=document.getElementById("mincert-val");if(mcv)mcv.textContent="0.00";}
   rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]});
@@ -1452,6 +1484,7 @@ function renderVectorSparkline(vec){
 // sparkline, clickable neighbors). The inline selectPoint path is untouched.
 async function selectStreamRow(row){
   if(!streamStreamer)return;
+  _streamSelectedRow=row;
   const src=streamStreamer.source,info=document.getElementById("info");
   let meta,nbrs=[];
   try{const ms=await src.pointMeta([row]);meta=ms&&ms[0];if(!meta)return;nbrs=await src.nearest({row},6);}
