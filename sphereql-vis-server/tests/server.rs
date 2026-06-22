@@ -20,7 +20,7 @@ const BODY_CAP: usize = 64 * 1024 * 1024;
 fn router() -> axum::Router {
     let state =
         AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
-    build_router(Arc::new(RwLock::new(Arc::new(state))))
+    build_router(Arc::new(RwLock::new(Arc::new(state))), None)
 }
 
 /// Build the router and also surface the corpus's category names + embedding
@@ -33,7 +33,7 @@ fn router_with_meta() -> (Vec<String>, usize, axum::Router) {
     (
         names,
         dim,
-        build_router(Arc::new(RwLock::new(Arc::new(state)))),
+        build_router(Arc::new(RwLock::new(Arc::new(state))), None),
     )
 }
 

@@ -2,9 +2,14 @@
 //! the streaming-viewer API.
 //!
 //! ```sh
+//! # API + auto-detected WASM studio front-end (one-liner):
+//! cargo run -p sphereql-vis-server -- --corpus stress --open
+//!
+//! # API only (no studio found / not built):
 //! cargo run -p sphereql-vis-server -- --corpus stress --addr 127.0.0.1:8080
-//! cargo run -p sphereql-vis-server -- --corpus stress --emit-html target/viewer.html --open
-//! cargo run -p sphereql-vis-server -- --corpus path/to/corpus.parquet --projection umap_sphere
+//!
+//! # Generate a standalone offline viewer and open it:
+//! cargo run -p sphereql-vis-server -- --corpus stress --emit-html --open
 //! ```
 
 use std::process::ExitCode;
@@ -12,7 +17,7 @@ use std::sync::{Arc, RwLock};
 
 use sphereql_embed::ProjectionKind;
 use sphereql_vis::Scene;
-use sphereql_vis_server::{AppState, build_router, parse_corpus, parse_projection};
+use sphereql_vis_server::{AppState, StudioAssets, build_router, parse_corpus, parse_projection};
 
 struct Args {
     corpus: String,
@@ -86,7 +91,7 @@ sphereql-vis-server — out-of-core query server for the streaming viewer
 
 USAGE:
     sphereql-vis-server [--corpus <name|path>] [--addr <host:port>] [--projection <kind>]
-                        [--emit-html <path>] [--open]
+                        [--emit-html [path]] [--open]
 
 OPTIONS:
     -c, --corpus      Corpus name (stress, hand_crafted, full, dbpedia_500k, …) or
@@ -95,10 +100,11 @@ OPTIONS:
     -p, --projection  pca | umap_sphere | laplacian | kernel_pca [default: pca]
                       (O(n²) families are gated to PCA above ~10k points)
     -e, --emit-html [path]
-                      Write a viewer HTML pre-wired to connect to this server
-                      (auto-sets location.hash). Path defaults to sphere_viz.html.
-                      Use with --open for a one-liner start-and-open workflow
-    -o, --open        Open the emitted HTML in the default browser after writing
+                      Write a standalone offline viewer pre-wired to connect to
+                      this server. Path defaults to sphere_viz.html.
+    -o, --open        Open in the default browser after the server starts.
+                      Opens http://<addr>/ if the WASM studio is found at
+                      sphereql-wasm/studio/dist; otherwise opens --emit-html.
     -h, --help        Print this help";
 
 #[tokio::main]
@@ -132,21 +138,52 @@ async fn main() -> ExitCode {
         state.manifest.palette.len(),
     );
 
+    let viewer_host = resolve_viewer_host(&args.addr);
+    let server_url = format!("http://{viewer_host}");
+
+    // Optionally write a self-contained offline viewer (no studio deps needed).
     if let Some(ref out_path) = args.emit_html {
-        match emit_viewer_html(out_path, &args.corpus, &args.addr) {
-            Ok(abs) => {
-                eprintln!("viewer HTML written to {}", abs.display());
-                if args.open_browser {
-                    open_in_browser(&abs);
-                }
-            }
-            Err(e) => {
-                eprintln!("warning: --emit-html failed: {e}");
-            }
+        match write_offline_viewer(out_path, &args.corpus, &server_url) {
+            Ok(abs) => eprintln!("offline viewer written to {}", abs.display()),
+            Err(e) => eprintln!("warning: --emit-html failed: {e}"),
         }
     }
 
-    let app = build_router(Arc::new(RwLock::new(Arc::new(state))));
+    // Auto-detect the pre-built WASM studio. If found, serve it as the
+    // front-end at `GET /` with the auto-connect script injected.
+    let studio = find_studio_dir().and_then(|dir| {
+        let idx_path = dir.join("index.html");
+        match std::fs::read_to_string(&idx_path) {
+            Ok(html) => {
+                eprintln!("studio found at {} — serving at /", dir.display());
+                Some(StudioAssets {
+                    index_html: inject_auto_connect(html, &server_url),
+                    dir,
+                })
+            }
+            Err(e) => {
+                eprintln!("warning: studio dir found but index.html unreadable: {e}");
+                None
+            }
+        }
+    });
+
+    // Decide what --open will point at (resolved after bind below).
+    let open_url: Option<String> = if args.open_browser {
+        if studio.is_some() {
+            Some(format!("{server_url}/"))
+        } else if args.emit_html.is_some() {
+            // Offline file — path is relative to CWD; open via file:// isn't
+            // great cross-platform, so just open the server URL instead.
+            Some(format!("{server_url}/"))
+        } else {
+            Some(format!("{server_url}/"))
+        }
+    } else {
+        None
+    };
+
+    let app = build_router(Arc::new(RwLock::new(Arc::new(state))), studio);
     let listener = match tokio::net::TcpListener::bind(&args.addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -154,7 +191,13 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    eprintln!("serving on http://{} (Ctrl-C to stop)", args.addr);
+    eprintln!("serving on {server_url}/ (Ctrl-C to stop)");
+
+    // Open the browser only after the socket is bound so the page can connect.
+    if let Some(url) = open_url {
+        open_in_browser(&url);
+    }
+
     if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
@@ -165,39 +208,55 @@ async fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Generate a viewer HTML pre-wired to connect to `addr` on load.
-///
-/// Creates a minimal empty scene (no inline points), injects a small `<script>`
-/// that sets `location.hash` to `#server=<url>` so the viewer auto-connects,
-/// and writes to `out_path`. Returns the canonicalized absolute path.
-fn emit_viewer_html(
-    out_path: &str,
-    corpus: &str,
-    addr: &str,
-) -> std::io::Result<std::path::PathBuf> {
-    // If the server binds to 0.0.0.0 or :: the browser needs a routable host.
-    let viewer_host = if addr.starts_with("0.0.0.0:") {
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+/// Rewrite a bind address so browsers can actually reach it: `0.0.0.0:PORT`
+/// → `127.0.0.1:PORT`, `:::PORT` → `[::1]:PORT`, everything else unchanged.
+fn resolve_viewer_host(addr: &str) -> String {
+    if addr.starts_with("0.0.0.0:") {
         addr.replacen("0.0.0.0:", "127.0.0.1:", 1)
-    } else if addr.starts_with(":::") || addr == "::" {
-        addr.replacen("::", "[::1]:", 1)
+    } else if addr.starts_with(":::") {
+        addr.replacen(":::", "[::1]:", 1)
     } else {
         addr.to_string()
-    };
-    let server_url = format!("http://{viewer_host}");
+    }
+}
 
-    let title = format!("SphereQL – {corpus}");
-    let scene = Scene::builder().title(&title).build();
-    let mut html = scene.to_html();
-
-    // Inject auto-connect after viewer.js (before </body>). The #server= IIFE
-    // in viewer.js has already run by this point, so we call connectToServer()
-    // directly — it's a top-level function and reachable from any later script.
-    // Guard: skip if a #v= session hash or explicit #server= hash is present
-    // (applyViewHash / the IIFE already handled those on boot).
-    let connect_script = format!(
+/// Inject a `<script>` before `</body>` that calls `connectToServer(url)` when
+/// the page loads with no existing hash. The injected script runs after
+/// viewer.js (which is inlined earlier), so `connectToServer` is already
+/// defined. Existing `#v=` session hashes or explicit `#server=` hashes are
+/// preserved — the guard skips auto-connect when a hash is already present.
+fn inject_auto_connect(mut html: String, server_url: &str) -> String {
+    let script = format!(
         "<script>if(!location.hash||location.hash===\"#\")connectToServer(\"{server_url}\").catch(function(e){{console.warn(\"SphereQL auto-connect:\",e);}});</script>\n"
     );
-    html = html.replacen("</body>", &format!("{connect_script}</body>"), 1);
+    html = html.replacen("</body>", &format!("{script}</body>"), 1);
+    html
+}
+
+/// Look for the pre-built WASM studio in the expected workspace location.
+/// Returns `None` when the directory or its `studio.js` sentinel is absent.
+fn find_studio_dir() -> Option<std::path::PathBuf> {
+    let candidate = std::path::Path::new("sphereql-wasm/studio/dist");
+    if candidate.join("studio.js").exists() && candidate.join("index.html").exists() {
+        Some(candidate.to_path_buf())
+    } else {
+        None
+    }
+}
+
+/// Write a self-contained offline viewer HTML pre-wired to auto-connect to
+/// `server_url`. The file inlines three.js so it works without network. Parent
+/// directories are created as needed.
+fn write_offline_viewer(
+    out_path: &str,
+    corpus: &str,
+    server_url: &str,
+) -> std::io::Result<std::path::PathBuf> {
+    let title = format!("SphereQL – {corpus}");
+    let scene = Scene::builder().title(&title).build();
+    let html = inject_auto_connect(scene.to_html(), server_url);
 
     let path = std::path::Path::new(out_path);
     if let Some(parent) = path.parent()
@@ -209,19 +268,16 @@ fn emit_viewer_html(
     std::fs::canonicalize(path)
 }
 
-/// Open a file in the OS default application (best-effort; logs on failure).
-fn open_in_browser(path: &std::path::Path) {
-    let path_str = path.to_string_lossy();
+/// Open a URL or file in the OS default application (best-effort; logs on failure).
+fn open_in_browser(url: &str) {
     #[cfg(target_os = "windows")]
     let result = std::process::Command::new("cmd")
-        .args(["/c", "start", "", &*path_str])
+        .args(["/c", "start", "", url])
         .spawn();
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&*path_str).spawn();
+    let result = std::process::Command::new("open").arg(url).spawn();
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let result = std::process::Command::new("xdg-open")
-        .arg(&*path_str)
-        .spawn();
+    let result = std::process::Command::new("xdg-open").arg(url).spawn();
     if let Err(e) = result {
         eprintln!("warning: could not open browser: {e}");
     }

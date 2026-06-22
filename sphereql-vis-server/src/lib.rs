@@ -35,7 +35,7 @@ pub mod routes;
 pub mod state;
 pub mod tiles;
 
-pub use routes::{Shared, build_router};
+pub use routes::{Shared, StudioAssets, build_router};
 pub use state::{AppState, BuildError, PointItem, StoredPoint, gate_projection};
 
 /// Resolve a projection-kind name (CLI `--projection` or the `/reproject`

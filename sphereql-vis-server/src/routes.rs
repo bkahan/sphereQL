@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
     extract::{Query, State},
     http::{HeaderValue, StatusCode, header},
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ use sphereql_embed::{PipelineQuery, SphereQLOutput, SphereQLQuery, WarningSeveri
 use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::services::ServeDir;
 
 use crate::state::AppState;
 use crate::tiles::{TileParams, build_tile};
@@ -29,6 +30,19 @@ use crate::tiles::{TileParams, build_tile};
 /// under a write lock. Lock-free in practice — the read lock is held only long
 /// enough to clone the `Arc`.
 pub type Shared = Arc<RwLock<Arc<AppState>>>;
+
+/// Optional WASM studio front-end to serve alongside the API.
+///
+/// When present, the server serves the pre-built studio files from `dir` as
+/// static assets (via `ServeDir`), and returns the auto-connect-injected
+/// `index_html` for `GET /`. The studio's `studio.js`, `compare.html`,
+/// `embed.html`, `demo-corpus.json`, and `pkg/*` are all served from `dir`.
+pub struct StudioAssets {
+    /// Modified `index.html` content (auto-connect script already injected).
+    pub index_html: String,
+    /// The `studio/dist` directory to serve as a static fallback.
+    pub dir: std::path::PathBuf,
+}
 
 /// Snapshot the current state (clone the inner `Arc`, release the lock).
 fn snapshot(shared: &Shared) -> Arc<AppState> {
@@ -42,16 +56,21 @@ const MAX_NEAREST_K: usize = 256;
 /// Request body limit (applies to the POST endpoints).
 const BODY_LIMIT: usize = 4 * 1024 * 1024;
 
-/// Build the router over a shared [`AppState`]. Adds permissive CORS (the
-/// viewer is typically served from `file://` or a different origin), a body
-/// limit on the POST endpoints, and a panic catcher so a handler fault returns
-/// 500 instead of dropping the connection.
-pub fn build_router(state: Shared) -> Router {
+/// Build the router over a shared [`AppState`].
+///
+/// Adds permissive CORS (the viewer is typically served from `file://` or a
+/// different origin), a body limit on the POST endpoints, and a panic catcher
+/// so a handler fault returns 500 instead of dropping the connection.
+///
+/// When `studio` is `Some`, the router also serves the pre-built WASM studio
+/// as a static site: `GET /` returns the auto-connect-injected `index.html`
+/// and all other unmatched paths fall through to `ServeDir` over `studio.dir`.
+pub fn build_router(state: Shared, studio: Option<StudioAssets>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    Router::new()
+    let api = Router::new()
         .route("/health", get(health))
         .route("/manifest", get(manifest))
         .route("/tiles", get(tiles))
@@ -66,7 +85,23 @@ pub fn build_router(state: Shared) -> Router {
         .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
         .layer(cors)
         .layer(CatchPanicLayer::new())
-        .with_state(state)
+        .with_state(state);
+
+    if let Some(assets) = studio {
+        let idx_html = Arc::new(assets.index_html);
+        Router::new()
+            .route(
+                "/",
+                get(move || {
+                    let html = Arc::clone(&idx_html);
+                    async move { Html((*html).clone()) }
+                }),
+            )
+            .merge(api)
+            .fallback_service(ServeDir::new(assets.dir))
+    } else {
+        api
+    }
 }
 
 async fn health() -> &'static str {
