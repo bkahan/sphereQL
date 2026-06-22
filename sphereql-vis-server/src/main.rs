@@ -189,10 +189,13 @@ fn emit_viewer_html(
     let scene = Scene::builder().title(&title).build();
     let mut html = scene.to_html();
 
-    // Inject auto-connect before </body>: sets hash only if none is present so
-    // that manual #v= session hashes (shareLink) still win.
+    // Inject auto-connect after viewer.js (before </body>). The #server= IIFE
+    // in viewer.js has already run by this point, so we call connectToServer()
+    // directly — it's a top-level function and reachable from any later script.
+    // Guard: skip if a #v= session hash or explicit #server= hash is present
+    // (applyViewHash / the IIFE already handled those on boot).
     let connect_script = format!(
-        "<script>if(!location.hash||location.hash===\"#\")location.hash=\"server=\"+encodeURIComponent(\"{server_url}\");</script>\n"
+        "<script>if(!location.hash||location.hash===\"#\")connectToServer(\"{server_url}\").catch(function(e){{console.warn(\"SphereQL auto-connect:\",e);}});</script>\n"
     );
     html = html.replacen("</body>", &format!("{connect_script}</body>"), 1);
 
