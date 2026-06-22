@@ -34,26 +34,41 @@ impl Default for Args {
     }
 }
 
-/// Minimal `--flag value` parser — avoids a clap dependency for a handful of options.
+/// Minimal `--flag [value]` parser — avoids a clap dependency for a handful of options.
 /// Returns `Err` with a usage hint on an unknown flag or missing value.
 fn parse_args() -> Result<Args, String> {
     let mut args = Args::default();
-    let mut it = std::env::args().skip(1);
-    while let Some(flag) = it.next() {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    let mut i = 0;
+    while i < argv.len() {
+        let flag = &argv[i];
         match flag.as_str() {
             "--corpus" | "-c" => {
-                args.corpus = it.next().ok_or("--corpus needs a value")?;
+                i += 1;
+                args.corpus = argv.get(i).ok_or("--corpus needs a value")?.clone();
             }
             "--addr" | "-a" => {
-                args.addr = it.next().ok_or("--addr needs a value")?;
+                i += 1;
+                args.addr = argv.get(i).ok_or("--addr needs a value")?.clone();
             }
             "--projection" | "-p" => {
-                let v = it.next().ok_or("--projection needs a value")?;
+                i += 1;
+                let v = argv.get(i).ok_or("--projection needs a value")?;
                 args.projection =
-                    parse_projection(&v).ok_or_else(|| format!("unknown projection '{v}'"))?;
+                    parse_projection(v).ok_or_else(|| format!("unknown projection '{v}'"))?;
             }
             "--emit-html" | "-e" => {
-                args.emit_html = Some(it.next().ok_or("--emit-html needs a path")?);
+                // Path is optional: if the next token is absent or starts with
+                // '-' (another flag), fall back to "sphere_viz.html".
+                let next = argv.get(i + 1);
+                if let Some(v) = next
+                    && !v.starts_with('-')
+                {
+                    i += 1;
+                    args.emit_html = Some(v.clone());
+                } else {
+                    args.emit_html = Some("sphere_viz.html".to_string());
+                }
             }
             "--open" | "-o" => {
                 args.open_browser = true;
@@ -61,6 +76,7 @@ fn parse_args() -> Result<Args, String> {
             "--help" | "-h" => return Err("help".to_string()),
             other => return Err(format!("unknown argument '{other}'")),
         }
+        i += 1;
     }
     Ok(args)
 }
@@ -78,9 +94,10 @@ OPTIONS:
     -a, --addr        Address to bind [default: 127.0.0.1:8080]
     -p, --projection  pca | umap_sphere | laplacian | kernel_pca [default: pca]
                       (O(n²) families are gated to PCA above ~10k points)
-    -e, --emit-html   Write a viewer HTML to <path> pre-wired to connect to this
-                      server (auto-sets location.hash); use with --open for a
-                      one-liner start-and-open workflow
+    -e, --emit-html [path]
+                      Write a viewer HTML pre-wired to connect to this server
+                      (auto-sets location.hash). Path defaults to sphere_viz.html.
+                      Use with --open for a one-liner start-and-open workflow
     -o, --open        Open the emitted HTML in the default browser after writing
     -h, --help        Print this help";
 
