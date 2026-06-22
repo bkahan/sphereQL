@@ -1114,7 +1114,7 @@ function stratify(points,catIds,budget){
   return out;
 }
 // Build the /tiles query string from a params object (finite fields only).
-function tileQuery(p){p=p||{};const q=[];for(const k of["theta","phi","half_angle","budget","lod"])if(p[k]!=null&&isFinite(+p[k]))q.push(k+"="+(+p[k]));return q.join("&");}
+function tileQuery(p){p=p||{};const q=[];for(const k of["theta","phi","half_angle","budget","lod"])if(p[k]!=null&&isFinite(+p[k]))q.push(k+"="+(+p[k]));if(p.cats!=null)q.push("cats="+encodeURIComponent(String(p.cats)));if(p.min_certainty!=null&&isFinite(+p.min_certainty))q.push("min_certainty="+(+p.min_certainty));return q.join("&");}
 
 // InlineSource — the offline blob. Renders all of `D`; serves the streaming
 // interface from the in-memory scene. nearest() here is a *positional* cosine
@@ -1200,18 +1200,19 @@ class TileCache{
 class ServerSource{
   constructor(baseUrl,opts){opts=opts||{};this.base=String(baseUrl||"").replace(/\/+$/,"");
     this._fetch=opts.fetch||(typeof fetch!=="undefined"?fetch.bind(typeof globalThis!=="undefined"?globalThis:null):null);
-    this.cache=opts.cache||null;this.decode=opts.decode||decodeTile;}
+    this.cache=opts.cache||null;this.decode=opts.decode||decodeTile;this._gen=0;}
   async manifest(){return this._json("/manifest");}
   async categoryStats(){return this._json("/category_stats");}
   async diagnostics(){return this._json("/diagnostics");}
   // Live "tune": ask the server to re-project the corpus with a different kind;
   // returns the fresh manifest (re-stream tiles after this to pick up the new
   // positions).
-  async reproject(projection){return this._post("/reproject",{projection});}
+  async reproject(projection){const m=await this._post("/reproject",{projection});this._gen++;return m;}
   async tiles(params){
-    const key="/tiles?"+tileQuery(params);
+    const urlQ=tileQuery(params);
+    const key="/tiles?"+urlQ+(this._gen?"@"+this._gen:"");
     let buf=this.cache?await this.cache.get(key):null;
-    if(buf==null){const res=await this._fetch(this.base+key);if(!res.ok)throw new Error("tiles → "+res.status);buf=await res.arrayBuffer();if(this.cache)await this.cache.put(key,buf);}
+    if(buf==null){const res=await this._fetch(this.base+"/tiles?"+urlQ);if(!res.ok)throw new Error("tiles → "+res.status);buf=await res.arrayBuffer();if(this.cache)await this.cache.put(key,buf);}
     // Decode a throwaway copy when caching: a worker-backed `decode` transfers
     // (detaches) the buffer it is handed, which would corrupt the retained
     // cache entry and break every subsequent cache hit. The cache keeps the
@@ -1447,12 +1448,14 @@ async function connectToServer(baseUrl,opts){
       document.getElementById("hdr-pill").textContent=(m.stats&&m.stats.projection_kind)||"";
       streamStreamer.clear();streamStreamer.tiles=new Map();await streamStreamer.startWith(m);streamStreamer.update(camToReq());
       loadDiagnostics();
-    }catch(err){console.warn("SphereQL: reproject failed",err);}
+    }catch(err){console.warn("SphereQL: reproject failed",err);flashButton("server-connect","✗ reproject",2200);}
   };
   const mc=document.getElementById("mincert");
   if(mc)mc.oninput=()=>{const v=document.getElementById("mincert-val");if(v)v.textContent=(+mc.value).toFixed(2);applyStreamFilter();};
   streamStreamer.update(camToReq());
   loadDiagnostics();
+  {const el=document.getElementById("server-url");if(el)el.value=source.base;}
+  {const btn=document.getElementById("server-connect");if(btn)btn.textContent="Disconnect";}
   return streamStreamer;
 }
 // Tear down an active server stream (its tile group + camera listener).
@@ -1462,6 +1465,7 @@ function disconnectServer(){
   if(_streamTimer){clearTimeout(_streamTimer);_streamTimer=null;}
   if(streamStreamer){streamStreamer.clear();streamStreamer=null;}
   if(streamGroup){scene.remove(streamGroup);disposeObject(streamGroup);const i=scalables.indexOf(streamGroup);if(i>=0)scalables.splice(i,1);streamGroup=null;}
+  {const btn=document.getElementById("server-connect");if(btn)btn.textContent="Connect";}
 }
 
 // ── Server debugger UI: inspect · diagnostics · tune · filter ──────────────
@@ -1537,6 +1541,22 @@ async function loadDiagnostics(){
 let dataSource=new InlineSource(D);
 rebuild(dataSource.scene);
 applyViewHash(); // restore a shared camera/settings view, if the URL carries one
+// Connect-to-server button in the Settings panel: input + toggle Connect/Disconnect.
+(function(){
+  const urlEl=document.getElementById("server-url");
+  const btn=document.getElementById("server-connect");
+  if(!btn)return;
+  btn.addEventListener("click",function(){
+    if(streamStreamer){disconnectServer();return;}
+    const url=(urlEl?urlEl.value:"").trim();
+    if(!url){flashButton("server-connect","enter URL",1400);return;}
+    btn.disabled=true;btn.textContent="…";
+    connectToServer(url).catch(function(err){
+      console.warn("SphereQL: connect failed",err);
+      flashButton("server-connect","✗ "+(err&&err.message||"failed"),2400);
+    }).finally(function(){btn.disabled=false;});
+  });
+})();
 // Opt-in streaming mode: launch with `#server=<url>` to stream from a
 // sphereql-vis-server instead of rendering the inline blob. Offline by default
 // — with no such hash the viewer never touches the network.

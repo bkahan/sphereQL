@@ -281,6 +281,12 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
     <div class="seg" style="margin-top:12px"><button id="save-cfg">Save .toml</button><button id="load-cfg">Load .toml</button></div>
     <input type="file" id="cfg-file" accept=".toml,.txt" style="display:none">
     <div class="sep"></div>
+    <div class="set">
+      <div class="lab"><span>Server</span></div>
+      <div class="seg"><input type="text" id="server-url" class="sel" placeholder="http://127.0.0.1:8080" style="flex:3;min-width:0;cursor:text"><button id="server-connect" style="flex:1">Connect</button></div>
+      <div class="hint">Stream from a live <code>sphereql-vis-server</code>. Click Disconnect to return to offline mode.</div>
+    </div>
+    <div class="sep"></div>
     <button id="open-scene" class="resetbtn">⤓ Open Scene JSON…</button>
     <input type="file" id="scene-file" accept=".json,application/json,.txt" style="display:none">
     <div class="hint">Load any SphereQL Scene — or drop a <code>.json</code> file anywhere on the page.</div>
@@ -302,7 +308,7 @@ input[type=range]::-moz-range-thumb{width:13px;height:13px;border:2px solid #0b0
       <input type="range" id="mincert" min="0" max="1" step="0.02" value="0">
       <div class="hint">Hide streamed points whose projection certainty is below this.</div>
     </div>
-    <div id="diag-content"><div class="muted">Launch with <code>#server=&lt;url&gt;</code> for live projection diagnostics.</div></div>
+    <div id="diag-content"><div class="muted">Connect to a <code>sphereql-vis-server</code> (Settings tab) for live projection diagnostics.</div></div>
   </div>
 </div>
 
