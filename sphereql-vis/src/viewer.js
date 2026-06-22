@@ -148,7 +148,7 @@ let morphTarget=null,morphT=0; // id → {d:unit dir, r} of a second scene, + sl
 let origPos=new Float32Array(0);
 let pointsGeo=null,pointsMat=null,pickMat=null,pointsMesh=null,globeGroup=null,linesGroup=null;
 let overlayGroups={},overlayKinds=new Set(),bridgeLines=[],bridgesByPoint={};
-let labelData=[],labelEls=[],labelKindOn={},labelKindsPresent=[],soloCat=null,labelRefDist=1;
+let labelData=[],labelEls=[],labelKindOn={},labelKindsPresent=[],soloCat=null;
 let legendRows={};
 let scalables=[];
 let baseSize=DEF.size,curScale=DEF.scale,spreadF=DEF.spread,radialG=DEF.radial,uiScale=DEF.ui;
@@ -449,7 +449,7 @@ function updateLabels(){
     const facing=(_av.x*_cd.x+_av.y*_cd.y+_av.z*_cd.z)/al>-0.15; // front hemisphere
     const sp=projectToScreen(ld.anchor);
     if(sp.vis&&facing){
-      const dist=camera.position.distanceTo(_av),s=clamp(labelRefDist/Math.max(dist,1e-3),0.7,1.7);
+      const dist=camera.position.distanceTo(_av),s=clamp((curScale*SR*2.6)/Math.max(dist,1e-3),0.5,2.2);
       el.style.display="flex";el.style.left=sp.x+"px";el.style.top=sp.y+"px";el.style.fontSize=(10.5*s).toFixed(1)+"px";
       el.classList.toggle("solo",ld.kind==="centroid"&&soloCat===ld.cat);
     }else el.style.display="none";
@@ -877,8 +877,6 @@ function rebuild(sc){
   // Reset view/transform state to defaults for the new scene.
   baseSize=DEF.size;curScale=DEF.scale;spreadF=DEF.spread;radialG=DEF.radial;uiScale=DEF.ui;
   soloCat=null;selectedIdx=-1;hoveredIdx=-1;pendingTransform=false;tgtTween=null;
-  labelRefDist=DEF.scale*maxR*2.6;
-
   // Categories + colors.
   catSet=[...new Set(pts.map(p=>p.cat))].sort();
   catColor={};buildCatColor(DEF.palette);
