@@ -38,6 +38,10 @@
   }
 
   const worker = new Worker("worker.js");
+  worker.onerror = (e) => {
+    wasmFailed = true; pendingRun = false;
+    setStatus("✗ wasm worker crashed — reload the page", "err");
+  };
   const input = document.getElementById("studio-input");
   const statusEl = document.getElementById("studio-status");
   const proj = document.getElementById("studio-proj");
@@ -87,6 +91,9 @@
       setStatus("computing…", "busy");
       worker.postMessage({ id, kind: "lingua", text });
     } else {
+      // When connected to a server, delegate projection to the live server instead
+      // of blocking the WASM worker (UMAP in WASM on the demo corpus is O(n²) slow).
+      if (typeof window.__sqServerReproject === "function") { window.__sqServerReproject(proj.value); return; }
       const corpus = corpusText(); // your paste, else the demo corpus
       if (!corpus) { setStatus(demoFailed ? "demo corpus unavailable — paste your own" : "paste a corpus to run", "err"); return; }
       const cfg = proj.value ? JSON.stringify({ projection_kind: proj.value }) : null;

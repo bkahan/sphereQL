@@ -417,9 +417,26 @@ function drawMinimapBase(){
   mbctx.clearRect(0,0,MW,MH);mbctx.strokeStyle="rgba(120,160,255,0.10)";mbctx.lineWidth=1;
   for(let i=1;i<3;i++){const y=MH*i/3;mbctx.beginPath();mbctx.moveTo(0,y);mbctx.lineTo(MW,y);mbctx.stroke();}
   for(let i=1;i<6;i++){const x=MW*i/6;mbctx.beginPath();mbctx.moveTo(x,0);mbctx.lineTo(x,MH);mbctx.stroke();}
-  if(!pointsGeo)return;
-  for(let i=0;i<N;i++){if(!catVisible[pts[i].cat])continue;const c=curPos(i),[th,ph]=tpOf(c[0],c[1],c[2]);
-    mbctx.fillStyle=catColor[pts[i].cat];mbctx.fillRect(th/(2*Math.PI)*MW-0.6,ph/Math.PI*MH-0.6,1.7,1.7);}}
+  if(typeof streamGroup!=="undefined"&&streamGroup&&streamGroup.children.length){
+    // Streaming mode: draw from loaded tile meshes (pts[] is empty server-side).
+    for(const mesh of streamGroup.children){
+      const pos=mesh.geometry.getAttribute("position");
+      const col=mesh.geometry.getAttribute("color");
+      if(!pos)continue;
+      const pa=pos.array,ca=col&&col.array;
+      for(let i=0,n=(pa.length/3)|0;i<n;i++){
+        const[th,ph]=tpOf(pa[i*3],pa[i*3+1],pa[i*3+2]);
+        if(ca){const r=(ca[i*3]*255+0.5)|0,g=(ca[i*3+1]*255+0.5)|0,b=(ca[i*3+2]*255+0.5)|0;mbctx.fillStyle=`rgb(${r},${g},${b})`;}
+        else mbctx.fillStyle="#5cc8ff";
+        mbctx.fillRect(th/(2*Math.PI)*MW-.6,ph/Math.PI*MH-.6,1.7,1.7);
+      }
+    }
+  } else if(pointsGeo){
+    // Offline mode: draw from pts[].
+    for(let i=0;i<N;i++){if(!catVisible[pts[i].cat])continue;const c=curPos(i),[th,ph]=tpOf(c[0],c[1],c[2]);
+      mbctx.fillStyle=catColor[pts[i].cat];mbctx.fillRect(th/(2*Math.PI)*MW-.6,ph/Math.PI*MH-.6,1.7,1.7);}
+  }
+}
 function drawMinimap(){
   mctx.clearRect(0,0,MW,MH);mctx.drawImage(miniBase,0,0);
   const[th,ph]=tpOf(camera.position.x,camera.position.y,camera.position.z);
@@ -1336,7 +1353,7 @@ function tileMeshSink(group,palette,material){
   const colors=(palette||[]).map(c=>new THREE.Color(c.color));
   const meshes=new Map();
   function addTile(key,data){
-    if(meshes.has(key))removeTile(key);
+    if(meshes.has(key))_removeTileGeom(key);
     const n=data.count|0,geo=new THREE.BufferGeometry();
     const col=new Float32Array(n*3),size=new Float32Array(n),pick=new Float32Array(n*3);
     for(let i=0;i<n;i++){const c=colors[data.cats[i]]||new THREE.Color(0x90a4ae);col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;size[i]=baseSize;
@@ -1348,12 +1365,14 @@ function tileMeshSink(group,palette,material){
     const mesh=new THREE.Points(geo,material);mesh.frustumCulled=true;
     mesh.userData={rows:data.rows}; // global rows, for CPU picking → inspector
     group.add(mesh);meshes.set(key,mesh);
+    drawMinimapBase();
   }
+  function _removeTileGeom(key){const m=meshes.get(key);if(m){group.remove(m);if(m.geometry&&m.geometry.dispose)m.geometry.dispose();meshes.delete(key);}}
   // Dispose only the per-tile geometry — the material is shared across all
   // tiles (disposing it would free an in-use GPU program and force recompiles
   // on every eviction).
-  function removeTile(key){const m=meshes.get(key);if(m){group.remove(m);if(m.geometry&&m.geometry.dispose)m.geometry.dispose();meshes.delete(key);}}
-  function clear(){for(const k of[...meshes.keys()])removeTile(k);}
+  function removeTile(key){_removeTileGeom(key);drawMinimapBase();}
+  function clear(){for(const k of[...meshes.keys()])_removeTileGeom(k);drawMinimapBase();}
   return {addTile,removeTile,clear,count:()=>meshes.size,meshAt:k=>meshes.get(k)};
 }
 
@@ -1440,14 +1459,24 @@ async function connectToServer(baseUrl,opts){
   // rows, and load the diagnostics dashboard.
   const showRow=id=>{const el=document.getElementById(id);if(el)el.style.display="block";};
   showRow("tune-row");showRow("filter-row");
+  const _studioProj=document.getElementById("studio-proj");
+  const _sp2srv={"":"pca","UmapSphere":"umap_sphere","LaplacianEigenmap":"laplacian","KernelPca":"kernel_pca"};
+  const _srv2sp={"pca":"","umap_sphere":"UmapSphere","laplacian":"LaplacianEigenmap","kernel_pca":"KernelPca"};
   const tune=document.getElementById("tune-proj");
-  if(tune)tune.onchange=async()=>{
-    try{const m=await source.reproject(tune.value);
-      document.getElementById("hdr-pill").textContent=(m.stats&&m.stats.projection_kind)||"";
-      streamStreamer.clear();streamStreamer.tiles=new Map();await streamStreamer.startWith(m);streamStreamer.update(camToReq());
+  const doReproject=async(serverProj)=>{
+    try{const newM=await source.reproject(serverProj);
+      const pk=(newM.stats&&newM.stats.projection_kind)||serverProj;
+      document.getElementById("hdr-pill").textContent=pk;
+      if(_studioProj)_studioProj.value=_srv2sp[pk]||"";
+      if(tune)tune.value=pk;
+      streamStreamer.clear();streamStreamer.tiles=new Map();await streamStreamer.startWith(newM);streamStreamer.update(camToReq());
       loadDiagnostics();
     }catch(err){console.warn("SphereQL: reproject failed",err);flashButton("server-connect","✗ reproject",2200);}
   };
+  if(tune)tune.onchange=()=>doReproject(tune.value);
+  // When connected, studio.js corpus-projection changes route here (avoids slow WASM UMAP on demo corpus).
+  window.__sqServerReproject=(studioVal)=>doReproject(_sp2srv[studioVal]||"pca");
+  if(manifest.stats&&manifest.stats.projection_kind){const pk=manifest.stats.projection_kind;if(_studioProj)_studioProj.value=_srv2sp[pk]||"";if(tune)tune.value=pk;}
   const mc=document.getElementById("mincert");
   if(mc)mc.oninput=()=>{const v=document.getElementById("mincert-val");if(v)v.textContent=(+mc.value).toFixed(2);applyStreamFilter();};
   streamStreamer.update(camToReq());
@@ -1458,6 +1487,7 @@ async function connectToServer(baseUrl,opts){
 }
 // Tear down an active server stream (its tile group + camera listener).
 function disconnectServer(){
+  window.__sqServerReproject=null;
   if(_streamOnMove&&controls.removeEventListener)controls.removeEventListener("change",_streamOnMove);
   _streamOnMove=null;
   if(_streamTimer){clearTimeout(_streamTimer);_streamTimer=null;}
