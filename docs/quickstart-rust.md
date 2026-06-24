@@ -214,6 +214,11 @@ workflow: load a corpus, auto-tune a projection, and emit a scene with
 category centroids, classified bridges, geodesic concept paths, Voronoi caps,
 antipodes, and domain-group spokes.
 
+For corpora past a few hundred thousand points, inlining one JSON blob stops
+scaling: `sphereql-vis-server` instead streams binary `SQT1` tiles by viewport.
+The full runbook, architecture, and HTTP API are in
+[visualization.md](visualization.md).
+
 ## GraphQL
 
 ```rust,ignore

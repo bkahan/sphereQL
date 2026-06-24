@@ -57,6 +57,12 @@ cargo run -p sphereql-examples --example visualize_corpus --release -- --corpus 
 # Transformer-embedding pipeline → sphere, rendered through the same
 # sphereql-vis crate (points, globs, slicing manifolds, concept paths).
 cargo run -p sphereql-examples --example e2e_transformer
+
+# Streaming viewer for large corpora: hold a corpus + indexes in memory and
+# serve binary SQT1 tiles by viewport (axum). Auto-serves the WASM studio at /
+# when built. See docs/visualization.md for the runbook + HTTP API.
+cargo run -p sphereql-vis-server -- --corpus stress --open
+# flags: --corpus <name|path>  --addr <host:port>  --projection <kind>  --emit-html [path]  --open
 ```
 
 ## Rust — comprehensive end-to-end demo

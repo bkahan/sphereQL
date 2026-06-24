@@ -21,6 +21,13 @@ A self-contained browser demo lives in
 [`sphereql-wasm/examples/`](../sphereql-wasm/examples/) — see its
 README for serving instructions.
 
+For a live **projection studio** — paste prose or corpus JSON and watch the
+pipeline place each concept on the sphere in real time, all client-side via
+WASM — see [`sphereql-wasm/studio/`](../sphereql-wasm/studio/) and the
+[visualization runbook](visualization.md#path-2--the-wasm-studio). The studio
+shares the same `viewer.js` runtime as the offline `sphereql-vis` export, and
+can be served as the streaming server's front-end.
+
 ## Use
 
 ```typescript

@@ -45,6 +45,39 @@ versions.
   filtering, deterministic per-category decimation for very large clouds,
   and a snapshot/round-trip/XSS/offline test suite.
 
+### Added — out-of-core streaming viewer (`sphereql-vis-server`)
+
+- **New `sphereql-vis-server` crate** — an axum + tokio query server for
+  corpora too large to inline. It loads a corpus, embeds + projects it
+  (gating O(n²) families to PCA above ~10k points, UMAP above ~100k), and
+  holds the projected positions (spatial-indexed), the raw embeddings
+  (ANN-indexed), and per-point metadata in memory. Serves
+  `/manifest /tiles /points /nearest /category_stats /path /globs
+  /drill_down /diagnostics /reproject /health`, plus the WASM studio at
+  `GET /` when present. `--corpus / --addr / --projection / --emit-html /
+  --open` CLI; live `/reproject` ("tune") atomically swaps server state.
+  29 tests (3 + 7 unit, 19 in-process axum integration).
+- **Streaming contract in `sphereql-vis`** — new `manifest` and `tile`
+  modules: a bounded `Manifest` (`Bounds` / `CategoryInfo` / `LodScheme` /
+  `MANIFEST_VERSION`) and the binary **`SQT1`** point tile (`encode_tile` /
+  `decode_tile` / `TilePoint` / `TileError`; 16-byte header + 20-byte
+  records, little-endian). Bounded regardless of N.
+- **Shared `viewer.js` runtime + instantiable refactor** — `viewer.js` is
+  now a `createViewer(rootEl, opts)` factory shared by the offline HTML,
+  the WASM studio, and the server front-end, with a strength channel
+  (certainty → intensity → size/opacity), view-preserving live
+  `updateScene`, and reasoning-chain rendering. The WASM studio can be
+  served as the server's front-end at `/`.
+- **Documentation** — see [`docs/visualization.md`](docs/visualization.md)
+  for the full runbook, architecture, design choices, and API.
+
+> **Note (branch-local, pre-merge):** the server and the streaming contract
+> are complete and tested, but the browser client that consumed `/tiles`
+> (`ServerSource` / `TileStreamer` / `connectToServer`) was removed from
+> `viewer.js` by the instantiable refactor and is not yet re-ported. The
+> offline single-file and WASM-studio paths are fully working; the
+> server-backed *browser* streaming path is mid-migration.
+
 ### Changed
 
 - `sphereql-python`'s `visualize` / `visualize_pipeline` now render through
