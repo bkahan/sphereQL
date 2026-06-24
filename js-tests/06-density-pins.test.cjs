@@ -1,3 +1,8 @@
+// Density-shading heatmap + pins + TOML config round-trip, on the createViewer
+// factory. rebuild() bins every point into a θ×φ grid → a per-point normalized
+// density attribute; the Settings density toggle flips the shader uniform.
+// Pins drop (θ,φ) annotation markers; currentSettings()/applySettings() round-
+// trips the whole Settings pane (incl. base64 pins) through a .toml-style blob.
 const path = require("path");
 const { run } = require("./harness.cjs");
 const VIEWER = path.join(__dirname, "..", "sphereql-vis", "src", "viewer.js");

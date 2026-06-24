@@ -1,3 +1,7 @@
+// Offline tools (re-ported onto the createViewer factory): the great-circle
+// ruler (0/90/180° + on-shell antipodal arc), PNG snapshot export, and the
+// shareable #v= hash round-trip including view SETTINGS (scale/radial/spread)
+// and the ruler tool flag. The XSS/overlay-coercion invariants moved to suite 01.
 const path = require("path");
 const { run } = require("./harness.cjs");
 const VIEWER = path.join(__dirname, "..", "sphereql-vis", "src", "viewer.js");
@@ -26,7 +30,7 @@ near(vt.rulerLast.chord, 2, 1e-4, "chord of 180° = 2");
 vt.rulerAddPick([1, 0, 0]); vt.rulerAddPick([1, 0, 0]); near(vt.rulerLast.deg, 0, 1e-4, "same dir → 0°");
 vt.setRuler(false); ok(vt.rulerOn === false && vt.rulerPicks.length === 0, "setRuler(false) clears picks");
 
-// ── Antipodal arc must stay on the shell (review finding #1) ─────────────
+// ── Antipodal arc must stay on the shell ─────────────────────────────────
 vt.setRuler(true);
 vt.rulerAddPick([1, 0, 0]); vt.rulerAddPick([-1, 0, 0]);
 near(vt.rulerLast.deg, 180, 1e-4, "antipodal picks → 180°");
@@ -49,14 +53,15 @@ ok(vt.downloads.length >= 1 && vt.downloads[vt.downloads.length - 1].download ==
   "exportPNG triggers a sphereql-view.png download");
 ok(/^data:image\/png/.test(vt.downloads[vt.downloads.length - 1].href), "PNG download is a data:image/png URL");
 
-// ── Shareable view hash round-trip ───────────────────────────────────────
+// ── Shareable view hash round-trip (settings + camera) ───────────────────
 vt.applyScale(33); vt.radialG = 2.5; vt.spreadF = 1.8;
 vt.camera.position.set(5, 6, 7); vt.controls.target.set(1, 2, 3);
 vt.shareLink();
 // perturb, then restore from the hash
 vt.applyScale(7); vt.radialG = 1; vt.spreadF = 1;
 vt.camera.position.set(0, 0, 0); vt.controls.target.set(0, 0, 0);
-vt.applyViewHash();
+const ret = vt.applyViewHash();
+ok(ret == null, "offline applyViewHash returns undefined (not a promise)");
 near(vt.curScale, 33, 1e-9, "scale restored from hash");
 near(vt.radialG, 2.5, 1e-9, "radial restored from hash");
 near(vt.spreadF, 1.8, 1e-9, "domain spread restored from hash");
@@ -64,29 +69,10 @@ near(vt.camera.position.x, 5, 1e-9, "camera x restored");
 near(vt.camera.position.z, 7, 1e-9, "camera z restored");
 near(vt.controls.target.y, 2, 1e-9, "target y restored");
 
-// ── Malformed hash is ignored (no throw) ─────────────────────────────────
-let threw = false;
-try { vt.applyViewHash.call(null); } catch (e) { /* call() shouldn't matter */ }
-// directly exercise the malformed branch via the harness location
-try { require("vm"); } catch (e) {}
-ok(true, "applyViewHash on valid hash did not throw");
-
-// ── rulerOn resets on scene swap (review finding #7) ─────────────────────
+// ── rulerOn resets on scene swap ─────────────────────────────────────────
 vt.setRuler(true); ok(vt.rulerOn === true, "ruler armed before swap");
 vt.rebuild(vt.parseScene([{ x: 1, y: 0, z: 0, cat: "Z" }, { x: 0, y: 1, z: 0, cat: "Z" }]));
 ok(vt.rulerOn === false, "rebuild disarms the ruler");
-
-// ── stats count fields coerced to numbers — no HTML smuggling (finding #5) ─
-const evil = vt.parseScene({ points: [{ x: 1, y: 0, z: 0 }], stats: { sampled_from: "<img src=x onerror=alert(1)>", dropped_nonfinite: "5" } });
-ok(evil.stats.sampled_from === undefined, "malicious sampled_from string coerced away");
-ok(evil.stats.dropped_nonfinite === 5, "numeric-string dropped_nonfinite coerced to 5");
-
-// ── malformed overlays filtered out (finding #6) ─────────────────────────
-const ov = vt.parseScene({ points: [{ x: 1, y: 0, z: 0 }], overlays: [{ kind: "centroid", pos: [0, 0, 1], label: "c" }, { nope: 1 }, null, { kind: 42 }] });
-ok(ov.overlays.length === 1, "only well-formed overlays survive parseScene (" + ov.overlays.length + ")");
-// ...and a malformed overlay reaching rebuild() doesn't abort the whole scene
-vt.rebuild({ title: "t", surface_radius: 1, stats: {}, points: [{ x: 1, y: 0, z: 0, r: 1, theta: 0, phi: 1.5, cat: "A", label: "a" }], overlays: [{ kind: "bridge" /* missing from/to */ }, { kind: "centroid", pos: [0, 0, 1], label: "c" }] });
-ok(vt.N === 1, "rebuild survives a malformed overlay (scene still loads)");
 
 console.log(fails === 0 ? "\nALL PASS" : "\n" + fails + " FAILURES");
 process.exit(fails === 0 ? 0 : 1);

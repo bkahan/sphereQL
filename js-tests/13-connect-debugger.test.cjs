@@ -1,9 +1,11 @@
 // Phase D streaming-debugger flow, headless: drive connectToServer against a
 // mock fetch and verify the wiring — manifest + base tile + diagnostics are
-// fetched, the streamer is live with the base tile rendered, and inspecting a
-// row issues the /points + /nearest fetches. (The DOM stub returns ephemeral
-// elements, so this asserts on fetch traffic + streamer state, not on rendered
-// markup — the visuals are browser-validated.)
+// fetched, the streamer is live with the base tile rendered, inspecting a row
+// issues the /points + /nearest fetches, renderDiagnostics survives a full
+// payload and null, applyStreamFilter pushes a server-side filter, and
+// disconnect tears the stream down. (The DOM stub returns ephemeral elements, so
+// this asserts on fetch traffic + streamer state, not rendered markup — the
+// visuals + the escHtml/safeColor XSS hardening are browser/review-validated.)
 const path = require("path");
 const { run } = require("./harness.cjs");
 
@@ -43,7 +45,7 @@ const fetch = (url, init) => {
 const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "x" }] }, { globals: { fetch } });
 
 (async () => {
-  ok(typeof vt.connectToServer === "function", "connectToServer exported");
+  ok(typeof vt.connectToServer === "function", "connectToServer on the instance");
   const streamer = await vt.connectToServer("http://srv");
   ok(streamer && vt.streamStreamer === streamer, "connectToServer installs a live streamer");
   ok(streamer.manifest && streamer.manifest.total_points === 50, "manifest fetched + applied");
@@ -59,11 +61,34 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "x" }] }, { globals: 
   ok(calls.some((c) => c.url.endsWith("/nearest") && JSON.parse(c.init.body).row === 7), "selectStreamRow fetches /nearest for the row");
   ok(calls.length > before, "inspect issued network calls");
 
-  // renderDiagnostics tolerates a payload without throwing (DOM stub absorbs it).
+  // renderDiagnostics tolerates a full payload AND null without throwing.
   let threw = false;
-  try { vt.renderDiagnostics({ projection_kind: "pca", evr: 0.5, total_points: 9, warnings: [], certainty: { bins: [1], min: 0, max: 1 }, intensity: { bins: [1], min: 0, max: 1 }, outliers: [] }); }
-  catch (e) { threw = true; }
-  ok(!threw, "renderDiagnostics runs without throwing");
+  try {
+    vt.renderDiagnostics({ projection_kind: "pca", evr: 0.5, total_points: 9, warnings: [{ message: "<img src=x onerror=alert(1)>", severity: "critical" }], certainty: { bins: [1], min: 0, max: 1 }, intensity: { bins: [1], min: 0, max: 1 }, outliers: [{ row: 7, label: "p7", certainty: 0.1 }] });
+    vt.renderDiagnostics(null);
+  } catch (e) { threw = true; }
+  ok(!threw, "renderDiagnostics runs (full payload incl. hostile warning + null) without throwing");
+
+  // applyStreamFilter pushes a server-side filter through the streamer.
+  if (typeof vt.applyStreamFilter === "function" && typeof vt.streamStreamer.setFilter === "function") {
+    let filterThrew = false;
+    try { vt.applyStreamFilter(); } catch (e) { filterThrew = true; }
+    ok(!filterThrew, "applyStreamFilter runs without throwing");
+  }
+
+  // Disconnect tears the stream down.
+  vt.disconnectServer();
+  ok(vt.streamStreamer == null, "disconnectServer clears the streamer");
+
+  // Zombie-stream regression: rebuild() (e.g. drag-drop / Open Scene while
+  // streaming) must tear down the active stream via teardown→disconnectServer,
+  // else getHovered/updateHover stay on the streaming branch and the new offline
+  // scene is unpickable.
+  await vt.connectToServer("http://srv");
+  ok(!!vt.streamStreamer, "reconnected for the rebuild-teardown check");
+  vt.rebuild(vt.parseScene([{ x: 1, y: 0, z: 0, cat: "q" }, { x: 0, y: 1, z: 0, cat: "q" }]));
+  ok(vt.streamStreamer == null, "rebuild() disconnects the active stream (no zombie)");
+  ok(vt.dataSource && vt.dataSource.scene && vt.dataSource.scene.points.length === 2, "rebuild() reinstalls an InlineSource for the offline scene");
 
   console.log(fails === 0 ? "\nALL PASS" : "\n" + fails + " FAILURES");
   process.exit(fails === 0 ? 0 : 1);

@@ -62,6 +62,20 @@ vt.rebuild(vt.parseScene([{ x: 1, y: 0, z: 0, cat: "Z" }, { x: 0, y: 1, z: 0, ca
 ok(vt.N === 3, "rebuild swapped to 3 points (N=" + vt.N + ")");
 ok(vt.catSet.length === 2 && vt.catSet.indexOf("Q") >= 0, "rebuild recomputed categories [" + vt.catSet + "]");
 
+// ── stats count fields coerced to numbers — no HTML smuggling (finding #5) ─
+// (moved here from the deleted 02-tools suite — render-path invariants that only
+//  need parseScene/rebuild.)
+const evil = vt.parseScene({ points: [{ x: 1, y: 0, z: 0 }], stats: { sampled_from: "<img src=x onerror=alert(1)>", dropped_nonfinite: "5" } });
+ok(evil.stats.sampled_from === undefined, "malicious sampled_from string coerced away");
+ok(evil.stats.dropped_nonfinite === 5, "numeric-string dropped_nonfinite coerced to 5");
+
+// ── malformed overlays filtered out (finding #6) ─────────────────────────
+const ov = vt.parseScene({ points: [{ x: 1, y: 0, z: 0 }], overlays: [{ kind: "centroid", pos: [0, 0, 1], label: "c" }, { nope: 1 }, null, { kind: 42 }] });
+ok(ov.overlays.length === 1, "only well-formed overlays survive parseScene (" + ov.overlays.length + ")");
+// ...and a malformed overlay reaching rebuild() doesn't abort the whole scene
+vt.rebuild({ title: "t", surface_radius: 1, stats: {}, points: [{ x: 1, y: 0, z: 0, r: 1, theta: 0, phi: 1.5, cat: "A", label: "a" }], overlays: [{ kind: "bridge" /* missing from/to */ }, { kind: "centroid", pos: [0, 0, 1], label: "c" }] });
+ok(vt.N === 1, "rebuild survives a malformed overlay (scene still loads)");
+
 // Optional integration check: round-trip a REAL emitted scene through
 // parseScene. Point SPHEREQL_EMIT_HTML at an emitted page to enable it, e.g.
 //   cargo run -p sphereql-examples --example visualize_corpus -- --out /tmp/v.html
