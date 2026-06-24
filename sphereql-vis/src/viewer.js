@@ -65,7 +65,17 @@ vec3 sphTransform(vec3 o){
   }
   if(uSpread!=1.0){
     float dt=clamp(dot(aCatDir,d),-1.0,1.0);float om=acos(dt);
-    if(om>=1e-4){float s=sin(om);float w1=sin((1.0-uSpread)*om)/s;float w2=sin(uSpread*om)/s;d=normalize(aCatDir*w1+d*w2);}
+    if(om<1e-4){}
+    else if(om>3.141592653589793-1e-4){
+      // Antipodal to the category pivot: the slerp's 1/sin(om) blows up, so
+      // rotate d toward a deterministic helper axis by (1-uSpread)*om instead.
+      // Same construction as the morph branch above, so this GPU path and the
+      // curPos/transformPos CPU mirrors place the point identically (pick==draw).
+      vec3 h=abs(d.x)<0.9?vec3(1.0,0.0,0.0):vec3(0.0,1.0,0.0);
+      float hd=dot(h,d);vec3 pp=normalize(h-hd*d);
+      float th=(1.0-uSpread)*om;d=d*cos(th)+pp*sin(th);
+    }
+    else{float s=sin(om);float w1=sin((1.0-uSpread)*om)/s;float w2=sin(uSpread*om)/s;d=normalize(aCatDir*w1+d*w2);}
   }
   return d*max(0.02,uSR+(mag-uSR)*uRadial);
 }
@@ -186,8 +196,11 @@ function createViewer(rootEl,opts){
     if(spreadF!==1){
       let bc=null,bd=-2;for(const c of catDirArr){const dt=c[0]*dx+c[1]*dy+c[2]*dz;if(dt>bd){bd=dt;bc=c;}}
       const om=Math.acos(clamp(bd,-1,1));
-      if(bc&&om>=1e-4){const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
-        const nx=bc[0]*w1+dx*w2,ny=bc[1]*w1+dy*w2,nz=bc[2]*w1+dz*w2,nm=Math.hypot(nx,ny,nz)||1;dx=nx/nm;dy=ny/nm;dz=nz/nm;}
+      if(bc&&om>=1e-4){
+        if(om>Math.PI-1e-4){const h=Math.abs(dx)<0.9?[1,0,0]:[0,1,0];const hd=h[0]*dx+h[1]*dy+h[2]*dz;let px=h[0]-hd*dx,py=h[1]-hd*dy,pz=h[2]-hd*dz;const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;const th=(1-spreadF)*om,c2=Math.cos(th),s2=Math.sin(th),ndx=dx*c2+px*s2,ndy=dy*c2+py*s2,ndz=dz*c2+pz*s2;dx=ndx;dy=ndy;dz=ndz;}
+        else{const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
+          const nx=bc[0]*w1+dx*w2,ny=bc[1]*w1+dy*w2,nz=bc[2]*w1+dz*w2,nm=Math.hypot(nx,ny,nz)||1;dx=nx/nm;dy=ny/nm;dz=nz/nm;}
+      }
     }
     const nmag=Math.max(0.02,SR+(mag-SR)*radialG);
     return[dx*nmag,dy*nmag,dz*nmag];
@@ -198,7 +211,12 @@ function createViewer(rootEl,opts){
     const u=pointsMat.uniforms;
     u.uSpread.value=spreadF;u.uRadial.value=radialG;u.uSR.value=SR;
     u.uMorphT.value=morphTarget?morphT:0;u.uHasMorph.value=morphTarget?1:0;
-    for(const b of bridgeLines){const a=b.fromIndex>=0?curPos(b.fromIndex):transformPos(b.from),c=transformPos(b.to),pos=b.line.geometry.getAttribute("position");pos.setXYZ(0,a[0],a[1],a[2]);pos.setXYZ(1,c[0],c[1],c[2]);pos.needsUpdate=true;}
+    // While a morph is active the GPU shader returns before the spread/radial
+    // block, so points sit at their morphed/raw positions. The `from` end
+    // already follows that via curPos; keep the `to` end (a static shell coord,
+    // not a drawn point) raw too so the bridge stays attached instead of being
+    // spread-transformed onto a stale position.
+    for(const b of bridgeLines){const a=b.fromIndex>=0?curPos(b.fromIndex):transformPos(b.from),c=(morphTarget&&morphT>0)?b.to:transformPos(b.to),pos=b.line.geometry.getAttribute("position");pos.setXYZ(0,a[0],a[1],a[2]);pos.setXYZ(1,c[0],c[1],c[2]);pos.needsUpdate=true;}
     if(selectedIdx>=0)deselectPoint();
   }
 
@@ -298,7 +316,9 @@ function createViewer(rootEl,opts){
       return[nx*rr,ny*rr,nz*rr];
     }
     if(spreadF!==1){const c=catDir[pts[i].cat];const dot=clamp(c[0]*dx+c[1]*dy+c[2]*dz,-1,1),om=Math.acos(dot);
-      if(om>=1e-4){const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
+      if(om<1e-4){}
+      else if(om>Math.PI-1e-4){const h=Math.abs(dx)<0.9?[1,0,0]:[0,1,0];const hd=h[0]*dx+h[1]*dy+h[2]*dz;let px=h[0]-hd*dx,py=h[1]-hd*dy,pz=h[2]-hd*dz;const pm=Math.hypot(px,py,pz)||1;px/=pm;py/=pm;pz/=pm;const th=(1-spreadF)*om,c2=Math.cos(th),s2=Math.sin(th),ndx=dx*c2+px*s2,ndy=dy*c2+py*s2,ndz=dz*c2+pz*s2;dx=ndx;dy=ndy;dz=ndz;}
+      else{const s=Math.sin(om),w1=Math.sin((1-spreadF)*om)/s,w2=Math.sin(spreadF*om)/s;
         const nx=c[0]*w1+dx*w2,ny=c[1]*w1+dy*w2,nz=c[2]*w1+dz*w2,nm=Math.hypot(nx,ny,nz)||1;dx=nx/nm;dy=ny/nm;dz=nz/nm;}}
     const nmag=Math.max(0.02,SR+(mag-SR)*radialG);
     return[dx*nmag,dy*nmag,dz*nmag];
@@ -319,21 +339,21 @@ function createViewer(rootEl,opts){
     const sa=pointsGeo.getAttribute("size").array,ca=pointsGeo.getAttribute("color").array;
     for(let i=0;i<N;i++){const base=new THREE.Color(catColor[pts[i].cat]);
       if(near.has(i)){sa[i]=i===idx?baseSize*1.7:baseSize*1.4;ca[i*3]=base.r;ca[i*3+1]=base.g;ca[i*3+2]=base.b;}
-      else{sa[i]=baseSize*0.5;ca[i*3]=base.r*0.28;ca[i*3+1]=base.g*0.28;ca[i*3+2]=base.b*0.28;}}
+      else{sa[i]=catVisible[pts[i].cat]?baseSize*0.5:0;ca[i*3]=base.r*0.28;ca[i*3+1]=base.g*0.28;ca[i*3+2]=base.b*0.28;}}
     pointsGeo.getAttribute("size").needsUpdate=true;pointsGeo.getAttribute("color").needsUpdate=true;
     pointsMat.uniforms.opacity.value=0.4;
     while(linesGroup.children.length)linesGroup.remove(linesGroup.children[0]);
     const lm=new THREE.LineBasicMaterial({color:0x5cc8ff,transparent:true,opacity:0.5});
     for(const d of dists){const c=curPos(d.i);linesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(P[0],P[1],P[2]),new THREE.Vector3(c[0],c[1],c[2])]),lm));}
     const myBridges=bridgesByPoint[idx];
-    if(myBridges)for(const br of myBridges){const c=transformPos(br.to);
+    if(myBridges)for(const br of myBridges){const c=(morphTarget&&morphT>0)?br.to:transformPos(br.to);
       linesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(P[0],P[1],P[2]),new THREE.Vector3(c[0],c[1],c[2])]),new THREE.LineBasicMaterial({color:br.color,transparent:true,opacity:0.9})));}
     const p=pts[idx];
     if(sellabel){sellabel.innerHTML=`<span class="sl-dot" style="background:${catColor[p.cat]};color:${catColor[p.cat]}"></span>${escHtml(p.label||"Point "+idx)}`;sellabel.style.display="block";}
     const infoLabel=q("info-label","info-label");if(infoLabel)infoLabel.textContent=p.label||"Point "+idx;
     const infoTag=q("info-cat","info-cat");if(infoTag){infoTag.textContent=p.cat;infoTag.style.color=catColor[p.cat];infoTag.style.background=catColor[p.cat]+"18";}
     const infoCoords=q("info-coords","info-coords");
-    if(infoCoords)infoCoords.innerHTML=`<span>θ</span><b>${p.theta.toFixed(4)}</b><span>φ</span><b>${p.phi.toFixed(4)}</b><span>r</span><b>${p.r.toFixed(4)}</b><span>str</span><b>${p.strength.toFixed(2)}</b>${myBridges?`<span>bridges</span><b>${myBridges.length}</b>`:""}`;
+    if(infoCoords)infoCoords.innerHTML=`<span>θ</span><b>${p.theta.toFixed(4)}</b><span>φ</span><b>${p.phi.toFixed(4)}</b><span>r</span><b>${p.r.toFixed(4)}</b><span>str</span><b>${deriveStrength(p).toFixed(2)}</b>${myBridges?`<span>bridges</span><b>${myBridges.length}</b>`:""}`;
     const nb=q("info-neighbors","info-neighbors");
     if(nb){nb.innerHTML=dists.map(d=>{const dc=catColor[pts[d.i].cat];return`<div class="nb" data-idx="${d.i}" style="background:${dc}22;border-left:2px solid ${dc}"><span>${escHtml(pts[d.i].label||"Point "+d.i)}</span><span class="dist">${d.d.toFixed(3)}</span></div>`;}).join("");
       nb.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectPoint(parseInt(el.dataset.idx))));}
@@ -352,7 +372,7 @@ function createViewer(rootEl,opts){
     if(revertCam)tweenTarget(new THREE.Vector3(0,0,0));
   }
 
-  function setAll(v){catSet.forEach(c=>{catVisible[c]=v;if(legendRows[c])legendRows[c].classList.toggle("dim",!v);});updateVisibility();}
+  function setAll(v){soloCat=null;catSet.forEach(c=>{catVisible[c]=v;if(legendRows[c])legendRows[c].classList.toggle("dim",!v);});updateVisibility();}
   function updateVisibility(){
     if(!pointsGeo)return;
     const sa=pointsGeo.getAttribute("size").array;
@@ -387,7 +407,11 @@ function createViewer(rootEl,opts){
     }
   }
 
-  function disposeObject(o){if(!o)return;o.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){const m=c.material;(Array.isArray(m)?m:[m]).forEach(x=>{if(x&&x.dispose)x.dispose();});}});}
+  // Dispose the map texture too: Material.dispose() does NOT cascade to its
+  // textures, so without this every makeTextSprite CanvasTexture (relation
+  // labels) leaks on the GPU across chain clear / overlay teardown / rebuild.
+  // `.map` is the only texture slot used in this viewer.
+  function disposeObject(o){if(!o)return;o.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){const m=c.material;(Array.isArray(m)?m:[m]).forEach(x=>{if(x){if(x.map&&x.map.dispose)x.map.dispose();if(x.dispose)x.dispose();}});}});}
 
   // ── Great-circle arc (shared by highlightByIds + drawChain) ─────────────
   // Robust slerp from direction a → b sampled at SR; handles coincident and
@@ -416,6 +440,11 @@ function createViewer(rootEl,opts){
     const order=[],seen=new Set();
     for(const raw of ids||[]){const key=String(raw&&raw.id!=null?raw.id:raw);const idx=idToIndex.get(key);if(idx!==undefined&&!seen.has(idx)){seen.add(idx);order.push(idx);}}
     if(order.length===0){deselectPoint();return 0;}
+    // Reset any prior point selection (without reverting the camera) so its
+    // neighbor/bridge lines + sellabel don't linger over the query highlight,
+    // and selectedIdx is cleared so the next updateScene tick's in-place
+    // selectPoint re-apply can't overwrite this query's per-point emphasis.
+    if(selectedIdx>=0)deselectPoint();
     const sa=pointsGeo.getAttribute("size").array,ca=pointsGeo.getAttribute("color").array;
     for(let i=0;i<N;i++){const c=new THREE.Color(catColor[pts[i].cat]);
       if(seen.has(i)){const top=i===order[0];sa[i]=baseSize*(top?1.8:1.4);ca[i*3]=c.r;ca[i*3+1]=c.g;ca[i*3+2]=c.b;}
@@ -591,7 +620,7 @@ function createViewer(rootEl,opts){
         const row=document.createElement("div");row.className="lrow";
         row.innerHTML=`<span class="ldot" style="background:${catColor[cat]};color:${catColor[cat]}"></span><span class="lbl"></span><span class="lcnt">${catCounts[cat]}</span>`;
         row.querySelector(".lbl").textContent=cat;legendRows[cat]=row;
-        row.addEventListener("click",()=>{catVisible[cat]=!catVisible[cat];row.classList.toggle("dim",!catVisible[cat]);updateVisibility();});
+        row.addEventListener("click",()=>{soloCat=null;catVisible[cat]=!catVisible[cat];row.classList.toggle("dim",!catVisible[cat]);updateVisibility();});
         legendDiv.appendChild(row);});}
 
     // ── Overlay toggles ──────────────────────────────────────────────────
@@ -708,7 +737,12 @@ function createViewer(rootEl,opts){
     posAttr.needsUpdate=true;colAttr.needsUpdate=true;strAttr.needsUpdate=true;cdAttr.needsUpdate=true;
     // Re-apply the active selection in place: recompute neighbor lines/highlight
     // against the new positions, but keep the camera and don't re-notify the host.
+    // selectPoint rewrites the whole size buffer itself, so it covers the
+    // selected case. With no selection, refresh size from catVisible here: slots
+    // recycle across categories on a tick (see the idToIndex rebuild above), so a
+    // slot whose cat changed would otherwise keep a stale visible/hidden size.
     if(selectedIdx>=0)selectPoint(selectedIdx,{skipTween:true});
+    else{const sa=pointsGeo.getAttribute("size").array;for(let i=0;i<N;i++)sa[i]=catVisible[pts[i].cat]?baseSize:0;pointsGeo.getAttribute("size").needsUpdate=true;}
   }
 
   // ── drawChain(chain) ─────────────────────────────────────────────────────
@@ -739,8 +773,11 @@ function createViewer(rootEl,opts){
     const edges=rawNodes.length?rawNodes.slice(1).map(n=>n.rel?{label:n.rel}:null):(chain.edges||[]);
     if(verts.length<2)return{clear:()=>{}};
 
+    // grp inherits chainGroup's scale — chainGroup is in `scalables`, so
+    // applyScale already drives it by curScale (matching drawChainIntoGroup's
+    // overlay groups and highlightByIds' queryGroup). Setting grp.scale here too
+    // would apply curScale twice (curScale²), throwing the chain off-screen.
     const grp=new THREE.Group();
-    grp.scale.setScalar(curScale);
     chainGroup.add(grp);
 
     // Animated line draw-on via drawRange.
@@ -833,7 +870,7 @@ function createViewer(rootEl,opts){
     if(!_hoverEv)return;const e=_hoverEv;_hoverEv=null;
     const idx=getHovered(e);hoveredIdx=idx;
     if(idx>=0){const p=pts[idx];
-      if(tooltip){tooltip.innerHTML=`<div class="tt-lbl">${escHtml(p.label||"Point "+idx)}</div><div class="tt-meta">${escHtml(p.cat)} · θ ${p.theta.toFixed(2)}  φ ${p.phi.toFixed(2)}  r ${p.r.toFixed(2)}  str ${p.strength.toFixed(2)}</div>`;
+      if(tooltip){tooltip.innerHTML=`<div class="tt-lbl">${escHtml(p.label||"Point "+idx)}</div><div class="tt-meta">${escHtml(p.cat)} · θ ${p.theta.toFixed(2)}  φ ${p.phi.toFixed(2)}  r ${p.r.toFixed(2)}  str ${deriveStrength(p).toFixed(2)}</div>`;
         tooltip.style.display="block";tooltip.style.left=(e.clientX+16)+"px";tooltip.style.top=(e.clientY+14)+"px";}
       canvas.style.cursor="crosshair";
     }else{if(tooltip)tooltip.style.display="none";canvas.style.cursor="grab";}
@@ -856,6 +893,9 @@ function createViewer(rootEl,opts){
   // ── Event listeners ──────────────────────────────────────────────────────
   const ac=new AbortController();
   const sig={signal:ac.signal};
+  // Teardown hooks for listeners that can't take an AbortSignal (e.g. THREE's
+  // EventDispatcher). dispose() runs these in addition to ac.abort().
+  const cleanups=[];
 
   // Zoom to cursor.
   canvas.addEventListener("wheel",e=>{
@@ -931,6 +971,7 @@ function createViewer(rootEl,opts){
     aniRunning=false;cancelAnimationFrame(aniHandle);
     if(ro)ro.disconnect();
     ac.abort(); // removes all our addEventListener(...,{signal}) handlers
+    for(const fn of cleanups){try{fn();}catch(e){}} // non-signal listeners (e.g. embed)
     if(controls&&controls.dispose)controls.dispose(); // OrbitControls' own canvas listeners
     teardown();
     if(pickRT)pickRT.dispose();
@@ -947,14 +988,24 @@ function createViewer(rootEl,opts){
     const camState=()=>[camera.position.x,camera.position.y,camera.position.z,controls.target.x,controls.target.y,controls.target.z];
     const drift=(a,b)=>{if(!a||!b)return Infinity;let d=0;for(let i=0;i<6;i++)d=Math.max(d,Math.abs(a[i]-b[i]));return d;};
     const eps=()=>1e-3*Math.max(1,maxR*curScale);
-    controls.addEventListener("change",()=>{
+    // Named so dispose() can remove it — THREE's EventDispatcher has no
+    // AbortSignal support, so without the cleanup hook this handler outlives
+    // dispose() and keeps posting cam updates from a torn-down viewer.
+    const onCamChange=()=>{
       if(applying)return;
       const s=camState();
       if(drift(s,lastSent)<eps())return;
       lastSent=s;
       try{parent.postMessage({type:"sphereql-cam",s},"*");}catch(err){}
-    });
+    };
+    controls.addEventListener("change",onCamChange);
+    cleanups.push(()=>controls.removeEventListener("change",onCamChange));
+    // ,sig binds this to the AbortController so dispose() removes it; the
+    // aniRunning guard neutralizes any message already in flight at dispose time
+    // (without it, a post-dispose `sphereql-scene` would rebuild() a disposed GL
+    // context, and `sphereql-cam`/`-lock` would mutate dead controls).
     window.addEventListener("message",e=>{
+      if(!aniRunning)return;
       if(e.source!==parent)return;
       const m=e.data;if(!m||typeof m!=="object")return;
       if(m.type==="sphereql-scene"&&m.scene){try{rebuild(parseScene(m.scene));}catch(err){console.warn("SphereQL: bad injected scene",err);}}
@@ -969,7 +1020,7 @@ function createViewer(rootEl,opts){
         controls.enableZoom=!m.lockZoom;
         zoomLocked=!!m.lockZoom;
       }
-    });
+    },sig);
     try{parent.postMessage({type:"sphereql-embed-ready"},"*");}catch(err){}
   })();
 
