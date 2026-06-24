@@ -102,9 +102,10 @@ OPTIONS:
     -e, --emit-html [path]
                       Write a standalone offline viewer pre-wired to connect to
                       this server. Path defaults to sphere_viz.html.
-    -o, --open        Open in the default browser after the server starts.
-                      Opens http://<addr>/ if the WASM studio is found at
-                      sphereql-wasm/studio/dist; otherwise opens --emit-html.
+    -o, --open        Open http://<addr>/ in the default browser after the
+                      server starts. Serves the WASM studio there if a complete
+                      build is found at sphereql-wasm/studio/dist; otherwise a
+                      landing page listing the JSON endpoints.
     -h, --help        Print this help";
 
 #[tokio::main]
@@ -149,39 +150,43 @@ async fn main() -> ExitCode {
         }
     }
 
-    // Auto-detect the pre-built WASM studio. If found, serve it as the
-    // front-end at `GET /` with the auto-connect script injected.
-    let studio = find_studio_dir().and_then(|dir| {
-        let idx_path = dir.join("index.html");
-        match std::fs::read_to_string(&idx_path) {
-            Ok(html) => {
-                eprintln!("studio found at {} — serving at /", dir.display());
-                Some(StudioAssets {
-                    index_html: inject_auto_connect(html, &server_url),
-                    dir,
-                })
-            }
-            Err(e) => {
-                eprintln!("warning: studio dir found but index.html unreadable: {e}");
-                None
+    // Auto-detect the pre-built WASM studio. If a complete build is found, serve
+    // it as the front-end at `GET /` with the auto-connect script injected.
+    // A partial build (HTML shell without studio.js) is refused with a precise
+    // hint — the server still serves the API and the `/` landing page.
+    let studio = match probe_studio_dir() {
+        StudioProbe::Ready(dir) => {
+            let idx_path = dir.join("index.html");
+            match std::fs::read_to_string(&idx_path) {
+                Ok(html) => {
+                    eprintln!("studio found at {} — serving at /", dir.display());
+                    Some(StudioAssets {
+                        index_html: inject_auto_connect(html, &server_url),
+                        dir,
+                    })
+                }
+                Err(e) => {
+                    eprintln!("warning: studio dir found but index.html unreadable: {e}");
+                    None
+                }
             }
         }
-    });
-
-    // Decide what --open will point at (resolved after bind below).
-    let open_url: Option<String> = if args.open_browser {
-        if studio.is_some() {
-            Some(format!("{server_url}/"))
-        } else if args.emit_html.is_some() {
-            // Offline file — path is relative to CWD; open via file:// isn't
-            // great cross-platform, so just open the server URL instead.
-            Some(format!("{server_url}/"))
-        } else {
-            Some(format!("{server_url}/"))
+        StudioProbe::Partial(dir) => {
+            eprintln!(
+                "warning: studio at {} is incomplete (studio.js missing) — run \
+                 sphereql-wasm/studio/build.sh to finish; serving API + landing page only",
+                dir.display()
+            );
+            None
         }
-    } else {
-        None
+        StudioProbe::Absent => None,
     };
+
+    // `--open` always targets the served root: with a studio that's the viewer,
+    // and without one it's the landing page (S6) — never a 404. The offline
+    // `--emit-html` file isn't opened directly (file:// is unreliable across
+    // platforms); the auto-connect-wired studio/landing page covers it.
+    let open_url: Option<String> = args.open_browser.then(|| format!("{server_url}/"));
 
     let app = build_router(Arc::new(RwLock::new(Arc::new(state))), studio);
     let listener = match tokio::net::TcpListener::bind(&args.addr).await {
@@ -228,21 +233,45 @@ fn resolve_viewer_host(addr: &str) -> String {
 /// defined. Existing `#v=` session hashes or explicit `#server=` hashes are
 /// preserved — the guard skips auto-connect when a hash is already present.
 fn inject_auto_connect(mut html: String, server_url: &str) -> String {
+    // Guarded so the page degrades gracefully until the client re-port (Prompt
+    // 22) defines `connectToServer`. Until then this is a silent no-op: the
+    // `typeof` check skips the call, and the `try/catch` swallows any throw so
+    // an inline-script error can never blank the served page. (String-only edit
+    // — viewer.js is unchanged.)
     let script = format!(
-        "<script>if(!location.hash||location.hash===\"#\")connectToServer(\"{server_url}\").catch(function(e){{console.warn(\"SphereQL auto-connect:\",e);}});</script>\n"
+        "<script>try{{if((!location.hash||location.hash===\"#\")&&typeof connectToServer===\"function\")connectToServer(\"{server_url}\").catch(function(e){{console.warn(\"SphereQL auto-connect:\",e);}});}}catch(e){{console.warn(\"SphereQL auto-connect:\",e);}}</script>\n"
     );
     html = html.replacen("</body>", &format!("{script}</body>"), 1);
     html
 }
 
-/// Look for the pre-built WASM studio in the expected workspace location.
-/// Returns `None` when the directory or its `studio.js` sentinel is absent.
-fn find_studio_dir() -> Option<std::path::PathBuf> {
-    let candidate = std::path::Path::new("sphereql-wasm/studio/dist");
-    if candidate.join("studio.js").exists() && candidate.join("index.html").exists() {
-        Some(candidate.to_path_buf())
-    } else {
-        None
+/// Outcome of probing for the pre-built WASM studio at
+/// `sphereql-wasm/studio/dist`.
+///
+/// `studio.js` is the load-bearing sentinel: the `build_studio` example emits
+/// only the HTML shells (`index.html`, `embed.html`, `demo-corpus.json`), while
+/// `studio.js` + `worker.js` + `pkg/*.wasm` are produced/copied by
+/// `studio/build.sh`. Serving an index whose baked `<script src="studio.js">`
+/// 404s is worse than serving no studio at all, so a `Partial` build is refused
+/// — but with a precise "run build.sh to finish" warning rather than silence.
+enum StudioProbe {
+    /// `index.html` && `studio.js` present — safe to serve.
+    Ready(std::path::PathBuf),
+    /// `index.html` present but `studio.js` missing — an incomplete build.
+    Partial(std::path::PathBuf),
+    /// Nothing usable at the expected path.
+    Absent,
+}
+
+/// Probe the expected workspace location for a complete WASM studio build.
+fn probe_studio_dir() -> StudioProbe {
+    let dir = std::path::Path::new("sphereql-wasm/studio/dist");
+    let has_index = dir.join("index.html").exists();
+    let has_js = dir.join("studio.js").exists();
+    match (has_index, has_js) {
+        (true, true) => StudioProbe::Ready(dir.to_path_buf()),
+        (true, false) => StudioProbe::Partial(dir.to_path_buf()),
+        _ => StudioProbe::Absent,
     }
 }
 

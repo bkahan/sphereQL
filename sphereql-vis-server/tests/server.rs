@@ -71,6 +71,32 @@ async fn health_ok() {
 }
 
 #[tokio::test]
+async fn root_serves_landing_page_when_no_studio() {
+    // S6 regression: with studio = None, `GET /` must NOT 404 (`--open` targets
+    // it unconditionally). It returns a 200 HTML landing page that lists the
+    // JSON endpoints and points at the studio build script.
+    let resp = get(router(), "/").await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(
+        resp.headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("text/html")),
+        "landing page is served as text/html"
+    );
+    let body = String::from_utf8(body_bytes(resp).await).unwrap();
+    // Lists the core endpoints…
+    for ep in ["/manifest", "/tiles", "/nearest", "/points", "/diagnostics"] {
+        assert!(body.contains(ep), "landing page lists {ep}");
+    }
+    // …and tells the user how to get the full studio.
+    assert!(
+        body.contains("studio/build.sh"),
+        "landing page points at the studio build script"
+    );
+}
+
+#[tokio::test]
 async fn manifest_round_trips_and_describes_the_corpus() {
     let resp = get(router(), "/manifest").await;
     assert_eq!(resp.status(), StatusCode::OK);

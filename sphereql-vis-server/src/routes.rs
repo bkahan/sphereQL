@@ -100,13 +100,71 @@ pub fn build_router(state: Shared, studio: Option<StudioAssets>) -> Router {
             .merge(api)
             .fallback_service(ServeDir::new(assets.dir))
     } else {
-        api
+        // No studio to serve — still answer `/` with a minimal landing page so
+        // `--open` never lands on a 404 (S6). The page is a static `const`, so
+        // it carries no untrusted data and needs no escaping / auto-connect
+        // injection. `/` is registered ONLY here: the `Some` branch above owns
+        // `/` for the studio index, and axum panics at startup on a duplicate
+        // route, so `api` itself must never define `/`.
+        api.route("/", get(landing))
     }
 }
 
 async fn health() -> &'static str {
     "ok"
 }
+
+/// Minimal static landing page served at `GET /` when no WASM studio is built.
+/// Lists the JSON endpoints and points at the studio build script. Static — no
+/// untrusted data, no escaping, no auto-connect injection.
+async fn landing() -> Html<&'static str> {
+    Html(LANDING)
+}
+
+const LANDING: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SphereQL vis-server</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem; color: #1a1a1a; }
+  code { background: #f0f0f3; padding: .1em .35em; border-radius: 4px; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.05rem; margin-top: 1.6rem; }
+  ul { padding-left: 1.2rem; } li { margin: .25rem 0; }
+  .hint { background: #fffbe6; border: 1px solid #f0e2a0; border-radius: 6px; padding: .8rem 1rem; margin-top: 1.4rem; }
+</style>
+</head>
+<body>
+<h1>SphereQL vis-server</h1>
+<p>The query API is running. No WASM studio front-end was found at
+<code>sphereql-wasm/studio/dist</code>, so this page is served at <code>/</code> instead.</p>
+
+<h2>JSON / binary endpoints</h2>
+<ul>
+  <li><code>GET /health</code> — liveness check</li>
+  <li><code>GET /manifest</code> — bounded scene descriptor (stats, palette, bounds, LOD)</li>
+  <li><code>GET /tiles</code> — binary SQT1 tile of points in a viewport cone</li>
+  <li><code>POST /points</code> — per-point metadata by row</li>
+  <li><code>POST /nearest</code> — ANN neighbors of a row or query vector</li>
+  <li><code>GET /category_stats</code> — palette (name → color → count)</li>
+  <li><code>POST /path</code> — shortest path between two categories</li>
+  <li><code>GET /globs</code> — concept-cluster detection</li>
+  <li><code>POST /drill_down</code> — k-NN within one category</li>
+  <li><code>GET /diagnostics</code> — projection-health dashboard data</li>
+  <li><code>POST /reproject</code> — live re-projection</li>
+</ul>
+
+<div class="hint">
+  <strong>Want the interactive studio here at <code>/</code>?</strong>
+  Build it once with <code>sphereql-wasm/studio/build.sh</code> (emits
+  <code>studio/dist</code> with the wasm + worker), then restart the server.
+  Or generate a standalone offline viewer with
+  <code>--emit-html</code>.
+</div>
+</body>
+</html>
+"#;
 
 async fn manifest(State(shared): State<Shared>) -> Response {
     Json(&snapshot(&shared).manifest).into_response()

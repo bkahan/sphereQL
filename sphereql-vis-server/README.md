@@ -56,7 +56,7 @@ cargo run -p sphereql-vis-server -- --corpus stress --emit-html --open
 | `POST /drill_down` | k-NN within one category (inner-sphere projection when available). |
 | `GET /diagnostics` | projection-health: EVR, warnings, certainty/intensity histograms, low-certainty outliers. |
 | `POST /reproject` | live re-projection ("tune") — rebuilds and atomically swaps server state. |
-| `GET /` | the pre-built WASM studio (when found at `sphereql-wasm/studio/dist`), else absent. |
+| `GET /` | the pre-built WASM studio (when a complete build is found at `sphereql-wasm/studio/dist`), else a minimal landing page listing these endpoints. |
 
 Full request/response shapes with real payloads are in the
 [HTTP API reference](../docs/visualization.md#http-api-reference).
