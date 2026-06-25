@@ -8,7 +8,11 @@
 //! Run: `cargo run -p sphereql-wasm --example build_studio`
 //! Then build the wasm + copy the worker (see `studio/build.sh`).
 
-#[cfg(feature = "scene")]
+// build_studio is a native-only tool: it bakes the demo scene/corpus from the
+// (native-only) sphereql-examples + sphereql-corpus crates, which are target-
+// gated out of wasm builds. `wasm-pack test` compiles examples for wasm32, so
+// give it a trivial no-op main there; the real tool only builds on the host.
+#[cfg(all(feature = "scene", not(target_arch = "wasm32")))]
 fn main() -> std::io::Result<()> {
     // Bake the 775-point HandCrafted demo scene (auto-tuned, full overlays — the
     // same picture `visualize_corpus` renders) as the studio's opening scene, so
@@ -49,8 +53,13 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "scene"))]
+#[cfg(all(not(feature = "scene"), not(target_arch = "wasm32")))]
 fn main() {
     eprintln!("build_studio requires the `scene` feature (on by default)");
     std::process::exit(1);
 }
+
+// Native-only tool — never run on wasm; trivial main keeps `wasm-pack test`
+// (which compiles examples for wasm32) from referencing the host-only deps.
+#[cfg(target_arch = "wasm32")]
+fn main() {}
