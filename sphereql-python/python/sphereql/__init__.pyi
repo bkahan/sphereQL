@@ -926,7 +926,8 @@ def visualize(categories: typing.Sequence[builtins.str], embeddings: typing.Sequ
     Generate an interactive 3D sphere visualization from embeddings.
     
     Fits a PCA projection, projects embeddings to 3D spherical coordinates,
-    and writes a self-contained HTML file with a Three.js scene.
+    and writes a self-contained HTML file with a Three.js scene (the runtime
+    is inlined, so the file works offline).
     
     Args:
         categories: Category label for each embedding.
@@ -944,9 +945,10 @@ def visualize_pipeline(pipeline: Pipeline, output: builtins.str = 'sphere_viz.ht
     r"""
     Generate a visualization from an already-built Pipeline.
     
-    Reuses the PCA projection fitted inside the pipeline, avoiding
-    re-fitting. The pipeline's internal IDs (s-0000, s-0001, ...) are
-    used as labels unless the pipeline items have associated text.
+    Reuses the projection fitted inside the pipeline, avoiding re-fitting. The
+    stats panel reports the pipeline's actual projection family and its
+    matching quality metric (e.g. "UMAP kNN-recall"), not a hardcoded label.
+    The pipeline's internal IDs (s-0000, s-0001, ...) are used as labels.
     
     Args:
         pipeline: A built sphereql.Pipeline instance.

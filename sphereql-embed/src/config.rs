@@ -34,6 +34,9 @@ pub struct PipelineConfig {
     pub umap: UmapConfig,
     /// Spatial quality Monte Carlo sample counts.
     pub spatial: SpatialConfig,
+    /// How the radial coordinate `r` is assigned to projected points.
+    /// Default is a faithful embedding-magnitude pass-through.
+    pub radial: RadialConfig,
     /// Minimum number of items a category must have to participate in
     /// category-level analysis (bridges, domain groups, spatial quality,
     /// Voronoi tessellation). Categories below this threshold are excluded
@@ -60,7 +63,60 @@ impl Default for PipelineConfig {
             laplacian: LaplacianConfig::default(),
             umap: UmapConfig::default(),
             spatial: SpatialConfig::default(),
+            radial: RadialConfig::default(),
             min_category_size: default_min_category_size(),
+        }
+    }
+}
+
+// ── Radial coordinate ──────────────────────────────────────────────────
+
+/// How the radial coordinate `r` of each projected point is assigned.
+///
+/// The angular position (θ, φ) always encodes semantic direction; the
+/// radial component is free. On sparse/uniform corpora the historical
+/// [`Magnitude`](RadialMode::Magnitude) pass-through lands `r` in a narrow
+/// near-maximum band — [`Stretch`](RadialMode::Stretch) remaps it onto a
+/// configurable range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RadialMode {
+    /// `r = ‖raw embedding‖₂` — faithful magnitude pass-through (historical
+    /// default).
+    #[default]
+    Magnitude,
+    /// `r = 1` for every point (all on the reference shell).
+    Fixed,
+    /// Percentile-stretch the corpus magnitude distribution onto `[lo, hi]`
+    /// so `r` fills a configurable radial range.
+    Stretch,
+}
+
+/// Radial-coordinate assignment for the pipeline.
+///
+/// `lo` / `hi` / `percentile` are only consulted in [`RadialMode::Stretch`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct RadialConfig {
+    /// Which radial mapping to use.
+    pub mode: RadialMode,
+    /// Target radius for the smallest magnitude (`Stretch` mode).
+    pub lo: f64,
+    /// Target radius for the largest magnitude (`Stretch` mode).
+    pub hi: f64,
+    /// Tail fraction clipped at each end when computing the source magnitude
+    /// bounds for `Stretch` (0.0 = full min/max; 0.02 = 2nd/98th percentile,
+    /// robust to outliers). Clamped to `[0, 0.49]`.
+    pub percentile: f64,
+}
+
+impl Default for RadialConfig {
+    fn default() -> Self {
+        Self {
+            mode: RadialMode::Magnitude,
+            lo: 0.35,
+            hi: 1.6,
+            percentile: 0.02,
         }
     }
 }
@@ -190,14 +246,26 @@ pub struct BridgeConfig {
     /// affinity to both sides as the bottom-25% of items have to
     /// their own home category.
     pub balanced_affinity_quantile: f64,
-    /// EVR below which bridge classification is unreliable. When the
-    /// outer projection's EVR is below this threshold, all bridges
-    /// are labeled `Weak` (honest uncertainty) rather than attempting
-    /// territorial-factor-based classification — which collapses to
-    /// 100% `OverlapArtifact` when caps overlap everywhere on a
-    /// low-EVR projection, flattening the tuner landscape. Default
-    /// 0.20.
+    /// Quantile of the full-dim centroid-separation distribution
+    /// (`1 − cos(centroid_a, centroid_b)` over bridged category pairs) below
+    /// which a bridged pair is `OverlapArtifact`: the two "categories" occupy
+    /// the same region of embedding space (duplicate/sibling labels) and cannot
+    /// host a genuine cross-domain bridge. Projection-INDEPENDENT (full-dim
+    /// centroids), robust where the S² territorial factor is unreliable on a
+    /// low-recall layout. Smaller = stricter. Default 0.10.
+    #[serde(default = "default_overlap_separation_quantile")]
+    pub overlap_separation_quantile: f64,
+    /// DEPRECATED (2026-06): formerly gated bridge classification on the outer
+    /// projection's EVR, but for UmapSphere that EVR is a kNN-recall score
+    /// (neighbourhood preservation) orthogonal to relation validity, so it
+    /// suppressed every bridge to `Weak`. Classification now runs
+    /// unconditionally from full-dim affinity + centroid separation. Retained
+    /// for serde/back-compat only; no longer consulted.
     pub min_evr_for_classification: f64,
+}
+
+fn default_overlap_separation_quantile() -> f64 {
+    0.10
 }
 
 impl Default for BridgeConfig {
@@ -207,6 +275,7 @@ impl Default for BridgeConfig {
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
             balanced_affinity_quantile: 0.25,
+            overlap_separation_quantile: default_overlap_separation_quantile(),
             min_evr_for_classification: 0.20,
         }
     }
@@ -397,6 +466,14 @@ mod tests {
         assert_eq!(c.spatial.exclusivity_samples, 30_000);
         assert_eq!(c.spatial.voronoi_samples, 100_000);
         assert_eq!(c.min_category_size, 1);
+        assert_eq!(c.radial.mode, RadialMode::Magnitude);
+    }
+
+    #[test]
+    fn radial_config_default_is_magnitude_passthrough() {
+        let r = RadialConfig::default();
+        assert_eq!(r.mode, RadialMode::Magnitude);
+        assert!((r.percentile - 0.02).abs() < 1e-12);
     }
 
     #[test]

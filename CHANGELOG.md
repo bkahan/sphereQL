@@ -6,6 +6,87 @@ versions.
 
 ## [Unreleased]
 
+### Added — configurable radial coordinate
+
+- **`PipelineConfig.radial` (`RadialConfig` / `RadialMode`)** — control how
+  the radial coordinate `r` is assigned. `Magnitude` (default) is the
+  faithful embedding-magnitude pass-through; `Stretch` percentile-maps the
+  corpus magnitude band onto a configurable `[lo, hi]` range so `r` no longer
+  clusters in a narrow near-maximum band on sparse/uniform corpora; `Fixed`
+  pins all points to the shell. New `RadialStrategy::MagnitudeStretch` carries
+  the corpus-derived bounds (resolved once at fit time, applied consistently
+  to corpus points and queries). PCA's volumetric mode is auto-disabled when a
+  non-default mode is chosen so the strategy takes effect. The
+  `visualize_corpus` example gains `--radial lo:hi`.
+
+### Added — `sphereql-vis` crate + first-class Rust visualization
+
+- **New `sphereql-vis` crate** — a pure, data-agnostic 3D-visualization
+  emitter: a serializable `Scene` (point cloud + `SceneStats` + an
+  `#[non_exhaustive]` `Overlay` set — category centroids, classified
+  bridges, slerp-interpolated geodesic concept paths, Voronoi territory
+  caps, antipodes, coverage maps, domain-group spokes, globs, manifold
+  slices) and a hardened HTML emitter. Depends only on `sphereql-core`.
+- **Offline, self-contained output** — the emitted HTML inlines the
+  Three.js + OrbitControls runtime (`to_html()`), so files open with no
+  network; `to_html_cdn()` produces a smaller CDN-backed file. The old
+  Python viewer claimed "self-contained" but loaded Three.js from a CDN.
+- **Projection-aware stats** — the stats panel reports the pipeline's
+  actual projection family and its matching quality metric (PCA variance
+  / Kernel EVR / connectivity ratio / UMAP kNN-recall) instead of a
+  hardcoded "PCA variance" label.
+- **Umbrella `vis` feature** — `sphereql --features vis` re-exports the
+  scene API as `sphereql::vis` (also in `full`).
+- **`visualize_corpus` example** — loads a corpus, auto-tunes a
+  projection, and renders the full overlay set to one offline HTML file
+  (`--open` to launch a browser, `--cdn` for a smaller file).
+- **Hardening** — centralized `<script>`-breakout escaping, a reduce-based
+  min/max that fixes a latent large-N `RangeError`, non-finite-point
+  filtering, deterministic per-category decimation for very large clouds,
+  and a snapshot/round-trip/XSS/offline test suite.
+
+### Added — out-of-core streaming viewer (`sphereql-vis-server`)
+
+- **New `sphereql-vis-server` crate** — an axum + tokio query server for
+  corpora too large to inline. It loads a corpus, embeds + projects it
+  (gating O(n²) families to PCA above ~10k points, UMAP above ~100k), and
+  holds the projected positions (spatial-indexed), the raw embeddings
+  (ANN-indexed), and per-point metadata in memory. Serves
+  `/manifest /tiles /points /nearest /category_stats /path /globs
+  /drill_down /diagnostics /reproject /health`, plus the WASM studio at
+  `GET /` when present. `--corpus / --addr / --projection / --emit-html /
+  --open` CLI; live `/reproject` ("tune") atomically swaps server state.
+  29 tests (3 + 7 unit, 19 in-process axum integration).
+- **Streaming contract in `sphereql-vis`** — new `manifest` and `tile`
+  modules: a bounded `Manifest` (`Bounds` / `CategoryInfo` / `LodScheme` /
+  `MANIFEST_VERSION`) and the binary **`SQT1`** point tile (`encode_tile` /
+  `decode_tile` / `TilePoint` / `TileError`; 16-byte header + 20-byte
+  records, little-endian). Bounded regardless of N.
+- **Shared `viewer.js` runtime + instantiable refactor** — `viewer.js` is
+  now a `createViewer(rootEl, opts)` factory shared by the offline HTML,
+  the WASM studio, and the server front-end, with a strength channel
+  (certainty → intensity → size/opacity), view-preserving live
+  `updateScene`, and reasoning-chain rendering. The WASM studio can be
+  served as the server's front-end at `/`.
+- **Documentation** — see [`docs/visualization.md`](docs/visualization.md)
+  for the full runbook, architecture, design choices, and API.
+
+> **Note (branch-local, pre-merge):** the server and the streaming contract
+> are complete and tested, but the browser client that consumed `/tiles`
+> (`ServerSource` / `TileStreamer` / `connectToServer`) was removed from
+> `viewer.js` by the instantiable refactor and is not yet re-ported. The
+> offline single-file and WASM-studio paths are fully working; the
+> server-backed *browser* streaming path is mid-migration.
+
+### Changed
+
+- `sphereql-python`'s `visualize` / `visualize_pipeline` now render through
+  `sphereql-vis` (API and signatures unchanged; output is offline and
+  projection-aware). The `sphereql-examples` `e2e_transformer` example was
+  migrated onto the shared crate, removing its duplicated inline template;
+  its bespoke per-query/per-path buttons are consolidated into the shared
+  viewer's click-to-inspect and overlay toggles.
+
 ## [0.3.0] — 2026-06-15
 
 ### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)

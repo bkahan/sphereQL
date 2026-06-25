@@ -6,7 +6,9 @@ What sphereQL is designed for:
   in microseconds, with optional cosine-similarity re-ranking in the original
   space for precision.
 - **Knowledge visualization** — render your entire embedding corpus as an
-  interactive 3D sphere, colored by category, explorable in the browser.
+  interactive 3D sphere, colored by category, explorable in the browser —
+  from a self-contained offline file up to million-point corpora via the
+  out-of-core streaming server ([visualization.md](visualization.md)).
 - **Concept path tracing** — find the shortest semantic path between two
   concepts through projected space.
 - **Cluster detection** — automatically discover concept "globs" (dense

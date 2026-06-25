@@ -59,6 +59,17 @@ and is reached from Python via the `sphereql-python` bindings.
 injectable `TextEmbedder` trait (default `NoEmbedder` returns a
 descriptive error until a real embedder is plugged in).
 
+**Visualization**: the offline single-file emitter (`sphereql-vis`) and the
+WASM studio are shipped and working — a `Scene` renders to one self-contained
+HTML file or a live in-browser pipeline. An out-of-core streaming server
+(`sphereql-vis-server`, axum) lands on the `feat/vis-server` branch: it streams
+binary `SQT1` point tiles by viewport for million-point corpora, with a bounded
+`Manifest`, lazy per-point metadata, and trace/tune endpoints (size-gating
+O(n²) projections). The server and its contract are complete and tested; the
+browser client that consumes the tiles is mid-migration after the `viewer.js`
+instantiable refactor (see [visualization.md](visualization.md) for the full
+status). Branch-local, pre-merge.
+
 ## Known limitations
 
 - **Search precision degrades at higher k.** The 384-d to 3-d projection
