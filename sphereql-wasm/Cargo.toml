@@ -56,8 +56,14 @@ console_error_panic_hook = { version = "0.1", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
+
 # Native-only, used by the `build_studio` example to bake the default 775-point
-# demo scene (auto-tuned HandCrafted corpus). Dev-deps are not compiled into
-# the wasm cdylib, so they don't affect the shipped bundle.
+# demo scene (auto-tuned HandCrafted corpus). Target-gated to non-wasm32:
+# `wasm-pack build` skips dev-deps, but `wasm-pack test --node` compiles them
+# for wasm32, which would drag these native crates (parquet/arrow → getrandom
+# without the "js" feature) into the wasm target and fail the build. The example
+# runs on the host, where they are available; the wasm-bindgen-test suite
+# (tests/web.rs) doesn't use them.
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 sphereql-examples = { path = "../sphereql-examples" }
 sphereql-corpus = { path = "../sphereql-corpus" }
