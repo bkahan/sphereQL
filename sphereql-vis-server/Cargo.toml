@@ -5,6 +5,7 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 keywords = ["visualization", "embeddings", "axum", "streaming", "server"]
 categories = ["visualization", "web-programming::http-server"]
 
