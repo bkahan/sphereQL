@@ -6,30 +6,68 @@
 //! so it can be unit-tested without a socket. The router is built by
 //! [`build_router`] and driven in tests via `tower::ServiceExt::oneshot`.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
 use axum::{
     Json, Router,
     extract::{Query, State},
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderValue, Method, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use sphereql_embed::{PipelineQuery, SphereQLOutput, SphereQLQuery, WarningSeverity};
+use tokio::sync::Mutex;
 use tower_http::catch_panic::CatchPanicLayer;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::ServeDir;
 
 use crate::state::AppState;
 use crate::tiles::{TileParams, build_tile};
 
-/// Shared, hot-swappable server state. Reads (tiles/queries) snapshot the inner
-/// `Arc` under a brief read lock; `/reproject` swaps in a freshly-built state
-/// under a write lock. Lock-free in practice — the read lock is held only long
-/// enough to clone the `Arc`.
-pub type Shared = Arc<RwLock<Arc<AppState>>>;
+/// Shared, hot-swappable server state. Reads (tiles/queries) snapshot the
+/// current [`AppState`] under a brief read lock; `/reproject` swaps in a
+/// freshly built one under a write lock, so reads never wait on a rebuild.
+#[derive(Clone)]
+pub struct Shared(Arc<Inner>);
+
+struct Inner {
+    scene: RwLock<Arc<AppState>>,
+    /// Held for the whole of a re-projection, so builds never overlap: two at
+    /// once would double peak memory, and the slower one would silently win.
+    reproject_turn: Arc<Mutex<()>>,
+    /// Ticket of the newest `/reproject` request. A request whose turn comes
+    /// after a newer one has arrived steps aside, so only the latest runs.
+    reproject_latest: AtomicU64,
+    /// Glob detection is CPU-bound and scales with the corpus; one at a time.
+    globs_turn: Arc<Mutex<()>>,
+}
+
+impl Shared {
+    pub fn new(state: AppState) -> Self {
+        Shared(Arc::new(Inner {
+            scene: RwLock::new(Arc::new(state)),
+            reproject_turn: Arc::new(Mutex::new(())),
+            reproject_latest: AtomicU64::new(0),
+            globs_turn: Arc::new(Mutex::new(())),
+        }))
+    }
+
+    /// The current state (clones the inner `Arc`, releases the lock).
+    pub fn snapshot(&self) -> Arc<AppState> {
+        self.0
+            .scene
+            .read()
+            .expect("state lock not poisoned")
+            .clone()
+    }
+
+    fn replace(&self, next: AppState) {
+        *self.0.scene.write().expect("state lock not poisoned") = Arc::new(next);
+    }
+}
 
 /// Optional WASM studio front-end to serve alongside the API.
 ///
@@ -44,11 +82,6 @@ pub struct StudioAssets {
     pub dir: std::path::PathBuf,
 }
 
-/// Snapshot the current state (clone the inner `Arc`, release the lock).
-fn snapshot(shared: &Shared) -> Arc<AppState> {
-    shared.read().expect("state lock not poisoned").clone()
-}
-
 /// Cap on rows in a single `POST /points` batch — bounds the response.
 const MAX_POINTS_BATCH: usize = 4096;
 /// Cap on `k` for `POST /nearest`.
@@ -58,18 +91,23 @@ const BODY_LIMIT: usize = 4 * 1024 * 1024;
 
 /// Build the router over a shared [`AppState`].
 ///
-/// Adds permissive CORS (the viewer is typically served from `file://` or a
-/// different origin), a body limit on the POST endpoints, and a panic catcher
-/// so a handler fault returns 500 instead of dropping the connection.
+/// Adds a body limit on the POST endpoints and a panic catcher so a handler
+/// fault returns 500 instead of dropping the connection.
+///
+/// The API is same-origin unless `allowed_origins` names others. With no CORS
+/// headers, a page on another origin can't read responses, and it can't send
+/// the JSON POSTs at all (they need a preflight). That matters because
+/// `/points` hands out labels and raw vectors, and `/reproject` rebuilds the
+/// whole projection.
 ///
 /// When `studio` is `Some`, the router also serves the pre-built WASM studio
 /// as a static site: `GET /` returns the auto-connect-injected `index.html`
 /// and all other unmatched paths fall through to `ServeDir` over `studio.dir`.
-pub fn build_router(state: Shared, studio: Option<StudioAssets>) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+pub fn build_router(
+    state: Shared,
+    studio: Option<StudioAssets>,
+    allowed_origins: &[HeaderValue],
+) -> Router {
     let api = Router::new()
         .route("/health", get(health))
         .route("/manifest", get(manifest))
@@ -82,10 +120,18 @@ pub fn build_router(state: Shared, studio: Option<StudioAssets>) -> Router {
         .route("/drill_down", post(drill_down))
         .route("/diagnostics", get(diagnostics))
         .route("/reproject", post(reproject))
-        .layer(RequestBodyLimitLayer::new(BODY_LIMIT))
-        .layer(cors)
-        .layer(CatchPanicLayer::new())
-        .with_state(state);
+        .layer(RequestBodyLimitLayer::new(BODY_LIMIT));
+    let api = if allowed_origins.is_empty() {
+        api
+    } else {
+        api.layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::list(allowed_origins.iter().cloned()))
+                .allow_methods([Method::GET, Method::POST])
+                .allow_headers([header::CONTENT_TYPE]),
+        )
+    };
+    let api = api.layer(CatchPanicLayer::new()).with_state(state);
 
     if let Some(assets) = studio {
         let idx_html = Arc::new(assets.index_html);
@@ -167,15 +213,15 @@ const LANDING: &str = r#"<!doctype html>
 "#;
 
 async fn manifest(State(shared): State<Shared>) -> Response {
-    Json(&snapshot(&shared).manifest).into_response()
+    Json(&shared.snapshot().manifest).into_response()
 }
 
 async fn category_stats(State(shared): State<Shared>) -> Response {
-    Json(&snapshot(&shared).manifest.palette).into_response()
+    Json(&shared.snapshot().manifest.palette).into_response()
 }
 
 async fn tiles(State(shared): State<Shared>, Query(params): Query<TileParams>) -> Response {
-    let state = snapshot(&shared);
+    let state = shared.snapshot();
     let bytes = build_tile(&state, &params);
     (
         [(
@@ -248,7 +294,7 @@ pub fn collect_points(state: &AppState, req: &PointsRequest) -> PointsResponse {
 }
 
 async fn points(State(shared): State<Shared>, Json(req): Json<PointsRequest>) -> Response {
-    Json(collect_points(&snapshot(&shared), &req)).into_response()
+    Json(collect_points(&shared.snapshot(), &req)).into_response()
 }
 
 // ── /nearest: semantic neighbors (trace) ────────────────────────────────────
@@ -301,7 +347,7 @@ pub fn collect_nearest(state: &AppState, req: &NearestRequest) -> NearestRespons
 }
 
 async fn nearest(State(shared): State<Shared>, Json(req): Json<NearestRequest>) -> Response {
-    Json(collect_nearest(&snapshot(&shared), &req)).into_response()
+    Json(collect_nearest(&shared.snapshot(), &req)).into_response()
 }
 
 // ── Trace endpoints (category graph / globs / drill-down) ───────────────────
@@ -320,6 +366,15 @@ fn zero_query(state: &AppState) -> PipelineQuery {
 /// are unknown category / dim mismatch — caller errors, not server faults).
 fn bad_request(msg: impl std::fmt::Display) -> Response {
     (StatusCode::BAD_REQUEST, msg.to_string()).into_response()
+}
+
+/// A blocking task panicked (the panic itself is already logged).
+fn task_failed(what: &str) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("{what} task failed"),
+    )
+        .into_response()
 }
 
 // /path — shortest path between two categories through the category graph.
@@ -352,7 +407,7 @@ pub struct PathResponse {
 }
 
 async fn path(State(shared): State<Shared>, Json(req): Json<PathRequest>) -> Response {
-    let state = snapshot(&shared);
+    let state = shared.snapshot();
     let q = SphereQLQuery::CategoryConceptPath {
         source_category: &req.source,
         target_category: &req.target,
@@ -405,28 +460,39 @@ pub struct GlobsResponse {
 }
 
 async fn globs(State(shared): State<Shared>, Query(q): Query<GlobParams>) -> Response {
-    let state = snapshot(&shared);
     let max_k = q.max_k.unwrap_or(12).clamp(2, 64);
     let k = q.k.filter(|&k| k >= 2);
-    match state
-        .pipeline
-        .query(SphereQLQuery::DetectGlobs { k, max_k }, &zero_query(&state))
-    {
-        Ok(SphereQLOutput::Globs(globs)) => Json(GlobsResponse {
-            globs: globs
-                .into_iter()
-                .map(|g| GlobDto {
-                    id: g.id,
-                    centroid: g.centroid,
-                    member_count: g.member_count,
-                    radius: g.radius,
-                    top_categories: g.top_categories,
-                })
-                .collect(),
-        })
-        .into_response(),
-        Ok(_) => bad_request("unexpected query output"),
-        Err(e) => bad_request(e),
+    // The guard moves into the blocking task, so a client that hangs up can't
+    // release the turn while its detection is still running.
+    let turn = Arc::clone(&shared.0.globs_turn).lock_owned().await;
+    let state = shared.snapshot();
+    let detected = tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        match state
+            .pipeline
+            .query(SphereQLQuery::DetectGlobs { k, max_k }, &zero_query(&state))
+        {
+            Ok(SphereQLOutput::Globs(globs)) => Ok(GlobsResponse {
+                globs: globs
+                    .into_iter()
+                    .map(|g| GlobDto {
+                        id: g.id,
+                        centroid: g.centroid,
+                        member_count: g.member_count,
+                        radius: g.radius,
+                        top_categories: g.top_categories,
+                    })
+                    .collect(),
+            }),
+            Ok(_) => Err("unexpected query output".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    })
+    .await;
+    match detected {
+        Ok(Ok(body)) => Json(body).into_response(),
+        Ok(Err(msg)) => bad_request(msg),
+        Err(_) => task_failed("glob detection"),
     }
 }
 
@@ -458,7 +524,7 @@ pub struct DrillResponse {
 }
 
 async fn drill_down(State(shared): State<Shared>, Json(req): Json<DrillRequest>) -> Response {
-    let state = snapshot(&shared);
+    let state = shared.snapshot();
     let k = req.k.unwrap_or(10).clamp(1, MAX_NEAREST_K);
     if req.vector.len() != state.dim {
         return bad_request(format!(
@@ -575,7 +641,7 @@ fn histogram(vals: &[f32], bins: usize) -> HistogramDto {
 }
 
 async fn diagnostics(State(shared): State<Shared>) -> Response {
-    let state = snapshot(&shared);
+    let state = shared.snapshot();
     let certainty: Vec<f32> = state.points.iter().map(|p| p.certainty).collect();
     let intensity: Vec<f32> = state.points.iter().map(|p| p.intensity).collect();
     let warnings = state
@@ -642,22 +708,37 @@ pub struct ReprojectRequest {
 /// in, returning the new manifest. The heavy re-projection runs off the async
 /// runtime via `spawn_blocking`; the write lock is held only for the pointer
 /// swap, so concurrent reads (tiles/queries) are never blocked on the rebuild.
+///
+/// Builds run one at a time and the latest request wins: a request still
+/// waiting when a newer one arrives gets 409 instead of building. A build that
+/// has started can't be cancelled, so it finishes and swaps in first.
 async fn reproject(State(shared): State<Shared>, Json(req): Json<ReprojectRequest>) -> Response {
     let Some(kind) = crate::parse_projection(&req.projection) else {
         return bad_request(format!("unknown projection '{}'", req.projection));
     };
-    let current = snapshot(&shared);
-    match tokio::task::spawn_blocking(move || current.reproject(kind)).await {
-        Ok(Ok(next)) => {
-            let manifest = next.manifest.clone();
-            *shared.write().expect("state lock not poisoned") = Arc::new(next);
-            Json(manifest).into_response()
-        }
-        Ok(Err(e)) => bad_request(e),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "re-projection task failed".to_string(),
+    let ticket = shared.0.reproject_latest.fetch_add(1, Ordering::SeqCst) + 1;
+    let turn = Arc::clone(&shared.0.reproject_turn).lock_owned().await;
+    if shared.0.reproject_latest.load(Ordering::SeqCst) != ticket {
+        return (
+            StatusCode::CONFLICT,
+            "superseded by a newer /reproject request",
         )
-            .into_response(),
+            .into_response();
+    }
+    // Build and swap inside the task, holding the turn: if the client hangs
+    // up, the result still lands and the next build still waits for it.
+    let task_shared = shared.clone();
+    let built = tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        let next = task_shared.snapshot().reproject(kind)?;
+        let manifest = next.manifest.clone();
+        task_shared.replace(next);
+        Ok::<_, crate::BuildError>(manifest)
+    })
+    .await;
+    match built {
+        Ok(Ok(manifest)) => Json(manifest).into_response(),
+        Ok(Err(e)) => bad_request(e),
+        Err(_) => task_failed("re-projection"),
     }
 }

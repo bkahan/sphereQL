@@ -26,7 +26,7 @@ pins, PNG export, config chrome, and session restore). The result:
 |---|---|---|
 | **1. Offline single-file emit** | `Scene → to_html()` → one self-contained `.html` | ✅ Works, improved (instantiable, strength channel, live `updateScene`, reasoning chains). **Validated.** |
 | **2. WASM studio** | Paste prose / corpus JSON → in-browser pipeline → scene | ✅ Works (boot keeps `window.rebuild`/`parseScene` compat globals + the `#embed` compare protocol). Build path has a sharp edge — see [§ Path 2](#path-2--the-wasm-studio). |
-| **3. Server-backed streaming** | `sphereql-vis-server` streams binary tiles for million-point corpora | ⚠️ **Server compiles, runs, and is fully tested (29 tests); its HTTP API is validated. But the browser client was removed from `viewer.js`, so there is currently no in-tree front-end that consumes `/tiles`.** See [§ Path 3](#path-3--the-streaming-server) and [Known issues](#known-issues--gotchas). |
+| **3. Server-backed streaming** | `sphereql-vis-server` streams binary tiles for million-point corpora | ⚠️ **Server compiles, runs, and is fully tested (34 tests); its HTTP API is validated. But the browser client was removed from `viewer.js`, so there is currently no in-tree front-end that consumes `/tiles`.** See [§ Path 3](#path-3--the-streaming-server) and [Known issues](#known-issues--gotchas). |
 
 If you only need a picture of a corpus, **use Path 1** — it is solid. Path 3's
 *server* is production-quality and a good foundation, but its *browser half* is
@@ -308,7 +308,7 @@ corpus can never wedge the server on an infeasible projection:
 
 ### ⚠️ The browser half is not wired up on this branch
 
-The server's HTTP API is complete, tested (29 tests), and was exercised
+The server's HTTP API is complete, tested (34 tests), and was exercised
 end-to-end for this document (every endpoint below returns real data). **But**
 the browser client that consumed it — `ServerSource`, `TileStreamer`,
 `connectToServer`, the SQT1 JS `decodeTile`, the streaming inspector/diag/tune/
@@ -381,9 +381,9 @@ below under [the viewer runtime](#the-viewer-runtime-viewerjs) for re-porting.
    independent of N.
 
 `AppState` is immutable after build; `/reproject` builds a fresh one off the
-async runtime (`spawn_blocking`) and **atomically swaps** the shared
-`Arc<RwLock<Arc<AppState>>>`, so concurrent tile reads are never blocked on a
-rebuild.
+async runtime (`spawn_blocking`) and **atomically swaps** it into `Shared`,
+so concurrent tile reads are never blocked on a rebuild. Builds run one at a
+time, and the latest request wins.
 
 ---
 
@@ -561,7 +561,8 @@ client must satisfy (last present at `2512d9b:sphereql-vis/src/viewer.js`):
 ## HTTP API reference
 
 Base URL = the server's bind address. All responses are JSON except `/tiles`
-(`application/octet-stream`, SQT1) and `/health` (`text/plain`). Permissive CORS;
+(`application/octet-stream`, SQT1) and `/health` (`text/plain`). Same-origin
+unless `--allow-origin` (or `--emit-html`, which adds `null`) names others;
 POST bodies capped at 4 MiB; a panic catcher returns 500 rather than dropping the
 connection. **Every example below is a real response from `--corpus hand_crafted`.**
 
@@ -621,7 +622,9 @@ lowest-certainty `outliers` (where the projection is least faithful).
 
 ### `GET /globs` — concept-cluster detection *(sphereQL)*
 `?k=` (fixed) or `?max_k=` (silhouette auto-select) → globs with `centroid`,
-`member_count`, `radius`, `top_categories`.
+`member_count`, `radius`, `top_categories`. Runs off the async runtime, one
+request at a time; above 2,000 points the silhouette is scored on a strided
+sample.
 
 ### `POST /drill_down` — within-category k-NN *(sphereQL)*
 `{"category": "physics", "k": 5, "vector": [..dim..]}` → results with `row`,
@@ -629,7 +632,8 @@ lowest-certainty `outliers` (where the projection is least faithful).
 
 ### `POST /reproject` — live re-projection ("tune") *(sphereQL)*
 `{"projection": "umap_sphere"}` → the new `Manifest`, after an atomic state swap.
-Subject to the same size gating as `--projection`. Validated: reprojecting the
+Subject to the same size gating as `--projection`. Builds run one at a time; a
+request still waiting when a newer one arrives gets `409 Conflict`. Validated: reprojecting the
 775-point corpus to `laplacian` returns EVR 0.92 ("Connectivity ratio").
 
 ### `GET /` (only when a built studio is present)
@@ -689,7 +693,7 @@ embedding-visualization tool, keep the left column; replace or strip the right.
 | **Overlays** | `Centroid`, `VoronoiCap`, `Antipode`, `CoverageVoid`, `Glob` (generic spherical geometry) | `Bridge` (+ `classColor` Genuine/Weak/OverlapArtifact), `DomainGroup`, `ManifoldSlice`, reasoning-chain `GeodesicPath` with `-[rel]->` labels |
 | **Runtime** | `createViewer` lifecycle, OrbitControls, zoom-to-cursor, resize, dispose; `sphTransform`/`curPos` spread/radial/morph S² math; GPU id-picking; reference globe; density heatmap; `shellArc`; the `#embed` camera-sync protocol; `applyViewHash` camera restore | `deriveStrength` precedence; per-category spread pivots (`catDir`); domain solo/legend; bridge/reasoning-chain rendering |
 | **Wire** | Scene JSON shape; `Manifest{bounds,surface_radius,lod}`; SQT1 tile format; the `DataSource` seam; `decodeTile`/`TileCache`/`TileStreamer` | `palette` as a corpus registry; `cat` as a palette index; `min_certainty` filter |
-| **Server** | cone-query + LOD budget + stratified decimation; ANN neighbor index; `Arc<RwLock<Arc>>` atomic-swap | `CorpusId` registry + synthetic `embed`; `SphereQLPipeline` + `ProjectionKind` gating; category enrichment (`/path`, `/globs`, `/drill_down`); EVR/certainty diagnostics |
+| **Server** | cone-query + LOD budget + stratified decimation; ANN neighbor index; atomic-swap `Shared` state | `CorpusId` registry + synthetic `embed`; `SphereQLPipeline` + `ProjectionKind` gating; category enrichment (`/path`, `/globs`, `/drill_down`); EVR/certainty diagnostics |
 
 **A minimal generic viewer** would: keep `createViewer` + `parseScene` + the
 transform/picking/globe; drop `deriveStrength`'s certainty/intensity precedence (or
@@ -709,10 +713,11 @@ cargo test -p sphereql-vis -p sphereql-vis-server   # Rust: green (53 tests this
 
 - **`sphereql-vis`** — emit/golden/XSS/offline-self-containment + `Scene::to_json`
   panic-freedom on non-finite coords + tile/manifest round-trips.
-- **`sphereql-vis-server`** — **29 tests**: 3 (gating, build-from-corpus, reproject)
-  + 7 (tile budget/cone/filter/determinism) + 19 in-process axum integration tests
-  (`tower::oneshot`, no socket) covering every endpoint, including the
-  wrong-length-vector regression that must return empty (not panic).
+- **`sphereql-vis-server`** — **34 tests**: 3 (gating, build-from-corpus, reproject)
+  + 7 (tile budget/cone/filter/determinism) + 1 (`--allow-origin` parsing) + 23
+  in-process axum integration tests (`tower::oneshot`, no socket) covering every
+  endpoint, CORS, overlapping re-projections, and the wrong-length-vector
+  regression that must return empty (not panic).
 
 **What is validated vs. not:**
 

@@ -13,11 +13,13 @@
 //! ```
 
 use std::process::ExitCode;
-use std::sync::{Arc, RwLock};
 
+use axum::http::HeaderValue;
 use sphereql_embed::ProjectionKind;
 use sphereql_vis::Scene;
-use sphereql_vis_server::{AppState, StudioAssets, build_router, parse_corpus, parse_projection};
+use sphereql_vis_server::{
+    AppState, Shared, StudioAssets, build_router, parse_corpus, parse_projection,
+};
 
 struct Args {
     corpus: String,
@@ -25,6 +27,7 @@ struct Args {
     projection: ProjectionKind,
     emit_html: Option<String>,
     open_browser: bool,
+    allowed_origins: Vec<HeaderValue>,
 }
 
 impl Default for Args {
@@ -35,8 +38,28 @@ impl Default for Args {
             projection: ProjectionKind::Pca,
             emit_html: None,
             open_browser: false,
+            allowed_origins: Vec::new(),
         }
     }
+}
+
+/// An `--allow-origin` value as browsers send it: `null`, or
+/// `http(s)://host[:port]` with no path. A trailing `/` is dropped.
+fn parse_origin(s: &str) -> Result<HeaderValue, String> {
+    let origin = s.trim().trim_end_matches('/');
+    let host = origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"));
+    let valid = origin == "null"
+        || host.is_some_and(|h| {
+            !h.is_empty() && !h.contains(['/', '?', '#']) && !h.contains(char::is_whitespace)
+        });
+    if !valid {
+        return Err(format!(
+            "invalid origin '{s}' (expected null or http(s)://host[:port])"
+        ));
+    }
+    HeaderValue::from_str(origin).map_err(|_| format!("invalid origin '{s}'"))
 }
 
 /// Minimal `--flag [value]` parser — avoids a clap dependency for a handful of options.
@@ -78,6 +101,11 @@ fn parse_args() -> Result<Args, String> {
             "--open" | "-o" => {
                 args.open_browser = true;
             }
+            "--allow-origin" => {
+                i += 1;
+                let v = argv.get(i).ok_or("--allow-origin needs a value")?;
+                args.allowed_origins.push(parse_origin(v)?);
+            }
             "--help" | "-h" => return Err("help".to_string()),
             other => return Err(format!("unknown argument '{other}'")),
         }
@@ -91,7 +119,7 @@ sphereql-vis-server — out-of-core query server for the streaming viewer
 
 USAGE:
     sphereql-vis-server [--corpus <name|path>] [--addr <host:port>] [--projection <kind>]
-                        [--emit-html [path]] [--open]
+                        [--emit-html [path]] [--open] [--allow-origin <origin>]…
 
 OPTIONS:
     -c, --corpus      Corpus name (stress, hand_crafted, full, dbpedia_500k, …) or
@@ -101,11 +129,16 @@ OPTIONS:
                       (O(n²) families are gated to PCA above ~10k points)
     -e, --emit-html [path]
                       Write a standalone offline viewer pre-wired to connect to
-                      this server. Path defaults to sphere_viz.html.
+                      this server. Path defaults to sphere_viz.html. Also allows
+                      origin `null`, which a file:// page sends.
     -o, --open        Open http://<addr>/ in the default browser after the
                       server starts. Serves the WASM studio there if a complete
                       build is found at sphereql-wasm/studio/dist; otherwise a
                       landing page listing the JSON endpoints.
+        --allow-origin <origin>
+                      Let pages on another origin call the API, e.g.
+                      http://localhost:5173. Repeatable. By default only pages
+                      this server serves can read it.
     -h, --help        Print this help";
 
 #[tokio::main]
@@ -142,12 +175,31 @@ async fn main() -> ExitCode {
     let viewer_host = resolve_viewer_host(&args.addr);
     let server_url = format!("http://{viewer_host}");
 
+    let mut allowed_origins = args.allowed_origins;
+
     // Optionally write a self-contained offline viewer (no studio deps needed).
     if let Some(ref out_path) = args.emit_html {
         match write_offline_viewer(out_path, &args.corpus, &server_url) {
             Ok(abs) => eprintln!("offline viewer written to {}", abs.display()),
             Err(e) => eprintln!("warning: --emit-html failed: {e}"),
         }
+        // The offline file connects from file://, which browsers send as
+        // Origin: null. Sandboxed iframes on any site send it too.
+        let null = HeaderValue::from_static("null");
+        if !allowed_origins.contains(&null) {
+            allowed_origins.push(null);
+        }
+        eprintln!(
+            "note: allowing origin `null` for the offline viewer; any sandboxed \
+             page in this browser can read the API while the server runs"
+        );
+    }
+    if !allowed_origins.is_empty() {
+        let list: Vec<&str> = allowed_origins
+            .iter()
+            .filter_map(|o| o.to_str().ok())
+            .collect();
+        eprintln!("cross-origin access allowed for: {}", list.join(", "));
     }
 
     // Auto-detect the pre-built WASM studio. If a complete build is found, serve
@@ -188,7 +240,7 @@ async fn main() -> ExitCode {
     // platforms); the auto-connect-wired studio/landing page covers it.
     let open_url: Option<String> = args.open_browser.then(|| format!("{server_url}/"));
 
-    let app = build_router(Arc::new(RwLock::new(Arc::new(state))), studio);
+    let app = build_router(Shared::new(state), studio, &allowed_origins);
     let listener = match tokio::net::TcpListener::bind(&args.addr).await {
         Ok(l) => l,
         Err(e) => {
@@ -316,4 +368,35 @@ fn open_in_browser(url: &str) {
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
     eprintln!("\nshutting down …");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_origin;
+
+    #[test]
+    fn origins_are_scheme_host_port_or_null() {
+        for ok in [
+            "null",
+            "http://localhost:5173",
+            "https://viz.example.com/",
+            "http://[::1]:8080",
+        ] {
+            assert!(parse_origin(ok).is_ok(), "{ok}");
+        }
+        assert_eq!(
+            parse_origin("https://viz.example.com/").unwrap(),
+            "https://viz.example.com"
+        );
+        for bad in [
+            "*",
+            "localhost:5173",
+            "http://",
+            "http://example.com/path",
+            "ftp://example.com",
+            "http://a b",
+        ] {
+            assert!(parse_origin(bad).is_err(), "{bad}");
+        }
+    }
 }
