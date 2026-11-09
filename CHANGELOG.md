@@ -87,6 +87,29 @@ versions.
   its bespoke per-query/per-path buttons are consolidated into the shared
   viewer's click-to-inspect and overlay toggles.
 
+### Changed
+
+- **Seeded tuner runs pick different configs than 0.3.0.** Random
+  search and the Bayesian warmup now take the projection kinds in
+  turn, and each kind draws its knobs from its own seed-derived
+  stream, so a kind's n-th trial gets the same knobs whatever else is
+  in the space. Before, one RNG was shared across trials: adding a
+  family (UMAP, say) reshuffled every later trial, and how many trials
+  each kind got was left to chance. A seed still reproduces within a
+  release; runs recorded under 0.3.0 won't replay exactly.
+
+### Fixed
+
+- **A NaN score could win `auto_tune`.** The best-trial check treated
+  an unordered comparison as "not worse", so a NaN replaced a finite
+  best. Trials scoring NaN or ±inf now go to `TuneReport::failures`
+  and never rank; the tuner's comparators use `total_cmp`.
+- **`run_self_tune` wasn't deterministic.** An item that bridges
+  several categories took the label of whichever bridge a `HashMap`
+  visited last, so two runs on the same corpus could reweight and
+  prune different concepts. It now takes the label of its strongest
+  bridge, ties going to the lower target category.
+
 ## [0.3.0] — 2026-06-15
 
 ### Changed — UMAP projection overhaul (sphereQL-fit, 500k-ready)
