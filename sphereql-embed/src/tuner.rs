@@ -593,11 +593,7 @@ impl TuneReport {
     /// Trials ranked by descending score.
     pub fn ranked_trials(&self) -> Vec<&TrialRecord> {
         let mut refs: Vec<&TrialRecord> = self.trials.iter().collect();
-        refs.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        refs.sort_by(|a, b| b.score.total_cmp(&a.score));
         refs
     }
 
@@ -745,6 +741,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         ) {
             Ok(pipeline) => {
                 let (score, components) = metric.score_with_components(&pipeline);
+                // A NaN would otherwise win: no comparison ranks it below
+                // the current best.
+                if !score.is_finite() {
+                    failures.push((cfg, format!("{} scored {score}", metric.name())));
+                    return;
+                }
                 let build_ms = start.elapsed().as_millis();
                 trials.push(TrialRecord {
                     config: cfg,
@@ -752,14 +754,10 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                     build_ms,
                     components,
                 });
-                let replace = match best {
-                    Some((best_score, _)) => !matches!(
-                        score.partial_cmp(best_score),
-                        Some(std::cmp::Ordering::Less)
-                    ),
-                    None => true,
-                };
-                if replace {
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_score, _)| score >= *best_score)
+                {
                     *best = Some((score, pipeline));
                 }
             }
@@ -937,11 +935,7 @@ fn tpe_propose(
 ) -> PipelineConfig {
     // Sort by descending score, split at gamma threshold.
     let mut sorted: Vec<&TrialRecord> = trials.iter().collect();
-    sorted.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    sorted.sort_by(|a, b| b.score.total_cmp(&a.score));
     let n_good = ((sorted.len() as f64) * gamma).ceil() as usize;
     let n_good = n_good.max(1).min(sorted.len().saturating_sub(1).max(1));
     let good: Vec<&TrialRecord> = sorted.iter().take(n_good).copied().collect();
@@ -1145,12 +1139,11 @@ fn hist_f64(
     let mut counts = vec![0.0f64; values.len()];
     for t in trials {
         let v = extract(&t.config);
-        if let Some((i, _)) = values.iter().enumerate().min_by(|a, b| {
-            (a.1 - v)
-                .abs()
-                .partial_cmp(&(b.1 - v).abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }) {
+        if let Some((i, _)) = values
+            .iter()
+            .enumerate()
+            .min_by(|a, b| (a.1 - v).abs().total_cmp(&(b.1 - v).abs()))
+        {
             counts[i] += 1.0;
         }
     }
@@ -1645,6 +1638,54 @@ mod tests {
                     > 1e-12
         });
         assert!(any_differ, "different seeds produced identical trial set");
+    }
+
+    /// Scores PCA pipelines with `poison` and everything else with
+    /// [`TerritorialHealth`].
+    struct PoisonPca(f64);
+
+    impl QualityMetric for PoisonPca {
+        fn name(&self) -> &str {
+            "poison_pca"
+        }
+
+        fn score(&self, pipeline: &SphereQLPipeline) -> f64 {
+            if pipeline.config().projection_kind == ProjectionKind::Pca {
+                self.0
+            } else {
+                TerritorialHealth.score(pipeline)
+            }
+        }
+    }
+
+    #[test]
+    fn non_finite_scores_are_failures_not_winners() {
+        // PCA is enumerated last, which is where a NaN used to take the
+        // best slot from a finite score.
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::KernelPca, ProjectionKind::Pca],
+            ..full_search_space()
+        };
+        for poison in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let (pipeline, report) = auto_tune(
+                make_input(24, 8),
+                &space,
+                &PoisonPca(poison),
+                SearchStrategy::Grid,
+                &PipelineConfig::default(),
+            )
+            .unwrap();
+            assert_eq!(pipeline.config().projection_kind, ProjectionKind::KernelPca);
+            assert!(report.best_score.is_finite());
+            assert_eq!(report.trials.len(), 1);
+            assert_eq!(report.failures.len(), 1);
+            assert_eq!(report.failures[0].0.projection_kind, ProjectionKind::Pca);
+            assert!(
+                report.failures[0].1.contains("poison_pca scored"),
+                "{}",
+                report.failures[0].1
+            );
+        }
     }
 
     #[test]
