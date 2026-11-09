@@ -6,7 +6,7 @@ versions.
 
 ## [Unreleased]
 
-## [0.4.0] — Unreleased
+## [0.4.0] — 2026-11-09
 
 0.4.0 rather than 0.3.1: bridge classification changes for every
 projection, `PipelineConfig`, `BridgeConfig` and `RadialStrategy` gain
