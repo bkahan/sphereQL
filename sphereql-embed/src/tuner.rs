@@ -86,6 +86,8 @@ pub struct SearchSpace {
     /// Candidate values for [`RoutingConfig::low_evr_threshold`].
     pub low_evr_threshold: Vec<f64>,
     /// Candidate values for [`BridgeConfig::overlap_artifact_territorial`].
+    /// Bridge classification no longer reads that field, so the presets
+    /// search one value; the axis stays so existing spaces still build.
     pub overlap_artifact_territorial: Vec<f64>,
     /// Candidate values for [`BridgeConfig::threshold_base`].
     pub threshold_base: Vec<f64>,
@@ -115,7 +117,7 @@ impl SearchSpace {
             umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35],
-            overlap_artifact_territorial: vec![0.2, 0.3],
+            overlap_artifact_territorial: vec![0.3],
             threshold_base: vec![0.4, 0.5],
             threshold_evr_penalty: vec![0.3, 0.5],
             min_evr_improvement: vec![0.05, 0.10],
@@ -141,7 +143,7 @@ impl Default for SearchSpace {
             umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
-            overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
+            overlap_artifact_territorial: vec![0.3],
             threshold_base: vec![0.4, 0.5, 0.6],
             threshold_evr_penalty: vec![0.2, 0.4, 0.6],
             min_evr_improvement: vec![0.05, 0.10, 0.15],
