@@ -32,4 +32,4 @@ A quick map of what's in [`examples/`](./examples/):
   queries → divergence cartography → self-tune controller). Run with
   `--release`.
 
-Part of the sphereQL workspace, currently `0.3.0`.
+Part of the sphereQL workspace, currently `0.4.0`.

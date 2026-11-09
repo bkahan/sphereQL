@@ -1,10 +1,10 @@
 # Project status
 
-sphereQL is at **v0.3.0**. The core API is functional and covered
+sphereQL is at **v0.4.0**. The core API is functional and covered
 by 850+ Rust tests plus 200+ pytest tests on the Python bindings, but
 may change before 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the full
-v0.3.0 changes, including the UMAP projection overhaul and the
-auto-tuner / meta-model framework.
+v0.4.0 changes, including the visualization stack (`sphereql-vis`, the
+streaming server and the WASM studio) and the new bridge classification.
 
 ## Bindings status
 

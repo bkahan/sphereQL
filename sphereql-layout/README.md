@@ -60,7 +60,7 @@ println!("dispersion: {:.2}", result.quality.dispersion_score);
 
 ## Versioning
 
-Part of the sphereQL workspace, currently `0.3.0`; API may change
+Part of the sphereQL workspace, currently `0.4.0`; API may change
 before 1.0. See the workspace
 [CHANGELOG](https://github.com/bkahan/sphereQL/blob/main/CHANGELOG.md).
 
