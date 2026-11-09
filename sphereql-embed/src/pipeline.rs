@@ -9,7 +9,7 @@ use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
 use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
-use crate::config::{PipelineConfig, ProjectionKind};
+use crate::config::{PipelineConfig, ProjectionKind, RadialConfig, RadialMode};
 use crate::configured_projection::ConfiguredProjection;
 use crate::corpus_features::CorpusFeatures;
 use crate::domain_groups::DomainGroup;
@@ -1276,11 +1276,51 @@ fn require_fitted<M: MetaModel>(model: &M) -> Result<(), PipelineError> {
 /// covariance — see [`PcaProjection::fit_weighted`]); the UMAP arm uses
 /// it as supervision labels for the category term. Kernel PCA and
 /// Laplacian ignore it.
+/// Robust corpus magnitude bounds: the `[p, 1-p]` quantiles of the embedding
+/// L2 magnitudes (`p` clamped to `[0, 0.49]`; 0 = full min/max).
+fn magnitude_bounds(magnitudes: &[f64], percentile: f64) -> (f64, f64) {
+    let mut m: Vec<f64> = magnitudes
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .collect();
+    if m.is_empty() {
+        return (0.0, 1.0);
+    }
+    m.sort_by(f64::total_cmp);
+    let p = percentile.clamp(0.0, 0.49);
+    let last = m.len() - 1;
+    let lo_i = (last as f64 * p).round() as usize;
+    let hi_i = (last as f64 * (1.0 - p)).round() as usize;
+    (m[lo_i], m[hi_i.max(lo_i)])
+}
+
+/// Resolve the configured [`RadialMode`] into a concrete [`RadialStrategy`],
+/// precomputing corpus magnitude bounds for the `Stretch` mode so the
+/// projection assigns `r` consistently to corpus points and later queries.
+fn radial_strategy_for(radial: &RadialConfig, magnitudes: &[f64]) -> RadialStrategy {
+    match radial.mode {
+        RadialMode::Magnitude => RadialStrategy::Magnitude,
+        RadialMode::Fixed => RadialStrategy::Fixed(1.0),
+        RadialMode::Stretch => {
+            let (m_lo, m_hi) = magnitude_bounds(magnitudes, radial.percentile);
+            RadialStrategy::MagnitudeStretch {
+                m_lo,
+                m_hi,
+                r_lo: radial.lo,
+                r_hi: radial.hi,
+            }
+        }
+    }
+}
+
 pub fn fit_projection_for_config(
     embeddings: &[Embedding],
     categories: &[String],
     config: &PipelineConfig,
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
+    let mags: Vec<f64> = embeddings.iter().map(|e| e.magnitude()).collect();
+    let radial = radial_strategy_for(&config.radial, &mags);
     match config.projection_kind {
         ProjectionKind::Pca => {
             // Weight each sample by 1/sqrt(|its_category|) so a category's
@@ -1298,13 +1338,16 @@ pub fn fit_projection_for_config(
                 .map(|c| 1.0 / (cat_counts[c.as_str()] as f64).sqrt())
                 .collect();
             Ok(ConfiguredProjection::Pca(
-                PcaProjection::fit_weighted(embeddings, &weights, RadialStrategy::Magnitude)?
-                    .with_volumetric(true),
+                // Volumetric PCA derives r from the projection magnitude,
+                // which overrides any RadialStrategy. Keep that for the legacy
+                // Magnitude default, but disable it when a radial mode is
+                // chosen so the strategy (e.g. Stretch) actually takes effect.
+                PcaProjection::fit_weighted(embeddings, &weights, radial)?
+                    .with_volumetric(matches!(config.radial.mode, RadialMode::Magnitude)),
             ))
         }
         ProjectionKind::KernelPca => Ok(ConfiguredProjection::KernelPca(KernelPcaProjection::fit(
-            embeddings,
-            RadialStrategy::Magnitude,
+            embeddings, radial,
         )?)),
         ProjectionKind::LaplacianEigenmap => {
             let lc = &config.laplacian;
@@ -1313,7 +1356,7 @@ pub fn fit_projection_for_config(
                     embeddings,
                     lc.k_neighbors,
                     lc.active_threshold,
-                    RadialStrategy::Magnitude,
+                    radial,
                 )?,
             ))
         }
@@ -1323,7 +1366,7 @@ pub fn fit_projection_for_config(
                 crate::umap::UmapSphereProjection::fit(
                     embeddings,
                     Some(&cat_indices),
-                    RadialStrategy::Magnitude,
+                    radial,
                     umap_fit_config(config),
                 )?,
             ))
@@ -1344,11 +1387,12 @@ pub fn fit_umap_from_graph(
     config: &PipelineConfig,
 ) -> Result<ConfiguredProjection, crate::projection::ProjectionError> {
     let cat_indices = compact_category_indices(categories);
+    let radial = radial_strategy_for(&config.radial, &graph.magnitudes);
     Ok(ConfiguredProjection::UmapSphere(
         crate::umap::UmapSphereProjection::fit_from_graph(
             graph,
             Some(&cat_indices),
-            RadialStrategy::Magnitude,
+            radial,
             umap_fit_config(config),
         )?,
     ))
@@ -1395,6 +1439,79 @@ fn umap_fit_config(config: &PipelineConfig) -> crate::umap::UmapConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn magnitude_bounds_quantiles() {
+        let mags = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let (lo, hi) = magnitude_bounds(&mags, 0.0);
+        assert!((lo - 1.0).abs() < 1e-12 && (hi - 5.0).abs() < 1e-12);
+        let (lo2, hi2) = magnitude_bounds(&mags, 0.2);
+        assert!(lo2 >= 1.0 && hi2 <= 5.0 && lo2 < hi2);
+        let (el, eh) = magnitude_bounds(&[], 0.0);
+        assert!(el == 0.0 && (eh - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn radial_strategy_resolves_modes() {
+        let mags = vec![1.0, 2.0, 3.0];
+        assert!(matches!(
+            radial_strategy_for(&RadialConfig::default(), &mags),
+            RadialStrategy::Magnitude
+        ));
+        assert!(matches!(
+            radial_strategy_for(
+                &RadialConfig {
+                    mode: RadialMode::Fixed,
+                    ..Default::default()
+                },
+                &mags
+            ),
+            RadialStrategy::Fixed(_)
+        ));
+        match radial_strategy_for(
+            &RadialConfig {
+                mode: RadialMode::Stretch,
+                lo: 0.2,
+                hi: 1.8,
+                percentile: 0.0,
+            },
+            &mags,
+        ) {
+            RadialStrategy::MagnitudeStretch {
+                m_lo,
+                m_hi,
+                r_lo,
+                r_hi,
+            } => {
+                assert!((m_lo - 1.0).abs() < 1e-12 && (m_hi - 3.0).abs() < 1e-12);
+                assert!((r_lo - 0.2).abs() < 1e-12 && (r_hi - 1.8).abs() < 1e-12);
+            }
+            _ => panic!("expected MagnitudeStretch"),
+        }
+    }
+
+    #[test]
+    fn stretch_mode_fills_radial_range() {
+        let (input, _q) = make_input(40, 16);
+        let config = PipelineConfig {
+            radial: RadialConfig {
+                mode: RadialMode::Stretch,
+                lo: 0.3,
+                hi: 1.7,
+                percentile: 0.0,
+            },
+            ..PipelineConfig::default()
+        };
+        let pipeline = SphereQLPipeline::new_with_config(input, config).unwrap();
+        let rs: Vec<f64> = pipeline.exported_points().iter().map(|p| p.r).collect();
+        let min = rs.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = rs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            min >= 0.3 - 1e-9 && max <= 1.7 + 1e-9,
+            "r out of [lo,hi]: [{min}, {max}]"
+        );
+        assert!(max - min > 0.3, "stretch did not widen r: [{min}, {max}]");
+    }
 
     fn make_input(n: usize, dim: usize) -> (PipelineInput, PipelineQuery) {
         let mut embeddings = Vec::with_capacity(n);

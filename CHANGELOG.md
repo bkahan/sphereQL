@@ -6,8 +6,34 @@ versions.
 
 ## [Unreleased]
 
-### Changed
+## [0.4.0] — 2026-11-09
 
+0.4.0 rather than 0.3.1: bridge classification changes for every
+projection, `PipelineConfig`, `BridgeConfig` and `RadialStrategy` gain
+public members (none are `#[non_exhaustive]`), and seeded tuner runs
+pick different configs.
+
+### Breaking
+
+- **Bridge classification uses full-dimensional signals.** A bridge is
+  `Genuine` when `min(affinity_to_source, affinity_to_target)` clears the
+  `balanced_affinity_quantile` of the corpus's home affinities, and
+  `OverlapArtifact` when its two categories' full-dim centroids are closer
+  than the `overlap_separation_quantile` of bridged pairs (new field,
+  default 0.10); otherwise `Weak`. 0.3.0 left every bridge `Weak` when
+  the projection's EVR was below `min_evr_for_classification` (0.20), and
+  each projection family reports a different quantity as EVR, so whether
+  a corpus got classified at all depended on the projection; above the
+  gate it used the S² territorial factor and the median bridge strength.
+  Labels change for every projection, so anything keyed on
+  `Genuine` bridges sees a different set. `min_evr_for_classification`
+  and `overlap_artifact_territorial` are no longer read; both stay for
+  serde compatibility.
+- **New public members:** `PipelineConfig.radial` (`RadialConfig` /
+  `RadialMode`), `BridgeConfig.overlap_separation_quantile`, and
+  `RadialStrategy::MagnitudeStretch`. Struct literals without
+  `..Default::default()` and exhaustive matches on `RadialStrategy` need
+  updating. Saved configs still load (the new fields have serde defaults).
 - **Seeded tuner runs pick different configs than 0.3.0.** Random
   search and the Bayesian warmup now take the projection kinds in
   turn, and each kind draws its knobs from its own seed-derived
@@ -16,6 +42,108 @@ versions.
   family (UMAP, say) reshuffled every later trial, and how many trials
   each kind got was left to chance. A seed still reproduces within a
   release; runs recorded under 0.3.0 won't replay exactly.
+
+### Added — configurable radial coordinate
+
+- **`PipelineConfig.radial` (`RadialConfig` / `RadialMode`)** — control how
+  the radial coordinate `r` is assigned. `Magnitude` (default) is the
+  faithful embedding-magnitude pass-through; `Stretch` percentile-maps the
+  corpus magnitude band onto a configurable `[lo, hi]` range so `r` no longer
+  clusters in a narrow near-maximum band on sparse/uniform corpora; `Fixed`
+  pins all points to the shell. New `RadialStrategy::MagnitudeStretch` carries
+  the corpus-derived bounds (resolved once at fit time, applied consistently
+  to corpus points and queries). PCA's volumetric mode is auto-disabled when a
+  non-default mode is chosen so the strategy takes effect. The
+  `visualize_corpus` example gains `--radial lo:hi`.
+
+### Added — `sphereql-vis` crate + first-class Rust visualization
+
+- **New `sphereql-vis` crate** — a pure, data-agnostic 3D-visualization
+  emitter: a serializable `Scene` (point cloud + `SceneStats` + an
+  `#[non_exhaustive]` `Overlay` set — category centroids, classified
+  bridges, slerp-interpolated geodesic concept paths, Voronoi territory
+  caps, antipodes, coverage maps, domain-group spokes, globs, manifold
+  slices) and a hardened HTML emitter. Depends only on `sphereql-core`.
+- **Offline, self-contained output** — the emitted HTML inlines the
+  Three.js + OrbitControls runtime (`to_html()`), so files open with no
+  network; `to_html_cdn()` produces a smaller CDN-backed file. The old
+  Python viewer claimed "self-contained" but loaded Three.js from a CDN.
+- **Projection-aware stats** — the stats panel reports the pipeline's
+  actual projection family and its matching quality metric (PCA variance
+  / Kernel EVR / connectivity ratio / UMAP kNN-recall) instead of a
+  hardcoded "PCA variance" label.
+- **Umbrella `vis` feature** — `sphereql --features vis` re-exports the
+  scene API as `sphereql::vis` (also in `full`).
+- **`visualize_corpus` example** — loads a corpus, auto-tunes a
+  projection, and renders the full overlay set to one offline HTML file
+  (`--open` to launch a browser, `--cdn` for a smaller file).
+- **Hardening** — centralized `<script>`-breakout escaping, a reduce-based
+  min/max that fixes a latent large-N `RangeError`, non-finite-point
+  filtering, deterministic per-category decimation for very large clouds,
+  and a snapshot/round-trip/XSS/offline test suite.
+
+### Added — out-of-core streaming viewer (`sphereql-vis-server`)
+
+- **New `sphereql-vis-server` crate** — an axum + tokio query server for
+  corpora too large to inline. It loads a corpus, embeds + projects it
+  (gating O(n²) families to PCA above ~10k points, UMAP above ~100k), and
+  holds the projected positions (spatial-indexed), the raw embeddings
+  (ANN-indexed), and per-point metadata in memory. Serves
+  `/manifest /tiles /points /nearest /category_stats /path /globs
+  /drill_down /diagnostics /reproject /health`, plus the WASM studio at
+  `GET /` when present (a landing page otherwise). `--corpus / --addr /
+  --projection / --emit-html / --open / --allow-origin` CLI; live
+  `/reproject` ("tune") atomically swaps server state, one build at a
+  time, latest request wins. Same-origin unless `--allow-origin` says
+  otherwise. 34 tests. Not published to crates.io.
+- **Streaming contract in `sphereql-vis`** — new `manifest` and `tile`
+  modules: a bounded `Manifest` (`Bounds` / `CategoryInfo` / `LodScheme` /
+  `MANIFEST_VERSION`) and the binary **`SQT1`** point tile (`encode_tile` /
+  `decode_tile` / `TilePoint` / `TileError`; 16-byte header + 20-byte
+  records, little-endian). Bounded regardless of N.
+- **Shared `viewer.js` runtime + instantiable refactor** — `viewer.js` is
+  now a `createViewer(rootEl, opts)` factory shared by the offline HTML,
+  the WASM studio, and the server front-end, with a strength channel
+  (certainty → intensity → size/opacity), view-preserving live
+  `updateScene`, and reasoning-chain rendering. The WASM studio can be
+  served as the server's front-end at `/`.
+- **Streaming client** — `ServerSource` / `TileCache` / `TileStreamer` /
+  `connectToServer` stream tiles by viewport (off-thread decode, memory +
+  IndexedDB cache keyed to the server and manifest), with a debugger UI
+  (inspect, diagnostics, tune, filter) and share links that restore a
+  streaming session.
+- **Documentation** — see [`docs/visualization.md`](docs/visualization.md)
+  for the full runbook, architecture, design choices, and API.
+
+### Added — WASM studio and viewer tools
+
+- **Studio:** a lingua-live mode (paste prose → concept graph → scene, in
+  a Web Worker), a semantic query box, side-by-side compare and morph
+  between projections, and the 775-point demo corpus preloaded.
+- **Viewer tools:** great-circle ruler, PNG export, shareable `#v=` view
+  links, density shading, globe pins, drag-drop of any `Scene` JSON, and
+  GPU vertex transforms with id-buffer picking.
+- **`js-tests/`** — headless tests that boot the real `viewer.js` in Node
+  (14 suites), run in CI.
+
+### Changed
+
+- `sphereql-python`'s `visualize` / `visualize_pipeline` now render through
+  `sphereql-vis` (API and signatures unchanged; output is offline and
+  projection-aware). The `sphereql-examples` `e2e_transformer` example was
+  migrated onto the shared crate, removing its duplicated inline template;
+  its bespoke per-query/per-path buttons are consolidated into the shared
+  viewer's click-to-inspect and overlay toggles.
+- `SearchSpace::default()` and `SearchSpace::large_corpus()` search a
+  single value of `overlap_artifact_territorial`, since classification no
+  longer reads it. The default grid is a third the size, and the
+  meta-model no longer learns from a knob with no effect.
+- Glob auto-k scores its silhouette on an evenly strided 2,000-point sample
+  above 2,000 points (it was O(k·n²) per candidate k, hours at 500k); the
+  exact path is O(n²) and unchanged in value.
+- `async-trait` 0.1.89 → 0.1.92, and two `chunks_exact` calls became
+  `as_chunks`, for Rust 1.99's clippy (`double_must_use`,
+  `chunks_exact_to_as_chunks`).
 
 ### Fixed
 
@@ -28,6 +156,35 @@ versions.
   visited last, so two runs on the same corpus could reweight and
   prune different concepts. It now takes the label of its strongest
   bridge, ties going to the lower target category.
+- `sphereql-vis-server`: `/globs` ran its clustering on a tokio worker,
+  so on a large corpus it tied up a runtime thread for the whole run; it
+  now runs in
+  `spawn_blocking`, one request at a time. Overlapping `/reproject` builds
+  could run at once (double the memory) and the slower one silently won;
+  they now run one at a time and a superseded waiting request gets `409`.
+- Viewer: a tile response that arrived after a re-projection or filter
+  change could replace the new tiles with old ones; re-projection left the
+  globe and overlays where the old projection put them; the tile-decode
+  worker was never stopped.
+
+### Security
+
+- `sphereql-vis-server` sent `Access-Control-Allow-Origin: *`, so any site
+  open in the browser could read `/points` (labels and raw vectors) and
+  drive `/reproject`. The API is now same-origin unless `--allow-origin`
+  names an origin; `--emit-html` adds `null` for its file:// page and says
+  so.
+- Viewer: the inspector put a server-supplied neighbor `row` into
+  `innerHTML` unescaped, reachable from a shared `#v=` / `#server=` link.
+  It is coerced to a number, and a link naming a server on another origin
+  now asks before connecting.
+- The tile cache was keyed by query string alone, so IndexedDB could serve
+  tiles from another server, corpus or projection after a reload. Keys now
+  carry the server and a manifest fingerprint, and IndexedDB holds one
+  scene.
+- The emitted HTML escaped only `</` in the scene payload; a label
+  containing `<!--<script>` swallowed the rest of the page. `<`, `>` and
+  `&` are now JSON-escaped.
 
 ## [0.3.0] — 2026-06-15
 
@@ -418,6 +575,7 @@ pipeline, category enrichment layer, GraphQL spatial queries, Python
 bridges (InMemory / Qdrant / Pinecone), auto-tuner + meta-model
 framework (Rust-only at the time). See git history for full detail.
 
+[0.4.0]: https://github.com/bkahan/sphereQL/releases/tag/v0.4.0
 [0.3.0]: https://github.com/bkahan/sphereQL/releases/tag/v0.3.0
 [0.2.0-alpha]: https://github.com/bkahan/sphereQL/releases/tag/v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/bkahan/sphereQL/releases/tag/v0.1.0-alpha

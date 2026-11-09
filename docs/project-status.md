@@ -1,10 +1,10 @@
 # Project status
 
-sphereQL is at **v0.3.0**. The core API is functional and covered
+sphereQL is at **v0.4.0**. The core API is functional and covered
 by 850+ Rust tests plus 200+ pytest tests on the Python bindings, but
 may change before 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the full
-v0.3.0 changes, including the UMAP projection overhaul and the
-auto-tuner / meta-model framework.
+v0.4.0 changes, including the visualization stack (`sphereql-vis`, the
+streaming server and the WASM studio) and the new bridge classification.
 
 ## Bindings status
 
@@ -58,6 +58,17 @@ and is reached from Python via the `sphereql-python` bindings.
 `MergedQueryRoot`. Text queries embed server-side through an
 injectable `TextEmbedder` trait (default `NoEmbedder` returns a
 descriptive error until a real embedder is plugged in).
+
+**Visualization**: the offline single-file emitter (`sphereql-vis`) and the
+WASM studio are shipped and working — a `Scene` renders to one self-contained
+HTML file or a live in-browser pipeline. An out-of-core streaming server
+(`sphereql-vis-server`, axum) lands on the `feat/vis-server` branch: it streams
+binary `SQT1` point tiles by viewport for million-point corpora, with a bounded
+`Manifest`, lazy per-point metadata, and trace/tune endpoints (size-gating
+O(n²) projections). The server and its contract are complete and tested; the
+browser client that consumes the tiles is mid-migration after the `viewer.js`
+instantiable refactor (see [visualization.md](visualization.md) for the full
+status). Branch-local, pre-merge.
 
 ## Known limitations
 

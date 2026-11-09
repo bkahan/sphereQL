@@ -75,7 +75,7 @@ or pin it in `Cargo.toml`:
 
 ```toml
 [dependencies]
-sphereql = { version = "0.3.0", features = ["full"] }
+sphereql = { version = "0.4.0", features = ["full"] }
 ```
 
 ```bash
@@ -178,6 +178,8 @@ in the browser.
 | `sphereql-embed` | Projections, query pipeline, Category Enrichment Layer, metalearning framework. |
 | `sphereql-graphql` | async-graphql schema: spatial queries (cone/shell/band/wedge), the full category enrichment surface, subscriptions, and a pluggable `TextEmbedder` trait for text query input. |
 | `sphereql-vectordb` | Vector store bridge (InMemory, Qdrant, Pinecone) with hybrid search. |
+| `sphereql-vis` | Self-contained 3D visualization: a serializable scene model + a hardened, offline Three.js emitter (points + centroids, bridges, geodesic paths, Voronoi caps, antipodes, coverage, domain groups, globs, manifold slices). Also ships the shared `viewer.js` runtime and the `Manifest` + binary `SQT1` tile streaming contract consumed by `sphereql-vis-server`. See [docs/visualization.md](docs/visualization.md). |
+| `sphereql-vis-server` | Out-of-core query server (axum) for the streaming viewer: holds a corpus + projection + ANN/spatial indexes in memory and streams binary point tiles by viewport, plus lazy per-point metadata and neighbor queries. |
 | `sphereql-python` | Python bindings via PyO3/maturin. |
 | `sphereql-wasm` | WASM bindings via wasm-bindgen. |
 | `sphereql-corpus` | Shared example corpora: 775-concept built-in (31 academic domains) and 300-concept stress corpus, plus bulk-ingested parquet corpora from DBpedia (500K) and Wikidata (50K). |
@@ -193,7 +195,7 @@ Full dependency graph and crate-by-crate description in
 
 ## Project status
 
-sphereQL is at **v0.3.0**. The core API is functional and covered
+sphereQL is at **v0.4.0**. The core API is functional and covered
 by 850+ Rust tests plus 200+ Python binding tests, but may change
 before 1.0. Known limitations and roadmap
 are in [project-status.md](docs/project-status.md).

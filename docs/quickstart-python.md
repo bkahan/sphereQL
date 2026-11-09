@@ -98,6 +98,12 @@ sphereql.visualize(categories, embeddings, title="My Embeddings")
 sphereql.visualize_pipeline(pipeline, title="Pipeline View")
 ```
 
+Both render one self-contained, offline HTML file through `sphereql-vis`
+(suited to small/medium corpora). For million-point corpora, the Rust
+`sphereql-vis-server` streams tiles by viewport instead — see
+[visualization.md](visualization.md). (The streaming server is not exposed
+through the Python binding.)
+
 ## Vector database bridge
 
 ```python

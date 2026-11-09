@@ -747,35 +747,59 @@ impl CategoryLayer {
             }
         }
 
-        // Classification pass: compare each bridge against the corpus-wide
-        // median strength and the pair's territorial separation on S².
-        //
-        // When EVR is below `min_evr_for_classification`, the projection
-        // is too lossy for territorial factors to distinguish genuine
-        // bridges from overlap artifacts — every factor collapses to
-        // near-zero, every bridge gets labeled OverlapArtifact, and the
-        // tuner landscape flattens. Skip the territorial check entirely
-        // in that regime and leave the default `Weak` label on each
-        // bridge (honest uncertainty).
-        if spatial.evr >= config.bridges.min_evr_for_classification {
-            let mut all_strengths: Vec<f64> = bridges
-                .values()
-                .flat_map(|list| list.iter().map(|b| b.bridge_strength))
-                .collect();
-            let median_strength = if all_strengths.is_empty() {
-                0.0
-            } else {
-                all_strengths.sort_by(|a, b| a.total_cmp(b));
-                all_strengths[all_strengths.len() / 2]
-            };
+        // Classification pass (globetrot 2026-06): HONEST, projection-robust.
+        // The old gate keyed on `spatial.evr >= min_evr_for_classification`, but
+        // for UmapSphere that EVR is a kNN-recall score (neighbourhood
+        // preservation) orthogonal to relation validity and ~0.09 here — so it
+        // suppressed EVERY bridge to Weak. We classify from FULL-DIMENSIONAL
+        // signals instead, finally implementing the documented
+        // `balanced_affinity_quantile` intent: a bridge is Genuine when its
+        // balanced dual-category affinity clears the home-affinity floor AND the
+        // two categories are genuinely distinct (centroid separation above a
+        // floor — near-collinear centroids are the same blob). territorial_factor
+        // stays the soft barrier discount on bridge_strength, never a gate.
+        {
+            fn quantile(v: &mut [f64], q: f64) -> f64 {
+                if v.is_empty() {
+                    return 0.0;
+                }
+                v.sort_by(|a, b| a.total_cmp(b));
+                let idx = (q.clamp(0.0, 1.0) * (v.len() - 1) as f64).round() as usize;
+                v[idx.min(v.len() - 1)]
+            }
 
-            let overlap_threshold = config.bridges.overlap_artifact_territorial;
-            for list in bridges.values_mut() {
+            // Home-affinity floor: q-quantile of every member's FULL-DIM cosine
+            // to its OWN category centroid (balanced_affinity_quantile).
+            let mut home_aff: Vec<f64> = Vec::new();
+            for s in summaries {
+                for &mi in &s.member_indices {
+                    home_aff.push(
+                        cosine_similarity(&embeddings[mi].values, &s.centroid_embedding)
+                            .unwrap_or(0.0),
+                    );
+                }
+            }
+            let affinity_floor = quantile(&mut home_aff, config.bridges.balanced_affinity_quantile);
+
+            // Separation floor: q-quantile of full-dim centroid separation
+            // `1 - cos(centroid_a, centroid_b)` over bridged category pairs.
+            let sep_of = |ci: usize, cj: usize| -> f64 {
+                1.0 - cosine_similarity(
+                    &summaries[ci].centroid_embedding,
+                    &summaries[cj].centroid_embedding,
+                )
+                .unwrap_or(0.0)
+            };
+            let mut seps: Vec<f64> = bridges.keys().map(|&(ci, cj)| sep_of(ci, cj)).collect();
+            let sep_floor = quantile(&mut seps, config.bridges.overlap_separation_quantile);
+
+            for (&(ci, cj), list) in bridges.iter_mut() {
+                let sep = sep_of(ci, cj);
                 for b in list.iter_mut() {
-                    let tf = spatial.territorial_factor(b.source_category, b.target_category);
-                    b.classification = if tf < overlap_threshold {
+                    let balanced = b.affinity_to_source.min(b.affinity_to_target);
+                    b.classification = if sep < sep_floor {
                         BridgeClassification::OverlapArtifact
-                    } else if b.bridge_strength >= median_strength {
+                    } else if balanced >= affinity_floor {
                         BridgeClassification::Genuine
                     } else {
                         BridgeClassification::Weak
@@ -1709,36 +1733,33 @@ mod tests {
     }
 
     #[test]
-    fn low_evr_skips_territorial_classification() {
-        // When `spatial.evr` falls below `min_evr_for_classification`,
-        // every bridge should fall back to `Weak`. We force the gate
-        // by raising the threshold above the measured EVR rather than
-        // synthesizing a low-EVR projection.
+    fn classification_ignores_deprecated_evr_gate() {
+        // The min_evr_for_classification gate was REMOVED (2026-06): for
+        // UmapSphere the outer EVR is a kNN-recall score orthogonal to relation
+        // validity, and it suppressed every bridge to Weak. Classification now
+        // runs unconditionally from full-dim affinity + centroid separation, so
+        // the deprecated threshold must no longer change any classification —
+        // building with a zero gate vs an impossibly-high gate is identical.
         let (categories, embeddings) = test_corpus();
         let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
         let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
 
-        let mut config = PipelineConfig::default();
-        // Set the gate above the natural ceiling so the early-skip
-        // branch is exercised regardless of corpus EVR.
-        config.bridges.min_evr_for_classification = 1.5;
+        let mut lo = PipelineConfig::default();
+        lo.bridges.min_evr_for_classification = 0.0;
+        let mut hi = PipelineConfig::default();
+        hi.bridges.min_evr_for_classification = 1.5;
 
-        let layer = CategoryLayer::build_with_config(
-            &categories,
-            &embeddings,
-            &projected,
-            &pca,
-            0.10,
-            &config,
-        );
+        let layer_lo =
+            CategoryLayer::build_with_config(&categories, &embeddings, &projected, &pca, 0.10, &lo);
+        let layer_hi =
+            CategoryLayer::build_with_config(&categories, &embeddings, &projected, &pca, 0.10, &hi);
 
-        for bridges in layer.graph.bridges.values() {
-            for b in bridges {
+        for (key, bl) in &layer_lo.graph.bridges {
+            let bh = layer_hi.graph.bridges.get(key).expect("same bridge keys");
+            for (a, b) in bl.iter().zip(bh.iter()) {
                 assert_eq!(
-                    b.classification,
-                    BridgeClassification::Weak,
-                    "low EVR should label every bridge Weak, got {:?}",
-                    b.classification
+                    a.classification, b.classification,
+                    "min_evr_for_classification must not affect classification"
                 );
             }
         }

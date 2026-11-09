@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: ["core", "index", "layout", "embed", "graphql", "vectordb", "full", ""]
+        features: ["core", "index", "layout", "embed", "graphql", "vectordb", "vis", "full", ""]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -163,6 +163,19 @@ jobs:
       - uses: jetli/wasm-pack-action@v0.4.0
       - name: Run WASM smoke tests (Node)
         run: wasm-pack test --node sphereql-wasm
+
+  js-tests:
+    # Headless logic tests for the browser viewer runtime (sphereql-vis
+    # viewer.js + the studio worker.js), run in Node against thin THREE/DOM
+    # stubs. The Rust suite can't reach this JS, so this is its only coverage.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run viewer JS tests
+        run: node js-tests/run-all.cjs
 
   bindings-drift:
     # Mirror of the separate bindings-drift workflow, but run on every

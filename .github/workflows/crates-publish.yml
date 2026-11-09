@@ -61,7 +61,7 @@ jobs:
       # occasionally lags behind a publish by ~30s.
       #
       # Order mirrors the workspace dependency graph:
-      #   core → corpus → lingua → index → layout → embed → graphql → vectordb → sphereql
+      #   core → corpus → lingua → vis → index → layout → embed → graphql → vectordb → sphereql
       # `sphereql-corpus` and `sphereql-lingua` depend only on
       # `sphereql-core`, so they are published right after core.
       # `sphereql-graphql` depends on `sphereql-embed` (added in
@@ -80,6 +80,14 @@ jobs:
 
       - name: Publish sphereql-lingua
         run: cargo publish -p sphereql-lingua
+      - name: Wait for registry
+        run: sleep 60
+
+      # `sphereql-vis` depends only on `sphereql-core`. It must land before
+      # the umbrella `sphereql`, which lists it as an optional dependency
+      # (the `vis` feature).
+      - name: Publish sphereql-vis
+        run: cargo publish -p sphereql-vis
       - name: Wait for registry
         run: sleep 60
 

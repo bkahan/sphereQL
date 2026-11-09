@@ -50,6 +50,6 @@ silently.
 
 ## Status
 
-Pre-1.0 (`0.3.0`). Public
+Pre-1.0 (`0.4.0`). Public
 surface kept small and stable; new functionality ships in
 `sphereql-lingua` first and reaches Python through the bindings.

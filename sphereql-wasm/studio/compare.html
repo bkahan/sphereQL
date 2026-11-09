@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SphereQL · Compare</title>
+<style>
+:root{--bg:#06060f;--panel:rgba(11,13,28,.72);--line:rgba(120,160,255,.16);--ink:#e6eaf7;--ink-dim:#9aa2bd;
+  --ink-faint:#596084;--accent:#5cc8ff;--mono:ui-monospace,"JetBrains Mono","Cascadia Code","SF Mono",Menlo,Consolas,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--mono);overflow:hidden}
+body{display:flex;flex-direction:column}
+#bar{flex:none;z-index:10;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+  padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}
+.brand{font-size:11px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;color:var(--ink)}
+.brand::first-letter{color:var(--accent)}
+.back{font-size:11px;letter-spacing:.08em;color:var(--ink-dim);text-decoration:none;border:1px solid var(--line);
+  border-radius:2px;padding:6px 10px;transition:.12s;white-space:nowrap}
+.back:hover{color:var(--accent);border-color:var(--accent)}
+#corpus{flex:1;min-width:200px;height:34px;resize:vertical;background:rgba(6,8,20,.6);border:1px solid var(--line);
+  border-radius:2px;color:var(--ink);font-family:var(--mono);font-size:11px;padding:7px 10px;outline:none}
+#corpus:focus{border-color:var(--accent)}
+select{background:rgba(6,8,20,.6);border:1px solid var(--line);border-radius:2px;color:var(--ink);
+  font-family:var(--mono);font-size:11px;padding:6px 8px;outline:none}
+.vs{font-size:10px;letter-spacing:.1em;color:var(--ink-faint)}
+#go{background:rgba(92,200,255,.1);border:1px solid var(--accent);color:var(--accent);font-family:var(--mono);
+  font-size:11px;letter-spacing:.08em;padding:7px 16px;border-radius:2px;cursor:pointer}
+#go:hover{background:rgba(92,200,255,.18)}
+.lock{background:rgba(120,160,255,.05);border:1px solid var(--line);color:var(--ink-dim);font-family:var(--mono);
+  font-size:10px;letter-spacing:.06em;padding:6px 9px;border-radius:2px;cursor:pointer;white-space:nowrap;transition:.12s}
+.lock:hover{color:var(--ink);border-color:var(--accent)}
+.lock.on{color:var(--accent);border-color:var(--accent);background:rgba(92,200,255,.1)}
+/* Fixed width so status-text changes never reflow (shift) the bar controls. */
+#status{flex:0 0 170px;width:170px;text-align:right;font-size:10px;letter-spacing:.08em;color:var(--ink-faint);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#panes{flex:1;min-height:0;display:flex}
+#panes iframe{flex:1;width:50%;height:100%;border:0;border-left:1px solid var(--line)}
+#panes iframe:first-child{border-left:0}
+.tag{position:fixed;bottom:10px;z-index:5;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);pointer-events:none}
+.tagA{left:14px}.tagB{left:calc(50% + 14px)}
+@media (max-width:720px){#panes{flex-direction:column}#panes iframe{width:100%;height:50%;border-left:0;border-top:1px solid var(--line)}.tagB{left:14px;bottom:calc(50% - 10px)}}
+</style>
+</head>
+<body>
+<div id="bar">
+  <a class="back" href="index.html" title="back to the studio">← studio</a>
+  <span class="brand">◐ Compare</span>
+  <textarea id="corpus" spellcheck="false" placeholder='empty = the demo corpus · or paste your own {"categories":[…],"embeddings":[[…],…]}'></textarea>
+  <select id="projA" title="left projection">
+    <option value="">PCA</option><option value="UmapSphere">UMAP sphere</option>
+    <option value="LaplacianEigenmap">Laplacian</option><option value="KernelPca">Kernel PCA</option>
+  </select>
+  <span class="vs">vs</span>
+  <select id="projB" title="right projection">
+    <option value="UmapSphere">UMAP sphere</option><option value="">PCA</option>
+    <option value="LaplacianEigenmap">Laplacian</option><option value="KernelPca">Kernel PCA</option>
+  </select>
+  <button id="go">compare ▸</button>
+  <button id="lockOrbit" class="lock" title="lock orbit (rotation) across both panes">⟲ orbit</button>
+  <button id="lockZoom" class="lock" title="lock zoom across both panes">⊙ zoom</button>
+  <span id="status">loading wasm…</span>
+</div>
+<div id="panes">
+  <iframe id="paneA" src="embed.html#embed" title="projection A"></iframe>
+  <iframe id="paneB" src="embed.html#embed" title="projection B"></iframe>
+</div>
+<div class="tag tagA" id="tagA"></div>
+<div class="tag tagB" id="tagB"></div>
+<script src="compare.js"></script>
+</body>
+</html>

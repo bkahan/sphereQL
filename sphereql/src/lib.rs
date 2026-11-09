@@ -11,6 +11,7 @@
 //! | `embed` | [`sphereql_embed`] — embedding pipeline + tuner |
 //! | `graphql` | [`sphereql_graphql`] — GraphQL schema layer |
 //! | `vectordb` | [`sphereql_vectordb`] — vector store backend |
+//! | `vis` | [`sphereql_vis`] — self-contained 3D visualization |
 
 #[cfg(feature = "core")]
 pub mod core {
@@ -40,4 +41,9 @@ pub mod graphql {
 #[cfg(feature = "vectordb")]
 pub mod vectordb {
     pub use sphereql_vectordb::*;
+}
+
+#[cfg(feature = "vis")]
+pub mod vis {
+    pub use sphereql_vis::*;
 }

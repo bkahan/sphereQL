@@ -2,75 +2,40 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::gen_stub_pyfunction;
 
-use sphereql_core::conversions::{cartesian_to_spherical, spherical_to_cartesian};
-use sphereql_core::types::CartesianPoint;
 use sphereql_embed::{Embedding, PcaProjection, Projection, RadialStrategy};
+use sphereql_vis::{Scene, ScenePoint, SceneStats};
 
 use crate::pipeline::Pipeline;
 
-const TEMPLATE: &str = include_str!("viz_template.html");
-
-#[derive(serde::Serialize)]
-struct VizPoint<'a> {
-    x: f64,
-    y: f64,
-    z: f64,
-    r: f64,
-    theta: f64,
-    phi: f64,
-    cat: &'a str,
-    label: &'a str,
+/// Human-readable label for the headline quality number, per projection
+/// family. Drives the stats-panel label so a UMAP-fitted pipeline no longer
+/// reports its quality as "PCA variance".
+fn evr_label_for(kind: &str) -> &'static str {
+    match kind {
+        "pca" => "PCA variance",
+        "kernel_pca" => "Kernel EVR",
+        "laplacian_eigenmap" => "Connectivity ratio",
+        "umap_sphere" => "UMAP kNN-recall",
+        _ => "Explained variance ratio",
+    }
 }
 
-#[derive(serde::Serialize)]
-struct VizData<'a> {
-    evr: f64,
-    points: Vec<VizPoint<'a>>,
-}
-
-fn build_data_json(
-    categories: &[String],
-    cart_points: &[[f64; 3]],
-    spherical: &[(f64, f64, f64)],
-    labels: Option<&[String]>,
-    explained_variance: f64,
-) -> String {
-    let points = cart_points
-        .iter()
-        .zip(spherical.iter())
-        .zip(categories.iter())
-        .enumerate()
-        .map(|(i, ((xyz, sph), cat))| VizPoint {
-            x: xyz[0],
-            y: xyz[1],
-            z: xyz[2],
-            r: sph.0,
-            theta: sph.1,
-            phi: sph.2,
-            cat: cat.as_str(),
-            label: labels
-                .and_then(|l| l.get(i))
-                .map(String::as_str)
-                .unwrap_or(""),
-        })
-        .collect();
-    let data = VizData {
-        evr: explained_variance,
-        points,
-    };
-    let serialized = serde_json::to_string(&data).unwrap_or_else(|err| {
-        eprintln!("viz: VizData serialization failed: {err}");
-        r#"{"evr":0.0,"points":[]}"#.to_string()
-    });
-    // The payload is interpolated into a <script> block. Escape "</" so a
-    // crafted category/label can't terminate the script tag (XSS).
-    serialized.replace("</", "<\\/")
-}
-
-fn render_html(data_json: &str, title: &str) -> String {
-    TEMPLATE
-        .replace("/*__SPHEREQL_DATA__*/", data_json)
-        .replace("__SPHEREQL_TITLE__", title)
+fn write_and_maybe_open(
+    py: Python<'_>,
+    scene: &Scene,
+    output: &str,
+    open_browser: bool,
+) -> PyResult<String> {
+    std::fs::write(output, scene.to_html())
+        .map_err(|e| PyValueError::new_err(format!("failed to write {output}: {e}")))?;
+    let abs_path = std::fs::canonicalize(output)
+        .map_err(|e| PyValueError::new_err(format!("failed to resolve path: {e}")))?
+        .to_string_lossy()
+        .to_string();
+    if open_browser {
+        open_in_browser(py, &abs_path)?;
+    }
+    Ok(abs_path)
 }
 
 fn open_in_browser(py: Python<'_>, path: &str) -> PyResult<()> {
@@ -83,7 +48,8 @@ fn open_in_browser(py: Python<'_>, path: &str) -> PyResult<()> {
 /// Generate an interactive 3D sphere visualization from embeddings.
 ///
 /// Fits a PCA projection, projects embeddings to 3D spherical coordinates,
-/// and writes a self-contained HTML file with a Three.js scene.
+/// and writes a self-contained HTML file with a Three.js scene (the runtime
+/// is inlined, so the file works offline).
 ///
 /// Args:
 ///     categories: Category label for each embedding.
@@ -135,45 +101,35 @@ pub fn visualize(
         .with_volumetric(true);
     let evr = pca.explained_variance_ratio();
 
-    let mut cart_points = Vec::with_capacity(embs.len());
-    let mut spherical = Vec::with_capacity(embs.len());
-    for emb in &embs {
-        let sp = pca.project(emb);
-        let c = spherical_to_cartesian(&sp);
-        cart_points.push([c.x, c.y, c.z]);
-        spherical.push((sp.r, sp.theta, sp.phi));
-    }
+    let points: Vec<ScenePoint> = embs
+        .iter()
+        .enumerate()
+        .map(|(i, emb)| {
+            let sp = pca.project(emb);
+            let label = labels
+                .as_ref()
+                .and_then(|l| l.get(i))
+                .cloned()
+                .unwrap_or_default();
+            ScenePoint::from_spherical(categories[i].clone(), label, sp.r, sp.theta, sp.phi)
+        })
+        .collect();
 
-    let data_json = build_data_json(
-        &categories,
-        &cart_points,
-        &spherical,
-        labels.as_deref(),
-        evr,
-    );
-    let title_str = title.unwrap_or("SphereQL Visualization");
-    let html = render_html(&data_json, title_str);
+    let scene = Scene::builder()
+        .title(title.unwrap_or("SphereQL Visualization"))
+        .points(points)
+        .stats(SceneStats::new("pca", evr).with_label("PCA variance"))
+        .build();
 
-    std::fs::write(output, &html)
-        .map_err(|e| PyValueError::new_err(format!("failed to write {output}: {e}")))?;
-
-    let abs_path = std::fs::canonicalize(output)
-        .map_err(|e| PyValueError::new_err(format!("failed to resolve path: {e}")))?
-        .to_string_lossy()
-        .to_string();
-
-    if open_browser {
-        open_in_browser(py, &abs_path)?;
-    }
-
-    Ok(abs_path)
+    write_and_maybe_open(py, &scene, output, open_browser)
 }
 
 /// Generate a visualization from an already-built Pipeline.
 ///
-/// Reuses the PCA projection fitted inside the pipeline, avoiding
-/// re-fitting. The pipeline's internal IDs (s-0000, s-0001, ...) are
-/// used as labels unless the pipeline items have associated text.
+/// Reuses the projection fitted inside the pipeline, avoiding re-fitting. The
+/// stats panel reports the pipeline's actual projection family and its
+/// matching quality metric (e.g. "UMAP kNN-recall"), not a hardcoded label.
+/// The pipeline's internal IDs (s-0000, s-0001, ...) are used as labels.
 ///
 /// Args:
 ///     pipeline: A built sphereql.Pipeline instance.
@@ -193,42 +149,22 @@ pub fn visualize_pipeline(
     title: Option<&str>,
     open_browser: bool,
 ) -> PyResult<String> {
-    let points = pipeline.inner.projected_points();
+    let projected = pipeline.inner.projected_points();
     let evr = pipeline.inner.projection().explained_variance_ratio();
+    let kind = pipeline.inner.projection_kind().name();
 
-    let mut categories = Vec::with_capacity(points.len());
-    let mut cart_points = Vec::with_capacity(points.len());
-    let mut labels = Vec::with_capacity(points.len());
-    let mut spherical = Vec::with_capacity(points.len());
+    let points: Vec<ScenePoint> = projected
+        .iter()
+        // from_cartesian derives the spherical readout so it matches the
+        // pipeline's stored geometry.
+        .map(|(id, cat, xyz)| ScenePoint::from_cartesian(cat.to_string(), id.to_string(), *xyz))
+        .collect();
 
-    for (id, cat, xyz) in &points {
-        categories.push(cat.to_string());
-        cart_points.push(*xyz);
-        labels.push(id.to_string());
-        let cp = CartesianPoint {
-            x: xyz[0],
-            y: xyz[1],
-            z: xyz[2],
-        };
-        let sp = cartesian_to_spherical(&cp);
-        spherical.push((sp.r, sp.theta, sp.phi));
-    }
+    let scene = Scene::builder()
+        .title(title.unwrap_or("SphereQL Visualization"))
+        .points(points)
+        .stats(SceneStats::new(kind, evr).with_label(evr_label_for(kind)))
+        .build();
 
-    let data_json = build_data_json(&categories, &cart_points, &spherical, Some(&labels), evr);
-    let title_str = title.unwrap_or("SphereQL Visualization");
-    let html = render_html(&data_json, title_str);
-
-    std::fs::write(output, &html)
-        .map_err(|e| PyValueError::new_err(format!("failed to write {output}: {e}")))?;
-
-    let abs_path = std::fs::canonicalize(output)
-        .map_err(|e| PyValueError::new_err(format!("failed to resolve path: {e}")))?
-        .to_string_lossy()
-        .to_string();
-
-    if open_browser {
-        open_in_browser(py, &abs_path)?;
-    }
-
-    Ok(abs_path)
+    write_and_maybe_open(py, &scene, output, open_browser)
 }

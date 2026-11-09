@@ -24,6 +24,10 @@ topic lives here.
   projection).
 - [Empirical findings](empirical-findings.md) — when each projection wins,
   with measured scores.
+- [Visualization](visualization.md) — running the 3D viewer (offline file,
+  WASM studio, streaming server), the `Scene`/`Manifest`/`SQT1` wire contracts,
+  the `viewer.js` runtime, the HTTP API, and the generic-vs-coupled extraction
+  map.
 - [Use cases](use-cases.md) — what problem each feature is meant to solve.
 
 ## Guides
