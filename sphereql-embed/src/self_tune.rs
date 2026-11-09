@@ -39,7 +39,7 @@
 
 use std::collections::HashMap;
 
-use crate::category::BridgeClassification;
+use crate::category::{BridgeClassification, BridgeItem};
 use crate::config::{PipelineConfig, ProjectionKind};
 use crate::configured_projection::ConfiguredProjection;
 use crate::corpus_quality::{CorpusQuality, CorpusQualityBreakdown};
@@ -439,14 +439,32 @@ fn reweight_from_base(
 }
 
 fn build_bridge_map(pipeline: &SphereQLPipeline) -> HashMap<usize, BridgeClassification> {
-    let layer = pipeline.category_layer();
-    let mut out = HashMap::new();
-    for bridges in layer.graph.bridges.values() {
-        for b in bridges {
-            out.insert(b.item_index, b.classification);
+    strongest_bridge_labels(pipeline.category_layer().graph.bridges.values().flatten())
+}
+
+/// An item can bridge to several categories, each with its own label.
+/// It takes the label of its strongest bridge, ties going to the lower
+/// target category, so the result doesn't depend on the order the
+/// bridges are visited in (a `HashMap` order, which changes every run).
+fn strongest_bridge_labels<'a>(
+    bridges: impl Iterator<Item = &'a BridgeItem>,
+) -> HashMap<usize, BridgeClassification> {
+    let mut strongest: HashMap<usize, &BridgeItem> = HashMap::new();
+    for b in bridges {
+        let kept = strongest.entry(b.item_index).or_insert(b);
+        let outranks = b
+            .bridge_strength
+            .total_cmp(&kept.bridge_strength)
+            .then(kept.target_category.cmp(&b.target_category))
+            .is_gt();
+        if outranks {
+            *kept = b;
         }
     }
-    out
+    strongest
+        .into_iter()
+        .map(|(item, b)| (item, b.classification))
+        .collect()
 }
 
 fn build_curvature_map(pipeline: &SphereQLPipeline) -> HashMap<String, f64> {
@@ -561,6 +579,42 @@ mod tests {
             source: Some("synthetic".into()),
             openalex_id: None,
         }
+    }
+
+    fn bridge(
+        item: usize,
+        target: usize,
+        strength: f64,
+        label: BridgeClassification,
+    ) -> BridgeItem {
+        BridgeItem {
+            item_index: item,
+            source_category: 0,
+            target_category: target,
+            affinity_to_source: strength,
+            affinity_to_target: strength,
+            bridge_strength: strength,
+            classification: label,
+            relation: None,
+        }
+    }
+
+    #[test]
+    fn multi_category_bridges_take_the_strongest_label_in_any_order() {
+        use BridgeClassification::*;
+        let bridges = [
+            bridge(7, 1, 0.4, Genuine),
+            bridge(7, 2, 0.9, OverlapArtifact),
+            bridge(7, 3, 0.2, Weak),
+            // Tied strengths: the lower target category wins.
+            bridge(8, 5, 0.6, Weak),
+            bridge(8, 4, 0.6, Genuine),
+        ];
+        let forward = strongest_bridge_labels(bridges.iter());
+        let backward = strongest_bridge_labels(bridges.iter().rev());
+        assert_eq!(forward, backward);
+        assert_eq!(forward[&7], OverlapArtifact);
+        assert_eq!(forward[&8], Genuine);
     }
 
     /// 6 categories × 8 concepts, 16-dim embeddings — the smallest
