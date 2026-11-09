@@ -87,11 +87,11 @@ fn run_demo(corpus: &[Concept]) {
         expert_cfg.routing.num_domain_groups
     );
     println!(
-        "  overlap_artifact_territorial = {} (IS in default SearchSpace — will be tuned)",
-        expert_cfg.bridges.overlap_artifact_territorial
+        "  threshold_base        = {} (IS in default SearchSpace — will be tuned)",
+        expert_cfg.bridges.threshold_base
     );
 
-    // ── 2. Constrain the SearchSpace to vary only overlap_artifact.
+    // ── 2. Constrain the SearchSpace to vary only threshold_base.
     //     Everything else stays pinned by the expert prediction.
     let space = SearchSpace {
         projection_kinds: vec![ProjectionKind::Pca],
@@ -103,14 +103,14 @@ fn run_demo(corpus: &[Concept]) {
         umap_min_dist: vec![0.1],
         num_domain_groups: vec![expert_cfg.routing.num_domain_groups], // pin
         low_evr_threshold: vec![expert_cfg.routing.low_evr_threshold], // pin
-        overlap_artifact_territorial: vec![0.2, 0.3, 0.4],             // the only tuned axis
-        threshold_base: vec![expert_cfg.bridges.threshold_base],       // pin
+        overlap_artifact_territorial: vec![expert_cfg.bridges.overlap_artifact_territorial], // pin
+        threshold_base: vec![0.4, 0.5, 0.6],                           // the only tuned axis
         threshold_evr_penalty: vec![expert_cfg.bridges.threshold_evr_penalty], // pin at 0.75
         min_evr_improvement: vec![expert_cfg.inner_sphere.min_evr_improvement], // pin
     };
 
     let metric = CompositeMetric::default_composite();
-    println!("\nTuning — only `overlap_artifact_territorial` varies:");
+    println!("\nTuning — only `threshold_base` varies:");
     let start = std::time::Instant::now();
     let (pipeline, _f, report) = SphereQLPipeline::new_from_metamodel_tuned(
         PipelineInput {
@@ -148,10 +148,10 @@ fn run_demo(corpus: &[Concept]) {
         expert_cfg.routing.num_domain_groups,
     );
 
-    println!("\nSearched knob (overlap_artifact_territorial):");
+    println!("\nSearched knob (threshold_base):");
     println!(
         "  tuner picked: {:.2} (from candidates {:?})",
-        winner.bridges.overlap_artifact_territorial, space.overlap_artifact_territorial
+        winner.bridges.threshold_base, space.threshold_base
     );
 }
 

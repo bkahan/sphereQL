@@ -125,7 +125,7 @@ cd sphereql-python && cargo run --bin gen-stubs --features vectordb
 
 ## Status
 
-Pre-1.0 (`0.3.0`). Expect
+Pre-1.0 (`0.4.0`). Expect
 breaking changes between minor versions. Source, issues, and full
 documentation live in the
 [sphereQL repository](https://github.com/bkahan/sphereQL).

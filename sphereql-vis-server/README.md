@@ -118,5 +118,5 @@ covering every endpoint, CORS, and overlapping re-projections.
 
 ## Versioning
 
-Part of the sphereQL workspace, `0.3.0`. Not published to crates.io. See the
+Part of the sphereQL workspace, `0.4.0`. Not published to crates.io. See the
 workspace [CHANGELOG](../CHANGELOG.md).

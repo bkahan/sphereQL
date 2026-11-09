@@ -362,13 +362,18 @@ function askToConnect(url){
 // decode when Workers/Blob/URL are unavailable (Node tests, locked-down embeds).
 function makeWorkerDecoder(){
   if(typeof Worker==="undefined"||typeof URL==="undefined"||!URL.createObjectURL||typeof Blob==="undefined")return decodeTile;
-  let worker;const pending=new Map();let seq=0;
+  let worker,url;const pending=new Map();let seq=0;
   try{
     const src="var decodeTile="+decodeTile.toString()+";self.onmessage=function(e){try{var d=decodeTile(e.data.buf);self.postMessage({id:e.data.id,d:d},[d.positions.buffer,d.cats.buffer,d.rows.buffer]);}catch(err){self.postMessage({id:e.data.id,err:String(err&&err.message||err)});}};";
-    worker=new Worker(URL.createObjectURL(new Blob([src],{type:"text/javascript"})));
+    url=URL.createObjectURL(new Blob([src],{type:"text/javascript"}));
+    worker=new Worker(url);
     worker.onmessage=e=>{const cb=pending.get(e.data.id);if(!cb)return;pending.delete(e.data.id);if(e.data.err)cb.rej(new Error(e.data.err));else cb.res(e.data.d);};
-  }catch(err){return decodeTile;}
-  return buf=>new Promise((res,rej)=>{const id=++seq;pending.set(id,{res,rej});try{worker.postMessage({id,buf},[buf]);}catch(err){pending.delete(id);try{res(decodeTile(buf));}catch(e2){rej(e2);}}});
+  }catch(err){if(url&&URL.revokeObjectURL)URL.revokeObjectURL(url);return decodeTile;}
+  const decode=buf=>new Promise((res,rej)=>{const id=++seq;pending.set(id,{res,rej});try{worker.postMessage({id,buf},[buf]);}catch(err){pending.delete(id);try{res(decodeTile(buf));}catch(e2){rej(e2);}}});
+  // Stop the worker and free its blob URL (disconnectServer). Decodes still in
+  // flight never settle; the streamer waiting on them is gone by then.
+  decode.close=()=>{worker.terminate();if(URL.revokeObjectURL)URL.revokeObjectURL(url);pending.clear();};
+  return decode;
 }
 
 // ── Streaming render: camera motion → a bounded working set of tile meshes ──
@@ -901,8 +906,8 @@ function createViewer(rootEl,opts){
   function clearMorph(){morphTarget=null;morphT=0;if(pointsMat){pointsMat.uniforms.uMorphT.value=0;pointsMat.uniforms.uHasMorph.value=0;}}
 
   // ── Scene swap ───────────────────────────────────────────────────────────
-  function teardown(){
-    disconnectServer(); // drop any active server stream (idempotent; no-op when offline) — else a scene swap leaves a zombie stream that keeps getHovered/updateHover on the streaming branch
+  function teardown(keepStream){
+    if(!keepStream)disconnectServer(); // drop any active server stream (idempotent; no-op when offline) — else a scene swap leaves a zombie stream that keeps getHovered/updateHover on the streaming branch
     disposeObject(pointsMesh);if(pointsMesh)scene.remove(pointsMesh);
     disposeObject(globeGroup);if(globeGroup)scene.remove(globeGroup);
     disposeObject(linesGroup);if(linesGroup)scene.remove(linesGroup);
@@ -925,14 +930,16 @@ function createViewer(rootEl,opts){
   // ── rebuild(sc) ──────────────────────────────────────────────────────────
   // Full scene swap from a parsed Scene object. Resets view settings to
   // defaults and re-frames the camera unless opts.preserveCamera is set.
+  // opts.keepStream keeps an active server stream (a re-projection swaps the
+  // chrome under it).
   function rebuild(sc,_opts){
-    const preserveCamera=_opts&&_opts.preserveCamera;
-    teardown();
+    const preserveCamera=_opts&&_opts.preserveCamera,keepStream=_opts&&_opts.keepStream;
+    teardown(keepStream);
     // Offline render routes through an InlineSource wrapping this scene (the
     // DataSource seam). teardown() above dropped any active stream and nulled
     // dataSource, so install the inline source AFTER it; connectToServer
     // overwrites dataSource with a ServerSource after its own rebuild.
-    dataSource=new InlineSource(sc);
+    if(!keepStream)dataSource=new InlineSource(sc);
     pts=sc.points||[];N=pts.length;overlays=sc.overlays||[];SR=sc.surface_radius||1.0;showAxes=!!sc.show_axes;
     maxR=1;for(const p of pts){const m=Math.hypot(p.x,p.y,p.z);if(m>maxR)maxR=m;}
 
@@ -1052,6 +1059,7 @@ function createViewer(rootEl,opts){
     overlayKinds.forEach(k=>{if(overlayDefaultOff.has(k))overlayGroups[k].visible=false;});
 
     scalables=[pointsMesh,linesGroup,globeGroup,rulerGroup,queryGroup,chainGroup,pinGroup,...Object.values(overlayGroups)];
+    if(streamGroup)scalables.push(streamGroup); // only survives teardown under keepStream
 
     // ── Legend ───────────────────────────────────────────────────────────
     legendRows={};
@@ -1470,21 +1478,28 @@ function createViewer(rootEl,opts){
   // scene chrome (globe + overlays + stats + a palette legend) with NO inline
   // points, then stream point tiles by viewport via a TileStreamer + wire the
   // debugger rows (tune/filter/diag). Returns the streamer. Browser-validated.
+  // Chrome via rebuild with zero inline points: the globe (surface_radius),
+  // overlays (manifest.overlays), and stats panel populate; the empty
+  // pointsMesh costs nothing. The palette legend replaces the per-point one.
+  // A re-projection moves the shell and every overlay, so it redraws the
+  // chrome too, keeping the stream and the camera.
+  function showStreamChrome(manifest,reprojected){
+    rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]},
+      reprojected?{preserveCamera:true,keepStream:true}:undefined);
+    {const el=q("empty","empty");if(el)el.style.display="none";}
+    buildStreamLegend(_streamPalette);
+  }
+
   async function connectToServer(baseUrl,opts){
     opts=opts||{};
     disconnectServer();
     const source=new ServerSource(baseUrl,{cache:new TileCache(),decode:makeWorkerDecoder()});
     const manifest=await source.manifest();
     _streamFilterOff=new Set();_streamSelectedRow=null;_streamPalette=manifest.palette||[];
-    // Chrome via rebuild with zero inline points: the globe (surface_radius),
-    // overlays (manifest.overlays), and stats panel populate; the empty
-    // pointsMesh costs nothing. The palette legend replaces the per-point one.
-    rebuild({title:manifest.title,stats:manifest.stats,overlays:manifest.overlays||[],surface_radius:manifest.surface_radius||1,show_axes:false,points:[]});
+    showStreamChrome(manifest);
     // rebuild installed an InlineSource for the (empty) chrome scene; the active
     // source is the server now — set AFTER rebuild so it isn't clobbered.
     dataSource=source;
-    {const el=q("empty","empty");if(el)el.style.display="none";}
-    buildStreamLegend(_streamPalette);
     // The tile group is a scalable so the slider scales streamed tiles with the
     // rest of the scene; tiles carry server-final positions and the sink material
     // has no sphTransform, so only the group's uniform scale applies.
@@ -1522,6 +1537,7 @@ function createViewer(rootEl,opts){
         const newM=await source.reproject(serverProj);
         if(mine!==reprojSeq||streamStreamer==null)return;
         _streamPalette=newM.palette||_streamPalette;
+        showStreamChrome(newM,true);
         const pk=(newM.stats&&newM.stats.projection_kind)||serverProj;
         const pill=q("hdr-pill","hdr-pill");if(pill)pill.textContent=pk;
         if(studioProj)studioProj.value=_srv2sp[pk]||"";
@@ -1559,6 +1575,7 @@ function createViewer(rootEl,opts){
     if(_streamTimer){clearTimeout(_streamTimer);_streamTimer=null;}
     if(streamStreamer){streamStreamer.clear();streamStreamer=null;}
     if(streamGroup){scene.remove(streamGroup);disposeObject(streamGroup);const i=scalables.indexOf(streamGroup);if(i>=0)scalables.splice(i,1);streamGroup=null;}
+    if(dataSource&&dataSource.decode&&dataSource.decode.close)dataSource.decode.close();
     dataSource=null;
     _streamSelectedRow=null;_streamHoverPos=null;
     {const tr=q("tune-row","tune-row");if(tr)tr.style.display="none";}

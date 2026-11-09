@@ -116,11 +116,34 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "x" }] }, { globals: 
     await rv.connectToServer("http://srv");
     const pick = rv.window.__sqServerReproject;
     pick("UmapSphere"); pick("KernelPca");
-    const answer = (i) => held[i].res({ ok: true, json: () => Promise.resolve({ title: "t", total_points: 50, palette: [], stats: { projection_kind: held[i].kind } }) });
+    const answer = (i) => held[i].res({ ok: true, json: () => Promise.resolve({
+      title: "t", total_points: 50, palette: [], stats: { projection_kind: held[i].kind },
+      surface_radius: 2 + i, overlays: [{ kind: "centroid", pos: [0, 0, 2 + i], label: "A", color: "#ff8a65" }],
+    }) });
     answer(0); await new Promise((r) => setImmediate(r));
     ok(rv.streamStreamer.manifest.stats.projection_kind === "pca", "the superseded re-projection isn't applied");
     answer(1); await new Promise((r) => setImmediate(r));
     ok(rv.streamStreamer.manifest.stats.projection_kind === "kernel_pca", "the newest re-projection is applied");
+    ok(rv.SR === 3 && rv.overlayKinds.includes("centroid"), "the globe and overlays are redrawn for the new projection");
+    ok(rv.dataSource && rv.dataSource.base === "http://srv", "the stream survives the redraw");
+  }
+
+  // Disconnecting stops the tile-decode worker and frees its blob URL.
+  {
+    const workers = [], revoked = [];
+    let decodeFn = null;
+    function FakeWorker(url) {
+      this.url = url; this.terminated = false; workers.push(this);
+      this.postMessage = (m) => setImmediate(() => this.onmessage({ data: { id: m.id, d: decodeFn(m.buf) } }));
+      this.terminate = () => { this.terminated = true; };
+    }
+    const wv = run(VIEWER, { points: [] }, { globals: { fetch, Worker: FakeWorker, Blob: function () {},
+      URL: { createObjectURL: () => "blob:decoder", revokeObjectURL: (u) => revoked.push(u) } } });
+    decodeFn = wv.decodeTile;
+    await wv.connectToServer("http://srv");
+    ok(workers.length === 1 && wv.streamStreamer.loadedKeys().includes("base"), "tiles decode through the worker");
+    wv.disconnectServer();
+    ok(workers[0].terminated && revoked.includes("blob:decoder"), "disconnect terminates the worker and revokes its URL");
   }
 
   console.log(fails === 0 ? "\nALL PASS" : "\n" + fails + " FAILURES");

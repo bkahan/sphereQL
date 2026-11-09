@@ -60,6 +60,11 @@ history — so a warm-start prediction competes directly with sampled
 candidates. `Grid` skips the seed trial: its trial set is defined as
 the exact Cartesian enumeration of the space.
 
+`Random` and the Bayesian warmup take `projection_kinds` in turn, and
+each kind draws its knobs from its own stream derived from `seed`. A
+kind's n-th trial gets the same knobs whichever other kinds share the
+space, and the kinds' trial counts differ by at most one.
+
 Metrics implement the `QualityMetric` trait:
 
 - `TerritorialHealth` — mean territorial_factor across category pairs.

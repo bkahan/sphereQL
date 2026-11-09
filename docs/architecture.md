@@ -78,7 +78,7 @@ both also depend directly on `sphereql-core`. The Python skeleton
 explicitly if you need the Pinecone backend:
 
 ```toml
-sphereql = { version = "0.3.0", features = ["full", "pinecone"] }
+sphereql = { version = "0.4.0", features = ["full", "pinecone"] }
 ```
 
 The `qdrant` feature is available on `sphereql-vectordb` and `sphereql-python`

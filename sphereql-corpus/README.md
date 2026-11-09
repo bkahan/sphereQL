@@ -104,6 +104,6 @@ address (auto-detected) for the free polite pool. See
 This is a dev/examples support crate — it is not part of the core sphereQL
 library and sphereQL users do not need to depend on it.
 
-Part of the sphereQL workspace, currently `0.3.0`; API may change
+Part of the sphereQL workspace, currently `0.4.0`; API may change
 before 1.0. See the [main repository](https://github.com/bkahan/sphereQL)
 for full documentation, examples, and architecture overview.
