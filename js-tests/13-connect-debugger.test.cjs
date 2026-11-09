@@ -90,6 +90,39 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "x" }] }, { globals: 
   ok(vt.streamStreamer == null, "rebuild() disconnects the active stream (no zombie)");
   ok(vt.dataSource && vt.dataSource.scene && vt.dataSource.scene.points.length === 2, "rebuild() reinstalls an InlineSource for the offline scene");
 
+  // A /nearest row is server data: it must reach the neighbor list as a number,
+  // never as markup (a shared #v= link can point the viewer at any server).
+  {
+    const hostile = (url, init) => url.endsWith("/nearest")
+      ? Promise.resolve({ ok: true, json: () => Promise.resolve({ neighbors: [{ row: '1" onmouseover="alert(1)', similarity: 0.5 }] }) })
+      : fetch(url, init);
+    const hv = run(VIEWER, { points: [] }, { globals: { fetch: hostile } });
+    const list = hv.body.querySelector();
+    const lookup = hv.body.querySelector;
+    hv.body.querySelector = (sel) => (sel === "[data-info-neighbors]" ? list : lookup(sel));
+    await hv.connectToServer("http://srv");
+    await hv.selectStreamRow(7);
+    hv.body.querySelector = lookup;
+    ok(list.innerHTML.includes('data-row="NaN"') && !list.innerHTML.includes('onmouseover="'), "a hostile neighbor row can't inject markup");
+  }
+
+  // Re-projection, latest wins: a slower, older response is ignored.
+  {
+    const held = [];
+    const deferred = (url, init) => url.endsWith("/reproject")
+      ? new Promise((res) => held.push({ kind: JSON.parse(init.body).projection, res }))
+      : fetch(url, init);
+    const rv = run(VIEWER, { points: [] }, { globals: { fetch: deferred } });
+    await rv.connectToServer("http://srv");
+    const pick = rv.window.__sqServerReproject;
+    pick("UmapSphere"); pick("KernelPca");
+    const answer = (i) => held[i].res({ ok: true, json: () => Promise.resolve({ title: "t", total_points: 50, palette: [], stats: { projection_kind: held[i].kind } }) });
+    answer(0); await new Promise((r) => setImmediate(r));
+    ok(rv.streamStreamer.manifest.stats.projection_kind === "pca", "the superseded re-projection isn't applied");
+    answer(1); await new Promise((r) => setImmediate(r));
+    ok(rv.streamStreamer.manifest.stats.projection_kind === "kernel_pca", "the newest re-projection is applied");
+  }
+
   console.log(fails === 0 ? "\nALL PASS" : "\n" + fails + " FAILURES");
   process.exit(fails === 0 ? 0 : 1);
 })();

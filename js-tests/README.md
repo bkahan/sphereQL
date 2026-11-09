@@ -32,15 +32,19 @@ Coverage:
 | `07-worker` | worker protocol: queue-before-ready, lingua/corpus/query/load dispatch, errors |
 | `08-tile-decode` | SQT1 binary tile `decodeTile` vs a **cross-language golden** (the exact bytes `tile.rs` `golden_bytes_match` asserts), incl. u16/u32 LE + error paths |
 | `09-datasource` | `InlineSource` manifest/tiles/pointMeta/nearest + boot routes through it unchanged |
-| `10-server-source` | `ServerSource` URL/method/body shaping vs the server routes, tile decode over a mock fetch, `TileCache` LRU + worker-decoder fallback |
+| `10-server-source` | `ServerSource` URL/method/body shaping vs the server routes, tile decode over a mock fetch, `TileCache` LRU + worker-decoder fallback, cache keys scoped to server + manifest (no cross-server or post-reproject hits), IndexedDB holding one scene |
 | `11-transform` | GPU transform parity: `curPos` matches the spread/radial/morph formula, `applyTransform` pushes the uniforms the GLSL reads (so CPU mirror + GPU agree), and the pick-id codec round-trips |
-| `12-tile-streamer` | streaming orchestration: `TileStreamer` camera→request mapping, base+detail working set, dedup, LRU eviction, load cancellation; `tileMeshSink` per-tile geometry + global-row pick ids; `safeColor` palette-injection guard |
-| `13-connect-debugger` | streaming-debugger flow against a mock fetch: `connectToServer` fetches manifest + base tile + diagnostics and installs a live streamer; `selectStreamRow` (inspect) issues /points + /nearest; `renderDiagnostics` runs clean (incl. null + an XSS-warning regression); `disconnectServer` clears the streamer |
-| `14-session-export` | `shareLink` / streaming `applyViewHash` round-trip (camera offline; camera + server URL + filter + selRow when streaming), validating every decoded field |
+| `12-tile-streamer` | streaming orchestration: `TileStreamer` camera→request mapping, base+detail working set, dedup, LRU eviction, load cancellation (incl. a response that lands after a restart); `tileMeshSink` per-tile geometry + global-row pick ids; `safeColor` palette-injection guard |
+| `13-connect-debugger` | streaming-debugger flow against a mock fetch: `connectToServer` fetches manifest + base tile + diagnostics and installs a live streamer; `selectStreamRow` (inspect) issues /points + /nearest; `renderDiagnostics` runs clean (incl. null + an XSS-warning regression); `disconnectServer` clears the streamer; a hostile `/nearest` row can't inject markup; overlapping re-projections apply only the newest |
+| `14-session-export` | `shareLink` / streaming `applyViewHash` round-trip (camera offline; camera + server URL + filter + selRow when streaming), validating every decoded field; a link to another origin's server waits for the in-page Connect/Cancel prompt, a same-origin one connects straight away |
 
 `01` has an optional integration check that round-trips a real emitted page —
 set `SPHEREQL_EMIT_HTML` to a file produced by `visualize_corpus` to enable it;
 it is skipped (not failed) otherwise so CI needs no Rust artifacts.
+
+A suite that never reaches its closing `process.exit(...)` (say, awaiting a
+promise that never settles) fails: `harness.cjs` sets a failing exit code up
+front.
 
 These are logic tests, not a browser. A manual WebGL smoke-test of the studio
 (`sphereql-wasm/studio/build.sh` → serve → paste/query/morph/compare) is still

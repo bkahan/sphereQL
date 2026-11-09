@@ -8,12 +8,23 @@
 const fs = require("fs");
 const vm = require("vm");
 
+// Every suite ends with an explicit process.exit(fails ? 1 : 0). One that
+// stalls on a promise that never settles would otherwise exit 0 and pass.
+process.exitCode = 1;
+
 function makeEl() {
   const e = {
     style: { setProperty() {}, removeProperty() {}, display: "", left: "", top: "", fontSize: "", cursor: "", background: "", color: "", width: "", height: "" },
     dataset: {}, files: [], value: "", checked: false, textContent: "", title: "", _html: "",
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
-    addEventListener() {}, removeEventListener() {}, appendChild(c) { return c; }, removeChild(c) { return c; }, click() {},
+    // appendChild/remove keep a real child list and addEventListener records
+    // handlers, so a suite can find an element the viewer added and click it.
+    children: [], parentNode: null, _on: {},
+    addEventListener(t, f) { (this._on[t] || (this._on[t] = [])).push(f); }, removeEventListener() {},
+    appendChild(c) { this.children.push(c); c.parentNode = this; return c; }, removeChild(c) { return c; },
+    remove() { if (this.parentNode) { const k = this.parentNode.children; k.splice(k.indexOf(this), 1); this.parentNode = null; } },
+    fire(t) { (this._on[t] || []).forEach((f) => f({ target: this })); },
+    click() {},
     // Every element resolves selectors to a fresh stub element so viewer.js's
     // q(attr,id) and chained rootEl.querySelector(...) calls never hit undefined.
     querySelector() { return makeEl(); }, querySelectorAll() { return []; },
@@ -115,7 +126,7 @@ const THREE = {
 function run(viewerPath, D, opts) {
   const src = fs.readFileSync(viewerPath, "utf8");
   downloads = [];
-  const location = { hash: (opts && opts.hash) || "", href: "http://x/" };
+  const location = { hash: (opts && opts.hash) || "", href: "http://x/", origin: "http://x", protocol: "http:" };
   const winListeners = {};
   const parentPosts = [];
   let exposed = null; // filled by opts.expose via the boot-capture shim
@@ -202,6 +213,8 @@ function run(viewerPath, D, opts) {
     (winListeners[type] || []).forEach((f) => f(ev));
   };
   ctx.__vt.parentStub = sandbox.parent;
+  ctx.__vt.body = document.body;
+  ctx.__vt.window = sandbox.window;
   ctx.__vt.fireCtrlChange = () => { const c = ctx.__vt.controls; (c.__l && c.__l.change || []).forEach((f) => f()); };
   return ctx.__vt;
 }

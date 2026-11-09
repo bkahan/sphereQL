@@ -665,8 +665,10 @@ The seam is the `DataSource` interface; `InlineSource` keeps the offline path
 identical so the two never diverge in render behavior.
 
 **Binary tiles (SQT1), not JSON.** A viewport of points is 20 bytes each, decoded
-off-thread, cached in memory + IndexedDB. JSON per-tile would dominate the wire
-and the main-thread parse budget.
+off-thread, cached in memory + IndexedDB. Cache keys carry the server URL and a
+fingerprint of the manifest, so a reload, a re-projection, or another corpus
+never reuses a tile from a different scene, and IndexedDB holds one scene at a
+time. JSON per-tile would dominate the wire and the main-thread parse budget.
 
 **Deterministic decimation everywhere.** Both the offline builder
 (`stratified_sample`) and the server tiler (`stratified`) use the same

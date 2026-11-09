@@ -153,6 +153,32 @@ function mockSource() {
   ok(vt.safeColor("red;background:url(http://evil/x)") === "#90a4ae", "CSS injection falls back to a safe default");
   ok(vt.safeColor(undefined) === "#90a4ae" && vt.safeColor("</span>") === "#90a4ae", "non-color input falls back");
 
+  // A response that lands after its entry was cleared AND re-requested (a
+  // re-projection or filter change) belongs to the old view: dropped, not added.
+  {
+    const pending = [], sink = mockSink();
+    const src = {
+      manifest: async () => ({ total_points: 10, surface_radius: 1, lod: {}, palette: [], stats: {}, overlays: [] }),
+      tiles: (req) => new Promise((res) => pending.push({ req, res })),
+    };
+    const s = new vt.TileStreamer(src, sink, {});
+    const oldBase = s._ensureBase();
+    s.clear(); s.tiles = new Map();
+    const newBase = s._ensureBase();
+    pending[0].res(tile([1])); await oldBase;
+    ok(!sink.tiles.has("base"), "a base tile from before the restart is dropped");
+    pending[1].res(tile([2])); await newBase;
+    ok(sink.tiles.get("base").rows[0] === 2, "the restarted base tile is the one shown");
+
+    const cam = { theta: 0, phi: 1.5, dist: 1.2 };
+    const oldDetail = s.update(cam);
+    s.clear(); s.tiles = new Map();
+    const newDetail = s.update(cam);
+    pending[2].res(tile([10])); ok((await oldDetail) === null, "a stale detail tile is dropped");
+    pending[3].res(tile([20])); const key = await newDetail;
+    ok(sink.tiles.get(key).rows[0] === 20, "the re-requested detail tile is the one shown");
+  }
+
   console.log(fails === 0 ? "\nALL PASS" : "\n" + fails + " FAILURES");
   process.exit(fails === 0 ? 0 : 1);
 })();

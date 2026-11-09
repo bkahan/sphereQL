@@ -38,6 +38,19 @@ function makeFetch(calls) {
   };
 }
 
+// The newest "Connect?" bar the viewer added, answered with `label`.
+function clickConnectBar(vt, label) {
+  const bars = vt.body.children.filter((e) => e.className === "sq-connect-ask");
+  const bar = bars[bars.length - 1];
+  const button = bar && bar.children.find((e) => e.textContent === label);
+  if (button) button.fire("click");
+  return bar;
+}
+
+const streamingHash = (server) => "#v=" + Buffer.from(encodeURIComponent(JSON.stringify({
+  server, cam: [4, 5, 6, 0.4, 0.5, 0.6], set: {}, tools: {},
+}))).toString("base64");
+
 (async () => {
   // ── Test 1: offline round-trip ────────────────────────────────────────────
   // shareLink encodes cam; applyViewHash restores it. No server involved.
@@ -113,6 +126,10 @@ function makeFetch(calls) {
     // the second call below is what we await.
     const p = vt.applyViewHash();
     ok(p != null && typeof p.then === "function", "applyViewHash returns a thenable (Promise) for streaming session");
+    // http://srv2 isn't the page's origin (http://x), so it waits for the user.
+    await new Promise((r) => setImmediate(r));
+    ok(!calls.some((c) => c.url.endsWith("/manifest")), "foreign server: nothing fetched before the user confirms");
+    clickConnectBar(vt, "Connect");
     await p;
 
     ok(!!vt.streamStreamer, "streaming session: streamer is live after applyViewHash");
@@ -131,6 +148,29 @@ function makeFetch(calls) {
     // selRow 7 was restored — selectStreamRow was called which fetches /points.
     ok(calls.some((c) => c.url.endsWith("/points")), "streaming session: selRow restored via selectStreamRow");
     ok(vt._streamSelectedRow === 7, "streaming session: _streamSelectedRow set to 7");
+  }
+
+  // ── Test 3b: declining the prompt for a foreign server connects to nothing ──
+  {
+    const calls = [];
+    const vt = run(VIEWER, { points: [] }, { globals: { fetch: makeFetch(calls) }, hash: streamingHash("http://evil.example") });
+    const p = vt.applyViewHash();
+    const bar = clickConnectBar(vt, "Cancel");
+    ok(bar && bar.children[0].textContent.includes("http://evil.example"), "the prompt names the server");
+    ok(!(await p), "Cancel resolves without connecting");
+    ok(!calls.some((c) => c.url.indexOf("evil.example") >= 0), "Cancel: no request reaches the foreign server");
+    ok(!vt.streamStreamer, "Cancel: no stream");
+    ok(!vt.body.children.includes(bar), "the prompt is removed once answered");
+  }
+
+  // ── Test 3c: a link to the page's own origin connects without asking ──────
+  {
+    const calls = [];
+    const vt = run(VIEWER, { points: [] }, { globals: { fetch: makeFetch(calls) }, hash: streamingHash("http://x") });
+    const before = vt.body.children.length;
+    await vt.applyViewHash();
+    ok(vt.body.children.length === before, "same origin: no prompt");
+    ok(calls.some((c) => c.url === "http://x/manifest") && !!vt.streamStreamer, "same origin: connected straight away");
   }
 
   // ── Test 4: applyViewHash without server is synchronous (no promise) ──────

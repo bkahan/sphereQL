@@ -239,22 +239,46 @@ class InlineSource{
   }
 }
 
-// Bounded in-memory (LRU) + optional IndexedDB cache for fetched tile blobs,
-// keyed by the tile request. IndexedDB persists across reloads when present
-// (browser); the memory tier alone suffices for tests and locked-down embeds
-// (pass `indexedDB:null` to disable the persistent tier).
+// 53-bit string hash (cyrb53). Fingerprints a manifest for tile-cache keys.
+function hash53(str){
+  let h1=0xdeadbeef,h2=0x41c6ce57;
+  for(let i=0;i<str.length;i++){const ch=str.charCodeAt(i);h1=Math.imul(h1^ch,2654435761);h2=Math.imul(h2^ch,1597334677);}
+  h1=Math.imul(h1^(h1>>>16),2246822507);h1^=Math.imul(h2^(h2>>>13),3266489909);
+  h2=Math.imul(h2^(h2>>>16),2246822507);h2^=Math.imul(h1^(h1>>>13),3266489909);
+  return(4294967296*(2097151&h2)+(h1>>>0)).toString(36);
+}
+
+// Bounded in-memory (LRU) + optional IndexedDB cache for fetched tile blobs.
+// IndexedDB persists across reloads when present (browser); the memory tier
+// alone suffices for tests and locked-down embeds (pass `indexedDB:null` to
+// disable the persistent tier). `scope(s)` binds the cache to one scene: the
+// other scene's entries are dropped, so IndexedDB never holds more than one.
 function idbReq(req){return new Promise((res,rej)=>{req.onsuccess=()=>res(req.result);req.onerror=()=>rej(req.error);});}
+const SCOPE_KEY="\u0000scope";
 class TileCache{
   constructor(opts){opts=opts||{};this.max=opts.max||256;this.mem=new Map();this.dbName=opts.dbName||"sphereql-tiles";this.store="tiles";
-    this._idb=opts.indexedDB!==undefined?opts.indexedDB:(typeof indexedDB!=="undefined"?indexedDB:null);this._dbp=null;}
+    this._idb=opts.indexedDB!==undefined?opts.indexedDB:(typeof indexedDB!=="undefined"?indexedDB:null);this._dbp=null;this._scope=null;this._scoped=null;}
   _touch(key,val){this.mem.delete(key);this.mem.set(key,val);while(this.mem.size>this.max)this.mem.delete(this.mem.keys().next().value);}
+  scope(s){
+    if(s===this._scope)return this._scoped;
+    this._scope=s;this.mem.clear();
+    this._scoped=this._open().then(async db=>{
+      if(!db)return;
+      try{
+        const os=()=>db.transaction(this.store,"readwrite").objectStore(this.store);
+        if(await idbReq(os().get(SCOPE_KEY))===s)return;
+        await idbReq(os().clear());await idbReq(os().put(s,SCOPE_KEY));
+      }catch(e){}
+    });
+    return this._scoped;
+  }
   async get(key){
     if(this.mem.has(key)){const v=this.mem.get(key);this._touch(key,v);return v;}
-    const db=await this._open();if(!db)return null;
+    await this._scoped;const db=await this._open();if(!db)return null;
     try{const v=await idbReq(db.transaction(this.store,"readonly").objectStore(this.store).get(key));if(v!=null){this._touch(key,v);return v;}}catch(e){}
     return null;
   }
-  async put(key,buf){this._touch(key,buf);const db=await this._open();if(!db)return;
+  async put(key,buf){this._touch(key,buf);await this._scoped;const db=await this._open();if(!db)return;
     try{db.transaction(this.store,"readwrite").objectStore(this.store).put(buf,key);}catch(e){}}
   _open(){
     if(!this._idb)return Promise.resolve(null);
@@ -275,18 +299,20 @@ class TileCache{
 class ServerSource{
   constructor(baseUrl,opts){opts=opts||{};this.base=String(baseUrl||"").replace(/\/+$/,"");
     this._fetch=opts.fetch||(typeof fetch!=="undefined"?fetch.bind(typeof globalThis!=="undefined"?globalThis:null):null);
-    this.cache=opts.cache||null;this.decode=opts.decode||decodeTile;this._gen=0;}
-  async manifest(){return this._json("/manifest");}
+    this.cache=opts.cache||null;this.decode=opts.decode||decodeTile;this._scene="";}
+  async manifest(){return this._adopt(await this._json("/manifest"));}
   async categoryStats(){return this._json("/category_stats");}
   async diagnostics(){return this._json("/diagnostics");}
   // Live "tune": ask the server to re-project the corpus with a different kind;
-  // returns the fresh manifest. Bumping `_gen` busts the tile-cache key (the old
-  // positions are stale), so re-streaming after this never serves a pre-reproject
-  // tile from cache.
-  async reproject(projection){const m=await this._post("/reproject",{projection});this._gen++;return m;}
+  // returns the fresh manifest.
+  async reproject(projection){return this._adopt(await this._post("/reproject",{projection}));}
+  // Tile-cache keys carry the server and a fingerprint of the manifest they
+  // were fetched under, so a reload, a re-projection, or another server or
+  // corpus never gets tiles cached for a different scene.
+  _adopt(m){this._scene=this.base+"|"+hash53(JSON.stringify(m));if(this.cache&&this.cache.scope)this.cache.scope(this._scene);return m;}
   async tiles(params){
     const urlQ=tileQuery(params);
-    const key="/tiles?"+urlQ+(this._gen?"@"+this._gen:"");
+    const key=this._scene+"|/tiles?"+urlQ;
     let buf=this.cache?await this.cache.get(key):null;
     if(buf==null){const res=await this._fetch(this.base+"/tiles?"+urlQ);if(!res.ok)throw new Error("tiles → "+res.status);buf=await res.arrayBuffer();if(this.cache)await this.cache.put(key,buf);}
     // Decode a throwaway copy when caching: a worker-backed `decode` transfers
@@ -299,6 +325,35 @@ class ServerSource{
   async nearest(q,k){const body={k:k||10};if(q&&q.row!=null)body.row=q.row;if(q&&Array.isArray(q.vector))body.vector=q.vector;return(await this._post("/nearest",body)).neighbors||[];}
   async _json(path){const res=await this._fetch(this.base+path);if(!res.ok)throw new Error(path+" → "+res.status);return res.json();}
   async _post(path,body){const res=await this._fetch(this.base+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});if(!res.ok)throw new Error(path+" → "+res.status);return res.json();}
+}
+
+// A #v= or #server= link can name any server, and whatever that server sends
+// reaches this page. A link to the page's own origin connects straight away;
+// any other server waits for the user to confirm in an in-page bar. (The
+// server's own injected auto-connect calls connectToServer directly.)
+function sameOrigin(url){
+  const s=String(url||"").trim();
+  const m=/^([a-z][a-z0-9+.-]*:)?\/\/([^/?#]*)/i.exec(s);
+  if(!m)return !/^[a-z][a-z0-9+.-]*:/i.test(s); // a relative path stays on this origin
+  if(typeof location==="undefined")return false;
+  return((m[1]||location.protocol)+"//"+m[2]).toLowerCase()===String(location.origin).toLowerCase();
+}
+function askToConnect(url){
+  if(sameOrigin(url))return Promise.resolve(true);
+  if(typeof document==="undefined"||!document.body)return Promise.resolve(false);
+  return new Promise(resolve=>{
+    const bar=document.createElement("div");bar.className="sq-connect-ask";
+    bar.style.cssText="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;gap:10px;align-items:center;max-width:90vw;padding:10px 14px;border-radius:8px;border:1px solid #3a4152;background:#1b1f2a;color:#e6e9ef;font:13px/1.4 system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)";
+    const msg=document.createElement("span");msg.style.overflowWrap="anywhere";
+    msg.textContent="This link streams from "+String(url).slice(0,200)+". Connect?"; // textContent: the URL is foreign
+    bar.appendChild(msg);
+    for(const[label,ok]of[["Connect",true],["Cancel",false]]){
+      const b=document.createElement("button");b.textContent=label;
+      b.addEventListener("click",()=>{bar.remove();resolve(ok);});
+      bar.appendChild(b);
+    }
+    document.body.appendChild(bar);
+  });
 }
 
 // Off-thread tile decode: a tiny Worker built from inlined source (so the file
@@ -356,9 +411,12 @@ class TileStreamer{
   }
   async _ensureBase(){
     if(this.tiles.has("base"))return;
-    this.tiles.set("base",{key:"base",base:true,state:"loading",used:this._clock++});
+    const t={key:"base",base:true,state:"loading",used:this._clock++};
+    this.tiles.set("base",t);
     const data=await this.source.tiles({half_angle:Math.PI,budget:this.baseBudget,lod:0,...this._filterParams()});
-    const t=this.tiles.get("base");if(!t)return; // cleared while loading
+    // Cleared while loading, or cleared and re-requested (a re-projection or
+    // filter change): this response belongs to the old view, so drop it.
+    if(this.tiles.get("base")!==t)return;
     t.state="loaded";t.data=data;this.sink.addTile("base",data);
   }
   // Camera distance → LOD: near the shell = finest, far = coarsest.
@@ -386,11 +444,11 @@ class TileStreamer{
     const req=this.requestFor(cam),key=this.keyFor(req);
     const existing=this.tiles.get(key);
     if(existing){existing.used=this._clock++;return key;}
-    this.tiles.set(key,{key,base:false,state:"loading",used:this._clock++});
+    const t={key,base:false,state:"loading",used:this._clock++};
+    this.tiles.set(key,t);
     let data;
-    try{data=await this.source.tiles(req);}catch(e){this.tiles.delete(key);return null;}
-    const t=this.tiles.get(key);
-    if(!t)return null; // evicted / cleared while in flight → drop
+    try{data=await this.source.tiles(req);}catch(e){if(this.tiles.get(key)===t)this.tiles.delete(key);return null;}
+    if(this.tiles.get(key)!==t)return null; // evicted, cleared or re-requested while in flight → drop
     t.state="loaded";t.data=data;this.sink.addTile(key,data);
     this._evict();
     return key;
@@ -1373,7 +1431,7 @@ function createViewer(rootEl,opts){
       const rows=nbrs.map(h=>h.row),lookup={};
       try{for(const m of await src.pointMeta(rows))lookup[m.row]=m;}catch(err){/* labels best-effort */}
       nb.innerHTML=nbrs.map(h=>{const m=lookup[h.row],c=m?(catColor[m.category]||"#5cc8ff"):"#5cc8ff";
-        return `<div class="nb" data-row="${h.row}" style="background:${c}22;border-left:2px solid ${c}"><span>${escHtml(m?(m.label||("#"+h.row)):("#"+h.row))}</span><span class="dist">${(+h.similarity).toFixed(3)}</span></div>`;}).join("");
+        return `<div class="nb" data-row="${+h.row}" style="background:${c}22;border-left:2px solid ${c}"><span>${escHtml(m?(m.label||("#"+h.row)):("#"+h.row))}</span><span class="dist">${(+h.similarity).toFixed(3)}</span></div>`;}).join("");
       nb.querySelectorAll(".nb").forEach(el=>el.addEventListener("click",()=>selectStreamRow(parseInt(el.dataset.row)),sig));
     }
     const head=q("info-nb-head","info-nb-head");if(head)head.textContent="Nearest · cosine";
@@ -1454,9 +1512,15 @@ function createViewer(rootEl,opts){
     const _srv2sp={pca:"",umap_sphere:"UmapSphere",laplacian:"LaplacianEigenmap",kernel_pca:"KernelPca"};
     const tune=q("tune-proj","tune-proj");
     const studioProj=(typeof document!=="undefined")?document.getElementById("studio-proj"):null; // studio chrome lives outside rootEl
+    // The server runs one re-projection at a time and answers a request that
+    // was superseded while waiting with 409, so only the newest pick matters
+    // here: any older response (or its 409) is ignored.
+    let reprojSeq=0;
     const doReproject=async serverProj=>{
+      const mine=++reprojSeq;
       try{
         const newM=await source.reproject(serverProj);
+        if(mine!==reprojSeq||streamStreamer==null)return;
         _streamPalette=newM.palette||_streamPalette;
         const pk=(newM.stats&&newM.stats.projection_kind)||serverProj;
         const pill=q("hdr-pill","hdr-pill");if(pill)pill.textContent=pk;
@@ -1468,7 +1532,7 @@ function createViewer(rootEl,opts){
         await streamStreamer.startWith(newM); // re-stream from the new projection
         streamStreamer.update(camToReq());
         loadDiagnostics();
-      }catch(err){console.warn("SphereQL: reproject failed",err);}
+      }catch(err){if(mine===reprojSeq)console.warn("SphereQL: reproject failed",err);}
     };
     if(tune)tune.addEventListener("change",()=>doReproject(tune.value),sig);
     // studio.js:96 delegates its projection change here when connected.
@@ -1686,10 +1750,11 @@ function createViewer(rootEl,opts){
       if(state.tools&&typeof state.tools==="object"&&state.tools.ruler)setRuler(true);
     };
     // ── Streaming session ──────────────────────────────────────────────────
+    // A server on another origin needs the user's OK first (askToConnect).
     // connectToServer() runs rebuild()→frameCamera() internally, so cam/filter/
     // selRow are applied AFTER it resolves (otherwise frameCamera overwrites cam).
     if(typeof state.server==="string"&&state.server){
-      return connectToServer(state.server).then(()=>{
+      return askToConnect(state.server).then(ok=>ok&&connectToServer(state.server).then(()=>{
         if(!aniRunning)return;              // disposed mid-connect → no-op
         if(!streamStreamer)return;          // connect succeeded but no live stream
         restoreSettings();
@@ -1712,7 +1777,7 @@ function createViewer(rootEl,opts){
         if(state.selRow!=null&&Number.isInteger(state.selRow)&&streamStreamer){
           selectStreamRow(state.selRow);
         }
-      });
+      }));
     }
     // ── Offline path (synchronous: settings + camera) ──────────────────────
     restoreSettings();
@@ -2022,10 +2087,12 @@ if(typeof document!=="undefined"&&typeof D!=="undefined"){
   // rejection (e.g. a shared hash pointing at a dead server) so it can't surface
   // as an unhandled rejection. No-op for the synchronous offline / no-hash path.
   Promise.resolve(viewer.applyViewHash()).catch(err=>console.warn("SphereQL: view-hash restore failed",err));
-  // #server=<url> boots straight into streaming (offline-by-default: only a
-  // #server= or #v= streaming hash makes a network request).
+  // #server=<url> boots into streaming (offline-by-default: only a #server= or
+  // #v= streaming hash makes a network request), after askToConnect's OK for a
+  // server on another origin.
   {
     const m=(location.hash||"").match(/[#&]server=([^&]+)/);
-    if(m){viewer.connectToServer(decodeURIComponent(m[1])).catch(e=>console.warn("SphereQL: #server connect failed",e));}
+    if(m){const url=decodeURIComponent(m[1]);
+      askToConnect(url).then(ok=>ok&&viewer.connectToServer(url)).catch(e=>console.warn("SphereQL: #server connect failed",e));}
   }
 }
