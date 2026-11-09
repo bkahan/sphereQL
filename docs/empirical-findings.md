@@ -4,7 +4,10 @@ The right projection is corpus-dependent. The numbers below are a
 three-way head-to-head — PCA vs Laplacian eigenmap vs UMAP-on-sphere —
 measured **2026-06-12** with the current `BridgeDiversity`-weighted
 composites, a budget-24 random search per metric, on both corpora. Each
-cell is the *best* score that projection reached across its trials:
+cell is the *best* score that projection reached across its trials.
+These runs used the 0.3.0 tuner, whose single shared RNG left each
+kind's trial count and knob draws to chance; the same seeds now pick
+different configs (see the CHANGELOG).
 
 | Corpus | Metric | PCA | Laplacian | UMAP | Winner |
 |---|---|---|---|---|---|

@@ -115,7 +115,7 @@ pub fn decode_tile(bytes: &[u8]) -> Result<Vec<TilePoint>, TileError> {
         });
     }
     let mut pts = Vec::with_capacity(count);
-    for r in body.chunks_exact(RECORD_LEN) {
+    for r in body.as_chunks::<RECORD_LEN>().0 {
         pts.push(TilePoint {
             x: f32::from_le_bytes([r[0], r[1], r[2], r[3]]),
             y: f32::from_le_bytes([r[4], r[5], r[6], r[7]]),

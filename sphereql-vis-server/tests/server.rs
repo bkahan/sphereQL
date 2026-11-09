@@ -4,37 +4,32 @@
 //! needed) and exercises one endpoint through the full extract → handle →
 //! serialize path.
 
-use std::sync::{Arc, RwLock};
-
 use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode, header};
+use axum::http::{HeaderValue, Request, StatusCode, header};
 use serde_json::{Value, json};
 use sphereql_corpus::CorpusId;
 use sphereql_embed::ProjectionKind;
 use sphereql_vis::{Manifest, decode_tile};
-use sphereql_vis_server::{AppState, build_router};
+use sphereql_vis_server::{AppState, Shared, build_router};
 use tower::ServiceExt; // for `oneshot`
 
 const BODY_CAP: usize = 64 * 1024 * 1024;
 
+fn stress() -> AppState {
+    AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds")
+}
+
 fn router() -> axum::Router {
-    let state =
-        AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
-    build_router(Arc::new(RwLock::new(Arc::new(state))), None)
+    build_router(Shared::new(stress()), None, &[])
 }
 
 /// Build the router and also surface the corpus's category names + embedding
 /// dim, so the trace tests can address real categories / sized vectors.
 fn router_with_meta() -> (Vec<String>, usize, axum::Router) {
-    let state =
-        AppState::from_corpus(CorpusId::Stress, ProjectionKind::Pca).expect("stress builds");
+    let state = stress();
     let names = state.cat_names.clone();
     let dim = state.dim;
-    (
-        names,
-        dim,
-        build_router(Arc::new(RwLock::new(Arc::new(state))), None),
-    )
+    (names, dim, build_router(Shared::new(state), None, &[]))
 }
 
 async fn body_bytes(resp: axum::response::Response) -> Vec<u8> {
@@ -374,6 +369,83 @@ async fn reproject_unknown_kind_is_a_400() {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn overlapping_reprojects_run_one_at_a_time_and_the_latest_wins() {
+    let app = router();
+    let reproject =
+        |kind: &str| post_json(app.clone(), "/reproject", json!({ "projection": kind }));
+    // join! polls in order: the first request takes the turn and starts
+    // building, and the other two queue behind it.
+    let (first, middle, last) = tokio::join!(
+        reproject("umap_sphere"),
+        reproject("laplacian"),
+        reproject("kernel_pca")
+    );
+    assert_eq!(
+        first.status(),
+        StatusCode::OK,
+        "already building, so it finishes"
+    );
+    assert_eq!(
+        middle.status(),
+        StatusCode::CONFLICT,
+        "superseded while waiting"
+    );
+    assert_eq!(last.status(), StatusCode::OK);
+    let m: Value = serde_json::from_slice(&body_bytes(get(app, "/manifest").await).await).unwrap();
+    assert_eq!(m["stats"]["projection_kind"], "kernel_pca");
+}
+
+async fn request_from(
+    app: axum::Router,
+    method: &str,
+    uri: &str,
+    origin: &str,
+) -> axum::response::Response {
+    let mut req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::ORIGIN, origin);
+    if method == "OPTIONS" {
+        req = req
+            .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+            .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type");
+    }
+    app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap()
+}
+
+fn allow_origin(resp: &axum::response::Response) -> Option<&HeaderValue> {
+    resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+}
+
+#[tokio::test]
+async fn other_origins_get_no_cors_headers_by_default() {
+    let resp = request_from(router(), "GET", "/manifest", "https://evil.example").await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(
+        allow_origin(&resp).is_none(),
+        "a foreign page can't read the response"
+    );
+    let preflight = request_from(router(), "OPTIONS", "/reproject", "https://evil.example").await;
+    assert!(allow_origin(&preflight).is_none(), "nor send a JSON POST");
+}
+
+#[tokio::test]
+async fn allowed_origins_and_only_those_get_cors_headers() {
+    let viewer = "http://localhost:5173";
+    let app = build_router(
+        Shared::new(stress()),
+        None,
+        &[HeaderValue::from_static(viewer)],
+    );
+    let resp = request_from(app.clone(), "GET", "/manifest", viewer).await;
+    assert_eq!(allow_origin(&resp).unwrap(), viewer);
+    let preflight = request_from(app.clone(), "OPTIONS", "/reproject", viewer).await;
+    assert_eq!(allow_origin(&preflight).unwrap(), viewer);
+    let other = request_from(app, "GET", "/manifest", "https://evil.example").await;
+    assert!(allow_origin(&other).is_none());
 }
 
 #[tokio::test]

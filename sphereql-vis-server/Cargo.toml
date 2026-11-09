@@ -5,17 +5,18 @@ edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
+publish = false
 keywords = ["visualization", "embeddings", "axum", "streaming", "server"]
 categories = ["visualization", "web-programming::http-server"]
 
 [dependencies]
-sphereql-core = { path = "../sphereql-core", version = "0.3.0" }
-sphereql-embed = { path = "../sphereql-embed", version = "0.3.0" }
-sphereql-index = { path = "../sphereql-index", version = "0.3.0" }
-sphereql-vis = { path = "../sphereql-vis", version = "0.3.0" }
-sphereql-corpus = { path = "../sphereql-corpus", version = "0.3.0" }
+sphereql-core = { path = "../sphereql-core", version = "0.4.0" }
+sphereql-embed = { path = "../sphereql-embed", version = "0.4.0" }
+sphereql-index = { path = "../sphereql-index", version = "0.4.0" }
+sphereql-vis = { path = "../sphereql-vis", version = "0.4.0" }
+sphereql-corpus = { path = "../sphereql-corpus", version = "0.4.0" }
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync"] }
 tower-http = { version = "0.6", features = ["cors", "limit", "catch-panic", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

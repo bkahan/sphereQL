@@ -743,6 +743,8 @@ pub struct ConceptGlob {
 pub struct GlobResult {
     pub globs: Vec<ConceptGlob>,
     pub k: usize,
+    /// Mean silhouette of the chosen clustering. Above 2,000 points it is
+    /// estimated from an evenly strided sample of 2,000.
     pub silhouette: f64,
 }
 
@@ -852,48 +854,58 @@ fn kmeans_3d(points: &[[f64; 3]], k: usize) -> (Vec<usize>, f64) {
     (assignments, sil)
 }
 
+/// Above this many points the silhouette is scored on an evenly strided sample
+/// of this size. The exact score is quadratic in n, so at 500k points every
+/// candidate k would take hours.
+const SILHOUETTE_SAMPLE: usize = 2_000;
+
+/// Mean silhouette of a clustering, estimated from a strided sample once there
+/// are more than [`SILHOUETTE_SAMPLE`] points.
 fn silhouette_score(points: &[[f64; 3]], assignments: &[usize], k: usize) -> f64 {
+    let n = points.len();
+    if n <= SILHOUETTE_SAMPLE {
+        return exact_silhouette(points, assignments, k);
+    }
+    let rows: Vec<usize> = (0..SILHOUETTE_SAMPLE)
+        .map(|i| i * n / SILHOUETTE_SAMPLE)
+        .collect();
+    let sample: Vec<[f64; 3]> = rows.iter().map(|&i| points[i]).collect();
+    let labels: Vec<usize> = rows.iter().map(|&i| assignments[i]).collect();
+    exact_silhouette(&sample, &labels, k)
+}
+
+/// One pass over the other points per point, accumulating every cluster's
+/// distance sum at once: O(n²) rather than O(k·n²).
+fn exact_silhouette(points: &[[f64; 3]], assignments: &[usize], k: usize) -> f64 {
     let n = points.len();
     if n <= 1 || k <= 1 {
         return 0.0;
     }
 
+    let mut sums = vec![0.0f64; k];
+    let mut counts = vec![0usize; k];
     let mut total = 0.0;
     for i in 0..n {
-        let ci = assignments[i];
-
-        // a(i): mean angular dist to same-cluster members
-        let mut a_sum = 0.0;
-        let mut a_cnt = 0;
+        sums.fill(0.0);
+        counts.fill(0);
         for j in 0..n {
-            if j != i && assignments[j] == ci {
-                a_sum += angular_dist3(&points[i], &points[j]);
-                a_cnt += 1;
+            if j != i {
+                let c = assignments[j];
+                sums[c] += angular_dist3(&points[i], &points[j]);
+                counts[c] += 1;
             }
         }
-        let a = if a_cnt > 0 { a_sum / a_cnt as f64 } else { 0.0 };
+        let own = assignments[i];
+        let mean = |c: usize| sums[c] / counts[c] as f64;
 
-        // b(i): min mean angular dist to any other cluster
-        let mut b = f64::MAX;
-        for ck in 0..k {
-            if ck == ci {
-                continue;
-            }
-            let mut b_sum = 0.0;
-            let mut b_cnt = 0;
-            for j in 0..n {
-                if assignments[j] == ck {
-                    b_sum += angular_dist3(&points[i], &points[j]);
-                    b_cnt += 1;
-                }
-            }
-            if b_cnt > 0 {
-                b = b.min(b_sum / b_cnt as f64);
-            }
-        }
-        if b == f64::MAX {
-            b = 0.0;
-        }
+        // a(i): mean angular distance to the rest of its own cluster.
+        let a = if counts[own] > 0 { mean(own) } else { 0.0 };
+        // b(i): the smallest mean distance to any other non-empty cluster.
+        let b = (0..k)
+            .filter(|&c| c != own && counts[c] > 0)
+            .map(mean)
+            .fold(f64::MAX, f64::min);
+        let b = if b == f64::MAX { 0.0 } else { b };
 
         let denom = a.max(b);
         total += if denom > 0.0 { (b - a) / denom } else { 0.0 };
@@ -1532,5 +1544,49 @@ mod tests {
         let (weight, bs) = cross_category_weight(0.5, &cats, 0, 1, &bridges);
         assert!((weight - 0.5).abs() < 1e-10);
         assert!(bs.is_none());
+    }
+
+    /// `per` points jittered around each coordinate axis, cluster by cluster.
+    fn three_axis_clusters(per: usize) -> (Vec<[f64; 3]>, Vec<usize>) {
+        let mut points = Vec::with_capacity(3 * per);
+        let mut labels = Vec::with_capacity(3 * per);
+        for c in 0..3 {
+            for i in 0..per {
+                let t = i as f64;
+                let mut p = [
+                    0.15 * (t * 1.3).sin(),
+                    0.15 * (t * 0.7).cos(),
+                    0.15 * (t * 2.1).sin(),
+                ];
+                p[c] = 1.0;
+                points.push(p);
+                labels.push(c);
+            }
+        }
+        (points, labels)
+    }
+
+    #[test]
+    fn sampled_silhouette_tracks_the_exact_score() {
+        let (points, labels) = three_axis_clusters(2_000);
+        assert!(points.len() > SILHOUETTE_SAMPLE);
+        let exact = exact_silhouette(&points, &labels, 3);
+        let sampled = silhouette_score(&points, &labels, 3);
+        assert!(exact > 0.5, "well-separated clusters, exact = {exact}");
+        assert!(
+            (sampled - exact).abs() < 0.02,
+            "sampled {sampled} vs exact {exact}"
+        );
+    }
+
+    #[test]
+    fn globs_on_a_large_cloud_find_its_clusters() {
+        let (points, _) = three_axis_clusters(2_000);
+        let ids: Vec<String> = (0..points.len()).map(|i| i.to_string()).collect();
+        let result = GlobResult::detect(&points, &ids, None, 6);
+        assert_eq!(result.k, 3);
+        let mut sizes: Vec<usize> = result.globs.iter().map(|g| g.member_ids.len()).collect();
+        sizes.sort_unstable();
+        assert_eq!(sizes, vec![2_000, 2_000, 2_000]);
     }
 }

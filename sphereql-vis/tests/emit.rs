@@ -147,10 +147,33 @@ fn xss_payload_is_escaped_never_raw() {
         .stats(SceneStats::new("pca", 0.5))
         .build();
     let html = scene.to_html();
-    // The raw closing tag must never appear from our payload; it is neutralized
-    // to `<\/script`.
     assert!(!html.contains("</script><img"));
-    assert!(html.contains("<\\/script><img"));
+    let payload = embedded_payload(&html);
+    assert!(!payload.contains('<') && !payload.contains('>'));
+    let back: Scene = serde_json::from_str(payload).expect("payload is valid JSON");
+    assert!(
+        back.points.iter().any(|p| p.label == evil),
+        "labels survive the escaping"
+    );
+}
+
+#[test]
+fn a_comment_opener_in_a_label_cannot_swallow_the_page() {
+    // `<!--` then `<script` inside a script element makes the HTML parser
+    // skip the next `</script>`, so the rest of the page would run as script.
+    let evil = "<!--<script>";
+    let scene = Scene::builder()
+        .points(vec![
+            ScenePoint::from_spherical("a", evil, 1.0, 0.1, 1.0),
+            ScenePoint::from_spherical("b", "b", 1.0, 1.0, 1.0),
+        ])
+        .stats(SceneStats::new("pca", 0.5))
+        .build();
+    let html = scene.to_html();
+    let payload = embedded_payload(&html);
+    assert!(!payload.contains("<!--") && !payload.contains("<script"));
+    let back: Scene = serde_json::from_str(payload).expect("payload is valid JSON");
+    assert!(back.points.iter().any(|p| p.label == evil));
 }
 
 #[test]

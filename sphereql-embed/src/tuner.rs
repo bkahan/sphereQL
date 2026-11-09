@@ -86,6 +86,8 @@ pub struct SearchSpace {
     /// Candidate values for [`RoutingConfig::low_evr_threshold`].
     pub low_evr_threshold: Vec<f64>,
     /// Candidate values for [`BridgeConfig::overlap_artifact_territorial`].
+    /// Bridge classification no longer reads that field, so the presets
+    /// search one value; the axis stays so existing spaces still build.
     pub overlap_artifact_territorial: Vec<f64>,
     /// Candidate values for [`BridgeConfig::threshold_base`].
     pub threshold_base: Vec<f64>,
@@ -115,7 +117,7 @@ impl SearchSpace {
             umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35],
-            overlap_artifact_territorial: vec![0.2, 0.3],
+            overlap_artifact_territorial: vec![0.3],
             threshold_base: vec![0.4, 0.5],
             threshold_evr_penalty: vec![0.3, 0.5],
             min_evr_improvement: vec![0.05, 0.10],
@@ -141,7 +143,7 @@ impl Default for SearchSpace {
             umap_min_dist: vec![0.0, 0.1, 0.25],
             num_domain_groups: vec![3, 5, 7],
             low_evr_threshold: vec![0.25, 0.35, 0.45],
-            overlap_artifact_territorial: vec![0.2, 0.3, 0.4],
+            overlap_artifact_territorial: vec![0.3],
             threshold_base: vec![0.4, 0.5, 0.6],
             threshold_evr_penalty: vec![0.2, 0.4, 0.6],
             min_evr_improvement: vec![0.05, 0.10, 0.15],
@@ -392,27 +394,23 @@ impl SearchSpace {
         cfg
     }
 
-    /// Sample one random [`PipelineConfig`] from this space. Every knob's
-    /// value set is sampled uniformly and independently; kind-specific
-    /// knobs are only sampled when the sampled kind uses them. Internal
-    /// to the tuner — external callers go through [`auto_tune`] with a
-    /// [`SearchStrategy::Random`] strategy.
-    pub(crate) fn sample(&self, rng: &mut SplitMix64, base: &PipelineConfig) -> PipelineConfig {
-        // `auto_tune` calls [`Self::validate`] upfront, so by the time
-        // we reach here projection_kinds and every per-kind axis are
-        // guaranteed non-empty. `debug_assert!` keeps the invariant
-        // visible during development without re-introducing a runtime
-        // panic on the hot path.
+    /// Sample one random [`PipelineConfig`] of the given kind. Every
+    /// knob's value set is sampled uniformly and independently;
+    /// kind-specific knobs are only sampled when `kind` uses them.
+    fn sample_kind(
+        &self,
+        kind: ProjectionKind,
+        rng: &mut SplitMix64,
+        base: &PipelineConfig,
+    ) -> PipelineConfig {
+        // `auto_tune` calls [`Self::validate`] upfront, so every axis
+        // `kind` reads is non-empty by the time we get here.
         debug_assert!(
-            !self.projection_kinds.is_empty(),
-            "SearchSpace::sample called without prior validate()"
+            self.check_axes_non_empty(kind).is_ok(),
+            "SearchSpace::sample_kind called without prior validate()"
         );
         let mut cfg = base.clone();
-        cfg.projection_kind = pick_uniform(rng, &self.projection_kinds);
-        debug_assert!(
-            self.check_axes_non_empty(cfg.projection_kind).is_ok(),
-            "SearchSpace::sample called without prior validate()"
-        );
+        cfg.projection_kind = kind;
         cfg.routing = RoutingConfig {
             num_domain_groups: pick_uniform(rng, &self.num_domain_groups),
             low_evr_threshold: pick_uniform(rng, &self.low_evr_threshold),
@@ -448,6 +446,64 @@ impl SearchSpace {
 
         cfg
     }
+}
+
+// ── Uniform proposals ────────────────────────────────────────────────
+
+/// Uniform proposals for [`SearchStrategy::Random`] and the Bayesian
+/// warmup.
+///
+/// Kinds take turns, and a kind's n-th proposal draws its knobs from
+/// `stream_rng(seed, kind_stream(kind), n)`, so it gets the same knobs
+/// whichever other kinds share the space. With one shared RNG, adding a
+/// projection family shifted every later trial, and each kind's trial
+/// count was left to chance.
+struct UniformProposer<'a> {
+    space: &'a SearchSpace,
+    seed: u64,
+    proposed: usize,
+    drawn: HashMap<ProjectionKind, u64>,
+}
+
+impl<'a> UniformProposer<'a> {
+    fn new(space: &'a SearchSpace, seed: u64) -> Self {
+        Self {
+            space,
+            seed,
+            proposed: 0,
+            drawn: HashMap::new(),
+        }
+    }
+
+    fn propose(&mut self, base: &PipelineConfig) -> PipelineConfig {
+        let kinds = &self.space.projection_kinds;
+        let kind = kinds[self.proposed % kinds.len()];
+        self.proposed += 1;
+        let n = self.drawn.entry(kind).or_default();
+        let mut rng = stream_rng(self.seed, kind_stream(kind), *n);
+        *n += 1;
+        self.space.sample_kind(kind, &mut rng, base)
+    }
+}
+
+/// Fixed per kind rather than taken from its position in
+/// `projection_kinds`, so reordering the space leaves each kind's draws
+/// alone.
+fn kind_stream(kind: ProjectionKind) -> u64 {
+    match kind {
+        ProjectionKind::Pca => 0,
+        ProjectionKind::KernelPca => 1,
+        ProjectionKind::LaplacianEigenmap => 2,
+        ProjectionKind::UmapSphere => 3,
+    }
+}
+
+const TPE_STREAM: u64 = 4;
+
+/// An independent generator for draw `index` of `stream` under `seed`.
+fn stream_rng(seed: u64, stream: u64, index: u64) -> SplitMix64 {
+    let mut mixed = SplitMix64::new(seed ^ stream.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    SplitMix64::new(mixed.next_u64() ^ index.wrapping_mul(0xD1B5_4A32_D192_ED03))
 }
 
 // ── Prefit cache key ─────────────────────────────────────────────────
@@ -506,7 +562,8 @@ pub enum SearchStrategy {
     /// Exhaustive Cartesian-product enumeration. Cost scales with the
     /// grid cardinality — see [`SearchSpace::grid_cardinality`].
     Grid,
-    /// Uniform random sampling for `budget` trials.
+    /// Uniform random sampling for `budget` trials, taking the
+    /// projection kinds in turn.
     Random {
         budget: usize,
         seed: u64,
@@ -593,11 +650,7 @@ impl TuneReport {
     /// Trials ranked by descending score.
     pub fn ranked_trials(&self) -> Vec<&TrialRecord> {
         let mut refs: Vec<&TrialRecord> = self.trials.iter().collect();
-        refs.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        refs.sort_by(|a, b| b.score.total_cmp(&a.score));
         refs
     }
 
@@ -745,6 +798,12 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         ) {
             Ok(pipeline) => {
                 let (score, components) = metric.score_with_components(&pipeline);
+                // A NaN would otherwise win: no comparison ranks it below
+                // the current best.
+                if !score.is_finite() {
+                    failures.push((cfg, format!("{} scored {score}", metric.name())));
+                    return;
+                }
                 let build_ms = start.elapsed().as_millis();
                 trials.push(TrialRecord {
                     config: cfg,
@@ -752,14 +811,10 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
                     build_ms,
                     components,
                 });
-                let replace = match best {
-                    Some((best_score, _)) => !matches!(
-                        score.partial_cmp(best_score),
-                        Some(std::cmp::Ordering::Less)
-                    ),
-                    None => true,
-                };
-                if replace {
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_score, _)| score >= *best_score)
+                {
                     *best = Some((score, pipeline));
                 }
             }
@@ -796,7 +851,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             }
         }
         SearchStrategy::Random { budget, seed, .. } => {
-            let mut rng = SplitMix64::new(*seed);
+            let mut uniform = UniformProposer::new(space, *seed);
             // Trial 0: warm-start seed. base_config competes directly
             // with the sampled candidates and counts against the budget.
             run_trial(
@@ -810,7 +865,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             );
             if !wall_exceeded() {
                 for _ in 1..*budget {
-                    let cfg = space.sample(&mut rng, base_config);
+                    let cfg = uniform.propose(base_config);
                     run_trial(
                         cfg,
                         &mut prefit,
@@ -835,7 +890,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
         } => {
             // budget/warmup/gamma already validated above by space.validate(&strategy).
             let budget = *budget;
-            let mut rng = SplitMix64::new(*seed);
+            let mut uniform = UniformProposer::new(space, *seed);
             let warmup = (*warmup).clamp(2, budget);
             let gamma = gamma.clamp(0.05, 0.95);
 
@@ -852,7 +907,7 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             // Remaining warmup: uniform random.
             if !wall_exceeded() {
                 for _ in 1..warmup {
-                    let cfg = space.sample(&mut rng, base_config);
+                    let cfg = uniform.propose(base_config);
                     run_trial(
                         cfg,
                         &mut prefit,
@@ -869,7 +924,8 @@ pub fn auto_tune<M: QualityMetric + ?Sized>(
             }
             // Acquisition: axis-parallel TPE-lite.
             if !wall_exceeded() {
-                for _ in warmup..budget {
+                for trial in warmup..budget {
+                    let mut rng = stream_rng(*seed, TPE_STREAM, trial as u64);
                     let cfg = tpe_propose(space, base_config, &trials, gamma, &mut rng);
                     run_trial(
                         cfg,
@@ -937,11 +993,7 @@ fn tpe_propose(
 ) -> PipelineConfig {
     // Sort by descending score, split at gamma threshold.
     let mut sorted: Vec<&TrialRecord> = trials.iter().collect();
-    sorted.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    sorted.sort_by(|a, b| b.score.total_cmp(&a.score));
     let n_good = ((sorted.len() as f64) * gamma).ceil() as usize;
     let n_good = n_good.max(1).min(sorted.len().saturating_sub(1).max(1));
     let good: Vec<&TrialRecord> = sorted.iter().take(n_good).copied().collect();
@@ -949,7 +1001,8 @@ fn tpe_propose(
 
     // Fall back to uniform sampling if we somehow don't have both sides.
     if good.is_empty() || bad.is_empty() {
-        return space.sample(rng, base);
+        let kind = pick_uniform(rng, &space.projection_kinds);
+        return space.sample_kind(kind, rng, base);
     }
 
     let pick_idx = |rng: &mut SplitMix64, good_counts: &[f64], bad_counts: &[f64]| -> usize {
@@ -1145,12 +1198,11 @@ fn hist_f64(
     let mut counts = vec![0.0f64; values.len()];
     for t in trials {
         let v = extract(&t.config);
-        if let Some((i, _)) = values.iter().enumerate().min_by(|a, b| {
-            (a.1 - v)
-                .abs()
-                .partial_cmp(&(b.1 - v).abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }) {
+        if let Some((i, _)) = values
+            .iter()
+            .enumerate()
+            .min_by(|a, b| (a.1 - v).abs().total_cmp(&(b.1 - v).abs()))
+        {
             counts[i] += 1.0;
         }
     }
@@ -1645,6 +1697,103 @@ mod tests {
                     > 1e-12
         });
         assert!(any_differ, "different seeds produced identical trial set");
+    }
+
+    #[test]
+    fn uniform_proposals_take_kinds_in_turn() {
+        let kinds = vec![
+            ProjectionKind::Pca,
+            ProjectionKind::LaplacianEigenmap,
+            ProjectionKind::UmapSphere,
+        ];
+        let space = SearchSpace {
+            projection_kinds: kinds.clone(),
+            ..SearchSpace::default()
+        };
+        let base = PipelineConfig::default();
+        let mut uniform = UniformProposer::new(&space, 3);
+        let proposed: Vec<ProjectionKind> = (0..9)
+            .map(|_| uniform.propose(&base).projection_kind)
+            .collect();
+        assert_eq!(proposed, kinds.repeat(3));
+    }
+
+    #[test]
+    fn each_kind_draws_from_its_own_stream() {
+        let laplacian_only = SearchSpace {
+            projection_kinds: vec![ProjectionKind::LaplacianEigenmap],
+            ..SearchSpace::default()
+        };
+        let mixed = SearchSpace {
+            projection_kinds: vec![
+                ProjectionKind::UmapSphere,
+                ProjectionKind::LaplacianEigenmap,
+                ProjectionKind::Pca,
+            ],
+            ..SearchSpace::default()
+        };
+        let base = PipelineConfig::default();
+        let laplacian_trials = |space: &SearchSpace| -> Vec<String> {
+            let mut uniform = UniformProposer::new(space, 11);
+            (0..30)
+                .map(|_| uniform.propose(&base))
+                .filter(|c| c.projection_kind == ProjectionKind::LaplacianEigenmap)
+                .take(10)
+                .map(|c| format!("{c:?}"))
+                .collect()
+        };
+        let alone = laplacian_trials(&laplacian_only);
+        assert_eq!(alone, laplacian_trials(&mixed));
+        let distinct: std::collections::HashSet<&String> = alone.iter().collect();
+        assert!(distinct.len() > 1, "every Laplacian proposal was identical");
+    }
+
+    /// Scores PCA pipelines with `poison` and everything else with
+    /// [`TerritorialHealth`].
+    struct PoisonPca(f64);
+
+    impl QualityMetric for PoisonPca {
+        fn name(&self) -> &str {
+            "poison_pca"
+        }
+
+        fn score(&self, pipeline: &SphereQLPipeline) -> f64 {
+            if pipeline.config().projection_kind == ProjectionKind::Pca {
+                self.0
+            } else {
+                TerritorialHealth.score(pipeline)
+            }
+        }
+    }
+
+    #[test]
+    fn non_finite_scores_are_failures_not_winners() {
+        // PCA is enumerated last, which is where a NaN used to take the
+        // best slot from a finite score.
+        let space = SearchSpace {
+            projection_kinds: vec![ProjectionKind::KernelPca, ProjectionKind::Pca],
+            ..full_search_space()
+        };
+        for poison in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let (pipeline, report) = auto_tune(
+                make_input(24, 8),
+                &space,
+                &PoisonPca(poison),
+                SearchStrategy::Grid,
+                &PipelineConfig::default(),
+            )
+            .unwrap();
+            assert_eq!(pipeline.config().projection_kind, ProjectionKind::KernelPca);
+            assert!(report.best_score.is_finite());
+            assert_eq!(report.trials.len(), 1);
+            assert_eq!(report.failures.len(), 1);
+            assert_eq!(report.failures[0].0.projection_kind, ProjectionKind::Pca);
+            assert!(
+                report.failures[0].1.contains("poison_pca scored"),
+                "{}",
+                report.failures[0].1
+            );
+        }
     }
 
     #[test]

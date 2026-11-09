@@ -3,8 +3,8 @@
 //! All escaping and three.js injection lives here so every consumer
 //! (Rust, Python, examples) gets identical, audited output. The template's
 //! own `escHtml()` handles DOM insertion of category/label strings; this
-//! module hardens the JSON payload against `</script>` breakout and injects
-//! the runtime either inline (offline) or via CDN tags.
+//! module keeps the JSON payload from ending or derailing its `<script>` and
+//! injects the runtime either inline (offline) or via CDN tags.
 
 use crate::scene::Scene;
 use crate::template;
@@ -52,8 +52,13 @@ fn serialize_payload(scene: &Scene) -> String {
         eprintln!("sphereql-vis: scene serialization failed: {err}");
         r#"{"title":"SphereQL Visualization","points":[],"overlays":[],"stats":{"projection_kind":"none","evr":0.0,"evr_label":"Explained variance ratio"},"surface_radius":1.0,"show_axes":false}"#.to_string()
     });
-    // Prevent a crafted category/label from terminating the <script> tag.
-    json.replace("</", "<\\/")
+    // Inside <script>, `</script` ends the element, and `<!--` followed by
+    // `<script` makes the parser ignore the next `</script>`, swallowing the
+    // rest of the page. JSON only has `<`, `>` and `&` inside strings, where
+    // the \u escapes decode to the same characters.
+    json.replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
 }
 
 /// Escape plain text destined for an HTML text node (the `<title>`).

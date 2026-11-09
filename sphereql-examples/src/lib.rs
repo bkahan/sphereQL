@@ -122,8 +122,10 @@ impl CategoryPicker {
     /// chunking them into disjoint pairs.
     pub fn distinct_pairs(&self, k: usize) -> Vec<(String, String)> {
         let set = self.distinct_set((2 * k).min(self.by_count.len()));
-        set.chunks_exact(2)
-            .map(|c| (c[0].clone(), c[1].clone()))
+        set.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|[a, b]| (a.clone(), b.clone()))
             .collect()
     }
 }

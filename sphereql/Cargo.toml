@@ -23,10 +23,10 @@ vis = ["dep:sphereql-vis"]
 full = ["core", "index", "layout", "embed", "graphql", "vectordb", "retain-embeddings", "vis"]
 
 [dependencies]
-sphereql-core = { version = "0.3.0", path = "../sphereql-core", optional = true }
-sphereql-index = { version = "0.3.0", path = "../sphereql-index", optional = true }
-sphereql-layout = { version = "0.3.0", path = "../sphereql-layout", optional = true }
-sphereql-embed = { version = "0.3.0", path = "../sphereql-embed", optional = true }
-sphereql-graphql = { version = "0.3.0", path = "../sphereql-graphql", optional = true }
-sphereql-vectordb = { version = "0.3.0", path = "../sphereql-vectordb", optional = true }
-sphereql-vis = { version = "0.3.0", path = "../sphereql-vis", optional = true }
+sphereql-core = { version = "0.4.0", path = "../sphereql-core", optional = true }
+sphereql-index = { version = "0.4.0", path = "../sphereql-index", optional = true }
+sphereql-layout = { version = "0.4.0", path = "../sphereql-layout", optional = true }
+sphereql-embed = { version = "0.4.0", path = "../sphereql-embed", optional = true }
+sphereql-graphql = { version = "0.4.0", path = "../sphereql-graphql", optional = true }
+sphereql-vectordb = { version = "0.4.0", path = "../sphereql-vectordb", optional = true }
+sphereql-vis = { version = "0.4.0", path = "../sphereql-vis", optional = true }

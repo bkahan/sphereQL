@@ -22,6 +22,15 @@ function makeFetch(router) {
   return fetch;
 }
 
+// Just enough IndexedDB for TileCache: one object store, async request events.
+function fakeIndexedDB() {
+  const data = new Map();
+  const req = (fn) => { const r = {}; setImmediate(() => { r.result = fn(); r.onsuccess && r.onsuccess(); }); return r; };
+  const store = { get: (k) => req(() => data.get(k)), put: (v, k) => req(() => { data.set(k, v); }), clear: () => req(() => data.clear()) };
+  const db = { transaction: () => ({ objectStore: () => store }), createObjectStore() {} };
+  return { data, open: () => req(() => db) };
+}
+
 const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "A", label: "a" }] });
 
 (async () => {
@@ -116,6 +125,43 @@ const vt = run(VIEWER, { points: [{ x: 1, y: 0, z: 0, cat: "A", label: "a" }] })
   const dec = vt.makeWorkerDecoder();
   ok(typeof dec === "function", "makeWorkerDecoder returns a decode fn");
   ok((await dec(golden)).count === 2, "worker-decoder (inline fallback) decodes the golden tile");
+
+  // Tile-cache keys carry the server and the manifest: another server, or the
+  // same server after a re-projection, never gets a tile cached for another scene.
+  {
+    const shared = new vt.TileCache({ indexedDB: null });
+    const manifestFetch = (projection) => makeFetch((url) => {
+      if (url.endsWith("/manifest")) return { ok: true, json: () => Promise.resolve({ stats: { projection_kind: projection } }) };
+      if (url.endsWith("/reproject")) return { ok: true, json: () => Promise.resolve({ stats: { projection_kind: "umap_sphere" } }) };
+      return { ok: true, arrayBuffer: () => Promise.resolve(goldenAB()) };
+    });
+    const f1 = manifestFetch("pca"), s1 = new vt.ServerSource("http://one", { fetch: f1, cache: shared });
+    const f2 = manifestFetch("pca"), s2 = new vt.ServerSource("http://two", { fetch: f2, cache: shared });
+    await s1.manifest(); await s1.tiles({ budget: 5 });
+    await s2.manifest(); await s2.tiles({ budget: 5 });
+    ok(f2.calls.some((c) => c.url.indexOf("/tiles") >= 0), "another server misses the first one's tile");
+    await s1.manifest(); await s1.tiles({ budget: 5 });
+    const tilesFetched = () => f1.calls.filter((c) => c.url.indexOf("/tiles") >= 0).length;
+    ok(tilesFetched() === 2, "re-scoping drops the old scene from memory, so it refetches");
+    await s1.tiles({ budget: 5 });
+    ok(tilesFetched() === 2, "same server + same manifest hits the cache");
+    await s1.reproject("umap_sphere"); await s1.tiles({ budget: 5 });
+    ok(tilesFetched() === 3, "after a re-projection the same tile request misses");
+  }
+
+  // IndexedDB keeps one scene: switching scope clears the other scene's tiles.
+  {
+    const idb = fakeIndexedDB();
+    const c1 = new vt.TileCache({ indexedDB: idb });
+    await c1.scope("A"); await c1.put("A|t", 1);
+    const c2 = new vt.TileCache({ indexedDB: idb }); // a reload, same scene
+    await c2.scope("A");
+    ok((await c2.get("A|t")) === 1, "a reload under the same scene keeps its tiles");
+    await c2.scope("B");
+    ok(!idb.data.has("A|t"), "switching scene clears the old scene from IndexedDB");
+    await c2.put("B|t", 2);
+    ok((await c2.get("B|t")) === 2, "the new scene caches normally");
+  }
 
   console.log(fails === 0 ? "\nALL PASS" : "\n" + fails + " FAILURES");
   process.exit(fails === 0 ? 0 : 1);

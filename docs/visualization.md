@@ -14,23 +14,21 @@ generic 3D-embedding concern vs. what is coupled to sphereQL's domain** (see
 
 ---
 
-## Current status (branch `feat/vis-server`, 2026-06)
+## Current status (0.4.0)
 
-The viewer is **mid-migration**. A recent refactor (`ef5d558`, "make viewer.js
-instantiable") rewrote `viewer.js` into a clean `createViewer(rootEl, opts)`
-factory and, in the same commit, **removed the entire server/streaming client**
-(the `ServerSource` / `TileStreamer` / `connectToServer` layer, plus the ruler,
-pins, PNG export, config chrome, and session restore). The result:
+All three paths work. The instantiable refactor (`ef5d558`) briefly removed the
+streaming client from `viewer.js`; `820a126` re-ported it onto the
+`createViewer` factory, along with the ruler, pins, PNG export, share links and
+the streaming debugger (inspect, diagnostics, tune, filter).
 
 | Path | What it is | Status |
 |---|---|---|
-| **1. Offline single-file emit** | `Scene → to_html()` → one self-contained `.html` | ✅ Works, improved (instantiable, strength channel, live `updateScene`, reasoning chains). **Validated.** |
-| **2. WASM studio** | Paste prose / corpus JSON → in-browser pipeline → scene | ✅ Works (boot keeps `window.rebuild`/`parseScene` compat globals + the `#embed` compare protocol). Build path has a sharp edge — see [§ Path 2](#path-2--the-wasm-studio). |
-| **3. Server-backed streaming** | `sphereql-vis-server` streams binary tiles for million-point corpora | ⚠️ **Server compiles, runs, and is fully tested (29 tests); its HTTP API is validated. But the browser client was removed from `viewer.js`, so there is currently no in-tree front-end that consumes `/tiles`.** See [§ Path 3](#path-3--the-streaming-server) and [Known issues](#known-issues--gotchas). |
+| **1. Offline single-file emit** | `Scene → to_html()` → one self-contained `.html` | ✅ Works (instantiable, strength channel, live `updateScene`, reasoning chains). |
+| **2. WASM studio** | Paste prose / corpus JSON → in-browser pipeline → scene | ✅ Works (boot keeps `window.rebuild`/`parseScene` compat globals + the `#embed` compare protocol). Build is two steps — see [§ Path 2](#path-2--the-wasm-studio). |
+| **3. Server-backed streaming** | `sphereql-vis-server` streams binary tiles for million-point corpora | ✅ Works: the server (34 tests) and the browser client (`connectToServer`, js-tests 10–14). See [§ Path 3](#path-3--the-streaming-server). |
 
-If you only need a picture of a corpus, **use Path 1** — it is solid. Path 3's
-*server* is production-quality and a good foundation, but its *browser half* is
-not wired up on this branch.
+Use Path 1 for a picture of a corpus, Path 3 once the corpus is too big to
+inline.
 
 ---
 
@@ -263,8 +261,8 @@ points by **stable id**.
 For corpora past a few hundred thousand points, inlining one JSON blob stops
 scaling. `sphereql-vis-server` (axum + tokio) instead holds the corpus, its
 projection, and the indexes **in memory**, serves a bounded `Manifest` up front,
-and streams binary **SQT1** point tiles by viewport + LOD. The browser would
-hold only the visible working set.
+and streams binary **SQT1** point tiles by viewport + LOD. The browser holds
+only the visible working set.
 
 ### Run
 
@@ -284,8 +282,9 @@ cargo run -p sphereql-vis-server -- --corpus stress --emit-html --open
 | `-c, --corpus <name\|path>` | `stress` | Registry name (`hand_crafted`, `extended`, `full`, `stress`, `dbpedia_50k`, `dbpedia_500k`, `wikidata_50k`, …) or a path to a Parquet file. |
 | `-a, --addr <host:port>` | `127.0.0.1:8080` | Bind address. `0.0.0.0:` / `:::` are rewritten to a browser-reachable host for `--open`. |
 | `-p, --projection <kind>` | `pca` | `pca` \| `umap_sphere` \| `laplacian` \| `kernel_pca`. Gated by corpus size (see below). |
-| `-e, --emit-html [path]` | off (`sphere_viz.html` if bare) | Write a standalone offline viewer pre-wired to connect to this server. |
-| `-o, --open` | off | Open the browser after bind. Targets `http://<addr>/` (the studio, if found). |
+| `-e, --emit-html [path]` | off (`sphere_viz.html` if bare) | Write a standalone offline viewer pre-wired to connect to this server. Also allows origin `null`, which the file:// page sends. |
+| `-o, --open` | off | Open the browser after bind. Targets `http://<addr>/` (the studio if found, else a landing page). |
+| `--allow-origin <origin>` | none | Let pages on another origin call the API. Repeatable. The API is same-origin otherwise. |
 
 Validated startup (`--corpus hand_crafted`):
 
@@ -306,24 +305,23 @@ corpus can never wedge the server on an infeasible projection:
 | `UmapSphere` | `n > 100_000` | kept |
 | `Pca` | never | always |
 
-### ⚠️ The browser half is not wired up on this branch
+### The browser half
 
-The server's HTTP API is complete, tested (29 tests), and was exercised
-end-to-end for this document (every endpoint below returns real data). **But**
-the browser client that consumed it — `ServerSource`, `TileStreamer`,
-`connectToServer`, the SQT1 JS `decodeTile`, the streaming inspector/diag/tune/
-filter UI — was removed from `viewer.js` by the instantiable refactor and has
-not been re-ported. Concretely on this branch:
+`connectToServer(url)` in `viewer.js` fetches the manifest, draws the globe,
+overlays and stats with no inline points, and streams tiles for the current
+viewport (see [the streaming layer](#the-streaming-layer)). Three things call
+it:
 
-- `--emit-html` and the studio auto-connect inject `connectToServer(url)`, which
-  **no longer exists** → an uncaught `ReferenceError`; the page renders an empty
-  (or demo) scene and never streams.
-- The control chrome for connect/tune/filter still exists in `template.html` but
-  is unwired.
+- the studio the server serves at `/`, and the `--emit-html` file, both through
+  an injected auto-connect script naming this server;
+- the Settings tab's Connect button;
+- a share link: `#server=<url>`, or a `#v=` link made while streaming. A link
+  naming a server on another origin shows an in-page "Connect?" bar first,
+  because whatever that server sends reaches the page. Same-origin links
+  connect straight away.
 
-The server is the right foundation; the client is the gap. The last working
-client lives at `git show 2512d9b:sphereql-vis/src/viewer.js` and is documented
-below under [the viewer runtime](#the-viewer-runtime-viewerjs) for re-porting.
+Re-projecting from the tune picker redraws the shell and overlays for the new
+projection and re-streams the tiles; the camera stays put.
 
 ---
 
@@ -381,9 +379,9 @@ below under [the viewer runtime](#the-viewer-runtime-viewerjs) for re-porting.
    independent of N.
 
 `AppState` is immutable after build; `/reproject` builds a fresh one off the
-async runtime (`spawn_blocking`) and **atomically swaps** the shared
-`Arc<RwLock<Arc<AppState>>>`, so concurrent tile reads are never blocked on a
-rebuild.
+async runtime (`spawn_blocking`) and **atomically swaps** it into `Shared`,
+so concurrent tile reads are never blocked on a rebuild. Builds run one at a
+time, and the latest request wins.
 
 ---
 
@@ -536,23 +534,27 @@ rotate/zoom), `sphereql-embed-ready`. The camera broadcast is **epsilon-gated**
 so the OrbitControls damping that follows an *applied* update is not echoed back
 into a feedback loop.
 
-### The removed streaming layer (reference, pre-`ef5d558`)
+### The streaming layer
 
-These symbols are **not in the current file** but define the contract a re-ported
-client must satisfy (last present at `2512d9b:sphereql-vis/src/viewer.js`):
+The client half of Path 3:
 
 - **`DataSource` seam** — `manifest()`, `tiles(params)`, `pointMeta(rows)`,
   `nearest(q,k)`; `InlineSource(scene)` (offline, no network) vs.
-  `ServerSource(baseUrl)` (hits the axum API). The offline boot was
-  `rebuild(new InlineSource(D).scene)` — byte-identical to today's path.
+  `ServerSource(baseUrl)` (hits the axum API). The offline boot is
+  `rebuild(new InlineSource(D).scene)`.
 - **`decodeTile`** — the JS SQT1 decoder mirroring `tile.rs` (header + 20-byte
   records → `{positions, cats, rows}`); `makeWorkerDecoder` runs it off-thread
-  with an inline fallback.
+  with an inline fallback, and `disconnectServer` stops the worker.
+- **`TileCache`** — memory LRU + IndexedDB. Keys carry the server URL and a
+  fingerprint of the manifest, and IndexedDB holds one scene at a time.
 - **`TileStreamer`** — camera → cone tile requests; one persistent coarse base
-  tile + LRU detail tiles, dedup/cancellation; `tileMeshSink` builds per-tile
+  tile + LRU detail tiles, dedup/cancellation (a response that lands after a
+  restart is dropped); `tileMeshSink` builds per-tile
   `THREE.Points` with global-row pick ids.
 - **`connectToServer(url)`** — fetch manifest → `rebuild({...manifest, points:[]})`
-  → palette legend → stream by camera; wires the tune/filter/diag UI.
+  → palette legend → stream by camera; wires the tune/filter/diag UI. Tune
+  picks apply only the newest response, matching the server's latest-wins
+  `/reproject`.
 - **`safeColor`** — allow-lists palette colors from an untrusted server manifest
   (CSS-injection guard).
 
@@ -561,7 +563,8 @@ client must satisfy (last present at `2512d9b:sphereql-vis/src/viewer.js`):
 ## HTTP API reference
 
 Base URL = the server's bind address. All responses are JSON except `/tiles`
-(`application/octet-stream`, SQT1) and `/health` (`text/plain`). Permissive CORS;
+(`application/octet-stream`, SQT1) and `/health` (`text/plain`). Same-origin
+unless `--allow-origin` (or `--emit-html`, which adds `null`) names others;
 POST bodies capped at 4 MiB; a panic catcher returns 500 rather than dropping the
 connection. **Every example below is a real response from `--corpus hand_crafted`.**
 
@@ -621,7 +624,9 @@ lowest-certainty `outliers` (where the projection is least faithful).
 
 ### `GET /globs` — concept-cluster detection *(sphereQL)*
 `?k=` (fixed) or `?max_k=` (silhouette auto-select) → globs with `centroid`,
-`member_count`, `radius`, `top_categories`.
+`member_count`, `radius`, `top_categories`. Runs off the async runtime, one
+request at a time; above 2,000 points the silhouette is scored on a strided
+sample.
 
 ### `POST /drill_down` — within-category k-NN *(sphereQL)*
 `{"category": "physics", "k": 5, "vector": [..dim..]}` → results with `row`,
@@ -629,7 +634,8 @@ lowest-certainty `outliers` (where the projection is least faithful).
 
 ### `POST /reproject` — live re-projection ("tune") *(sphereQL)*
 `{"projection": "umap_sphere"}` → the new `Manifest`, after an atomic state swap.
-Subject to the same size gating as `--projection`. Validated: reprojecting the
+Subject to the same size gating as `--projection`. Builds run one at a time; a
+request still waiting when a newer one arrives gets `409 Conflict`. Validated: reprojecting the
 775-point corpus to `laplacian` returns EVR 0.92 ("Connectivity ratio").
 
 ### `GET /` (only when a built studio is present)
@@ -661,8 +667,10 @@ The seam is the `DataSource` interface; `InlineSource` keeps the offline path
 identical so the two never diverge in render behavior.
 
 **Binary tiles (SQT1), not JSON.** A viewport of points is 20 bytes each, decoded
-off-thread, cached in memory + IndexedDB. JSON per-tile would dominate the wire
-and the main-thread parse budget.
+off-thread, cached in memory + IndexedDB. Cache keys carry the server URL and a
+fingerprint of the manifest, so a reload, a re-projection, or another corpus
+never reuses a tile from a different scene, and IndexedDB holds one scene at a
+time. JSON per-tile would dominate the wire and the main-thread parse budget.
 
 **Deterministic decimation everywhere.** Both the offline builder
 (`stratified_sample`) and the server tiler (`stratified`) use the same
@@ -689,7 +697,7 @@ embedding-visualization tool, keep the left column; replace or strip the right.
 | **Overlays** | `Centroid`, `VoronoiCap`, `Antipode`, `CoverageVoid`, `Glob` (generic spherical geometry) | `Bridge` (+ `classColor` Genuine/Weak/OverlapArtifact), `DomainGroup`, `ManifoldSlice`, reasoning-chain `GeodesicPath` with `-[rel]->` labels |
 | **Runtime** | `createViewer` lifecycle, OrbitControls, zoom-to-cursor, resize, dispose; `sphTransform`/`curPos` spread/radial/morph S² math; GPU id-picking; reference globe; density heatmap; `shellArc`; the `#embed` camera-sync protocol; `applyViewHash` camera restore | `deriveStrength` precedence; per-category spread pivots (`catDir`); domain solo/legend; bridge/reasoning-chain rendering |
 | **Wire** | Scene JSON shape; `Manifest{bounds,surface_radius,lod}`; SQT1 tile format; the `DataSource` seam; `decodeTile`/`TileCache`/`TileStreamer` | `palette` as a corpus registry; `cat` as a palette index; `min_certainty` filter |
-| **Server** | cone-query + LOD budget + stratified decimation; ANN neighbor index; `Arc<RwLock<Arc>>` atomic-swap | `CorpusId` registry + synthetic `embed`; `SphereQLPipeline` + `ProjectionKind` gating; category enrichment (`/path`, `/globs`, `/drill_down`); EVR/certainty diagnostics |
+| **Server** | cone-query + LOD budget + stratified decimation; ANN neighbor index; atomic-swap `Shared` state | `CorpusId` registry + synthetic `embed`; `SphereQLPipeline` + `ProjectionKind` gating; category enrichment (`/path`, `/globs`, `/drill_down`); EVR/certainty diagnostics |
 
 **A minimal generic viewer** would: keep `createViewer` + `parseScene` + the
 transform/picking/globe; drop `deriveStrength`'s certainty/intensity precedence (or
@@ -704,25 +712,26 @@ implementation). The cleanest cut line is the **`DataSource` seam** and the
 ## Testing & validation
 
 ```bash
-cargo test -p sphereql-vis -p sphereql-vis-server   # Rust: green (53 tests this branch)
+cargo test -p sphereql-vis -p sphereql-vis-server   # Rust: 59 tests
+node js-tests/run-all.cjs                           # viewer.js: 14 suites
 ```
 
 - **`sphereql-vis`** — emit/golden/XSS/offline-self-containment + `Scene::to_json`
   panic-freedom on non-finite coords + tile/manifest round-trips.
-- **`sphereql-vis-server`** — **29 tests**: 3 (gating, build-from-corpus, reproject)
-  + 7 (tile budget/cone/filter/determinism) + 19 in-process axum integration tests
-  (`tower::oneshot`, no socket) covering every endpoint, including the
-  wrong-length-vector regression that must return empty (not panic).
+- **`sphereql-vis-server`** — **34 tests**: 3 (gating, build-from-corpus, reproject)
+  + 7 (tile budget/cone/filter/determinism) + 1 (`--allow-origin` parsing) + 23
+  in-process axum integration tests (`tower::oneshot`, no socket) covering every
+  endpoint, CORS, overlapping re-projections, and the wrong-length-vector
+  regression that must return empty (not panic).
 
 **What is validated vs. not:**
 
 - ✅ Rust crates compile and pass; the full server HTTP API returns correct data
   (exercised end-to-end for this doc); the offline emitter produces a valid
   1.1 MB self-contained file.
-- ❌ **The `js-tests/` headless harness is currently broken** — all 14 suites fail
-  at boot (`rootEl.querySelector is not a function`) because the harness predates
-  the instantiable refactor and still targets removed module-globals. It needs a
-  rewrite against the `createViewer` API before it can validate the runtime again.
+- ✅ `js-tests/` boots the real `viewer.js` against THREE/DOM stubs and covers
+  the streaming client: `ServerSource`, `TileCache`, `TileStreamer`,
+  `connectToServer`, share-link restore, and the hostile-input cases.
 - ⚠️ **WebGL / browser interaction cannot be auto-verified** — the actual GLSL
   render, hover/select, orbit-sync, studio paste→worker→render, and any streaming
   experience need a manual browser smoke-test.
@@ -731,30 +740,21 @@ cargo test -p sphereql-vis -p sphereql-vis-server   # Rust: green (53 tests this
 
 ## Known issues / gotchas
 
-These are live on `feat/vis-server` as of this writing (see the review summary in
-the PR for file:line detail):
-
-1. **Streaming browser client orphaned.** `--emit-html` and the studio
-   auto-connect inject `connectToServer(url)`, removed from `viewer.js` →
-   uncaught `ReferenceError`, no streaming. The server API itself is fine.
-2. **`js-tests` fully broken** — harness predates the refactor; needs a rewrite.
-3. **Studio build is two steps.** `cargo run --example build_studio` alone does
-   **not** produce `studio.js`; you must run `studio/build.sh`. The server's
-   `find_studio_dir` uses `studio.js` as its sentinel, so a half-built `dist/`
-   means the studio is silently not served at `/`.
-4. **`--open` without a built studio opens a 404** — when no studio is found,
-   the router has no `/` route, so `--open` (which always targets `http://<addr>/`)
-   lands on a 404. Use the API directly, or build the studio first.
-5. **Dead control chrome in `template.html`** — sliders/buttons/tabs for the
-   removed tools (ruler, PNG, share, pin, connect, tune, filter) are still in the
-   DOM but unwired. They degrade gracefully (every consumer is null-guarded) but
-   the "Connect" UI is misleading.
-6. **`#v=` share links restore camera only** — the streaming-session restore
-   branch was dropped with the client.
-
-For a generic extraction, items 1–2 and 5–6 are the natural cleanup boundary:
-either re-port the streaming client against the `createViewer` API, or formally
-drop the server path from the client and document the server as a standalone API.
+1. **Studio build is two steps.** `cargo run --example build_studio` alone does
+   **not** produce `studio.js`; you must run `studio/build.sh`. The server uses
+   `studio.js` as its sentinel, so a half-built `dist/` is refused with a
+   warning and `/` serves the landing page instead.
+2. **Re-projection resets the view sliders.** The camera stays, but scale,
+   spread and radial go back to their defaults with the redrawn shell.
+3. **`/tiles?cats=` is O(|cats|·N).** Fine for a handful of categories; a
+   filter naming hundreds of them on a 500k corpus is slow.
+4. **The client ignores the tile header's `flags` field and never checks the
+   manifest's `format_version`.** The tile `version` is checked. Flags are 0
+   and the manifest version is 1 today; a future format change needs the
+   client to check both.
+5. **The server doesn't check the `Host` header.** It binds 127.0.0.1 by
+   default and is same-origin, but a DNS-rebinding page could still reach it.
+   Bind to a non-loopback address only on a trusted network.
 
 ---
 
