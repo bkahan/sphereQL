@@ -73,7 +73,7 @@ class TestLaplacianEigenmap:
         # 3 (points on S²).
         assert proj.dimensionality == 4
         assert 0.0 <= proj.connectivity_ratio <= 1.0
-        assert proj.connectivity_ratio == proj.explained_variance_ratio
+        assert 0.0 <= proj.explained_variance_ratio <= 1.0
         ev = proj.eigenvalues
         assert len(ev) == 3
         for v in ev:

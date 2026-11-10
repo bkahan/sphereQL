@@ -30,9 +30,7 @@ use sphereql_embed::corpus_features::CorpusFeatures;
 use sphereql_embed::corpus_quality::{CorpusQuality, CorpusQualityWeights};
 use sphereql_embed::domain_groups::DomainGroup;
 use sphereql_embed::feedback::{FeedbackAggregator, FeedbackEvent, FeedbackSummary};
-use sphereql_embed::laplacian::{
-    DEFAULT_ACTIVE_THRESHOLD, DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection,
-};
+use sphereql_embed::laplacian::{DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection};
 use sphereql_embed::meta_model::{
     DistanceWeightedMetaModel, MetaModel, MetaTrainingRecord, NearestNeighborMetaModel,
 };
@@ -1405,7 +1403,10 @@ impl WasmLaplacianEigenmapProjection {
     ///   4 rows; all rows must share a dimensionality >= 1.
     /// - `radial_json` (optional): `"\"magnitude\""` or a JSON number.
     /// - `k_neighbors` (optional): k-NN graph density; defaults to 15.
-    /// - `active_threshold` (optional): absolute-weight cutoff; defaults to 0.05.
+    /// - `active_threshold` (optional): leave unset to link items by cosine
+    ///   similarity (the default). Set it to link them by the Jaccard
+    ///   overlap of their active axes (`|v| > threshold`) instead, for
+    ///   sparse embeddings.
     #[wasm_bindgen(constructor)]
     pub fn new(
         embeddings_json: &str,
@@ -1416,9 +1417,13 @@ impl WasmLaplacianEigenmapProjection {
         let embs = parse_embeddings_2d(embeddings_json)?;
         let radial = parse_radial_strategy(radial_json.as_deref())?;
         let k = k_neighbors.unwrap_or(DEFAULT_K_NEIGHBORS);
-        let thresh = active_threshold.unwrap_or(DEFAULT_ACTIVE_THRESHOLD);
-        let inner = LaplacianEigenmapProjection::fit_with_params(&embs, k, thresh, radial)
-            .map_err(|e| JsError::new(&e.to_string()))?;
+        let inner = match active_threshold {
+            Some(threshold) => {
+                LaplacianEigenmapProjection::fit_with_params(&embs, k, threshold, radial)
+            }
+            None => LaplacianEigenmapProjection::fit_cosine(&embs, k, radial),
+        }
+        .map_err(|e| JsError::new(&e.to_string()))?;
         Ok(Self { inner })
     }
 
@@ -1428,13 +1433,16 @@ impl WasmLaplacianEigenmapProjection {
     }
 
     /// Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
+    /// Describes how strongly the graph splits into groups, not how well
+    /// the layout preserves it.
     #[wasm_bindgen(getter, js_name = connectivityRatio)]
     pub fn connectivity_ratio(&self) -> f64 {
         self.inner.connectivity_ratio()
     }
 
-    /// Same scalar as `connectivityRatio`, exposed under PCA's name for
-    /// adaptive-threshold compatibility.
+    /// Neighbour recall in `[0, 1]`: the mean share of an item's `k` graph
+    /// neighbours that are also among its `k` nearest on the sphere. Under
+    /// PCA's name so adaptive thresholds can read it; not a variance ratio.
     #[wasm_bindgen(getter, js_name = explainedVarianceRatio)]
     pub fn explained_variance_ratio(&self) -> f64 {
         self.inner.explained_variance_ratio()
@@ -1565,7 +1573,7 @@ fn scene_evr_label_for(kind: &str) -> &'static str {
     match kind {
         "pca" => "PCA variance",
         "kernel_pca" => "Kernel EVR",
-        "laplacian_eigenmap" => "Connectivity ratio",
+        "laplacian_eigenmap" => "Laplacian kNN-recall",
         "umap_sphere" => "UMAP kNN-recall",
         _ => "Explained variance ratio",
     }

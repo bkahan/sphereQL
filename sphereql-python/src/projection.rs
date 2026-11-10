@@ -5,9 +5,7 @@ use pyo3::types::PyType;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 
 use sphereql_embed::kernel_pca::KernelPcaProjection;
-use sphereql_embed::laplacian::{
-    DEFAULT_ACTIVE_THRESHOLD, DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection,
-};
+use sphereql_embed::laplacian::{DEFAULT_K_NEIGHBORS, LaplacianEigenmapProjection};
 use sphereql_embed::projection::{PcaProjection, Projection, RandomProjection};
 use sphereql_embed::types::{Embedding, RadialStrategy};
 
@@ -422,9 +420,11 @@ impl PyLaplacianEigenmapProjection {
     /// - `k_neighbors`: density of the sparsified k-NN graph. Higher =
     ///   smoother embedding, less noise-sensitivity, but more blurred
     ///   category boundaries. Typical range 10–30; defaults to 15.
-    /// - `active_threshold`: absolute-weight cutoff for the active-axis
-    ///   filter. Axes with `|v| ≤ threshold` are dropped before computing
-    ///   Jaccard similarity. Defaults to 0.05.
+    /// - `active_threshold`: leave unset to link items by cosine
+    ///   similarity (the default; works on any embedding). Set it to
+    ///   link them by the Jaccard overlap of their active axes
+    ///   (`|v| > threshold`) instead, for sparse embeddings whose signal
+    ///   is which axes fire.
     #[classmethod]
     #[pyo3(signature = (embeddings, *, radial=None, k_neighbors=None, active_threshold=None))]
     fn fit(
@@ -441,9 +441,13 @@ impl PyLaplacianEigenmapProjection {
             None => RadialStrategy::Magnitude,
         };
         let k = k_neighbors.unwrap_or(DEFAULT_K_NEIGHBORS);
-        let thresh = active_threshold.unwrap_or(DEFAULT_ACTIVE_THRESHOLD);
         let proj = py
-            .detach(|| LaplacianEigenmapProjection::fit_with_params(&embs, k, thresh, strategy))
+            .detach(|| match active_threshold {
+                Some(threshold) => {
+                    LaplacianEigenmapProjection::fit_with_params(&embs, k, threshold, strategy)
+                }
+                None => LaplacianEigenmapProjection::fit_cosine(&embs, k, strategy),
+            })
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(Self { inner: proj })
     }
@@ -453,16 +457,18 @@ impl PyLaplacianEigenmapProjection {
         self.inner.dimensionality()
     }
 
-    /// Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
-    /// Exposed under the same name as PCA's EVR for adaptive-threshold
-    /// compatibility — but the two quantities have distinct meaning.
+    /// Neighbour recall in `[0, 1]`: the mean share of an item's `k` graph
+    /// neighbours that are also among its `k` nearest on the sphere. Under
+    /// PCA's name so adaptive thresholds can read it, but not a variance
+    /// ratio.
     #[getter]
     fn explained_variance_ratio(&self) -> f64 {
         self.inner.explained_variance_ratio()
     }
 
-    /// Same scalar as `explained_variance_ratio`, but under the
-    /// spectrally-accurate name.
+    /// Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
+    /// Describes how strongly the graph splits into groups, not how well
+    /// the layout preserves it.
     #[getter]
     fn connectivity_ratio(&self) -> f64 {
         self.inner.connectivity_ratio()

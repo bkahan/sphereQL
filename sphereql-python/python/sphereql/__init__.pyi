@@ -393,15 +393,17 @@ class LaplacianEigenmap:
     @property
     def explained_variance_ratio(self) -> builtins.float:
         r"""
-        Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
-        Exposed under the same name as PCA's EVR for adaptive-threshold
-        compatibility — but the two quantities have distinct meaning.
+        Neighbour recall in `[0, 1]`: the mean share of an item's `k` graph
+        neighbours that are also among its `k` nearest on the sphere. Under
+        PCA's name so adaptive thresholds can read it, but not a variance
+        ratio.
         """
     @property
     def connectivity_ratio(self) -> builtins.float:
         r"""
-        Same scalar as `explained_variance_ratio`, but under the
-        spectrally-accurate name.
+        Mean of `|μ_k|` across the three retained eigenvalues, in `[0, 1]`.
+        Describes how strongly the graph splits into groups, not how well
+        the layout preserves it.
         """
     @property
     def eigenvalues(self) -> tuple[builtins.float, builtins.float, builtins.float]:
@@ -420,9 +422,11 @@ class LaplacianEigenmap:
         - `k_neighbors`: density of the sparsified k-NN graph. Higher =
           smoother embedding, less noise-sensitivity, but more blurred
           category boundaries. Typical range 10–30; defaults to 15.
-        - `active_threshold`: absolute-weight cutoff for the active-axis
-          filter. Axes with `|v| ≤ threshold` are dropped before computing
-          Jaccard similarity. Defaults to 0.05.
+        - `active_threshold`: leave unset to link items by cosine
+          similarity (the default; works on any embedding). Set it to
+          link them by the Jaccard overlap of their active axes
+          (`|v| > threshold`) instead, for sparse embeddings whose signal
+          is which axes fire.
         """
     def project(self, embedding: typing.Any) -> SphericalPoint: ...
     def project_rich(self, embedding: typing.Any) -> ProjectedPoint: ...
