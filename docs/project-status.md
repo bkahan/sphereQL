@@ -84,11 +84,9 @@ status). Branch-local, pre-merge.
       dimensions" figure comes from. That low-EVR story is **PCA-specific**.
     - **Kernel PCA** reports a kernel-space EVR (variance captured in RBF
       feature space).
-    - **Laplacian eigenmap** reports a connectivity ratio (mean |μ| of the
-      three retained eigenvalues) — a community-structure signal, not a
-      variance fraction.
-    - **UMAP-on-sphere** reports kNN recall (trustworthiness-style
-      neighborhood preservation), not a variance ratio at all.
+    - **Laplacian eigenmap** and **UMAP-on-sphere** report kNN recall
+      (trustworthiness-style neighborhood preservation), not a variance
+      ratio at all.
 
   On large/sparse corpora the defaults are UMAP or Laplacian, not PCA, so
   the relevant quality signal there is recall or connectivity — "low EVR"

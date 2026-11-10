@@ -97,7 +97,7 @@ Constructors: `from_spherical(cat, label, r, theta, phi)` (derives x/y/z via
 
 The stats-panel metadata. `evr` is the headline quality number in `[0,1]`; its
 *meaning* is given by `evr_label` (so the panel reads "PCA variance" /
-"UMAP kNN-recall" / "Connectivity ratio" per projection family, not a hardcoded
+"UMAP kNN-recall" / "Laplacian kNN-recall" per projection family, not a hardcoded
 string). `SceneStats::new(kind, evr)` defaults the label to "Explained variance
 ratio"; `.with_label(s)` overrides. `sampled_from` / `dropped_nonfinite` are set
 automatically by the builder when it decimates or drops non-finite points.
@@ -636,7 +636,7 @@ sample.
 `{"projection": "umap_sphere"}` → the new `Manifest`, after an atomic state swap.
 Subject to the same size gating as `--projection`. Builds run one at a time; a
 request still waiting when a newer one arrives gets `409 Conflict`. Validated: reprojecting the
-775-point corpus to `laplacian` returns EVR 0.92 ("Connectivity ratio").
+775-point corpus to `laplacian` returns EVR 0.37 ("Laplacian kNN-recall").
 
 ### `GET /` (only when a built studio is present)
 Serves `studio/dist/index.html` (auto-connect injected) with `ServeDir` fallback

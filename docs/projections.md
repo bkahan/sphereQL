@@ -57,25 +57,38 @@ for mathematical details and references.
 
 ## Laplacian eigenmap
 
-Targets a different failure mode: sparse, noise-heavy embeddings where the
-signal lives in the co-activation structure of a few active axes rather
-than in coordinate variance. PCA and kernel PCA get pulled toward whichever
-noise directions happen to have the largest variance; a graph-Laplacian
-spectral decomposition does not.
+Targets a different failure mode: embeddings where the signal is which
+items are close to which, not which directions vary most. PCA and
+kernel PCA get pulled toward whichever noise directions happen to have
+the largest variance; a graph-Laplacian spectral decomposition does
+not.
 
 The pipeline:
 
-1. For each embedding, extract its **active-axis set** — indices where
-   `|v_i| > active_threshold`.
-2. Build a k-NN graph whose edges are the **Jaccard similarity** between
-   active-axis sets.
-3. Form the normalized graph Laplacian `L = I − D⁻¹ᐟ² W D⁻¹ᐟ²`.
-4. Keep the bottom 3 non-trivial eigenvectors as coordinates.
-5. Out-of-sample points: **Nyström extension** blends the query's Jaccard
-   weights against the training graph's eigenvectors, so a fitted
-   projection behaves like any other at query time.
+1. Link each item to its `k` most similar items and take the union of
+   those links. Similarity is `LaplacianConfig.similarity`:
+   - `Cosine` (default): cosine similarity between the embeddings.
+     Works on any embedding and has no threshold to tune. Exact scan
+     below 2,000 items, RP-forest ANN above.
+   - `ActiveAxes`: the **Jaccard similarity** between the items'
+     active-axis sets (`|v_i| > active_threshold`). For sparse
+     embeddings whose signal is which axes fire. The threshold has to
+     sit between the noise floor and the signal: on the 300-concept
+     stress corpus (noise amplitude 0.2), 0.10 recovers the categories
+     and 0.05 does not. On dense embeddings every axis is active for
+     every item and the layout collapses.
+2. Form the normalized graph Laplacian `L = I − D⁻¹ᐟ² W D⁻¹ᐟ²`.
+3. Keep the bottom 3 non-trivial eigenvectors as coordinates. Fitted
+   items sit at their own rows.
+4. Out-of-sample points: **Nyström extension** over the query's `k`
+   nearest fitted items, the same sparsification the fit used.
 
-Hyperparameters live in `LaplacianConfig` (`k_neighbors`,
+A graph that splits into two or three separate groups leaves fewer than
+three group-level directions, so the remaining coordinate is variation
+*inside* one group and that group spreads out on the sphere. With four
+or more groups all three coordinates separate groups.
+
+Hyperparameters live in `LaplacianConfig` (`k_neighbors`, `similarity`,
 `active_threshold`). See
 [`sphereql-embed/src/laplacian.rs`](../sphereql-embed/src/laplacian.rs)
 for construction details.
@@ -141,7 +154,7 @@ reporting a quantity appropriate to their own mathematics.
 |---|---|---|---|
 | **PCA** | Classical explained-variance ratio (EVR) | Fraction of total corpus variance retained in the top-3 principal components | Higher = more linear variance survives the 3D projection. 2–5% is typical for transformer embeddings at 3 dimensions — low in absolute terms, but the surviving axes still rank meaning. |
 | **Kernel PCA** | Kernel-space EVR | Fraction of variance in the (infinite-dimensional) Gaussian feature space captured by the top-3 kernel PCs | Same shape as PCA's EVR but computed in RBF feature space; comparable to PCA only loosely, not to the two below. |
-| **Laplacian eigenmap** | Connectivity ratio (mean \|μ\| of the 3 retained eigenvalues) | How much low-frequency community/connectivity structure the 3D embedding captured | Higher = stronger block structure along the retained spectral directions. **Not** a variance fraction and **not** comparable to PCA EVR. |
+| **Laplacian eigenmap** | kNN recall | Mean overlap between each point's neighborhood among the fitted 3D positions and its neighbors in the graph the fit was built from | Same definition as UMAP's, so the two compare directly. **Not** a variance fraction and **not** comparable to PCA EVR. The spectral summary (mean \|μ\| of the 3 kept eigenvalues) is still available as `connectivity_ratio()`; it describes how strongly the graph splits into groups, not how well the layout preserves it. |
 | **UMAP-on-sphere** | Trustworthiness-style kNN recall | Mean overlap between each point's neighborhood among the fitted 3D positions and its original-space kNN set | Higher = more local neighborhoods survive the projection. 1.0 means every original neighborhood is preserved; random placements score near `k/n`. Rank-meaningful across corpora. |
 
 All four are bounded in `[0, 1]` and feed the same EVR-adaptive
@@ -150,7 +163,7 @@ thresholds downstream — the bridge threshold,
 `default_nearest`, and confidence scoring all consult this single value.
 That shared plumbing is the reason the families expose one accessor; it
 is **not** a claim that the scores are interchangeable. Do not compare a
-PCA EVR against a UMAP recall or a Laplacian connectivity ratio as if
+PCA EVR against a UMAP or Laplacian recall as if
 they were the same scale — a "low" number means something different in
 each column above. (Earlier UMAP versions used a median-distance proxy
 that saturated near 1.0 on the sphere; recall replaced it because it

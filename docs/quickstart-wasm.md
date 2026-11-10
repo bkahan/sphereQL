@@ -71,7 +71,7 @@ const proj = new LaplacianEigenmapProjection(
   JSON.stringify(embeddings),
   '"magnitude"', // radial
   15,            // k_neighbors
-  0.05,          // active_threshold
+  undefined,     // active_threshold: unset = cosine graph
 );
 console.log('connectivity_ratio:', proj.connectivityRatio);
 // `project` returns a typed { r, theta, phi } object — no JSON.parse.

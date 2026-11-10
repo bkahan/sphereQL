@@ -53,6 +53,29 @@ the PCA-vs-Laplacian columns:
 > budget-limited search that doesn't sample `active_threshold = 0.10`
 > misses the good configuration.
 
+> **Update, 2026-11-10: the Laplacian columns above predate the cosine
+> graph.** Laplacian eigenmap now links items by cosine similarity by
+> default, keeps fitted items at their own eigenvector rows, and reports
+> kNN recall as its quality score (see the CHANGELOG). The bimodality
+> described above belongs to the active-axis graph, which is now opt-in
+> (`laplacian.similarity = ActiveAxes`); the default graph has no
+> threshold. Re-running `auto_tune` (budget 24, random search, current
+> tuner and metrics) on that code:
+>
+> | Corpus | Metric | PCA | Laplacian | UMAP |
+> |---|---|---|---|---|
+> | Built-in 775-concept | `default_composite` | 0.1671 | 0.2040 | **0.5047** |
+> | Built-in 775-concept | `connectivity_composite` | 0.1154 | 0.1567 | **0.4718** |
+> | Stress 300-concept | `default_composite` | 0.6419 | **0.6800** | 0.6457 |
+> | Stress 300-concept | `connectivity_composite` | 0.5912 | 0.6100 | 0.6100 |
+>
+> Laplacian now beats PCA on both corpora and wins the stress corpus
+> under `default_composite`; all eight of its stress trials scored
+> 0.6800, so the result no longer depends on which trials the search
+> draws. UMAP still wins the built-in corpus by a wide margin. These
+> runs use the current tuner, so the PCA and UMAP cells are not
+> comparable with the table at the top either.
+
 This per-corpus, per-metric variation is the whole motivation for the
 auto-tuner + meta-model layer — no single projection is right, so the
 pipeline picks one per corpus.

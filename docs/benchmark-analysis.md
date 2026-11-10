@@ -190,7 +190,10 @@ in [empirical-findings.md](empirical-findings.md); the headline:
   `UmapSphere` shifts its random stream; `examples/meta_learn.rs` sweeps
   the same corpus without UMAP and reports Laplacian winning at ~0.68. See
   [empirical-findings.md](empirical-findings.md) for the full
-  reconciliation.
+  reconciliation. *(2026-11-10: this describes the active-axis graph,
+  now opt-in. On the default cosine graph Laplacian scores 0.68 on
+  every stress trial and wins that corpus under `default_composite`;
+  the same page has the re-run.)*
 - **PCA is robust on the stress corpus** but still loses to UMAP there.
 
 This supersedes the earlier two-way result (PCA wins the built-in corpus,
