@@ -528,10 +528,12 @@ impl NearestNeighborMetaModel {
     /// `inner_sphere.min_evr_improvement`, plus the kind-specific
     /// `laplacian.*` / `umap.*` knobs. Everything else
     /// (`bridges.balanced_affinity_quantile`,
+    /// `bridges.genuine_affinity_ratio`,
+    /// `bridges.overlap_separation_quantile`,
     /// `bridges.min_evr_for_classification`,
     /// `routing.group_routing_alpha`, the remaining `inner_sphere.*`
-    /// knobs, `spatial.*`, `min_category_size`) is inherited
-    /// nearest-neighbor from the closest record.
+    /// knobs, `radial.*`, `spatial.*`, `min_category_size`) is
+    /// inherited nearest-neighbor from the closest record.
     ///
     /// With `k = 1` this is exactly [`MetaModel::predict`]. Larger `k`
     /// trades sharpness for robustness against a single poorly-tuned
@@ -564,8 +566,9 @@ impl NearestNeighborMetaModel {
             .unwrap_or(top[0].best_config.projection_kind);
 
         // Fields not blended below — bridges.balanced_affinity_quantile,
+        // bridges.genuine_affinity_ratio, bridges.overlap_separation_quantile,
         // bridges.min_evr_for_classification, routing.group_routing_alpha,
-        // the remaining inner_sphere.* knobs, spatial.*, and
+        // the remaining inner_sphere.* knobs, radial.*, spatial.*, and
         // min_category_size — are intentionally inherited from the
         // nearest record: they're outside the tuner's SearchSpace, so
         // every record carries the same defaults and a median across

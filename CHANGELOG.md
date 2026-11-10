@@ -23,9 +23,10 @@ pick different configs.
   is at least `genuine_affinity_ratio` (new field, default 0.85) times the
   `balanced_affinity_quantile` of the corpus's home affinities, and `Weak`
   if not. Without the 0.85 the floor is unreachable on tight corpora (no
-  bridge on the 5k OpenAlex corpus qualified); in a blind review of 214
-  bridges, 83–87% of those labeled `Genuine` were real cross-field links
-  on both bundled corpora, against about 40% of the rest. 0.3.0 left every bridge `Weak` when
+  bridge on the 5k OpenAlex corpus qualified). In a blind check of 60
+  bridges from the two bundled corpora, 70% of those labeled `Genuine`
+  were real cross-field links, against 43% of the rest; 0.3.0's labels
+  showed no such gap. 0.3.0 left every bridge `Weak` when
   the projection's EVR was below `min_evr_for_classification` (0.20), and
   each projection family reports a different quantity as EVR, so whether
   a corpus got classified at all depended on the projection; above the
