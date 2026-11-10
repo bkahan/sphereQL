@@ -458,18 +458,26 @@ impl SearchSpace {
 /// whichever other kinds share the space. With one shared RNG, adding a
 /// projection family shifted every later trial, and each kind's trial
 /// count was left to chance.
+///
+/// The turns start at a kind picked by the seed. When the budget doesn't
+/// divide evenly, the kinds visited first get one extra trial; starting
+/// at the head of `projection_kinds` every time would always hand that
+/// extra trial to the same kinds, and short the last one listed.
 struct UniformProposer<'a> {
     space: &'a SearchSpace,
     seed: u64,
+    start: usize,
     proposed: usize,
     drawn: HashMap<ProjectionKind, u64>,
 }
 
 impl<'a> UniformProposer<'a> {
     fn new(space: &'a SearchSpace, seed: u64) -> Self {
+        let kinds = space.projection_kinds.len().max(1) as u64;
         Self {
             space,
             seed,
+            start: (stream_rng(seed, ORDER_STREAM, 0).next_u64() % kinds) as usize,
             proposed: 0,
             drawn: HashMap::new(),
         }
@@ -477,7 +485,7 @@ impl<'a> UniformProposer<'a> {
 
     fn propose(&mut self, base: &PipelineConfig) -> PipelineConfig {
         let kinds = &self.space.projection_kinds;
-        let kind = kinds[self.proposed % kinds.len()];
+        let kind = kinds[(self.start + self.proposed) % kinds.len()];
         self.proposed += 1;
         let n = self.drawn.entry(kind).or_default();
         let mut rng = stream_rng(self.seed, kind_stream(kind), *n);
@@ -499,6 +507,7 @@ fn kind_stream(kind: ProjectionKind) -> u64 {
 }
 
 const TPE_STREAM: u64 = 4;
+const ORDER_STREAM: u64 = 5;
 
 /// An independent generator for draw `index` of `stream` under `seed`.
 fn stream_rng(seed: u64, stream: u64, index: u64) -> SplitMix64 {
@@ -1711,11 +1720,20 @@ mod tests {
             ..SearchSpace::default()
         };
         let base = PipelineConfig::default();
-        let mut uniform = UniformProposer::new(&space, 3);
-        let proposed: Vec<ProjectionKind> = (0..9)
-            .map(|_| uniform.propose(&base).projection_kind)
-            .collect();
-        assert_eq!(proposed, kinds.repeat(3));
+        let mut first_kinds = std::collections::HashSet::new();
+        for seed in 0..64 {
+            let mut uniform = UniformProposer::new(&space, seed);
+            let proposed: Vec<ProjectionKind> = (0..9)
+                .map(|_| uniform.propose(&base).projection_kind)
+                .collect();
+            let start = kinds.iter().position(|&k| k == proposed[0]).unwrap();
+            let rotated: Vec<ProjectionKind> = (0..9).map(|i| kinds[(start + i) % 3]).collect();
+            assert_eq!(proposed, rotated, "seed {seed}: kinds rotate in list order");
+            first_kinds.insert(proposed[0]);
+        }
+        // Which kind goes first (and so gets the extra trial of an uneven
+        // budget) depends on the seed, not on the list order.
+        assert_eq!(first_kinds.len(), kinds.len());
     }
 
     #[test]
