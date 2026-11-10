@@ -36,9 +36,9 @@ pick different configs.
   updating. Saved configs still load (the new fields have serde defaults).
 - **Seeded tuner runs pick different configs than 0.3.0.** Random
   search and the Bayesian warmup now take the projection kinds in
-  turn, and each kind draws its knobs from its own seed-derived
-  stream, so a kind's n-th trial gets the same knobs whatever else is
-  in the space. Before, one RNG was shared across trials: adding a
+  turn, starting at a kind the seed picks, and each kind draws its
+  knobs from its own seed-derived stream, so a kind's n-th trial gets
+  the same knobs whatever else is in the space. Before, one RNG was shared across trials: adding a
   family (UMAP, say) reshuffled every later trial, and how many trials
   each kind got was left to chance. A seed still reproduces within a
   release; runs recorded under 0.3.0 won't replay exactly.

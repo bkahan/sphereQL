@@ -63,7 +63,9 @@ the exact Cartesian enumeration of the space.
 `Random` and the Bayesian warmup take `projection_kinds` in turn, and
 each kind draws its knobs from its own stream derived from `seed`. A
 kind's n-th trial gets the same knobs whichever other kinds share the
-space, and the kinds' trial counts differ by at most one.
+space, and the kinds' trial counts differ by at most one. The turns
+start at a kind the seed picks, so which kinds get the extra trial of an
+uneven budget doesn't depend on the order of `projection_kinds`.
 
 Metrics implement the `QualityMetric` trait:
 
