@@ -102,7 +102,7 @@ def main():
 
     print("\n  query_similar (min_cosine=0.6):")
     similar = bridge.query_similar(query_vec, min_cosine=0.6)
-    print(f"    -> {len(similar)} above threshold")
+    print(f"    -> {len(similar)} inside the cap (projected cosine)")
     for h in similar[:3]:
         print(f"       [{h.category}] d={h.distance:.4f} id={h.id}")
 

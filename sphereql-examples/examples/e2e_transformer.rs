@@ -326,11 +326,11 @@ fn main() {
         }
     }
 
-    // ── Similarity threshold demo (SimilarAbove) ────────────────────────
+    // ── Cap on the sphere around the projected query ────────────────────
     if let Some(first_q) = queries.first() {
         let sim_result = index.search_similar(&first_q.1, 0.85);
         println!(
-            "\n--- SimilarAbove (cosine ≥ 0.85): \"{}\" → {} hits ---",
+            "\n--- search_similar (projected cosine ≥ 0.85): \"{}\" → {} hits ---",
             first_q.0,
             sim_result.items.len(),
         );

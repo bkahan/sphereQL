@@ -347,7 +347,7 @@ fn main() {
     // -----------------------------------------------------------------------
     // Similarity search: find all docs semantically close to a music query
     // -----------------------------------------------------------------------
-    println!("\n--- Similarity Search: \"orchestral performance\" (cosine ≥ 0.75) ---");
+    println!("\n--- Similarity Search: \"orchestral performance\" (projected cosine ≥ 0.75) ---");
     let q_music = embed(&[(MUSIC, 0.9), (PERFORM, 0.8), (EMOTION, 0.4)], 103);
     let sim_results = index.search_similar(&q_music, 0.75);
     let q_proj = index.projection().project(&q_music);

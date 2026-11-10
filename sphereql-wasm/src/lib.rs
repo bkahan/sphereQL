@@ -145,7 +145,10 @@ impl Pipeline {
         }
     }
 
-    /// All items above a cosine similarity threshold.
+    /// Items inside the cap of angle `acos(min_cosine)` around the projected
+    /// query. This build keeps only the 3D projection, so the threshold
+    /// applies to the cosine between projected directions, not between
+    /// embeddings: read the result as candidates to re-rank, not as matches.
     pub fn similar_above(
         &self,
         query_json: &str,

@@ -48,7 +48,8 @@ results = pipeline.nearest(query, k=3)
 for r in results:
     print(f"{r.id}  {r.category}  distance={r.distance:.4f}")
 
-# Similarity threshold search
+# Candidates inside a cap on the sphere. The threshold is on the cosine
+# between projected directions, so re-rank against your vectors.
 similar = pipeline.similar_above(query, min_cosine=0.8)
 
 # Concept path between items
