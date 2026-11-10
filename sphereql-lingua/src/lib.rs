@@ -17,7 +17,7 @@ pub mod salience;
 pub mod taxonomy;
 
 pub use abstraction::AbstractionResolver;
-pub use concept::{Concept, ConceptExtractor, RegexExtractor, VocabEntry};
+pub use concept::{Concept, ConceptExtractor, RegexExtractor, VocabEntry, normalize_text};
 pub use graph::ConceptGraph;
 pub use pipeline::LinguaPipeline;
 pub use relation::{Relation, RelationEncoder, RelationType};

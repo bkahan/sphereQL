@@ -17,7 +17,8 @@ pub struct Concept {
     pub point: Option<SphericalPoint>,
     /// Occurrence count in source text.
     pub frequency: u32,
-    /// Character offsets of each occurrence.
+    /// Byte offset of each occurrence in [`normalize_text`] of the source
+    /// text (not in the source text itself: normalizing changes lengths).
     pub positions: Vec<usize>,
     /// Hint from vocabulary: which domain does this belong to?
     pub domain_hint: Option<String>,
@@ -55,6 +56,17 @@ impl std::hash::Hash for Concept {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.normalized.hash(state);
     }
+}
+
+/// The form of a text that concepts are matched against and that
+/// [`Concept::positions`] index into: lowercased, `θ`/`φ` spelled out,
+/// runs of whitespace collapsed to one space, ends trimmed.
+pub fn normalize_text(text: &str) -> String {
+    let lowered = text
+        .to_lowercase()
+        .replace('θ', "theta")
+        .replace('φ', "phi");
+    WHITESPACE_RE.replace_all(&lowered, " ").trim().to_string()
 }
 
 /// Trait for concept extraction backends.
@@ -320,12 +332,6 @@ impl RegexExtractor {
         .collect()
     }
 
-    fn normalize_text(&self, text: &str) -> String {
-        let mut s = text.to_lowercase();
-        s = s.replace('θ', "theta").replace('φ', "phi");
-        WHITESPACE_RE.replace_all(&s, " ").trim().to_string()
-    }
-
     fn count_occurrences(term: &str, text: &str) -> (u32, Vec<usize>) {
         let mut count = 0u32;
         let mut positions = Vec::new();
@@ -342,7 +348,7 @@ impl RegexExtractor {
 
 impl ConceptExtractor for RegexExtractor {
     fn extract(&self, text: &str) -> Vec<Concept> {
-        let normalized = self.normalize_text(text);
+        let normalized = normalize_text(text);
         let mut seen: HashSet<String> = HashSet::new();
         let mut concepts = Vec::new();
 

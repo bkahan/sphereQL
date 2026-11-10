@@ -166,6 +166,15 @@ pick different configs.
   change could replace the new tiles with old ones; re-projection left the
   globe and overlays where the old projection put them; the tile-decode
   worker was never stopped.
+- **`sphereql-lingua` panicked on non-ASCII text.** The salience scorer
+  cut fixed-width windows out of the text at byte offsets, which lands
+  inside a character as soon as an accent, curly quote or dash is
+  nearby, and it read `Concept::positions` (offsets into the normalized
+  text) against the un-normalized text, so a text with many `θ`/`φ`
+  panicked too. Windows now widen to character boundaries and the
+  scorer reads the text the offsets index. `normalize_text` is public
+  so a custom `ConceptExtractor` can produce matching offsets. Radii on
+  ASCII text move by under 0.001.
 
 ### Security
 
