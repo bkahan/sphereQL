@@ -124,7 +124,7 @@ impl ScenePoint {
 ///
 /// `evr_label` is set by the producer so the panel reports the right metric
 /// per projection family (PCA: "PCA variance"; UMAP: "UMAP kNN-recall";
-/// Laplacian: "connectivity ratio"; …) rather than a hardcoded string.
+/// Laplacian: "Laplacian kNN-recall"; …) rather than a hardcoded string.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SceneStats {
     /// Projection family name (e.g. `"pca"`, `"umap_sphere"`).

@@ -949,7 +949,7 @@ fn pca_warm_start(
 /// Above `ANN_BRUTE_FORCE_THRESHOLD` a fresh ANN index is built over
 /// the 3D positions (deterministic via the default seed); this is
 /// distinct from the retained high-dimensional index in `UmapGraph`.
-fn knn_recall_score(points: &[[f64; 3]], knn: &[Vec<usize>]) -> f64 {
+pub(crate) fn knn_recall_score(points: &[[f64; 3]], knn: &[Vec<usize>]) -> f64 {
     let n = points.len();
     if n < 2 {
         return 1.0;

@@ -172,8 +172,8 @@ let drill = pipeline.query(
 let stats = pipeline.query(SphereQLQuery::CategoryStats, &query).unwrap();
 
 // Export for visualization. The quality score is EVR for PCA / kernel
-// PCA, a connectivity ratio for Laplacian, and kNN-recall
-// trustworthiness for UMAP — same [0, 1] scale, different meaning.
+// PCA and kNN-recall for Laplacian and UMAP: same [0, 1] scale,
+// different meaning.
 let points = pipeline.exported_points();
 let quality = pipeline.explained_variance_ratio();
 ```

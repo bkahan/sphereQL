@@ -21,7 +21,7 @@ pipeline output into a `Scene` and call `to_html()`.
 - **`Scene` / `ScenePoint` / `SceneStats`** — the point cloud plus
   projection-quality metadata. The stats panel reports the right metric per
   projection family via `evr_label` (PCA variance / UMAP kNN-recall /
-  Connectivity ratio), not a hardcoded string. `ScenePoint` carries both
+  Laplacian kNN-recall), not a hardcoded string. `ScenePoint` carries both
   Cartesian and spherical forms, an optional stable `id` (for k-NN highlight +
   cross-scene morph), and optional `certainty`/`intensity` quality signals.
 - **`Overlay`** — drawable S² structure: category centroids, classified bridges,

@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::config::{
-    BridgeConfig, InnerSphereConfig, LaplacianConfig, PipelineConfig, ProjectionKind,
-    RoutingConfig, UmapConfig,
+    BridgeConfig, InnerSphereConfig, LaplacianConfig, LaplacianSimilarity, PipelineConfig,
+    ProjectionKind, RoutingConfig, UmapConfig,
 };
 use crate::configured_projection::ConfiguredProjection;
 use crate::pipeline::{
@@ -63,7 +63,9 @@ pub struct SearchSpace {
     pub laplacian_k_neighbors: Vec<usize>,
     /// Candidate values for [`LaplacianConfig::active_threshold`]. Only
     /// explored when [`ProjectionKind::LaplacianEigenmap`] is in
-    /// `projection_kinds`.
+    /// `projection_kinds`, and only read by the fit when the base
+    /// config's `laplacian.similarity` is
+    /// [`LaplacianSimilarity::ActiveAxes`].
     pub laplacian_active_threshold: Vec<f64>,
 
     /// Candidate values for [`UmapConfig::n_neighbors`]. Only explored
@@ -100,9 +102,9 @@ pub struct SearchSpace {
 impl SearchSpace {
     /// Search space optimized for large corpora (> 10 000 items).
     ///
-    /// Includes PCA and UMAP (but not Laplacian eigenmap, which is O(N²)
-    /// on the affinity matrix). UMAP uses the ANN-backed kNN graph,
-    /// making it O(N log N) for graph construction.
+    /// Includes PCA and UMAP, which uses the ANN-backed kNN graph
+    /// (O(N log N) to build). Laplacian eigenmap is left out: its cosine
+    /// graph scales the same way, but it has not been run at this size.
     pub fn large_corpus() -> Self {
         Self {
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::UmapSphere],
@@ -132,11 +134,15 @@ impl Default for SearchSpace {
             // sweep — callers who want it can add ProjectionKind::KernelPca
             // explicitly, accepting the longer fit cost.
             projection_kinds: vec![ProjectionKind::Pca, ProjectionKind::LaplacianEigenmap],
-            // Laplacian hyperparameters bracket the default values
-            // (k=15, threshold=0.05) widely enough that the tuner can
-            // actually move the projection's geometry.
+            // k brackets the default (15) widely enough that the tuner
+            // can actually move the projection's geometry.
             laplacian_k_neighbors: vec![10, 15, 25],
-            laplacian_active_threshold: vec![0.03, 0.05, 0.10],
+            // One value: the default cosine graph doesn't read the
+            // threshold, so sweeping it would repeat the same fit. With
+            // `laplacian.similarity = ActiveAxes` in the base config,
+            // give this axis values that bracket the corpus's noise
+            // floor (e.g. `[0.03, 0.05, 0.10]`).
+            laplacian_active_threshold: vec![0.05],
             umap_n_neighbors: vec![10, 15, 30],
             umap_n_epochs: vec![150, 250],
             umap_category_weight: vec![0.0, 1.5, 3.0],
@@ -374,6 +380,7 @@ impl SearchSpace {
             cfg.laplacian = LaplacianConfig {
                 k_neighbors: self.laplacian_k_neighbors[i_k],
                 active_threshold: self.laplacian_active_threshold[i_thr],
+                similarity: cfg.laplacian.similarity,
             };
         }
 
@@ -431,6 +438,7 @@ impl SearchSpace {
             cfg.laplacian = LaplacianConfig {
                 k_neighbors: pick_uniform(rng, &self.laplacian_k_neighbors),
                 active_threshold: pick_uniform(rng, &self.laplacian_active_threshold),
+                similarity: cfg.laplacian.similarity,
             };
         }
 
@@ -521,6 +529,8 @@ enum ProjectionFitKey {
     KernelPca,
     Laplacian {
         k: usize,
+        similarity: LaplacianSimilarity,
+        /// Zero unless the graph reads the threshold.
         threshold_bits: u64,
     },
     UmapSphere {
@@ -538,7 +548,13 @@ impl ProjectionFitKey {
             ProjectionKind::KernelPca => Self::KernelPca,
             ProjectionKind::LaplacianEigenmap => Self::Laplacian {
                 k: cfg.laplacian.k_neighbors,
-                threshold_bits: cfg.laplacian.active_threshold.to_bits(),
+                similarity: cfg.laplacian.similarity,
+                // The cosine graph ignores the threshold, so configs that
+                // differ only there share one fit.
+                threshold_bits: match cfg.laplacian.similarity {
+                    LaplacianSimilarity::ActiveAxes => cfg.laplacian.active_threshold.to_bits(),
+                    LaplacianSimilarity::Cosine => 0,
+                },
             },
             ProjectionKind::UmapSphere => Self::UmapSphere {
                 n_neighbors: cfg.umap.n_neighbors,
@@ -1095,6 +1111,7 @@ fn tpe_propose(
             cfg.laplacian = LaplacianConfig {
                 k_neighbors: pick_uniform(rng, &space.laplacian_k_neighbors),
                 active_threshold: pick_uniform(rng, &space.laplacian_active_threshold),
+                similarity: cfg.laplacian.similarity,
             };
         } else {
             let k_g = hist_usize(&good_l, &space.laplacian_k_neighbors, |c| {
@@ -1112,6 +1129,7 @@ fn tpe_propose(
             cfg.laplacian = LaplacianConfig {
                 k_neighbors: space.laplacian_k_neighbors[pick_idx(rng, &k_g, &k_b)],
                 active_threshold: space.laplacian_active_threshold[pick_idx(rng, &at_g, &at_b)],
+                similarity: cfg.laplacian.similarity,
             };
         }
     }

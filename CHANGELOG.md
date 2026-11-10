@@ -126,6 +126,48 @@ pick different configs.
 - **`js-tests/`** — headless tests that boot the real `viewer.js` in Node
   (14 suites), run in CI.
 
+### Changed — Laplacian eigenmap (breaking for its results)
+
+- **The neighbour graph is cosine k-NN by default.** The graph was the
+  Jaccard overlap of each item's active axes (`|v_i| > active_threshold`),
+  which only has contrast on sparse embeddings. On dense ones every axis
+  is active for every item: on 2,799 GloVe vectors the layout covered 1%
+  of the sphere and its distances had no rank correlation with cosine
+  distance. New `LaplacianConfig.similarity` (`LaplacianSimilarity`,
+  default `Cosine`; `ActiveAxes` keeps the old graph and is the only mode
+  that reads `active_threshold`). `LaplacianEigenmapProjection::fit` now
+  fits the cosine graph, `fit_cosine` takes `k`, and `fit_with_params`
+  still fits the active-axis graph. In Python and WASM, leaving
+  `active_threshold` unset selects cosine. Struct literals of
+  `LaplacianConfig` need the new field; saved configs load with `Cosine`.
+- **Fitted items sit at their own eigenvector rows, and queries are
+  placed from their `k` nearest fitted items.** Every item, fitted or
+  not, used to be placed by a Nyström sum over the *whole* corpus, which
+  is not the sparsified graph the eigenvectors came from and pulled
+  everything toward the middle.
+- **The solver keeps the largest eigenvalues, not the largest
+  magnitudes,** and works on the sparse graph instead of a dense n×n
+  matrix. Power iteration on the affinity itself could keep an eigenvalue
+  near −1 (it did, at −0.67, on the GloVe corpus) in place of a
+  connectivity direction. Fit on the 5,321-concept corpus went from 48 s
+  to 3 s on a 2-core machine.
+- **`explained_variance_ratio()` is kNN recall,** the same definition
+  UMAP reports, so the pipeline's EVR-adaptive thresholds see how well
+  the layout keeps neighbourhoods. It was the mean `|μ|` of the kept
+  eigenvalues, which describes the graph, not the layout: 0.44–0.98 on
+  the four test corpora whatever the layout's quality. That number is
+  still `connectivity_ratio()`. Viewer label: "Laplacian kNN-recall".
+- Recall@10 against full-dimensional cosine neighbours, default config,
+  before → after. In-sample: 0.106 → 0.199 (GloVe), 0.219 → 0.327
+  (775-concept), 0.125 → 0.180 (5,321-concept), 0.035 → 0.541 (stress).
+  Fit on 80% and placing the other 20%: 0.087 → 0.193, 0.233 → 0.310,
+  0.129 → 0.189, 0.052 → 0.400.
+- `SearchSpace::default()` searches a single `laplacian_active_threshold`
+  (the cosine graph doesn't read it), so its Laplacian slice is a third
+  the size. To sweep the active-axis graph, set
+  `laplacian.similarity = ActiveAxes` in the base config and give the
+  axis values.
+
 ### Changed
 
 - `sphereql-python`'s `visualize` / `visualize_pipeline` now render through

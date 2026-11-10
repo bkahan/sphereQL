@@ -39,6 +39,10 @@ name = "LaplacianConfig"
 reason = "sub-config inside PipelineConfig"
 
 [[exempt]]
+name = "LaplacianSimilarity"
+reason = "field of LaplacianConfig; reached via the config dict"
+
+[[exempt]]
 name = "SpatialConfig"
 reason = "sub-config inside PipelineConfig"
 

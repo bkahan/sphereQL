@@ -107,7 +107,7 @@ class TestVisualizePipeline:
         with open(out) as f:
             content = f.read()
         assert "laplacian_eigenmap" in content
-        assert "Connectivity ratio" in content
+        assert "Laplacian kNN-recall" in content
         assert "PCA variance" not in content
 
 

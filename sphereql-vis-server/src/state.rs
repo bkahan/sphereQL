@@ -139,7 +139,7 @@ fn evr_label_for(kind: &str) -> &'static str {
     match kind {
         "pca" => "PCA variance",
         "kernel_pca" => "Kernel EVR",
-        "laplacian_eigenmap" => "Connectivity ratio",
+        "laplacian_eigenmap" => "Laplacian kNN-recall",
         "umap_sphere" => "UMAP kNN-recall",
         _ => "Explained variance ratio",
     }
