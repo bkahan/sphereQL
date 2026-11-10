@@ -230,6 +230,15 @@ impl Pipeline {
         serde_json::to_string(&out).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    /// Items inside the cap of angle `acos(min_cosine)` around the projected
+    /// query.
+    ///
+    /// This build keeps only the 3D projection, so the threshold applies to
+    /// the cosine between projected directions, not between embeddings.
+    /// Read the result as candidates: on three test corpora at thresholds
+    /// from 0.6 to 0.9 it held 94-100% of the items whose embedding cosine
+    /// met the threshold, but only 1-26% of what it returned did. Re-rank
+    /// against your vectors to get matches.
     #[pyo3(signature = (query, min_cosine=0.8))]
     fn similar_above(
         &self,
@@ -254,6 +263,7 @@ impl Pipeline {
         }
     }
 
+    /// `similar_above` as a JSON string.
     #[pyo3(signature = (query, min_cosine=0.8))]
     fn similar_above_json(
         &self,

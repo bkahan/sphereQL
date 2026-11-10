@@ -147,6 +147,15 @@ pick different configs.
 
 ### Fixed
 
+- **`SimilarAbove { min_cosine }` thresholds the embedding cosine when the
+  pipeline has the embeddings.** It always applied the threshold to the
+  cosine between projected directions. On three test corpora at
+  thresholds from 0.6 to 0.9, 1–26% of what that returned met the
+  threshold in embedding space. With `retain-embeddings` the result is
+  now exact and ordered most similar first. Without it the pipeline has
+  only the 3D projection and the behavior is unchanged; the docs for the
+  variant and for Python/WASM `similar_above` / `query_similar` now say
+  that the result is a candidate set to re-rank.
 - **A NaN score could win `auto_tune`.** The best-trial check treated
   an unordered comparison as "not worse", so a NaN replaced a finite
   best. Trials scoring NaN or ±inf now go to `TuneReport::failures`

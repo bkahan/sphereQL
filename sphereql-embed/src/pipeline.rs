@@ -185,7 +185,22 @@ pub enum SphereQLOutput {
 pub enum SphereQLQuery<'a> {
     /// Find the k nearest neighbors to the query embedding.
     Nearest { k: usize },
-    /// Find all neighbors within a cosine similarity threshold.
+    /// Every item whose cosine similarity to the query is at least
+    /// `min_cosine`.
+    ///
+    /// When the pipeline holds the corpus embeddings (the
+    /// `retain-embeddings` feature), the threshold is applied to the
+    /// full-dimensional cosine and the result is exact, most similar
+    /// first.
+    ///
+    /// Without them the pipeline only has the 3D projection, so the
+    /// threshold is applied to the cosine between *projected*
+    /// directions (the items inside a cap of angle `acos(min_cosine)`
+    /// around the projected query). Read that result as a candidate
+    /// set, not as matches: on three test corpora at thresholds from
+    /// 0.6 to 0.9 it held 94–100% of the true matches, but only 1–26%
+    /// of the items it returned were matches. Re-rank it against the
+    /// real vectors.
     SimilarAbove { min_cosine: f64 },
     /// Find the shortest concept path between two indexed items.
     ConceptPath {
@@ -550,23 +565,25 @@ impl SphereQLPipeline {
 
             SphereQLQuery::SimilarAbove { min_cosine } => {
                 let evr = self.projection.explained_variance_ratio();
-                let results = self.index.search_similar(&emb, min_cosine);
                 let sp_q = self.projection.project(&emb);
+                let hits = match &self.raw_embeddings {
+                    Some(raw) => Self::at_least_cosine(raw, &emb.values, min_cosine)
+                        .into_iter()
+                        .filter_map(|i| self.index.get(&self.ids[i]).cloned())
+                        .collect(),
+                    None => self.index.search_similar(&emb, min_cosine).items,
+                };
                 Ok(SphereQLOutput::KNearest(
-                    results
-                        .items
-                        .iter()
+                    hits.iter()
                         .map(|item| {
-                            let d = angular_distance(&sp_q, item.position());
                             let certainty = item.certainty();
-                            let quality = QualitySignal::from_certainty(evr, certainty);
                             NearestResult {
                                 id: item.id.clone(),
                                 category: self.cat_for(&item.id),
-                                distance: d,
+                                distance: angular_distance(&sp_q, item.position()),
                                 certainty,
                                 intensity: item.intensity(),
-                                quality: Some(quality),
+                                quality: Some(QualitySignal::from_certainty(evr, certainty)),
                             }
                         })
                         .filter(|r| self.passes_quality(r))
@@ -689,6 +706,32 @@ impl SphereQLPipeline {
                 inner_sphere_reports: self.category_layer.inner_sphere_stats(),
             }),
         }
+    }
+
+    /// Indices of the embeddings whose cosine similarity to `query` is at
+    /// least `min_cosine`, most similar first (ties in index order). A
+    /// zero vector has no direction and matches nothing. One O(N·D) scan.
+    fn at_least_cosine(embeddings: &[Vec<f64>], query: &[f64], min_cosine: f64) -> Vec<usize> {
+        let norm = |v: &[f64]| v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let query_norm = norm(query);
+        if query_norm < f64::EPSILON {
+            return Vec::new();
+        }
+        let mut hits: Vec<(usize, f64)> = embeddings
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| {
+                let e_norm = norm(e);
+                if e_norm < f64::EPSILON {
+                    return None;
+                }
+                let dot: f64 = query.iter().zip(e).map(|(a, b)| a * b).sum();
+                let cosine = (dot / (query_norm * e_norm)).clamp(-1.0, 1.0);
+                (cosine >= min_cosine).then_some((i, cosine))
+            })
+            .collect();
+        hits.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        hits.into_iter().map(|(i, _)| i).collect()
     }
 
     /// Get the category for an indexed item by its id.
@@ -2382,6 +2425,112 @@ mod tests {
     }
 
     // ── retain-embeddings tests ──────────────────────────────────────
+
+    /// 40 items in two groups of 20 around `a` and `b`, which are 60° apart
+    /// in 8 dimensions, plus a query on `a`.
+    fn two_groups_60_degrees_apart() -> (PipelineInput, PipelineQuery) {
+        let mut embeddings = Vec::new();
+        let mut categories = Vec::new();
+        for i in 0..40 {
+            let mut v = vec![0.0; 8];
+            if i < 20 {
+                v[0] = 1.0;
+                categories.push("a".to_string());
+            } else {
+                v[0] = 0.5;
+                v[1] = 0.75f64.sqrt();
+                categories.push("b".to_string());
+            }
+            // Spread within the group, on axes the two groups don't share.
+            v[2 + i % 6] = 0.02 * (1 + i / 6) as f64;
+            embeddings.push(v);
+        }
+        let mut query = vec![0.0; 8];
+        query[0] = 1.0;
+        (
+            PipelineInput {
+                categories,
+                embeddings,
+            },
+            PipelineQuery { embedding: query },
+        )
+    }
+
+    fn similar_above(
+        pipeline: &SphereQLPipeline,
+        query: &PipelineQuery,
+        min_cosine: f64,
+    ) -> Vec<NearestResult> {
+        match pipeline
+            .query(SphereQLQuery::SimilarAbove { min_cosine }, query)
+            .unwrap()
+        {
+            SphereQLOutput::KNearest(items) => items,
+            other => panic!("expected KNearest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn similar_above_thresholds_the_full_dimensional_cosine() {
+        let (input, query) = two_groups_60_degrees_apart();
+        let embeddings = input.embeddings.clone();
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let cosine =
+            |i: usize| cosine_similarity(&query.embedding, &embeddings[i]).expect("same dimension");
+
+        for min_cosine in [0.99, 0.9, 0.6, 0.45, -1.0] {
+            let got: Vec<usize> = similar_above(&pipeline, &query, min_cosine)
+                .iter()
+                .map(|r| r.id[2..].parse().unwrap())
+                .collect();
+            let mut want: Vec<usize> = (0..embeddings.len())
+                .filter(|&i| cosine(i) >= min_cosine)
+                .collect();
+            want.sort_by(|&a, &b| cosine(b).total_cmp(&cosine(a)).then(a.cmp(&b)));
+            assert_eq!(got, want, "min_cosine = {min_cosine}");
+        }
+        // Group `b` sits at cosine 0.5: outside 0.6, inside 0.45.
+        assert_eq!(similar_above(&pipeline, &query, 0.6).len(), 20);
+        assert_eq!(similar_above(&pipeline, &query, 0.45).len(), 40);
+    }
+
+    #[test]
+    #[cfg(feature = "retain-embeddings")]
+    fn similar_above_matches_nothing_for_a_zero_query() {
+        let (input, _) = two_groups_60_degrees_apart();
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let zero = PipelineQuery {
+            embedding: vec![0.0; 8],
+        };
+        assert!(similar_above(&pipeline, &zero, -1.0).is_empty());
+    }
+
+    #[test]
+    #[cfg(not(feature = "retain-embeddings"))]
+    fn similar_above_without_embeddings_is_the_projected_cap() {
+        let (input, query) = two_groups_60_degrees_apart();
+        let pipeline = SphereQLPipeline::new(input).unwrap();
+        let query_position = pipeline
+            .projection()
+            .project(&Embedding::new(query.embedding.clone()));
+        let max_angle = 0.6f64.acos();
+
+        let got = similar_above(&pipeline, &query, 0.6);
+        assert!(!got.is_empty());
+        for r in &got {
+            assert!(r.distance <= max_angle + 1e-9, "{}: {}", r.id, r.distance);
+        }
+        let inside_cap = pipeline
+            .exported_points()
+            .iter()
+            .filter(|p| {
+                let position = SphericalPoint::new_unchecked(1.0, p.theta, p.phi);
+                angular_distance(&query_position, &position) <= max_angle
+            })
+            .count();
+        assert_eq!(got.len(), inside_cap);
+    }
 
     #[test]
     #[cfg(feature = "retain-embeddings")]

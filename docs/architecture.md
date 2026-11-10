@@ -71,7 +71,7 @@ both also depend directly on `sphereql-core`. The Python skeleton
 | `graphql` | GraphQL schema, subscriptions, event bus | `core`, `index` (+ `embed` via the crate) |
 | `vectordb` | Vector store bridge and hybrid search | `embed` |
 | `pinecone` | Pinecone backend for vectordb | `vectordb` |
-| `retain-embeddings` | Keep the original high-dimensional embeddings on the pipeline (`raw_embeddings()`, `pairwise_similarities()`, `nearest_by_embedding()`) | `sphereql-embed/retain-embeddings` |
+| `retain-embeddings` | Keep the original high-dimensional embeddings on the pipeline (`raw_embeddings()`, `pairwise_similarities()`, `nearest_by_embedding()`); also makes `SimilarAbove` an exact full-dimensional cosine threshold | `sphereql-embed/retain-embeddings` |
 | `full` | All of the above except `pinecone` (includes `retain-embeddings`) | All non-backend features |
 
 `full` does not activate `pinecone` because it pulls in `reqwest`. Enable it

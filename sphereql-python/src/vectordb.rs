@@ -183,6 +183,11 @@ macro_rules! impl_vector_bridge_methods {
                 }
             }
 
+            /// Items inside the cap of angle `acos(min_cosine)` around the
+            /// projected query. The threshold applies to the cosine between
+            /// projected directions, not between embeddings, so most of the
+            /// result will not meet it in embedding space; use
+            /// `hybrid_search` to rank against the stored vectors.
             #[pyo3(signature = (embedding, *, min_cosine=0.8))]
             fn query_similar(
                 &self,

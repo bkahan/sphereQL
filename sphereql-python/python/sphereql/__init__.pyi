@@ -622,8 +622,22 @@ class Pipeline:
         """
     def nearest(self, query: typing.Any, k: builtins.int = 5) -> builtins.list[NearestHit]: ...
     def nearest_json(self, query: typing.Any, k: builtins.int = 5) -> builtins.str: ...
-    def similar_above(self, query: typing.Any, min_cosine: builtins.float = 0.8) -> builtins.list[NearestHit]: ...
-    def similar_above_json(self, query: typing.Any, min_cosine: builtins.float = 0.8) -> builtins.str: ...
+    def similar_above(self, query: typing.Any, min_cosine: builtins.float = 0.8) -> builtins.list[NearestHit]:
+        r"""
+        Items inside the cap of angle `acos(min_cosine)` around the projected
+        query.
+        
+        This build keeps only the 3D projection, so the threshold applies to
+        the cosine between projected directions, not between embeddings.
+        Read the result as candidates: on three test corpora at thresholds
+        from 0.6 to 0.9 it held 94-100% of the items whose embedding cosine
+        met the threshold, but only 1-26% of what it returned did. Re-rank
+        against your vectors to get matches.
+        """
+    def similar_above_json(self, query: typing.Any, min_cosine: builtins.float = 0.8) -> builtins.str:
+        r"""
+        `similar_above` as a JSON string.
+        """
     def concept_path(self, source_id: builtins.str, target_id: builtins.str, *, graph_k: builtins.int = 10, query: typing.Optional[typing.Any] = None) -> typing.Optional[PathResult]: ...
     def concept_path_json(self, source_id: builtins.str, target_id: builtins.str, *, graph_k: builtins.int = 10, query: typing.Optional[typing.Any] = None) -> builtins.str: ...
     def detect_globs(self, *, k: typing.Optional[builtins.int] = None, max_k: builtins.int = 10, query: typing.Optional[typing.Any] = None) -> builtins.list[GlobInfo]: ...
@@ -746,7 +760,14 @@ class VectorStoreBridge:
         inner-sphere / routing thresholds).
         """
     def query_nearest(self, embedding: typing.Sequence[builtins.float], *, k: builtins.int = 5) -> builtins.list[NearestHit]: ...
-    def query_similar(self, embedding: typing.Sequence[builtins.float], *, min_cosine: builtins.float = 0.8) -> builtins.list[NearestHit]: ...
+    def query_similar(self, embedding: typing.Sequence[builtins.float], *, min_cosine: builtins.float = 0.8) -> builtins.list[NearestHit]:
+        r"""
+        Items inside the cap of angle `acos(min_cosine)` around the
+        projected query. The threshold applies to the cosine between
+        projected directions, not between embeddings, so most of the
+        result will not meet it in embedding space; use
+        `hybrid_search` to rank against the stored vectors.
+        """
     def query_concept_path(self, source_id: builtins.str, target_id: builtins.str, *, graph_k: builtins.int = 10, embedding: typing.Sequence[builtins.float]) -> typing.Optional[PathResult]: ...
     def query_detect_globs(self, embedding: typing.Sequence[builtins.float], *, k: typing.Optional[builtins.int] = None, max_k: builtins.int = 10) -> builtins.list[GlobInfo]: ...
     def query_local_manifold(self, embedding: typing.Sequence[builtins.float], *, neighborhood_k: builtins.int = 10) -> ManifoldInfo:
