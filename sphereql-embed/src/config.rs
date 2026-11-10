@@ -224,27 +224,35 @@ pub struct BridgeConfig {
     /// ([`Self::overlap_separation_quantile`]). Retained for serde/back-compat
     /// only; no longer consulted.
     pub overlap_artifact_territorial: f64,
-    /// Quantile of the home-affinity distribution that sets the
+    /// Quantile of the home-affinity distribution that anchors the
     /// genuine-bridge floor. For each member item, "home affinity" is
     /// the cosine similarity between the item's embedding and its own
-    /// category's centroid. A bridge is classified `Genuine` when
-    /// `min(affinity_to_source, affinity_to_target)` exceeds the
-    /// quantile-q of those home affinities; otherwise `Weak`.
+    /// category's centroid. The floor is
+    /// `genuine_affinity_ratio × quantile(home affinities, q)`, and a
+    /// bridge needs `min(affinity_to_source, affinity_to_target)` at or
+    /// above it to be `Genuine` (see [`Self::genuine_affinity_ratio`]
+    /// for the other condition).
     ///
-    /// Why a quantile and not an absolute cosine: home affinity scale
-    /// varies with the projection layout. After stratified PCA spreads
-    /// imbalanced corpora, home affinities can drop into the 0.3–0.6
-    /// band where a fixed 0.5 cosine floor labels almost every cross-
-    /// domain item `Weak`. A quantile-based floor adapts to the
-    /// corpus's own affinity scale: tight corpora get a strict floor,
-    /// spread ones get a permissive one, without per-corpus tuning.
+    /// Why a quantile and not an absolute cosine: the affinity scale
+    /// varies by corpus. A quantile-based floor adapts to the corpus's
+    /// own scale without per-corpus tuning.
     ///
-    /// Smaller q = stricter (only bridges matching the strongest
-    /// home affinities qualify). Larger q = more permissive. Default
-    /// 0.25: a bridge is `Genuine` if it has at least as much
-    /// affinity to both sides as the bottom-25% of items have to
-    /// their own home category.
+    /// Smaller q = stricter. Default 0.25.
     pub balanced_affinity_quantile: f64,
+    /// How far below the home-affinity quantile the genuine-bridge
+    /// floor sits. A bridge is `Genuine` when it goes to the item's
+    /// nearest other category (by full-dim centroid cosine) and its
+    /// weaker affinity is at least this fraction of the
+    /// [`Self::balanced_affinity_quantile`] home affinity.
+    ///
+    /// At 1.0 the floor is unreachable on tight corpora: on the 5k
+    /// OpenAlex corpus the bottom-quartile home affinity (0.823) is
+    /// above every bridge's weaker affinity (max 0.816), so nothing is
+    /// `Genuine`. In a blind review of 214 bridges across that corpus
+    /// and the 775-concept one, 0.85 kept 83–87% precision on both.
+    /// Default 0.85.
+    #[serde(default = "default_genuine_affinity_ratio")]
+    pub genuine_affinity_ratio: f64,
     /// Quantile of the full-dim centroid-separation distribution
     /// (`1 − cos(centroid_a, centroid_b)` over bridged category pairs) below
     /// which a bridged pair is `OverlapArtifact`: the two "categories" occupy
@@ -267,6 +275,10 @@ fn default_overlap_separation_quantile() -> f64 {
     0.10
 }
 
+fn default_genuine_affinity_ratio() -> f64 {
+    0.85
+}
+
 impl Default for BridgeConfig {
     fn default() -> Self {
         Self {
@@ -274,6 +286,7 @@ impl Default for BridgeConfig {
             threshold_evr_penalty: 0.4,
             overlap_artifact_territorial: 0.3,
             balanced_affinity_quantile: 0.25,
+            genuine_affinity_ratio: default_genuine_affinity_ratio(),
             overlap_separation_quantile: default_overlap_separation_quantile(),
             min_evr_for_classification: 0.20,
         }
@@ -451,6 +464,7 @@ mod tests {
         assert!((c.bridges.threshold_evr_penalty - 0.4).abs() < 1e-12);
         assert!((c.bridges.overlap_artifact_territorial - 0.3).abs() < 1e-12);
         assert!((c.bridges.balanced_affinity_quantile - 0.25).abs() < 1e-12);
+        assert!((c.bridges.genuine_affinity_ratio - 0.85).abs() < 1e-12);
         assert!((c.bridges.min_evr_for_classification - 0.20).abs() < 1e-12);
         assert_eq!(c.routing.num_domain_groups, 5);
         assert!((c.routing.low_evr_threshold - 0.35).abs() < 1e-12);
