@@ -9,7 +9,9 @@ use crate::category::{
     BridgeItem, CategoryLayer, CategoryPath, CategorySummary, DrillDownResult, InnerSphereReport,
 };
 use crate::confidence::{ProjectionWarning, QualityConfig, QualitySignal};
-use crate::config::{PipelineConfig, ProjectionKind, RadialConfig, RadialMode};
+use crate::config::{
+    LaplacianSimilarity, PipelineConfig, ProjectionKind, RadialConfig, RadialMode,
+};
 use crate::configured_projection::ConfiguredProjection;
 use crate::corpus_features::CorpusFeatures;
 use crate::domain_groups::DomainGroup;
@@ -824,12 +826,10 @@ impl SphereQLPipeline {
 
     /// The active projection's explained-variance-ratio-equivalent
     /// quality score, in `[0, 1]`. PCA returns the classical EVR;
-    /// kernel PCA returns its kernel-space EVR; Laplacian eigenmap
-    /// returns a compatible connectivity ratio (see
-    /// [`LaplacianEigenmapProjection::connectivity_ratio`](crate::laplacian::LaplacianEigenmapProjection::connectivity_ratio));
-    /// UMAP returns its kNN-recall — the fraction of each point's
-    /// high-dimensional neighbors preserved on the sphere. All four feed
-    /// the EVR-adaptive thresholds downstream.
+    /// kernel PCA returns its kernel-space EVR; Laplacian eigenmap and
+    /// UMAP return kNN-recall — the fraction of each point's
+    /// neighbors in the fit's graph preserved on the sphere. All four
+    /// feed the EVR-adaptive thresholds downstream.
     pub fn explained_variance_ratio(&self) -> f64 {
         self.projection.explained_variance_ratio()
     }
@@ -1351,14 +1351,17 @@ pub fn fit_projection_for_config(
         )?)),
         ProjectionKind::LaplacianEigenmap => {
             let lc = &config.laplacian;
-            Ok(ConfiguredProjection::Laplacian(
-                LaplacianEigenmapProjection::fit_with_params(
+            Ok(ConfiguredProjection::Laplacian(match lc.similarity {
+                LaplacianSimilarity::Cosine => {
+                    LaplacianEigenmapProjection::fit_cosine(embeddings, lc.k_neighbors, radial)?
+                }
+                LaplacianSimilarity::ActiveAxes => LaplacianEigenmapProjection::fit_with_params(
                     embeddings,
                     lc.k_neighbors,
                     lc.active_threshold,
                     radial,
                 )?,
-            ))
+            }))
         }
         ProjectionKind::UmapSphere => {
             let cat_indices = compact_category_indices(categories);

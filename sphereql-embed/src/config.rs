@@ -142,11 +142,11 @@ pub enum ProjectionKind {
     /// Kernel PCA with a Gaussian (RBF) kernel. Captures nonlinear
     /// manifold structure at O(n²) fit cost.
     KernelPca,
-    /// Laplacian eigenmap over a Jaccard-similarity graph of active
-    /// axes. Connectivity-preserving; preferred when signal lives in
-    /// the co-activation structure of a sparse embedding rather than in
-    /// coordinate variance (the typical failure mode of PCA on 128-dim
-    /// noise-heavy corpora).
+    /// Laplacian eigenmap over a k-nearest-neighbour graph (cosine
+    /// similarity by default; see [`LaplacianSimilarity`]).
+    /// Connectivity-preserving; preferred when signal lives in which
+    /// items are close rather than in coordinate variance (the typical
+    /// failure mode of PCA on noise-heavy corpora).
     LaplacianEigenmap,
     /// UMAP-on-sphere via Adam in the tangent bundle of S². PCA warm
     /// start, kNN attractive + uniform-negative repulsive, optional
@@ -330,6 +330,24 @@ impl Default for RoutingConfig {
 
 // ── Laplacian eigenmap ─────────────────────────────────────────────────
 
+/// What the Laplacian eigenmap's neighbour graph measures between two
+/// items.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
+pub enum LaplacianSimilarity {
+    /// Cosine similarity between the embeddings. Works on any embedding
+    /// and has no threshold to tune.
+    #[default]
+    Cosine,
+    /// Jaccard overlap between the sets of axes whose absolute weight
+    /// exceeds [`LaplacianConfig::active_threshold`]. For sparse
+    /// embeddings whose signal is which axes fire. On dense embeddings
+    /// every axis is active for every item, the graph carries no
+    /// information and the layout collapses.
+    ActiveAxes,
+}
+
 /// Graph-construction parameters for [`LaplacianEigenmapProjection`](crate::laplacian::LaplacianEigenmapProjection).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -337,7 +355,12 @@ pub struct LaplacianConfig {
     /// k in the k-NN graph sparsification step.
     pub k_neighbors: usize,
     /// Absolute-weight cutoff below which an axis is treated as noise.
+    /// Read only when [`Self::similarity`] is
+    /// [`LaplacianSimilarity::ActiveAxes`].
     pub active_threshold: f64,
+    /// What the neighbour graph measures. Default
+    /// [`LaplacianSimilarity::Cosine`].
+    pub similarity: LaplacianSimilarity,
 }
 
 impl Default for LaplacianConfig {
@@ -345,6 +368,7 @@ impl Default for LaplacianConfig {
         Self {
             k_neighbors: 15,
             active_threshold: 0.05,
+            similarity: LaplacianSimilarity::default(),
         }
     }
 }
