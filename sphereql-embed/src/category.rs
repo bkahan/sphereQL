@@ -690,6 +690,9 @@ impl CategoryLayer {
         let bridge_threshold = spatial.bridge_threshold;
 
         let mut bridges: HashMap<(usize, usize), Vec<BridgeItem>> = HashMap::new();
+        // Each item's closest category other than its own (ties go to the
+        // lower index). Only a bridge to that category can be Genuine.
+        let mut nearest_other: Vec<Option<usize>> = vec![None; embeddings.len()];
 
         for (ci, summary) in summaries.iter().enumerate() {
             let centroid_a = &summary.centroid_embedding;
@@ -700,6 +703,7 @@ impl CategoryLayer {
                 // at pipeline build time, so cosine_similarity cannot fail here.
                 let sim_to_own = cosine_similarity(&item_emb.values, centroid_a)
                     .expect("centroid and member share fixed embedding dimensionality");
+                let mut nearest: Option<(usize, f64)> = None;
 
                 for (cj, other_summary) in summaries.iter().enumerate() {
                     if ci == cj {
@@ -710,6 +714,9 @@ impl CategoryLayer {
                     let sim_to_other =
                         cosine_similarity(&item_emb.values, &other_summary.centroid_embedding)
                             .expect("centroid and member share fixed embedding dimensionality");
+                    if nearest.is_none_or(|(_, best)| sim_to_other > best) {
+                        nearest = Some((cj, sim_to_other));
+                    }
 
                     // EVR-adaptive threshold: stricter when projection is lossy.
                     // Require positive own-affinity too; otherwise the harmonic-mean
@@ -744,6 +751,7 @@ impl CategoryLayer {
                         });
                     }
                 }
+                nearest_other[mi] = nearest.map(|(cj, _)| cj);
             }
         }
 
@@ -752,12 +760,14 @@ impl CategoryLayer {
         // for UmapSphere that EVR is a kNN-recall score (neighbourhood
         // preservation) orthogonal to relation validity and ~0.09 here — so it
         // suppressed EVERY bridge to Weak. We classify from FULL-DIMENSIONAL
-        // signals instead, finally implementing the documented
-        // `balanced_affinity_quantile` intent: a bridge is Genuine when its
-        // balanced dual-category affinity clears the home-affinity floor AND the
-        // two categories are genuinely distinct (centroid separation above a
-        // floor — near-collinear centroids are the same blob). territorial_factor
-        // stays the soft barrier discount on bridge_strength, never a gate.
+        // signals instead. A bridge is Genuine when the two categories are
+        // genuinely distinct (centroid separation above a floor — near-collinear
+        // centroids are the same blob), it goes to the item's nearest other
+        // category, and its balanced dual-category affinity clears
+        // `genuine_affinity_ratio` × the home-affinity quantile. In a blind review
+        // a bridge to a farther category was a real link about a third of the
+        // time, against 85–90% for the nearest. territorial_factor stays the soft
+        // barrier discount on bridge_strength, never a gate.
         {
             fn quantile(v: &mut [f64], q: f64) -> f64 {
                 if v.is_empty() {
@@ -779,7 +789,8 @@ impl CategoryLayer {
                     );
                 }
             }
-            let affinity_floor = quantile(&mut home_aff, config.bridges.balanced_affinity_quantile);
+            let affinity_floor = config.bridges.genuine_affinity_ratio
+                * quantile(&mut home_aff, config.bridges.balanced_affinity_quantile);
 
             // Separation floor: q-quantile of full-dim centroid separation
             // `1 - cos(centroid_a, centroid_b)` over bridged category pairs.
@@ -799,7 +810,8 @@ impl CategoryLayer {
                     let balanced = b.affinity_to_source.min(b.affinity_to_target);
                     b.classification = if sep < sep_floor {
                         BridgeClassification::OverlapArtifact
-                    } else if balanced >= affinity_floor {
+                    } else if nearest_other[b.item_index] == Some(cj) && balanced >= affinity_floor
+                    {
                         BridgeClassification::Genuine
                     } else {
                         BridgeClassification::Weak
@@ -1730,6 +1742,69 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn only_a_bridge_to_the_nearest_other_category_can_be_genuine() {
+        // `x` lives in `a` but sits between `b` (closer) and `c`.
+        let mut categories: Vec<String> = Vec::new();
+        let mut embeddings = Vec::new();
+        for (name, axis) in [("a", 0), ("b", 1), ("c", 2), ("d", 3)] {
+            for k in 0..4 {
+                let mut v = vec![0.05; 4];
+                v[axis] = 1.0 + 0.05 * k as f64;
+                categories.push(name.into());
+                embeddings.push(emb(&v));
+            }
+        }
+        categories.push("a".into());
+        embeddings.push(emb(&[0.4, 0.7, 0.6, 0.0]));
+        let x = embeddings.len() - 1;
+
+        let pca = PcaProjection::fit(&embeddings, RadialStrategy::Fixed(1.0)).unwrap();
+        let projected: Vec<SphericalPoint> = embeddings.iter().map(|e| pca.project(e)).collect();
+        let layer_with = |ratio: f64| {
+            let mut config = PipelineConfig::default();
+            config.bridges.genuine_affinity_ratio = ratio;
+            CategoryLayer::build_with_config(
+                &categories,
+                &embeddings,
+                &projected,
+                &pca,
+                0.9,
+                &config,
+            )
+        };
+        let names = |layer: &CategoryLayer, i: usize| layer.summaries[i].name.clone();
+        let x_bridges = |layer: &CategoryLayer| -> Vec<(String, BridgeClassification)> {
+            layer
+                .graph
+                .bridges
+                .values()
+                .flatten()
+                .filter(|b| b.item_index == x)
+                .map(|b| (names(layer, b.target_category), b.classification))
+                .collect()
+        };
+
+        let open = layer_with(0.0);
+        let bridges = x_bridges(&open);
+        assert!(
+            bridges.iter().any(|(t, _)| t == "c"),
+            "x bridges to c too: {bridges:?}"
+        );
+        for (target, class) in &bridges {
+            let genuine = *class == BridgeClassification::Genuine;
+            assert_eq!(genuine, target == "b", "{target}: {class:?}");
+        }
+
+        let closed = layer_with(10.0);
+        assert!(
+            x_bridges(&closed)
+                .iter()
+                .all(|(_, c)| *c != BridgeClassification::Genuine),
+            "no bridge clears a floor above every affinity"
+        );
     }
 
     #[test]

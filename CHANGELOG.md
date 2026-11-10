@@ -16,11 +16,17 @@ pick different configs.
 ### Breaking
 
 - **Bridge classification uses full-dimensional signals.** A bridge is
-  `Genuine` when `min(affinity_to_source, affinity_to_target)` clears the
-  `balanced_affinity_quantile` of the corpus's home affinities, and
   `OverlapArtifact` when its two categories' full-dim centroids are closer
   than the `overlap_separation_quantile` of bridged pairs (new field,
-  default 0.10); otherwise `Weak`. 0.3.0 left every bridge `Weak` when
+  default 0.10). Otherwise it is `Genuine` when it goes to the item's
+  nearest other category and `min(affinity_to_source, affinity_to_target)`
+  is at least `genuine_affinity_ratio` (new field, default 0.85) times the
+  `balanced_affinity_quantile` of the corpus's home affinities, and `Weak`
+  if not. Without the 0.85 the floor is unreachable on tight corpora (no
+  bridge on the 5k OpenAlex corpus qualified). In a blind check of 60
+  bridges from the two bundled corpora, 70% of those labeled `Genuine`
+  were real cross-field links, against 43% of the rest; 0.3.0's labels
+  showed no such gap. 0.3.0 left every bridge `Weak` when
   the projection's EVR was below `min_evr_for_classification` (0.20), and
   each projection family reports a different quantity as EVR, so whether
   a corpus got classified at all depended on the projection; above the
@@ -30,7 +36,8 @@ pick different configs.
   and `overlap_artifact_territorial` are no longer read; both stay for
   serde compatibility.
 - **New public members:** `PipelineConfig.radial` (`RadialConfig` /
-  `RadialMode`), `BridgeConfig.overlap_separation_quantile`, and
+  `RadialMode`), `BridgeConfig.overlap_separation_quantile`,
+  `BridgeConfig.genuine_affinity_ratio`, and
   `RadialStrategy::MagnitudeStretch`. Struct literals without
   `..Default::default()` and exhaustive matches on `RadialStrategy` need
   updating. Saved configs still load (the new fields have serde defaults).
